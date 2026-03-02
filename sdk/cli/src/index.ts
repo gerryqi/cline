@@ -48,6 +48,7 @@ import {
 	SessionSource,
 } from "@cline/core/server";
 import { getLiveModelsCatalog } from "@cline/llms/providers";
+import { version } from "../package.json";
 import {
 	appendHookAudit,
 	formatToolInput,
@@ -1079,7 +1080,7 @@ ${c.bold}EXAMPLES${c.reset}
 }
 
 function showVersion(): void {
-	writeln("0.1.0");
+	writeln(version);
 }
 
 // =============================================================================

@@ -5,27 +5,33 @@
 		"llms",
 		"agents",
 		"core",
-		"cli"
+		"cli",
+		"desktop"
 	],
 	"scripts": {
-		"build": "bun install && bun run build:llms && bun run build:agents && bun run build:core && bun run build:cli",
+		"build": "bun run build:llms && bun run build:agents && bun run build:core",
+		"build:apps": "bun run build && bun run build:cli && bun run build:desktop",
 		"build:llms": "cd llms && bun run build",
 		"build:models": "cd llms && bun run generate:models",
 		"build:agents": "cd agents && bun run build",
 		"build:core": "cd core && bun run build",
 		"build:cli": "cd cli && bun run build",
+		"build:desktop": "cd desktop && bun run build",
+		"dev": "bun run build && bun run dev:desktop",
 		"dev:cli": "cd cli && bun run dev",
-		"clean": "cd llms && bun run clean && cd ../agents && bun run clean && cd ../core && bun run clean && cd ../cli && bun run clean",
-		"typecheck": "cd llms && bun run typecheck && cd ../agents && bun run typecheck && cd ../core && bun run typecheck && cd ../cli && bun run typecheck",
-		"test": "bun run test:llms && bun run test:agents && bun run test:core && bun run test:cli",
+		"dev:desktop": "cd desktop && bun run dev",
+		"clean": "cd llms && bun run clean && cd ../agents && bun run clean && cd ../core && bun run clean && cd ../cli && bun run clean && cd ../desktop && bun run clean",
+		"typecheck": "cd llms && bun run typecheck && cd ../agents && bun run typecheck && cd ../core && bun run typecheck && cd ../cli && bun run typecheck && cd ../desktop && bun run typecheck",
+		"test": "bun run test:llms && bun run test:agents && bun run test:core && bun run test:cli && bun run test:desktop",
 		"test:llms": "cd llms && bun run test",
 		"test:agents": "cd agents && bun run test",
 		"test:core": "cd core && bun run test",
 		"test:cli": "cd cli && bun run test",
+		"test:desktop": "cd desktop && bun run test",
 		"check": "bunx --bun @biomejs/biome check",
 		"format": "bunx --bun @biomejs/biome format",
 		"lint": "bunx --bun @biomejs/biome lint",
-		"fix": "bun run check --write"
+		"fix": "bun run check --write --unsafe"
 	},
 	"lint-staged": {
 		"*": [

@@ -244,7 +244,7 @@ export function createSubprocessHooks(
 
 	const onToolCallEnd = async (
 		ctx: AgentHookToolCallEndContext,
-	): Promise<void> => {
+	): Promise<AgentHookControl | undefined> => {
 		const payload: ToolResultHookPayload = {
 			hook_event_name: "tool_result",
 			agent_id: ctx.agentId,
@@ -254,9 +254,12 @@ export function createSubprocessHooks(
 			tool_result: ctx.record,
 		};
 		await dispatchDetached(payload, options);
+		return undefined;
 	};
 
-	const onTurnEnd = async (ctx: AgentHookTurnEndContext): Promise<void> => {
+	const onTurnEnd = async (
+		ctx: AgentHookTurnEndContext,
+	): Promise<AgentHookControl | undefined> => {
 		const payload: AgentEndHookPayload = {
 			hook_event_name: "agent_end",
 			agent_id: ctx.agentId,
@@ -266,6 +269,7 @@ export function createSubprocessHooks(
 			turn: ctx.turn,
 		};
 		await dispatchDetached(payload, options);
+		return undefined;
 	};
 
 	const shutdown = async (ctx: {
@@ -289,8 +293,15 @@ export function createSubprocessHooks(
 			onToolCallStart,
 			onToolCallEnd,
 			onTurnEnd,
-			onSessionShutdown: ({ agentId, conversationId, parentAgentId, reason }) =>
-				shutdown({ agentId, conversationId, parentAgentId, reason }),
+			onSessionShutdown: async ({
+				agentId,
+				conversationId,
+				parentAgentId,
+				reason,
+			}) => {
+				await shutdown({ agentId, conversationId, parentAgentId, reason });
+				return undefined;
+			},
 		},
 		shutdown,
 	};
