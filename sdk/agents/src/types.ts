@@ -1,0 +1,942 @@
+/**
+ * Types and Zod Schemas for the Agent Package
+ *
+ * This module defines all TypeScript types and Zod validation schemas
+ * for agent configuration, tools, events, and results.
+ */
+
+import type { Message, ModelInfo } from "@cline/llms/providers";
+import { z } from "zod";
+
+// =============================================================================
+// JSON Schema Types (for tool input validation)
+// =============================================================================
+
+/**
+ * JSON Schema for tool input parameters
+ */
+export type JsonSchema = {
+	type: "object";
+	properties: Record<string, JsonSchemaProperty>;
+	required?: string[];
+	additionalProperties?: boolean;
+	description?: string;
+};
+
+export type JsonSchemaProperty = {
+	type:
+		| "string"
+		| "number"
+		| "integer"
+		| "boolean"
+		| "array"
+		| "object"
+		| "null";
+	description?: string;
+	enum?: unknown[];
+	items?: JsonSchemaProperty;
+	properties?: Record<string, JsonSchemaProperty>;
+	required?: string[];
+	default?: unknown;
+	minimum?: number;
+	maximum?: number;
+	minLength?: number;
+	maxLength?: number;
+	pattern?: string;
+};
+
+export const JsonSchemaPropertySchema: z.ZodType<JsonSchemaProperty> = z.lazy(
+	() =>
+		z.object({
+			type: z.enum([
+				"string",
+				"number",
+				"integer",
+				"boolean",
+				"array",
+				"object",
+				"null",
+			]),
+			description: z.string().optional(),
+			enum: z.array(z.unknown()).optional(),
+			items: JsonSchemaPropertySchema.optional(),
+			properties: z.record(JsonSchemaPropertySchema).optional(),
+			required: z.array(z.string()).optional(),
+			default: z.unknown().optional(),
+			minimum: z.number().optional(),
+			maximum: z.number().optional(),
+			minLength: z.number().optional(),
+			maxLength: z.number().optional(),
+			pattern: z.string().optional(),
+		}),
+);
+
+export const JsonSchemaSchema = z.object({
+	type: z.literal("object"),
+	properties: z.record(JsonSchemaPropertySchema),
+	required: z.array(z.string()).optional(),
+	additionalProperties: z.boolean().optional(),
+	description: z.string().optional(),
+});
+
+// =============================================================================
+// Tool Context
+// =============================================================================
+
+/**
+ * Context passed to tool execution functions
+ */
+export interface ToolContext {
+	/** Unique identifier for the agent instance */
+	agentId: string;
+	/** Unique identifier for the current conversation */
+	conversationId: string;
+	/** Current iteration number in the agentic loop */
+	iteration: number;
+	/** Abort signal for cancellation */
+	abortSignal?: AbortSignal;
+	/** Optional metadata for the tool execution */
+	metadata?: Record<string, unknown>;
+}
+
+export interface ToolPolicy {
+	/**
+	 * Whether the tool can be executed at all.
+	 * @default true
+	 */
+	enabled?: boolean;
+	/**
+	 * Whether this tool can run without asking the client for approval.
+	 * @default true
+	 */
+	autoApprove?: boolean;
+}
+
+export const ToolContextSchema = z.object({
+	agentId: z.string(),
+	conversationId: z.string(),
+	iteration: z.number(),
+	abortSignal: z.custom<AbortSignal>().optional(),
+	metadata: z.record(z.unknown()).optional(),
+});
+
+// =============================================================================
+// Tool Definition
+// =============================================================================
+
+/**
+ * A tool that the agent can use
+ *
+ * @template TInput - The type of the input to the tool
+ * @template TOutput - The type of the output from the tool
+ */
+export interface Tool<TInput = unknown, TOutput = unknown> {
+	/** Unique name for the tool */
+	name: string;
+	/** Human-readable description of what the tool does */
+	description: string;
+	/** JSON Schema defining the tool's input parameters */
+	inputSchema: JsonSchema;
+	/** The function that executes the tool */
+	execute: (input: TInput, context: ToolContext) => Promise<TOutput>;
+	/**
+	 * Optional timeout in milliseconds for tool execution
+	 * @default 30000 (30 seconds)
+	 */
+	timeoutMs?: number;
+	/**
+	 * Whether the tool can be retried on failure
+	 * @default true
+	 */
+	retryable?: boolean;
+	/**
+	 * Maximum number of retries for this tool
+	 * @default 2
+	 */
+	maxRetries?: number;
+}
+
+// =============================================================================
+// Tool Call Record
+// =============================================================================
+
+/**
+ * Record of a tool call execution
+ */
+export interface ToolCallRecord {
+	/** Unique identifier for this tool call */
+	id: string;
+	/** Name of the tool that was called */
+	name: string;
+	/** Input passed to the tool */
+	input: unknown;
+	/** Output returned from the tool (if successful) */
+	output: unknown;
+	/** Error message (if the tool failed) */
+	error?: string;
+	/** Time taken to execute the tool in milliseconds */
+	durationMs: number;
+	/** Timestamp when the tool call started */
+	startedAt: Date;
+	/** Timestamp when the tool call ended */
+	endedAt: Date;
+}
+
+export interface ToolApprovalRequest {
+	agentId: string;
+	conversationId: string;
+	iteration: number;
+	toolCallId: string;
+	toolName: string;
+	input: unknown;
+	policy: ToolPolicy;
+}
+
+export interface ToolApprovalResult {
+	approved: boolean;
+	reason?: string;
+}
+
+export const ToolCallRecordSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+	input: z.unknown(),
+	output: z.unknown(),
+	error: z.string().optional(),
+	durationMs: z.number(),
+	startedAt: z.date(),
+	endedAt: z.date(),
+});
+
+// =============================================================================
+// Agent Events
+// =============================================================================
+
+/**
+ * Events emitted during agent execution
+ */
+export type AgentEvent =
+	| AgentTextEvent
+	| AgentReasoningEvent
+	| AgentToolCallStartEvent
+	| AgentToolCallEndEvent
+	| AgentIterationStartEvent
+	| AgentIterationEndEvent
+	| AgentUsageEvent
+	| AgentDoneEvent
+	| AgentErrorEvent;
+
+export interface AgentTextEvent {
+	type: "text";
+	/** The text chunk received from the model */
+	text: string;
+	/** Accumulated text so far in this turn */
+	accumulated?: string;
+}
+
+export interface AgentReasoningEvent {
+	type: "reasoning";
+	/** The reasoning/thinking text from the model */
+	reasoning: string;
+	/** Whether this is redacted reasoning */
+	redacted?: boolean;
+}
+
+export interface AgentToolCallStartEvent {
+	type: "tool_call_start";
+	/** Name of the tool being called */
+	toolName: string;
+	/** Unique identifier for this tool call */
+	toolCallId: string;
+	/** Input being passed to the tool */
+	input: unknown;
+}
+
+export interface AgentToolCallEndEvent {
+	type: "tool_call_end";
+	/** Name of the tool that was called */
+	toolName: string;
+	/** Unique identifier for this tool call */
+	toolCallId: string;
+	/** Output from the tool */
+	output: unknown;
+	/** Error message if the tool failed */
+	error?: string;
+	/** Time taken in milliseconds */
+	durationMs: number;
+}
+
+export interface AgentIterationStartEvent {
+	type: "iteration_start";
+	/** The iteration number (1-based) */
+	iteration: number;
+}
+
+export interface AgentIterationEndEvent {
+	type: "iteration_end";
+	/** The iteration number that just completed */
+	iteration: number;
+	/** Whether this iteration had any tool calls */
+	hadToolCalls: boolean;
+	/** Number of tool calls in this iteration */
+	toolCallCount: number;
+}
+
+export interface AgentUsageEvent {
+	type: "usage";
+	/** Number of input tokens for this turn */
+	inputTokens: number;
+	/** Number of output tokens for this turn */
+	outputTokens: number;
+	/** Tokens read from cache */
+	cacheReadTokens?: number;
+	/** Tokens written to cache */
+	cacheWriteTokens?: number;
+	/** Cost for this turn */
+	cost?: number;
+	/** Accumulated totals */
+	totalInputTokens: number;
+	totalOutputTokens: number;
+	totalCost?: number;
+}
+
+export interface AgentDoneEvent {
+	type: "done";
+	/** The reason the agent stopped */
+	reason: AgentFinishReason;
+	/** Final text output */
+	text: string;
+	/** Total number of iterations */
+	iterations: number;
+}
+
+export interface AgentErrorEvent {
+	type: "error";
+	/** The error that occurred */
+	error: Error;
+	/** Whether the error is recoverable */
+	recoverable: boolean;
+	/** Current iteration when error occurred */
+	iteration: number;
+}
+
+// =============================================================================
+// Hooks
+// =============================================================================
+
+/**
+ * Hook error handling behavior.
+ * - "ignore": swallow hook errors and continue agent execution
+ * - "throw": fail agent execution when a hook throws
+ */
+export type HookErrorMode = "ignore" | "throw";
+
+/**
+ * Common controls supported by lifecycle hooks.
+ */
+export interface AgentHookControl {
+	/**
+	 * Cancel the active run after this hook.
+	 * When true, finishReason becomes "aborted".
+	 */
+	cancel?: boolean;
+	/**
+	 * Optional context appended to the conversation as a user text block.
+	 */
+	context?: string;
+	/**
+	 * Optional replacement input for the active tool call.
+	 * Only applied for `onToolCallStart`.
+	 */
+	overrideInput?: unknown;
+}
+
+export interface AgentHookRunStartContext {
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+	userMessage: string;
+}
+
+export interface AgentHookRunEndContext {
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+	result: AgentResult;
+}
+
+export interface AgentHookIterationStartContext {
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+	iteration: number;
+}
+
+export interface AgentHookIterationEndContext {
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+	iteration: number;
+	hadToolCalls: boolean;
+	toolCallCount: number;
+}
+
+export interface AgentHookTurnStartContext {
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+	iteration: number;
+	messages: Message[];
+}
+
+export interface AgentHookTurnEndContext {
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+	iteration: number;
+	turn: ProcessedTurn;
+}
+
+export interface AgentHookToolCallStartContext {
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+	iteration: number;
+	call: PendingToolCall;
+}
+
+export interface AgentHookToolCallEndContext {
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+	iteration: number;
+	record: ToolCallRecord;
+}
+
+export interface AgentHookErrorContext {
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+	iteration: number;
+	error: Error;
+}
+
+export interface AgentHookSessionShutdownContext {
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+	/**
+	 * Optional reason for shutdown (e.g. "ctrl_d", "process_exit")
+	 */
+	reason?: string;
+}
+
+// =============================================================================
+// Extensions
+// =============================================================================
+
+export interface AgentExtensionCommand {
+	name: string;
+	description?: string;
+	handler?: (input: string) => Promise<string> | string;
+}
+
+export interface AgentExtensionShortcut {
+	name: string;
+	value: string;
+	description?: string;
+}
+
+export interface AgentExtensionFlag {
+	name: string;
+	description?: string;
+	defaultValue?: boolean | string | number;
+}
+
+export interface AgentExtensionMessageRenderer {
+	name: string;
+	render: (message: Message) => string;
+}
+
+export interface AgentExtensionProvider {
+	name: string;
+	description?: string;
+	metadata?: Record<string, unknown>;
+}
+
+export interface AgentExtensionRuntimeEventContext {
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+	event: AgentEvent;
+}
+
+export interface AgentExtensionSessionStartContext {
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+}
+
+export interface AgentExtensionSessionShutdownContext {
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+	reason?: string;
+}
+
+export interface AgentExtensionInputContext {
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+	mode: "run" | "continue";
+	input: string;
+}
+
+export interface AgentExtensionBeforeAgentStartContext {
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+	iteration: number;
+	systemPrompt: string;
+	messages: Message[];
+}
+
+export interface AgentExtensionBeforeAgentStartControl
+	extends AgentHookControl {
+	systemPrompt?: string;
+	appendMessages?: Message[];
+}
+
+export interface AgentExtensionApi {
+	registerTool: (tool: Tool) => void;
+	registerCommand: (command: AgentExtensionCommand) => void;
+	registerShortcut: (shortcut: AgentExtensionShortcut) => void;
+	registerFlag: (flag: AgentExtensionFlag) => void;
+	registerMessageRenderer: (renderer: AgentExtensionMessageRenderer) => void;
+	registerProvider: (provider: AgentExtensionProvider) => void;
+}
+
+export interface AgentExtension {
+	name: string;
+	setup?: (api: AgentExtensionApi) => void | Promise<void>;
+	onSessionStart?: (
+		ctx: AgentExtensionSessionStartContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onInput?: (
+		ctx: AgentExtensionInputContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onBeforeAgentStart?: (
+		ctx: AgentExtensionBeforeAgentStartContext,
+	) =>
+		| undefined
+		| AgentExtensionBeforeAgentStartControl
+		| Promise<undefined | AgentExtensionBeforeAgentStartControl>;
+	onToolCall?: (
+		ctx: AgentHookToolCallStartContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onToolResult?: (
+		ctx: AgentHookToolCallEndContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onAgentEnd?: (
+		ctx: AgentHookTurnEndContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onSessionShutdown?: (
+		ctx: AgentExtensionSessionShutdownContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onRuntimeEvent?: (
+		ctx: AgentExtensionRuntimeEventContext,
+	) => void | Promise<void>;
+	onError?: (ctx: AgentHookErrorContext) => void | Promise<void>;
+}
+
+export interface AgentExtensionRegistry {
+	tools: Tool[];
+	commands: AgentExtensionCommand[];
+	shortcuts: AgentExtensionShortcut[];
+	flags: AgentExtensionFlag[];
+	messageRenderers: AgentExtensionMessageRenderer[];
+	providers: AgentExtensionProvider[];
+}
+
+/**
+ * Lifecycle hooks for observing or influencing agent execution.
+ */
+export interface AgentHooks {
+	onRunStart?: (
+		ctx: AgentHookRunStartContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onRunEnd?: (ctx: AgentHookRunEndContext) => void | Promise<void>;
+	onIterationStart?: (
+		ctx: AgentHookIterationStartContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onIterationEnd?: (ctx: AgentHookIterationEndContext) => void | Promise<void>;
+	onTurnStart?: (
+		ctx: AgentHookTurnStartContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onTurnEnd?: (
+		ctx: AgentHookTurnEndContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onToolCallStart?: (
+		ctx: AgentHookToolCallStartContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onToolCallEnd?: (
+		ctx: AgentHookToolCallEndContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onSessionShutdown?: (
+		ctx: AgentHookSessionShutdownContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onError?: (ctx: AgentHookErrorContext) => void | Promise<void>;
+}
+
+// =============================================================================
+// Agent Finish Reasons
+// =============================================================================
+
+/**
+ * Reasons why the agent stopped executing
+ */
+export type AgentFinishReason =
+	| "completed" // Normal completion (no more tool calls)
+	| "max_iterations" // Hit the maximum iteration limit
+	| "aborted" // User or system aborted
+	| "error"; // Unrecoverable error occurred
+
+export const AgentFinishReasonSchema = z.enum([
+	"completed",
+	"max_iterations",
+	"aborted",
+	"error",
+]);
+
+// =============================================================================
+// Agent Usage
+// =============================================================================
+
+/**
+ * Aggregated token usage and cost information
+ */
+export interface AgentUsage {
+	/** Total input tokens across all iterations */
+	inputTokens: number;
+	/** Total output tokens across all iterations */
+	outputTokens: number;
+	/** Total tokens read from cache */
+	cacheReadTokens?: number;
+	/** Total tokens written to cache */
+	cacheWriteTokens?: number;
+	/** Total cost in dollars */
+	totalCost?: number;
+}
+
+export const AgentUsageSchema = z.object({
+	inputTokens: z.number(),
+	outputTokens: z.number(),
+	cacheReadTokens: z.number().optional(),
+	cacheWriteTokens: z.number().optional(),
+	totalCost: z.number().optional(),
+});
+
+// =============================================================================
+// Agent Result
+// =============================================================================
+
+/**
+ * Result returned from Agent.run()
+ */
+export interface AgentResult {
+	/** Final text output from the agent */
+	text: string;
+	/** Aggregated token usage and cost */
+	usage: AgentUsage;
+	/** Full conversation history */
+	messages: Message[];
+	/** All tool calls made during execution */
+	toolCalls: ToolCallRecord[];
+	/** Number of loop iterations */
+	iterations: number;
+	/** Why the agent stopped */
+	finishReason: AgentFinishReason;
+	/** Model information used */
+	model: {
+		id: string;
+		provider: string;
+		info?: ModelInfo;
+	};
+	/** Start time of the run */
+	startedAt: Date;
+	/** End time of the run */
+	endedAt: Date;
+	/** Total duration in milliseconds */
+	durationMs: number;
+}
+
+export const AgentResultSchema = z.object({
+	text: z.string(),
+	usage: AgentUsageSchema,
+	messages: z.array(z.custom<Message>()),
+	toolCalls: z.array(ToolCallRecordSchema),
+	iterations: z.number(),
+	finishReason: AgentFinishReasonSchema,
+	model: z.object({
+		id: z.string(),
+		provider: z.string(),
+		info: z.custom<ModelInfo>().optional(),
+	}),
+	startedAt: z.date(),
+	endedAt: z.date(),
+	durationMs: z.number(),
+});
+
+// =============================================================================
+// Agent Configuration
+// =============================================================================
+
+/**
+ * Reasoning effort level for capable models
+ */
+export type ReasoningEffort = "low" | "medium" | "high";
+
+export const ReasoningEffortSchema = z.enum(["low", "medium", "high"]);
+
+/**
+ * Configuration for creating an Agent
+ */
+export interface AgentConfig {
+	// -------------------------------------------------------------------------
+	// Provider Settings
+	// -------------------------------------------------------------------------
+
+	/** Provider ID (e.g., "anthropic", "openai", "gemini") */
+	providerId: string;
+	/** Model ID to use */
+	modelId: string;
+	/** API key for the provider */
+	apiKey?: string;
+	/** Custom base URL for the API */
+	baseUrl?: string;
+	/** Additional headers for API requests */
+	headers?: Record<string, string>;
+	/** Optional provider model catalog overrides */
+	knownModels?: Record<string, ModelInfo>;
+
+	// -------------------------------------------------------------------------
+	// Agent Behavior
+	// -------------------------------------------------------------------------
+
+	/** System prompt for the agent */
+	systemPrompt: string;
+	/** Tools available to the agent */
+	tools: Tool[];
+	/**
+	 * Maximum number of loop iterations
+	 * If undefined, no iteration cap is enforced.
+	 */
+	maxIterations?: number;
+	/**
+	 * Maximum output tokens per API call
+	 */
+	maxTokensPerTurn?: number;
+	/**
+	 * After this many consecutive iterations with tool calls,
+	 * inject a reminder text block asking the agent to answer if it has enough info.
+	 * Set to 0 to disable.
+	 * @default 6
+	 */
+	reminderAfterIterations?: number;
+	/**
+	 * Custom reminder text to inject after reminderAfterIterations.
+	 * @default "REMINDER: If you have gathered enough information to answer the user's question, please provide your final answer now without using any more tools."
+	 */
+	reminderText?: string;
+	/**
+	 * Timeout for each API call in milliseconds
+	 * @default 120000 (2 minutes)
+	 */
+	apiTimeoutMs?: number;
+
+	// -------------------------------------------------------------------------
+	// Reasoning Settings (for capable models)
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Reasoning effort level
+	 */
+	reasoningEffort?: ReasoningEffort;
+	/**
+	 * Maximum tokens for thinking/reasoning
+	 */
+	thinkingBudgetTokens?: number;
+
+	// -------------------------------------------------------------------------
+	// Callbacks
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Callback for agent events (streaming, progress, etc.)
+	 */
+	onEvent?: (event: AgentEvent) => void;
+	/**
+	 * Lifecycle hooks for observing or influencing agent execution.
+	 */
+	hooks?: AgentHooks;
+	/**
+	 * Optional parent agent ID for spawned/delegated runs.
+	 * Root agents should leave this undefined.
+	 */
+	parentAgentId?: string;
+	/**
+	 * Extension modules that can intercept lifecycle events and register tools/commands.
+	 */
+	extensions?: AgentExtension[];
+	/**
+	 * How hook errors should be handled.
+	 * @default "ignore"
+	 */
+	hookErrorMode?: HookErrorMode;
+	/**
+	 * Per-tool execution policy. Tool names not listed here default to enabled + autoApprove.
+	 */
+	toolPolicies?: Record<string, ToolPolicy>;
+	/**
+	 * Optional callback to request client approval when a tool policy disables auto-approval.
+	 */
+	requestToolApproval?: (
+		request: ToolApprovalRequest,
+	) => Promise<ToolApprovalResult> | ToolApprovalResult;
+
+	// -------------------------------------------------------------------------
+	// Cancellation
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Abort signal for cancellation
+	 */
+	abortSignal?: AbortSignal;
+}
+
+export const AgentConfigSchema = z.object({
+	// Provider Settings
+	providerId: z.string(),
+	modelId: z.string(),
+	apiKey: z.string().optional(),
+	baseUrl: z.string().url().optional(),
+	headers: z.record(z.string()).optional(),
+	knownModels: z.record(z.custom<ModelInfo>()).optional(),
+
+	// Agent Behavior
+	systemPrompt: z.string(),
+	tools: z.array(z.custom<Tool>()),
+	maxIterations: z.number().positive().optional(),
+	maxTokensPerTurn: z.number().positive().optional(),
+	apiTimeoutMs: z.number().positive().default(120000),
+	reminderAfterIterations: z.number().nonnegative().default(6),
+	reminderText: z.string().optional(),
+
+	// Reasoning Settings
+	reasoningEffort: ReasoningEffortSchema.optional(),
+	thinkingBudgetTokens: z.number().positive().optional(),
+
+	// Callbacks
+	onEvent: z
+		.function()
+		.args(z.custom<AgentEvent>())
+		.returns(z.void())
+		.optional(),
+	hooks: z.custom<AgentHooks>().optional(),
+	parentAgentId: z.string().optional(),
+	extensions: z.array(z.custom<AgentExtension>()).optional(),
+	hookErrorMode: z.enum(["ignore", "throw"]).default("ignore"),
+	toolPolicies: z
+		.record(
+			z.object({
+				enabled: z.boolean().optional(),
+				autoApprove: z.boolean().optional(),
+			}),
+		)
+		.optional(),
+	requestToolApproval: z
+		.function()
+		.args(
+			z.object({
+				agentId: z.string(),
+				conversationId: z.string(),
+				iteration: z.number(),
+				toolCallId: z.string(),
+				toolName: z.string(),
+				input: z.unknown(),
+				policy: z
+					.object({
+						enabled: z.boolean().optional(),
+						autoApprove: z.boolean().optional(),
+					})
+					.default({}),
+			}),
+		)
+		.returns(
+			z.union([
+				z.object({
+					approved: z.boolean(),
+					reason: z.string().optional(),
+				}),
+				z.promise(
+					z.object({
+						approved: z.boolean(),
+						reason: z.string().optional(),
+					}),
+				),
+			]),
+		)
+		.optional(),
+
+	// Cancellation
+	abortSignal: z.custom<AbortSignal>().optional(),
+});
+
+// =============================================================================
+// Internal Types
+// =============================================================================
+
+/**
+ * Pending tool call from the model
+ */
+export interface PendingToolCall {
+	id: string;
+	name: string;
+	input: unknown;
+	signature?: string;
+}
+
+/**
+ * Processed response from one turn of the loop
+ */
+export interface ProcessedTurn {
+	/** Text output from the model */
+	text: string;
+	/** Reasoning/thinking content */
+	reasoning?: string;
+	/** Tool calls requested by the model */
+	toolCalls: PendingToolCall[];
+	/** Token usage for this turn */
+	usage: {
+		inputTokens: number;
+		outputTokens: number;
+		cacheReadTokens?: number;
+		cacheWriteTokens?: number;
+		cost?: number;
+	};
+	/** Whether the response was truncated */
+	truncated: boolean;
+	/** Response ID from the API */
+	responseId?: string;
+}
+
+// =============================================================================
+// Re-exports from providers for convenience
+// =============================================================================
+
+export type {
+	ContentBlock,
+	Message,
+	ModelInfo,
+	ToolDefinition,
+} from "@cline/llms/providers";

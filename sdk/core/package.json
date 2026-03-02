@@ -1,0 +1,43 @@
+{
+	"name": "@cline/core",
+	"version": "0.0.0",
+	"description": "State-aware orchestration for Cline runtimes",
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./server": {
+			"types": "./dist/server/index.d.ts",
+			"import": "./dist/server/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"src"
+	],
+	"scripts": {
+		"build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --target node --format esm --external @cline/agents --external @cline/llms && bun build ./src/server/index.ts --outdir ./dist/server --target node --format esm --external @cline/agents --external @cline/llms && bun tsc --emitDeclarationOnly",
+		"clean": "rm -rf dist node_modules",
+		"typecheck": "bun tsc --noEmit",
+		"test": "vitest run",
+		"test:watch": "vitest"
+	},
+	"dependencies": {
+		"@cline/agents": "workspace:*",
+		"@cline/llms": "workspace:*",
+		"better-sqlite3": "^11.10.0",
+		"nanoid": "^5.1.6",
+		"simple-git": "^3.32.3",
+		"zod": "^3.24.1"
+	},
+	"devDependencies": {
+		"@types/node": "^20.0.0",
+		"typescript": "^5.7.2",
+		"vitest": "^3.2.4"
+	},
+	"private": true
+}

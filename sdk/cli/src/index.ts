@@ -1,0 +1,1237 @@
+#!/usr/bin/env -S node --no-deprecation
+
+/**
+ * @cline/cli - Fast CLI for running agentic loops
+ *
+ * A lightweight, speed-focused CLI for interacting with AI agents.
+ * Streams responses in real-time with minimal latency.
+ *
+ * Usage:
+ *   agent "your prompt here"
+ *   agent -s "system prompt" "your prompt"
+ *   agent -i                           # interactive mode
+ *   echo "prompt" | agent              # pipe input
+ */
+
+import {
+	appendFileSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
+import { createInterface } from "node:readline";
+import {
+	Agent,
+	type AgentEvent,
+	type AgentHooks,
+	type AgentResult,
+	createBuiltinTools,
+	createSpawnAgentTool as createSdkSpawnAgentTool,
+	createSubprocessHooks,
+	getClineDefaultSystemPrompt,
+	type TeamEvent,
+	type Tool,
+	type ToolApprovalRequest,
+	type ToolApprovalResult,
+	type ToolPolicy,
+} from "@cline/agents";
+import {
+	createTeamName,
+	DefaultRuntimeBuilder,
+	enrichPromptWithMentions,
+	generateWorkspaceInfo,
+	prewarmFastFileList,
+	type SessionManifest,
+	SessionSource,
+} from "@cline/core/server";
+import { getLiveModelsCatalog } from "@cline/llms/providers";
+import {
+	appendHookAudit,
+	formatToolInput,
+	formatToolOutput,
+	isCliHookPayload,
+	nowIso,
+	parseArgs,
+	randomSessionId,
+	readStdinUtf8,
+	truncate,
+	writeHookJson,
+} from "./utils/helpers";
+import {
+	appendSubagentHookAudit,
+	appendSubagentTranscriptLine,
+	applySubagentStatus,
+	createRootCliSessionWithArtifacts,
+	deleteCliSession,
+	handleSubAgentEnd,
+	handleSubAgentStart,
+	listCliSessions,
+	onTeamTaskEnd,
+	onTeamTaskStart,
+	queueSpawnRequest,
+	updateCliSessionStatusInStore,
+	upsertSubagentSessionFromHook,
+	writeCliSessionManifest,
+} from "./utils/session";
+import type { ActiveCliSession, Config } from "./utils/types";
+
+let activeCliSession: ActiveCliSession | undefined;
+let cliSessionExitBound = false;
+let activeRuntimeAbort: ((reason: string) => void) | undefined;
+let streamErrorGuardsBound = false;
+
+function isBrokenPipeError(error: unknown): boolean {
+	return Boolean(
+		error &&
+			typeof error === "object" &&
+			"code" in error &&
+			typeof (error as { code?: unknown }).code === "string" &&
+			(error as { code: string }).code === "EPIPE",
+	);
+}
+
+function installStreamErrorGuards(): void {
+	if (streamErrorGuardsBound) {
+		return;
+	}
+	streamErrorGuardsBound = true;
+
+	const onStdoutError = (error: unknown) => {
+		if (isBrokenPipeError(error)) {
+			process.exit(0);
+		}
+	};
+	const onStderrError = (error: unknown) => {
+		if (isBrokenPipeError(error)) {
+			process.exit(0);
+		}
+	};
+
+	process.stdout.on("error", onStdoutError);
+	process.stderr.on("error", onStderrError);
+}
+
+function setActiveRuntimeAbort(
+	abortFn: ((reason: string) => void) | undefined,
+): void {
+	activeRuntimeAbort = abortFn;
+}
+
+function abortActiveRuntime(reason: string): void {
+	try {
+		activeRuntimeAbort?.(reason);
+	} catch {
+		// Best-effort abort path.
+	}
+}
+
+function persistApiMessages(messages: AgentResult["messages"]): void {
+	if (!activeCliSession) {
+		return;
+	}
+	writeFileSync(
+		activeCliSession.messagesPath,
+		`${JSON.stringify(
+			{
+				version: 1,
+				updated_at: nowIso(),
+				messages,
+			},
+			null,
+			2,
+		)}\n`,
+		"utf8",
+	);
+}
+
+function persistCurrentAgentMessages(agent: Agent): void {
+	try {
+		persistApiMessages(agent.getMessages());
+	} catch {
+		// Best-effort persistence path for interrupted/failed runs.
+	}
+}
+
+function createCliSession(
+	config: Config,
+	prompt: string | undefined,
+	interactive: boolean,
+): ActiveCliSession {
+	const sessionId = process.env.CLINE_SESSION_ID?.trim() || randomSessionId();
+	const created = createRootCliSessionWithArtifacts({
+		sessionId,
+		source: SessionSource.CLI,
+		pid: process.pid,
+		interactive,
+		provider: config.providerId,
+		model: config.modelId,
+		cwd: config.cwd,
+		workspaceRoot: config.workspaceRoot || config.cwd,
+		teamName: config.teamName,
+		enableTools: config.enableTools,
+		enableSpawn: config.enableSpawnAgent,
+		enableTeams: config.enableAgentTeams,
+		prompt: prompt?.trim() || undefined,
+		startedAt: nowIso(),
+	});
+	process.env.CLINE_SESSION_ID = created.env.CLINE_SESSION_ID;
+	process.env.CLINE_HOOKS_LOG_PATH = created.env.CLINE_HOOKS_LOG_PATH;
+	process.env.CLINE_ENABLE_SUBPROCESS_HOOKS =
+		created.env.CLINE_ENABLE_SUBPROCESS_HOOKS;
+
+	return {
+		manifestPath: created.manifestPath,
+		transcriptPath: created.transcriptPath,
+		hookPath: created.hookPath,
+		messagesPath: created.messagesPath,
+		manifest: created.manifest,
+	};
+}
+
+function updateCliSessionStatus(
+	status: SessionManifest["status"],
+	exitCode?: number | null,
+): void {
+	if (!activeCliSession) {
+		return;
+	}
+	const result = updateCliSessionStatusInStore(
+		activeCliSession.manifest.session_id,
+		status,
+		exitCode,
+	);
+	if (!result.updated) {
+		return;
+	}
+	const endedAt = result.endedAt ?? nowIso();
+	activeCliSession.manifest.status = status;
+	activeCliSession.manifest.ended_at = endedAt;
+	activeCliSession.manifest.exit_code = exitCode ?? undefined;
+	writeCliSessionManifest(
+		activeCliSession.manifestPath,
+		activeCliSession.manifest,
+	);
+}
+
+function bindCliSessionExitHandlers(): void {
+	if (cliSessionExitBound) {
+		return;
+	}
+	cliSessionExitBound = true;
+	process.on("exit", (code) => {
+		if (activeCliSession?.manifest.status === "running") {
+			updateCliSessionStatus(code === 0 ? "completed" : "failed", code);
+		}
+	});
+	process.on("SIGTERM", () => {
+		abortActiveRuntime("sigterm");
+		if (activeCliSession?.manifest.status === "running") {
+			updateCliSessionStatus("cancelled", null);
+		}
+		process.exit(143);
+	});
+	process.on("SIGINT", () => {
+		abortActiveRuntime("sigint");
+		if (activeCliSession?.manifest.status === "running") {
+			updateCliSessionStatus("cancelled", null);
+		}
+	});
+}
+
+async function buildWorkspaceInfo(cwd: string): Promise<string> {
+	const workspaceInfo = await generateWorkspaceInfo(cwd);
+	const workspaceConfig = {
+		workspaces: {
+			[workspaceInfo.rootPath]: {
+				hint: workspaceInfo.hint,
+				associatedRemoteUrls: workspaceInfo.associatedRemoteUrls,
+				latestGitCommitHash: workspaceInfo.latestGitCommitHash,
+				latestGitBranchName: workspaceInfo.latestGitBranchName,
+			},
+		},
+	};
+	return `# Workspace Configuration\n${JSON.stringify(workspaceConfig, null, 2)}`;
+}
+
+async function buildDefaultSystemPrompt(cwd: string): Promise<string> {
+	const WORKSPACE_INFO = await buildWorkspaceInfo(cwd);
+	return getClineDefaultSystemPrompt("Terminal Shell", WORKSPACE_INFO);
+}
+
+function normalizeProviderId(providerId: string): string {
+	const normalized = providerId.trim();
+	return normalized === "openai" ? "openai-native" : normalized;
+}
+
+// =============================================================================
+// ANSI Colors (no dependencies for speed)
+// =============================================================================
+
+const c = {
+	reset: "\x1b[0m",
+	dim: "\x1b[2m",
+	bold: "\x1b[1m",
+	cyan: "\x1b[36m",
+	green: "\x1b[32m",
+	yellow: "\x1b[33m",
+	red: "\x1b[31m",
+	gray: "\x1b[90m",
+};
+
+function mergeToolPolicies(
+	base: Record<string, ToolPolicy>,
+	overrides: Record<string, ToolPolicy>,
+): Record<string, ToolPolicy> {
+	const out: Record<string, ToolPolicy> = { ...base };
+	for (const [name, policy] of Object.entries(overrides)) {
+		out[name] = { ...(out[name] ?? {}), ...policy };
+	}
+	return out;
+}
+
+function sanitizeApprovalToken(value: string): string {
+	return value.replace(/[^a-zA-Z0-9._-]+/g, "_");
+}
+
+function delay(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function requestDesktopToolApproval(
+	request: ToolApprovalRequest,
+): Promise<ToolApprovalResult> {
+	const approvalDir = process.env.CLINE_TOOL_APPROVAL_DIR?.trim();
+	const sessionId =
+		process.env.CLINE_TOOL_APPROVAL_SESSION_ID?.trim() ||
+		process.env.CLINE_SESSION_ID?.trim();
+	if (!approvalDir || !sessionId) {
+		return {
+			approved: false,
+			reason: "Desktop tool approval IPC is not configured",
+		};
+	}
+
+	mkdirSync(approvalDir, { recursive: true });
+	const requestId = sanitizeApprovalToken(`${request.toolCallId}`);
+	const requestPath = join(
+		approvalDir,
+		`${sessionId}.request.${requestId}.json`,
+	);
+	const decisionPath = join(
+		approvalDir,
+		`${sessionId}.decision.${requestId}.json`,
+	);
+
+	writeFileSync(
+		requestPath,
+		JSON.stringify(
+			{
+				requestId,
+				sessionId,
+				createdAt: nowIso(),
+				toolCallId: request.toolCallId,
+				toolName: request.toolName,
+				input: request.input,
+				iteration: request.iteration,
+				agentId: request.agentId,
+				conversationId: request.conversationId,
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+
+	const timeoutMs = 5 * 60_000;
+	const startedAt = Date.now();
+	while (Date.now() - startedAt < timeoutMs) {
+		if (existsSync(decisionPath)) {
+			try {
+				const raw = readFileSync(decisionPath, "utf8");
+				const parsed = JSON.parse(raw) as {
+					approved?: boolean;
+					reason?: string;
+				};
+				return {
+					approved: parsed.approved === true,
+					reason: typeof parsed.reason === "string" ? parsed.reason : undefined,
+				};
+			} catch {
+				return { approved: false, reason: "Invalid desktop approval response" };
+			} finally {
+				try {
+					unlinkSync(decisionPath);
+				} catch {
+					// Best-effort cleanup.
+				}
+				try {
+					unlinkSync(requestPath);
+				} catch {
+					// Best-effort cleanup.
+				}
+			}
+		}
+		await delay(200);
+	}
+
+	try {
+		unlinkSync(requestPath);
+	} catch {
+		// Best-effort cleanup.
+	}
+	return { approved: false, reason: "Tool approval request timed out" };
+}
+
+async function requestTerminalToolApproval(
+	request: ToolApprovalRequest,
+): Promise<ToolApprovalResult> {
+	if (!process.stdin.isTTY || !process.stdout.isTTY) {
+		return {
+			approved: false,
+			reason: `Tool "${request.toolName}" requires approval in a TTY session`,
+		};
+	}
+	const preview = truncate(JSON.stringify(request.input), 160);
+	const answer = await new Promise<string>((resolve) => {
+		const rl = createInterface({
+			input: process.stdin,
+			output: process.stdout,
+		});
+		rl.question(
+			`\nApprove tool "${request.toolName}" with input ${preview}? [y/N] `,
+			(value) => {
+				rl.close();
+				resolve(value);
+			},
+		);
+	});
+	const normalized = answer.trim().toLowerCase();
+	if (normalized === "y" || normalized === "yes") {
+		return { approved: true };
+	}
+	return {
+		approved: false,
+		reason: `Tool "${request.toolName}" was denied by user`,
+	};
+}
+
+async function requestToolApproval(
+	request: ToolApprovalRequest,
+): Promise<ToolApprovalResult> {
+	const mode = process.env.CLINE_TOOL_APPROVAL_MODE?.trim().toLowerCase();
+	if (mode === "desktop") {
+		return requestDesktopToolApproval(request);
+	}
+	return requestTerminalToolApproval(request);
+}
+
+function getHookCommand(): string[] | undefined {
+	if (process.env.CLINE_ENABLE_SUBPROCESS_HOOKS !== "1" || !process.argv[1]) {
+		return undefined;
+	}
+	return [process.execPath, process.argv[1], "hook"];
+}
+
+function createRuntimeHooks(): AgentHooks | undefined {
+	const command = getHookCommand();
+	if (!command) {
+		return undefined;
+	}
+	return createSubprocessHooks({
+		command,
+		env: process.env,
+		cwd: process.cwd(),
+		onDispatchError: (error: Error) => {
+			if (isDev) {
+				writeErr(`hook dispatch failed: ${error.message}`);
+			}
+		},
+	}).hooks;
+}
+
+function createBuiltinToolsList(cwd: string): Tool[] {
+	return createBuiltinTools({
+		cwd,
+		enableReadFiles: true,
+		enableSearch: true,
+		enableBash: true,
+		enableWebFetch: true,
+	});
+}
+
+function createCliSpawnTool(
+	config: Config,
+	hooks: AgentHooks | undefined,
+): Tool {
+	return createSdkSpawnAgentTool({
+		providerId: config.providerId,
+		modelId: config.modelId,
+		apiKey: config.apiKey,
+		baseUrl: config.baseUrl,
+		knownModels: config.knownModels,
+		defaultMaxIterations: 5,
+		createSubAgentTools: () => createBuiltinToolsList(config.cwd),
+		hooks,
+		toolPolicies: config.toolPolicies,
+		requestToolApproval,
+		onSubAgentStart: ({ subAgentId, conversationId, parentAgentId, input }) => {
+			handleSubAgentStart({
+				subAgentId,
+				conversationId,
+				parentAgentId,
+				input,
+			});
+		},
+		onSubAgentEnd: ({
+			subAgentId,
+			conversationId,
+			parentAgentId,
+			input,
+			result,
+			error,
+		}) => {
+			handleSubAgentEnd({
+				subAgentId,
+				conversationId,
+				parentAgentId,
+				input,
+				result,
+				error,
+			});
+		},
+	}) as Tool;
+}
+
+// =============================================================================
+// CLI Output
+// =============================================================================
+
+function write(text: string): void {
+	try {
+		process.stdout.write(text);
+	} catch (error) {
+		if (!isBrokenPipeError(error)) {
+			throw error;
+		}
+	}
+	if (activeCliSession) {
+		try {
+			appendFileSync(activeCliSession.transcriptPath, text, "utf8");
+		} catch {
+			// Best-effort transcript persistence for desktop discovery.
+		}
+	}
+}
+
+function writeln(text = ""): void {
+	console.log(text);
+	if (activeCliSession) {
+		try {
+			appendFileSync(activeCliSession.transcriptPath, `${text}\n`, "utf8");
+		} catch {
+			// Best-effort transcript persistence for desktop discovery.
+		}
+	}
+}
+
+function writeErr(text: string): void {
+	console.error(`${c.red}error:${c.reset} ${text}`);
+	if (activeCliSession) {
+		try {
+			appendFileSync(
+				activeCliSession.transcriptPath,
+				`error: ${text}\n`,
+				"utf8",
+			);
+		} catch {
+			// Best-effort transcript persistence for desktop discovery.
+		}
+	}
+}
+
+function printModelProviderInfo(config: Config): void {
+	const modelSource = config.knownModels ? "live" : "bundled";
+	writeln(
+		`${c.dim}[model] provider=${config.providerId} model=${config.modelId} catalog=${modelSource}${c.reset}`,
+	);
+}
+
+async function buildUserInputMessage(
+	rawPrompt: string,
+	cwd: string,
+): Promise<string> {
+	const enriched = await enrichPromptWithMentions(rawPrompt, cwd);
+	return `<user_input>${enriched.prompt}</user_input>`;
+}
+
+// =============================================================================
+// Agent Runner
+// =============================================================================
+
+async function runAgent(prompt: string, config: Config): Promise<void> {
+	const startTime = performance.now();
+	void prewarmFastFileList(config.cwd);
+	const hooks = createRuntimeHooks();
+	const runtime = new DefaultRuntimeBuilder().build({
+		config,
+		hooks,
+		onTeamEvent: handleTeamEvent,
+		createSpawnTool: () => createCliSpawnTool(config, hooks),
+		onTeamRestored: () => {
+			writeln(
+				`${c.dim}[team] restored persisted team state for "${config.teamName ?? "(unknown team)"}"${c.reset}`,
+			);
+		},
+	});
+	const { tools } = runtime;
+
+	let agent: Agent;
+	let errorAlreadyReported = false;
+	const onEvent = (event: AgentEvent) => {
+		if (event.type === "error") {
+			errorAlreadyReported = true;
+		}
+		handleEvent(event, config);
+		if ((event.type === "iteration_end" || event.type === "done") && agent) {
+			persistCurrentAgentMessages(agent);
+		}
+	};
+	agent = new Agent({
+		providerId: config.providerId,
+		modelId: config.modelId,
+		apiKey: config.apiKey,
+		baseUrl: config.baseUrl,
+		knownModels: config.knownModels,
+		systemPrompt: config.systemPrompt,
+		tools,
+		maxIterations: config.maxIterations,
+		onEvent,
+		hooks,
+		toolPolicies: config.toolPolicies,
+		requestToolApproval,
+	});
+	let abortRequested = false;
+	const abortAll = (reason: string) => {
+		if (abortRequested) {
+			return false;
+		}
+		abortRequested = true;
+		agent.abort();
+		runtime.shutdown(reason);
+		return true;
+	};
+	setActiveRuntimeAbort(abortAll);
+	const handleSigint = () => {
+		if (abortAll("sigint")) {
+			writeln(`\n${c.dim}[abort] requested${c.reset}`);
+		}
+	};
+	process.on("SIGINT", handleSigint);
+
+	try {
+		printModelProviderInfo(config);
+		const userInput = await buildUserInputMessage(prompt, config.cwd);
+		const result = await agent.run(userInput);
+		persistApiMessages(result.messages);
+		if (abortRequested || result.finishReason === "aborted") {
+			updateCliSessionStatus("cancelled", null);
+			writeln();
+			return;
+		}
+
+		writeln();
+
+		if (config.showTimings || config.showUsage) {
+			const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+			const parts: string[] = [];
+
+			if (config.showTimings) {
+				parts.push(`${elapsed}s`);
+			}
+
+			if (config.showUsage) {
+				const tokens = result.usage.inputTokens + result.usage.outputTokens;
+				parts.push(`${tokens} tokens`);
+				if (result.iterations > 1) {
+					parts.push(`${result.iterations} iterations`);
+				}
+			}
+
+			writeln(`${c.dim}[${parts.join(" | ")}]${c.reset}`);
+		}
+	} catch (err) {
+		persistCurrentAgentMessages(agent);
+		writeln();
+		if (!errorAlreadyReported) {
+			writeErr(err instanceof Error ? err.message : String(err));
+		}
+		updateCliSessionStatus("failed", 1);
+		process.exit(1);
+	} finally {
+		persistCurrentAgentMessages(agent);
+		process.off("SIGINT", handleSigint);
+		if (activeRuntimeAbort === abortAll) {
+			setActiveRuntimeAbort(undefined);
+		}
+	}
+}
+
+const isDev = process.env.NODE_ENV === "development";
+
+function handleEvent(event: AgentEvent, _config: Config): void {
+	switch (event.type) {
+		case "iteration_start":
+			if (isDev) {
+				write(`\n${c.yellow}── iteration ${event.iteration} ──${c.reset}\n`);
+			}
+			break;
+
+		case "iteration_end":
+			if (!event.hadToolCalls) {
+				// write(`\n\n${c.dim}(no tools called, done)${c.reset}\n`)
+			}
+			break;
+
+		case "text":
+			write(event.text);
+			break;
+
+		case "tool_call_start": {
+			const inputStr = formatToolInput(event.toolName, event.input);
+			write(
+				`\n${c.dim}[${event.toolName}]${c.reset} ${c.cyan}${inputStr}${c.reset}`,
+			);
+			break;
+		}
+
+		case "tool_call_end": {
+			if (event.error) {
+				write(` ${c.red}error: ${event.error}${c.reset}\n`);
+			} else {
+				const outputStr = formatToolOutput(event.output);
+				if (outputStr) {
+					write(`\n  ${c.dim}-> ${outputStr}${c.reset}\n`);
+				} else {
+					write(` ${c.green}ok${c.reset}\n`);
+				}
+			}
+			break;
+		}
+
+		case "done":
+			write(
+				`\n\n${c.dim}── finished: ${event.reason} (${event.iterations} iterations) ──${c.reset}\n`,
+			);
+			break;
+
+		case "error":
+			writeErr(event.error.message);
+			break;
+	}
+}
+
+function handleTeamEvent(event: TeamEvent): void {
+	switch (event.type) {
+		case "teammate_spawned":
+			write(
+				`\n${c.dim}[team] teammate spawned:${c.reset} ${c.cyan}${event.agentId}${c.reset}\n`,
+			);
+			break;
+		case "teammate_shutdown":
+			write(
+				`\n${c.dim}[team] teammate shutdown:${c.reset} ${c.cyan}${event.agentId}${c.reset}\n`,
+			);
+			break;
+		case "team_task_updated":
+			write(
+				`\n${c.dim}[team task]${c.reset} ${c.cyan}${event.task.id}${c.reset} -> ${event.task.status}\n`,
+			);
+			break;
+		case "team_message":
+			write(
+				`\n${c.dim}[mailbox]${c.reset} ${event.message.fromAgentId} -> ${event.message.toAgentId}: ${event.message.subject}\n`,
+			);
+			break;
+		case "team_mission_log":
+			write(
+				`\n${c.dim}[mission]${c.reset} ${event.entry.agentId}: ${truncate(event.entry.summary, 90)}\n`,
+			);
+			break;
+		case "task_start":
+			onTeamTaskStart(event.agentId, event.message);
+			break;
+		case "task_end":
+			if (event.error) {
+				onTeamTaskEnd(
+					event.agentId,
+					"failed",
+					`[error] ${event.error.message}`,
+				);
+			} else if (event.result?.finishReason === "aborted") {
+				onTeamTaskEnd(
+					event.agentId,
+					"cancelled",
+					"[done] aborted",
+					event.result.messages,
+				);
+			} else {
+				onTeamTaskEnd(
+					event.agentId,
+					"completed",
+					`[done] ${event.result?.finishReason ?? "completed"}`,
+					event.result?.messages,
+				);
+			}
+			break;
+		case "agent_event":
+			break;
+	}
+}
+
+// =============================================================================
+// Interactive Mode
+// =============================================================================
+
+async function runInteractive(config: Config): Promise<void> {
+	writeln(
+		`${c.cyan}${config.providerId}${c.reset} ${c.dim}${config.modelId}${c.reset}`,
+	);
+	writeln(`${c.dim}Type your message. Press Ctrl+C to exit.${c.reset}`);
+	writeln();
+	void prewarmFastFileList(config.cwd);
+
+	const rl = createInterface({
+		input: process.stdin,
+		output: process.stdout,
+		prompt: `${c.green}>${c.reset} `,
+	});
+	const hooks = createRuntimeHooks();
+	const runtime = new DefaultRuntimeBuilder().build({
+		config,
+		hooks,
+		onTeamEvent: handleTeamEvent,
+		createSpawnTool: () => createCliSpawnTool(config, hooks),
+		onTeamRestored: () => {
+			writeln(
+				`${c.dim}[team] restored persisted team state for "${config.teamName ?? "(unknown team)"}"${c.reset}`,
+			);
+		},
+	});
+	const { tools } = runtime;
+
+	// Create a single agent for the interactive session to maintain conversation history
+	let agent: Agent;
+	let turnErrorReported = false;
+	const onEvent = (event: AgentEvent) => {
+		if (event.type === "error") {
+			turnErrorReported = true;
+		}
+		handleEvent(event, config);
+		if ((event.type === "iteration_end" || event.type === "done") && agent) {
+			persistCurrentAgentMessages(agent);
+		}
+	};
+	agent = new Agent({
+		providerId: config.providerId,
+		modelId: config.modelId,
+		apiKey: config.apiKey,
+		baseUrl: config.baseUrl,
+		knownModels: config.knownModels,
+		systemPrompt: config.systemPrompt,
+		tools,
+		maxIterations: config.maxIterations,
+		onEvent,
+		hooks,
+		toolPolicies: config.toolPolicies,
+		requestToolApproval,
+	});
+
+	let isFirstMessage = true;
+	let isRunning = false;
+	let abortRequested = false;
+	const abortAll = (reason: string) => {
+		if (abortRequested) {
+			return false;
+		}
+		abortRequested = true;
+		agent.abort();
+		runtime.shutdown(reason);
+		return true;
+	};
+	setActiveRuntimeAbort(abortAll);
+	const handleSigint = () => {
+		if (isRunning) {
+			if (abortAll("sigint")) {
+				writeln(`\n${c.dim}[abort] requested${c.reset}`);
+			}
+			return;
+		}
+		if (process.stdin.isTTY) {
+			rl.close();
+			return;
+		}
+		writeln(`\n${c.dim}[abort] no active run${c.reset}`);
+		rl.prompt();
+	};
+
+	process.on("SIGINT", handleSigint);
+
+	rl.prompt();
+
+	rl.on("line", async (line) => {
+		const input = line.trim();
+		if (!input) {
+			rl.prompt();
+			return;
+		}
+
+		if (isRunning) {
+			return;
+		}
+
+		isRunning = true;
+		abortRequested = false;
+		turnErrorReported = false;
+		rl.pause();
+
+		try {
+			writeln();
+			const startTime = performance.now();
+
+			let result: AgentResult;
+			if (isFirstMessage) {
+				printModelProviderInfo(config);
+				const userInput = await buildUserInputMessage(input, config.cwd);
+				result = await agent.run(userInput);
+				isFirstMessage = false;
+			} else {
+				const userInput = await buildUserInputMessage(input, config.cwd);
+				result = await agent.continue(userInput);
+			}
+			persistApiMessages(result.messages);
+
+			writeln();
+
+			if (config.showTimings || config.showUsage) {
+				const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+				const parts: string[] = [];
+				if (config.showTimings) {
+					parts.push(`${elapsed}s`);
+				}
+				if (config.showUsage) {
+					const tokens = result.usage.inputTokens + result.usage.outputTokens;
+					parts.push(`${tokens} tokens`);
+					if (result.iterations > 1) {
+						parts.push(`${result.iterations} iterations`);
+					}
+				}
+				writeln(`${c.dim}[${parts.join(" | ")}]${c.reset}`);
+			}
+
+			writeln();
+		} catch (err) {
+			persistCurrentAgentMessages(agent);
+			writeln();
+			if (!turnErrorReported) {
+				writeErr(err instanceof Error ? err.message : String(err));
+			}
+			writeln();
+		} finally {
+			persistCurrentAgentMessages(agent);
+			isRunning = false;
+			rl.resume();
+			rl.prompt();
+		}
+	});
+
+	rl.on("close", () => {
+		persistCurrentAgentMessages(agent);
+		process.off("SIGINT", handleSigint);
+		abortAll("interactive_close");
+		if (activeRuntimeAbort === abortAll) {
+			setActiveRuntimeAbort(undefined);
+		}
+		writeln();
+		process.exit(0);
+	});
+}
+
+// =============================================================================
+// Argument Parsing (minimal, no dependencies)
+// =============================================================================
+
+async function runHookCommand(): Promise<number> {
+	try {
+		const raw = (await readStdinUtf8()).trim();
+		if (!raw) {
+			writeErr("hook command expects JSON payload on stdin");
+			return 1;
+		}
+
+		const parsed = JSON.parse(raw) as unknown;
+		if (!isCliHookPayload(parsed)) {
+			writeErr("invalid hook payload");
+			return 1;
+		}
+
+		appendHookAudit(parsed);
+		queueSpawnRequest(parsed);
+		const subSessionId = upsertSubagentSessionFromHook(parsed);
+		if (subSessionId) {
+			appendSubagentHookAudit(subSessionId, parsed);
+			if (parsed.hook_event_name === "tool_call") {
+				appendSubagentTranscriptLine(
+					subSessionId,
+					`[tool] ${parsed.tool_call?.name ?? "unknown"}`,
+				);
+			}
+			if (parsed.hook_event_name === "agent_end") {
+				appendSubagentTranscriptLine(subSessionId, "[done] completed");
+			}
+			if (parsed.hook_event_name === "session_shutdown") {
+				appendSubagentTranscriptLine(
+					subSessionId,
+					`[shutdown] ${parsed.reason ?? "session shutdown"}`,
+				);
+			}
+			applySubagentStatus(subSessionId, parsed);
+		}
+
+		switch (parsed.hook_event_name) {
+			case "tool_call":
+				// Return control surface JSON for pre-execution tool interception.
+				writeHookJson({});
+				return 0;
+			case "tool_result":
+			case "agent_end":
+			case "session_shutdown":
+				// Fire-and-forget events; no control response needed.
+				writeHookJson({});
+				return 0;
+			default:
+				writeErr(
+					`unsupported hook_event_name: ${(parsed as { hook_event_name: string }).hook_event_name}`,
+				);
+				return 1;
+		}
+	} catch (error) {
+		writeErr(error instanceof Error ? error.message : String(error));
+		return 1;
+	}
+}
+
+function showHelp(): void {
+	writeln(`${c.bold}clite${c.reset} - Lightweight CLI for Cline agentic capabilities
+
+${c.bold}USAGE${c.reset}
+  clite [OPTIONS] [PROMPT]
+  clite -i                    Interactive mode
+  clite hook < payload.json   Handle hook payload from stdin
+  echo "prompt" | clite       Pipe input
+
+${c.bold}OPTIONS${c.reset}
+  -s, --system <prompt>       System prompt for the agent
+  -m, --model <id>            Model ID (default: claude-sonnet-4-20250514)
+  -p, --provider <id>         Provider ID (default: anthropic)
+  -k, --key <api-key>         API key override for this run
+  -n, --max-iterations <n>    Max agentic loop iterations (currently ignored; runtime is unbounded)
+  -i, --interactive           Interactive mode with multi-turn conversation
+  -u, --usage                 Show token usage after response
+  -t, --timings               Show timing information
+  --no-tools                  Disable default tools (enabled by default)
+  --no-spawn                  Disable spawn_agent tool (enabled by default)
+  --no-teams                  Disable agent-team tools (enabled by default)
+  --auto-approve-tools        Skip approval prompts for tools (default)
+  --require-tool-approval     Require approval before each tool call
+  --tool-enable <name>        Explicitly enable a tool
+  --tool-disable <name>       Explicitly disable a tool
+  --tool-autoapprove <name>   Auto-approve a specific tool
+  --tool-require-approval <name>
+                              Require approval for a specific tool
+  --team-name <name>          Team name for runtime state (default: agent-team-\${nanoid(5)})
+  --mission-step-interval <n> Mission log update interval in meaningful steps (default: 3)
+  --mission-time-interval-ms <ms>
+                              Mission log update interval in milliseconds (default: 120000)
+  --cwd <path>                Working directory for tools (default: current dir)
+  -h, --help                  Show this help
+  -v, --version               Show version
+
+${c.bold}ENVIRONMENT${c.reset}
+  ANTHROPIC_API_KEY           API key for Anthropic
+  CLINE_API_KEY               API key for CLINE (when using -p cline)
+  OPENAI_API_KEY              API key for OpenAI (when using -p openai)
+  OPENROUTER_API_KEY          API key for Openrouter (when using -p openrouter)
+  VERCEL_AI_GATEWAY_API_KEY   API key for Vercel AI Gateway (when using -p vercel-ai-gateway)
+
+${c.bold}EXAMPLES${c.reset}
+  clite "What is 2+2?"
+  clite "Read package.json and summarize it"
+  clite "Search for TODO comments in the codebase"
+  clite -s "You are a pirate" "Tell me about the sea"
+  clite -i
+  clite --tools --teams "Create teammates for planner/coder/reviewer and execute tasks"
+  clite --no-tools "Answer from general knowledge only"
+  cat file.txt | clite "Summarize this"
+`);
+}
+
+function showVersion(): void {
+	writeln("0.1.0");
+}
+
+// =============================================================================
+// Main
+// =============================================================================
+
+async function main(): Promise<void> {
+	installStreamErrorGuards();
+
+	const rawArgs = process.argv.slice(2);
+	if (rawArgs[0] === "hook") {
+		const code = await runHookCommand();
+		process.exit(code);
+	}
+	if (rawArgs[0] === "sessions" && rawArgs[1] === "list") {
+		const limitIndex = rawArgs.indexOf("--limit");
+		const limit =
+			limitIndex >= 0 && limitIndex + 1 < rawArgs.length
+				? Number.parseInt(rawArgs[limitIndex + 1] ?? "200", 10)
+				: 200;
+		process.stdout.write(
+			JSON.stringify(listCliSessions(Number.isFinite(limit) ? limit : 200)),
+		);
+		process.exit(0);
+	}
+	if (rawArgs[0] === "sessions" && rawArgs[1] === "delete") {
+		const idIndex = rawArgs.indexOf("--session-id");
+		const sessionId =
+			idIndex >= 0 && idIndex + 1 < rawArgs.length ? rawArgs[idIndex + 1] : "";
+		if (!sessionId) {
+			writeErr("sessions delete requires --session-id <id>");
+			process.exit(1);
+		}
+		process.stdout.write(JSON.stringify(deleteCliSession(sessionId)));
+		process.exit(0);
+	}
+
+	const args = parseArgs(rawArgs);
+	const cwd = args.cwd ?? process.cwd();
+	const defaultToolAutoApprove = args.defaultToolAutoApprove;
+	const mergedToolPolicies = mergeToolPolicies({}, args.toolPolicies);
+	const toolPolicies: Record<string, ToolPolicy> = {
+		"*": {
+			autoApprove: defaultToolAutoApprove,
+		},
+	};
+	for (const [name, policy] of Object.entries(mergedToolPolicies)) {
+		toolPolicies[name] = {
+			enabled: policy.enabled,
+			autoApprove: policy.autoApprove ?? defaultToolAutoApprove,
+		};
+	}
+
+	if (args.showHelp) {
+		showHelp();
+		return;
+	}
+
+	if (args.showVersion) {
+		showVersion();
+		return;
+	}
+
+	// Resolve API key
+	const provider = normalizeProviderId(args.provider ?? "anthropic");
+	const apiKey = args.key?.trim() || undefined;
+
+	let knownModels: Config["knownModels"];
+	try {
+		const liveCatalog = await getLiveModelsCatalog();
+		knownModels = liveCatalog[provider];
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		writeln(
+			`${c.dim}[model-catalog] latest refresh failed, using bundled defaults (${message})${c.reset}`,
+		);
+	}
+
+	const config: Config = {
+		providerId: provider,
+		modelId: args.model ?? knownModels?.[0]?.id ?? "claude-sonnet-4-6",
+		apiKey: apiKey ?? "",
+		knownModels,
+		systemPrompt: args.systemPrompt ?? (await buildDefaultSystemPrompt(cwd)),
+		maxIterations: undefined,
+		showUsage: args.showUsage,
+		showTimings: args.showTimings,
+		defaultToolAutoApprove,
+		toolPolicies,
+		enableSpawnAgent: args.enableSpawnAgent,
+		enableAgentTeams: args.enableAgentTeams,
+		enableTools: args.enableTools,
+		cwd,
+		teamName: args.enableAgentTeams
+			? args.teamName?.trim() || createTeamName()
+			: undefined,
+		missionLogIntervalSteps:
+			typeof args.missionLogIntervalSteps === "number" &&
+			Number.isFinite(args.missionLogIntervalSteps)
+				? args.missionLogIntervalSteps
+				: 3,
+		missionLogIntervalMs:
+			typeof args.missionLogIntervalMs === "number" &&
+			Number.isFinite(args.missionLogIntervalMs)
+				? args.missionLogIntervalMs
+				: 120000,
+	};
+	bindCliSessionExitHandlers();
+
+	// Check for piped input
+	if (!process.stdin.isTTY && !args.interactive) {
+		const chunks: Buffer[] = [];
+		for await (const chunk of process.stdin) {
+			chunks.push(chunk as Buffer);
+		}
+		const pipedInput = Buffer.concat(chunks).toString("utf-8").trim();
+
+		if (pipedInput) {
+			const prompt = args.prompt
+				? `${args.prompt}\n\n${pipedInput}`
+				: pipedInput;
+			activeCliSession = createCliSession(config, prompt, false);
+			await runAgent(prompt, config);
+			if (activeCliSession?.manifest.status === "running") {
+				updateCliSessionStatus("completed", 0);
+			}
+			return;
+		}
+	}
+
+	// Interactive mode
+	if (args.interactive || !args.prompt) {
+		activeCliSession = createCliSession(config, undefined, true);
+		await runInteractive(config);
+		if (activeCliSession?.manifest.status === "running") {
+			updateCliSessionStatus("completed", 0);
+		}
+		return;
+	}
+
+	// Single prompt mode
+	activeCliSession = createCliSession(config, args.prompt, false);
+	await runAgent(args.prompt, config);
+	if (activeCliSession?.manifest.status === "running") {
+		updateCliSessionStatus("completed", 0);
+	}
+	// Exit once agent is done in non-interactive mode
+	process.exit(0);
+}
+
+main().catch((err) => {
+	writeErr(err instanceof Error ? err.message : String(err));
+	updateCliSessionStatus("failed", 1);
+	process.exit(1);
+});

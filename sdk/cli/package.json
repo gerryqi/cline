@@ -1,0 +1,55 @@
+{
+	"name": "@cline/cli",
+	"version": "0.0.0",
+	"description": "A lite version of the Cline CLI for running agentic loops.",
+	"type": "module",
+	"bin": {
+		"clite": "dist/index.js"
+	},
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --target node --format esm && bun tsc --emitDeclarationOnly --declarationMap false",
+		"build:binary": "rm -rf dist && bun build ./src/index.ts --compile --outfile ./dist/clite",
+		"dev": "bun ./src/index.ts",
+		"clean": "rm -rf dist node_modules",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run --config vitest.config.ts && vitest run --config vitest.e2e.config.ts",
+		"test:unit": "vitest run --config vitest.config.ts",
+		"test:e2e": "vitest run --config vitest.e2e.config.ts",
+		"test:watch": "vitest --config vitest.config.ts",
+		"pack": "bun ./scripts/deps.mts",
+		"release": "bun run build && bun run pack prepare && npm publish --access public && bun run pack restore"
+	},
+	"dependencies": {
+		"@cline/agents": "workspace:*",
+		"@cline/core": "workspace:*",
+		"@cline/llms": "workspace:*",
+		"better-sqlite3": "^11.10.0",
+		"nanoid": "^5.1.6"
+	},
+	"devDependencies": {
+		"@types/node": "^20.0.0",
+		"esbuild": "^0.25.10",
+		"tsx": "^4.20.4",
+		"typescript": "^5.7.2",
+		"vitest": "^3.2.4"
+	},
+	"keywords": [
+		"cli",
+		"llm",
+		"agents",
+		"ai",
+		"anthropic"
+	],
+	"license": "Apache-2.0"
+}

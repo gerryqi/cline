@@ -1,0 +1,31 @@
+export interface SessionChunkEvent {
+	sessionId: string;
+	stream: "stdout" | "stderr" | "agent";
+	chunk: string;
+	ts: number;
+}
+
+export interface SessionEndedEvent {
+	sessionId: string;
+	reason: string;
+	ts: number;
+}
+
+export interface SessionToolEvent {
+	sessionId: string;
+	hookEventName: "tool_call" | "tool_result" | "agent_end" | "session_shutdown";
+	agentId?: string;
+	conversationId?: string;
+	parentAgentId?: string;
+	iteration?: number;
+	toolName?: string;
+	inputTokens?: number;
+	outputTokens?: number;
+	ts?: string;
+}
+
+export type CoreSessionEvent =
+	| { type: "chunk"; payload: SessionChunkEvent }
+	| { type: "ended"; payload: SessionEndedEvent }
+	| { type: "hook"; payload: SessionToolEvent }
+	| { type: "status"; payload: { sessionId: string; status: string } };

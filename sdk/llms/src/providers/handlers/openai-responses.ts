@@ -1,0 +1,472 @@
+/**
+ * OpenAI Responses API Handler
+ *
+ * Handler for OpenAI's Responses API format, which is used by newer models
+ * that require native tool calling (e.g., GPT-5, o3, codex).
+ *
+ * The Responses API has a different structure than Chat Completions:
+ * - Uses `instructions` instead of system messages
+ * - Uses `input` instead of messages array
+ * - Has different streaming event types (response.*, not choices.delta)
+ * - Supports reasoning with encrypted content
+ */
+
+import OpenAI from "openai";
+import type {
+	ApiStream,
+	HandlerModelInfo,
+	ModelInfo,
+	ProviderConfig,
+} from "../types";
+import type { Message, ToolDefinition } from "../types/messages";
+import { withRetry } from "../utils/retry";
+import { getMissingApiKeyError, resolveApiKeyForProvider } from "./auth";
+import { BaseHandler, DEFAULT_MODEL_INFO } from "./base";
+
+/**
+ * Convert tool definitions to Responses API format
+ */
+function convertToolsToResponsesFormat(tools?: ToolDefinition[]) {
+	if (!tools?.length) return undefined;
+
+	return tools.map((tool) => ({
+		type: "function" as const,
+		name: tool.name,
+		description: tool.description,
+		parameters: tool.inputSchema,
+		strict: true, // Responses API defaults to strict mode
+	}));
+}
+
+/**
+ * Convert messages to Responses API input format
+ */
+function convertToResponsesInput(messages: Message[]) {
+	// Responses API uses a flat input array with specific item types
+	const input: Array<{
+		type: "message";
+		role: "user" | "assistant";
+		content:
+			| string
+			| Array<{ type: "input_text" | "output_text"; text: string }>;
+	}> = [];
+
+	for (const msg of messages) {
+		if (msg.role === "user" || msg.role === "assistant") {
+			// Handle content blocks
+			const contentBlocks = Array.isArray(msg.content)
+				? msg.content
+				: [{ type: "text" as const, text: msg.content }];
+
+			const textContent = contentBlocks
+				.filter(
+					(block): block is { type: "text"; text: string } =>
+						block.type === "text",
+				)
+				.map((block) => block.text)
+				.join("\n");
+
+			if (textContent) {
+				input.push({
+					type: "message",
+					role: msg.role,
+					content:
+						msg.role === "user"
+							? [{ type: "input_text", text: textContent }]
+							: [{ type: "output_text", text: textContent }],
+				});
+			}
+		}
+	}
+
+	return input;
+}
+
+/**
+ * Handler for OpenAI Responses API
+ *
+ * Uses ProviderConfig fields:
+ * - baseUrl: Base URL for the API
+ * - modelId: Model ID
+ * - knownModels: Known models with their info
+ * - headers: Custom headers
+ */
+export class OpenAIResponsesHandler extends BaseHandler {
+	protected client: OpenAI | undefined;
+
+	/**
+	 * Ensure the OpenAI client is initialized
+	 */
+	protected ensureClient(): OpenAI {
+		if (!this.client) {
+			const baseURL = this.config.baseUrl;
+
+			if (!baseURL) {
+				throw new Error("Base URL is required. Set baseUrl in config.");
+			}
+			const apiKey = resolveApiKeyForProvider(
+				this.config.providerId,
+				this.config.apiKey,
+			);
+			if (!apiKey) {
+				throw new Error(getMissingApiKeyError(this.config.providerId));
+			}
+			const requestHeaders = this.getRequestHeaders();
+			const hasAuthorizationHeader = Object.keys(requestHeaders).some(
+				(key) => key.toLowerCase() === "authorization",
+			);
+
+			this.client = new OpenAI({
+				apiKey,
+				baseURL,
+				defaultHeaders: hasAuthorizationHeader
+					? requestHeaders
+					: { ...requestHeaders, Authorization: `Bearer ${apiKey}` },
+			});
+		}
+		return this.client;
+	}
+
+	/**
+	 * Get model info, falling back to provider defaults
+	 */
+	getModel(): HandlerModelInfo {
+		const modelId = this.config.modelId;
+		if (!modelId) {
+			throw new Error("Model ID is required. Set modelId in config.");
+		}
+
+		const modelInfo =
+			this.config.modelInfo ??
+			this.config.knownModels?.[modelId] ??
+			this.getDefaultModelInfo();
+
+		return { id: modelId, info: { ...modelInfo, id: modelId } };
+	}
+
+	protected getDefaultModelInfo(): ModelInfo {
+		// Responses API models don't support prompt caching
+		const capabilities = (DEFAULT_MODEL_INFO.capabilities ?? []).filter(
+			(c) => c !== "prompt-cache",
+		);
+		return {
+			...DEFAULT_MODEL_INFO,
+			capabilities,
+		};
+	}
+
+	getMessages(
+		_systemPrompt: string,
+		messages: Message[],
+	): ReturnType<typeof convertToResponsesInput> {
+		return convertToResponsesInput(messages);
+	}
+
+	/**
+	 * Create a streaming message using the Responses API
+	 */
+	@withRetry()
+	async *createMessage(
+		systemPrompt: string,
+		messages: Message[],
+		tools?: ToolDefinition[],
+	): ApiStream {
+		const client = this.ensureClient();
+		const { id: modelId, info: modelInfo } = this.getModel();
+		const abortSignal = this.getAbortSignal();
+		const fallbackResponseId = this.createResponseId();
+		let resolvedResponseId: string | undefined;
+
+		// Convert messages to Responses API input format
+		const input = this.getMessages(systemPrompt, messages);
+
+		// Convert tools to Responses API format
+		const responseTools = convertToolsToResponsesFormat(tools);
+
+		// Responses API requires tools for native tool calling
+		if (!responseTools?.length) {
+			throw new Error(
+				"OpenAI Responses API requires tools to be provided. Enable native tool calling in settings.",
+			);
+		}
+
+		// Build reasoning config
+		const supportsReasoning =
+			modelInfo.capabilities?.includes("reasoning") ?? false;
+		const reasoningConfig =
+			supportsReasoning && this.config.reasoningEffort
+				? {
+						effort: this.config.reasoningEffort as "low" | "medium" | "high",
+						summary: "auto" as const,
+					}
+				: undefined;
+		const requestHeaders = this.getRequestHeaders();
+		const hasAuthorizationHeader = Object.keys(requestHeaders).some(
+			(key) => key.toLowerCase() === "authorization",
+		);
+		const apiKey = resolveApiKeyForProvider(
+			this.config.providerId,
+			this.config.apiKey,
+		);
+		if (!hasAuthorizationHeader && apiKey) {
+			requestHeaders.Authorization = `Bearer ${apiKey}`;
+		}
+
+		// Create the response using Responses API
+		const stream = await (client as any).responses.create(
+			{
+				model: modelId,
+				instructions: systemPrompt,
+				input,
+				stream: true,
+				tools: responseTools,
+				reasoning: reasoningConfig,
+			},
+			{ signal: abortSignal, headers: requestHeaders },
+		);
+
+		// Process the response stream
+		for await (const chunk of stream) {
+			const apiResponseId = this.getApiResponseId(chunk);
+			if (apiResponseId) {
+				resolvedResponseId = apiResponseId;
+			}
+
+			yield* this.processResponseChunk(
+				chunk,
+				modelInfo,
+				resolvedResponseId ?? fallbackResponseId,
+			);
+		}
+	}
+
+	/**
+	 * Process a single chunk from the Responses API stream
+	 */
+	protected *processResponseChunk(
+		chunk: any,
+		_modelInfo: ModelInfo,
+		responseId: string,
+	): Generator<import("../types").ApiStreamChunk> {
+		// Handle different event types from Responses API
+		switch (chunk.type) {
+			case "response.output_item.added": {
+				const item = chunk.item;
+				if (item.type === "function_call" && item.id) {
+					yield {
+						type: "tool_calls",
+						id: item.id || responseId,
+						tool_call: {
+							call_id: item.call_id,
+							function: {
+								id: item.id,
+								name: item.name,
+								arguments: item.arguments,
+							},
+						},
+					};
+				}
+				if (item.type === "reasoning" && item.encrypted_content && item.id) {
+					yield {
+						type: "reasoning",
+						id: item.id || responseId,
+						reasoning: "",
+						redacted_data: item.encrypted_content,
+					};
+				}
+				break;
+			}
+
+			case "response.output_item.done": {
+				const item = chunk.item;
+				if (item.type === "function_call") {
+					yield {
+						type: "tool_calls",
+						id: item.id || responseId,
+						tool_call: {
+							call_id: item.call_id,
+							function: {
+								id: item.id,
+								name: item.name,
+								arguments: item.arguments,
+							},
+						},
+					};
+				}
+				if (item.type === "reasoning") {
+					yield {
+						type: "reasoning",
+						id: item.id || responseId,
+						details: item.summary,
+						reasoning: "",
+					};
+				}
+				break;
+			}
+
+			case "response.reasoning_summary_part.added":
+				yield {
+					type: "reasoning",
+					id: chunk.item_id || responseId,
+					reasoning: chunk.part?.text || "",
+				};
+				break;
+
+			case "response.reasoning_summary_text.delta":
+				yield {
+					type: "reasoning",
+					id: chunk.item_id || responseId,
+					reasoning: chunk.delta || "",
+				};
+				break;
+
+			case "response.reasoning_summary_part.done":
+				yield {
+					type: "reasoning",
+					id: chunk.item_id || responseId,
+					details: chunk.part,
+					reasoning: "",
+				};
+				break;
+
+			case "response.output_text.delta":
+				if (chunk.delta) {
+					yield {
+						id: chunk.item_id || responseId,
+						type: "text",
+						text: chunk.delta,
+					};
+				}
+				break;
+
+			case "response.reasoning_text.delta":
+				if (chunk.delta) {
+					yield {
+						id: chunk.item_id || responseId,
+						type: "reasoning",
+						reasoning: chunk.delta,
+					};
+				}
+				break;
+
+			case "response.function_call_arguments.delta":
+				yield {
+					type: "tool_calls",
+					id: chunk.item_id || responseId,
+					tool_call: {
+						function: {
+							id: chunk.item_id,
+							name: chunk.item_id,
+							arguments: chunk.delta,
+						},
+					},
+				};
+				break;
+
+			case "response.function_call_arguments.done":
+				if (chunk.item_id && chunk.name && chunk.arguments) {
+					yield {
+						type: "tool_calls",
+						id: chunk.item_id || responseId,
+						tool_call: {
+							function: {
+								id: chunk.item_id,
+								name: chunk.name,
+								arguments: chunk.arguments,
+							},
+						},
+					};
+				}
+				break;
+
+			case "response.incomplete": {
+				const incompleteReason = chunk.response?.incomplete_details?.reason;
+				yield {
+					type: "done",
+					success: false,
+					incompleteReason,
+					id: chunk.response?.id || responseId,
+				};
+				break;
+			}
+
+			case "response.failed": {
+				const error = chunk.response?.error;
+				yield {
+					type: "done",
+					success: false,
+					error: error?.message || "Unknown error",
+					id: chunk.response?.id || responseId,
+				};
+				break;
+			}
+
+			case "response.completed": {
+				if (chunk.response?.usage) {
+					const usage = chunk.response.usage;
+					const inputTokens = usage.input_tokens || 0;
+					const outputTokens = usage.output_tokens || 0;
+					const cacheReadTokens =
+						usage.output_tokens_details?.reasoning_tokens || 0;
+					const cacheWriteTokens =
+						usage.input_tokens_details?.cached_tokens || 0;
+
+					const totalCost = this.calculateCost(
+						inputTokens,
+						outputTokens,
+						cacheReadTokens,
+					);
+					const nonCachedInputTokens = Math.max(
+						0,
+						inputTokens - cacheReadTokens - cacheWriteTokens,
+					);
+
+					yield {
+						type: "usage",
+						inputTokens: nonCachedInputTokens,
+						outputTokens,
+						cacheWriteTokens,
+						cacheReadTokens,
+						totalCost,
+						id: chunk.response.id || responseId,
+					};
+				}
+
+				// Yield done chunk to indicate streaming completed successfully
+				yield {
+					type: "done",
+					success: true,
+					id: chunk.response?.id || responseId,
+				};
+				break;
+			}
+		}
+	}
+
+	private getApiResponseId(chunk: any): string | undefined {
+		if (
+			typeof chunk?.response?.id === "string" &&
+			chunk.response.id.length > 0
+		) {
+			return chunk.response.id;
+		}
+
+		if (
+			typeof chunk?.response_id === "string" &&
+			chunk.response_id.length > 0
+		) {
+			return chunk.response_id;
+		}
+
+		return undefined;
+	}
+}
+
+/**
+ * Create an OpenAI Responses API handler
+ */
+export function createOpenAIResponsesHandler(
+	config: ProviderConfig,
+): OpenAIResponsesHandler {
+	return new OpenAIResponsesHandler(config);
+}
