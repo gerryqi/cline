@@ -27,6 +27,16 @@ import { getMissingApiKeyError, resolveApiKeyForProvider } from "./auth";
 import { BaseHandler, DEFAULT_MODEL_INFO } from "./base";
 
 const DEFAULT_THINKING_BUDGET_TOKENS = 1024;
+const THINKING_DEBUG_ENV = "CLINE_DEBUG_THINKING";
+
+function isThinkingDebugEnabled(): boolean {
+	const raw = process.env[THINKING_DEBUG_ENV];
+	if (!raw) {
+		return false;
+	}
+	const normalized = raw.trim().toLowerCase();
+	return normalized === "1" || normalized === "true" || normalized === "yes";
+}
 
 /**
  * Handler for Anthropic's API
@@ -96,6 +106,17 @@ export class AnthropicHandler extends BaseHandler {
 		const nativeToolsOn = tools && tools.length > 0;
 		const supportsPromptCache = hasModelCapability(model.info, "prompt-cache");
 		const reasoningOn = thinkingSupported && budgetTokens > 0;
+		const debugThinking = isThinkingDebugEnabled();
+		const debugChunkCounts: Record<string, number> = {};
+		const countChunk = (type: string): void => {
+			debugChunkCounts[type] = (debugChunkCounts[type] ?? 0) + 1;
+		};
+
+		if (debugThinking) {
+			console.error(
+				`[thinking-debug][anthropic][request] model=${model.id} thinkingFlag=${this.config.thinking === true} supportsModelThinking=${thinkingSupported} requestedBudget=${requestedBudget} effectiveBudget=${budgetTokens} reasoningOn=${reasoningOn} promptCache=${supportsPromptCache}`,
+			);
+		}
 
 		// Convert messages
 		const anthropicMessages = this.getMessages(systemPrompt, messages);
@@ -139,10 +160,28 @@ export class AnthropicHandler extends BaseHandler {
 		const currentToolCall = { id: "", name: "", arguments: "" };
 
 		for await (const chunk of stream) {
+			if (debugThinking) {
+				countChunk(`event:${chunk.type}`);
+				if (chunk.type === "content_block_start") {
+					countChunk(
+						`content_block_start:${chunk.content_block?.type ?? "unknown"}`,
+					);
+				} else if (chunk.type === "content_block_delta") {
+					countChunk(`content_block_delta:${chunk.delta?.type ?? "unknown"}`);
+				}
+			}
 			yield* this.withResponseIdForAll(
 				this.processChunk(chunk, currentToolCall, responseId),
 				responseId,
 			);
+		}
+
+		if (debugThinking) {
+			const summary = Object.entries(debugChunkCounts)
+				.map(([key, count]) => `${key}=${count}`)
+				.sort()
+				.join(" ");
+			console.error(`[thinking-debug][anthropic][stream] ${summary}`);
 		}
 
 		// Yield done chunk to indicate streaming completed successfully
@@ -182,7 +221,29 @@ export class AnthropicHandler extends BaseHandler {
 				const block = chunk.content_block;
 				switch (block.type) {
 					case "thinking":
-						yield { type: "reasoning", reasoning: "", id: responseId };
+						yield {
+							type: "reasoning",
+							reasoning:
+								typeof (block as { thinking?: unknown }).thinking === "string"
+									? ((block as { thinking: string }).thinking ?? "")
+									: "",
+							signature:
+								typeof (block as { signature?: unknown }).signature === "string"
+									? ((block as { signature: string }).signature ?? undefined)
+									: undefined,
+							id: responseId,
+						};
+						break;
+					case "redacted_thinking":
+						yield {
+							type: "reasoning",
+							reasoning: "",
+							redacted_data:
+								typeof (block as { data?: unknown }).data === "string"
+									? ((block as { data: string }).data ?? undefined)
+									: undefined,
+							id: responseId,
+						};
 						break;
 					case "text":
 						yield { type: "text", text: "", id: responseId };
@@ -203,6 +264,17 @@ export class AnthropicHandler extends BaseHandler {
 						yield {
 							type: "reasoning",
 							reasoning: delta.thinking,
+							id: responseId,
+						};
+						break;
+					case "signature_delta":
+						yield {
+							type: "reasoning",
+							reasoning: "",
+							signature:
+								typeof (delta as { signature?: unknown }).signature === "string"
+									? ((delta as { signature: string }).signature ?? undefined)
+									: undefined,
 							id: responseId,
 						};
 						break;

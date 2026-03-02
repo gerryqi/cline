@@ -83,6 +83,8 @@ let activeCliSession: ActiveCliSession | undefined;
 let cliSessionExitBound = false;
 let activeRuntimeAbort: ((reason: string) => void) | undefined;
 let streamErrorGuardsBound = false;
+let activeInlineStream: "text" | "reasoning" | undefined;
+let inlineStreamHasOutput = false;
 
 function isBrokenPipeError(error: unknown): boolean {
 	return Boolean(
@@ -602,19 +604,30 @@ function writeErr(text: string): void {
 
 function printModelProviderInfo(config: Config): void {
 	const modelSource = config.knownModels ? "live" : "bundled";
+	const thinkingStatus = config.thinking ? "on" : "off";
 	if (config.outputMode === "json") {
 		emitJsonLine("stdout", {
 			type: "run_start",
 			providerId: config.providerId,
 			modelId: config.modelId,
 			catalog: modelSource,
+			thinking: thinkingStatus,
 			sessionId: activeCliSession?.manifest.session_id,
 		});
 		return;
 	}
 	writeln(
-		`${c.dim}[model] provider=${config.providerId} model=${config.modelId} catalog=${modelSource}${c.reset}`,
+		`${c.dim}[model] provider=${config.providerId} model=${config.modelId} catalog=${modelSource} thinking=${thinkingStatus}${c.reset}`,
 	);
+}
+
+function closeInlineStreamIfNeeded(): void {
+	if (!inlineStreamHasOutput) {
+		return;
+	}
+	write("\n");
+	activeInlineStream = undefined;
+	inlineStreamHasOutput = false;
 }
 
 async function buildUserInputMessage(
@@ -655,9 +668,17 @@ async function runAgent(prompt: string, config: Config): Promise<void> {
 
 	let agent: Agent;
 	let errorAlreadyReported = false;
+	let reasoningChunkCount = 0;
+	let redactedReasoningChunkCount = 0;
 	const onEvent = (event: AgentEvent) => {
 		if (event.type === "error") {
 			errorAlreadyReported = true;
+		}
+		if (event.type === "reasoning") {
+			reasoningChunkCount += 1;
+			if (event.redacted) {
+				redactedReasoningChunkCount += 1;
+			}
 		}
 		handleEvent(event, config);
 		if ((event.type === "iteration_end" || event.type === "done") && agent) {
@@ -670,6 +691,7 @@ async function runAgent(prompt: string, config: Config): Promise<void> {
 		apiKey: config.apiKey,
 		baseUrl: config.baseUrl,
 		knownModels: config.knownModels,
+		thinking: config.thinking,
 		systemPrompt: config.systemPrompt,
 		tools,
 		maxIterations: config.maxIterations,
@@ -750,6 +772,11 @@ async function runAgent(prompt: string, config: Config): Promise<void> {
 
 			writeln(`${c.dim}[${parts.join(" | ")}]${c.reset}`);
 		}
+		if (config.outputMode === "text" && config.thinking) {
+			writeln(
+				`${c.dim}[thinking] chunks=${reasoningChunkCount} redacted=${redactedReasoningChunkCount}${c.reset}`,
+			);
+		}
 	} catch (err) {
 		persistCurrentAgentMessages(agent);
 		if (config.outputMode === "text") {
@@ -779,22 +806,46 @@ function handleEvent(event: AgentEvent, _config: Config): void {
 
 	switch (event.type) {
 		case "iteration_start":
+			closeInlineStreamIfNeeded();
 			if (isDev) {
 				write(`\n${c.yellow}── iteration ${event.iteration} ──${c.reset}\n`);
 			}
 			break;
 
 		case "iteration_end":
+			closeInlineStreamIfNeeded();
 			if (!event.hadToolCalls) {
 				// write(`\n\n${c.dim}(no tools called, done)${c.reset}\n`)
 			}
 			break;
 
 		case "text":
+			if (activeInlineStream !== "text") {
+				closeInlineStreamIfNeeded();
+				activeInlineStream = "text";
+			}
 			write(event.text);
+			inlineStreamHasOutput = true;
+			break;
+
+		case "reasoning":
+			if (activeInlineStream !== "reasoning") {
+				closeInlineStreamIfNeeded();
+				write(`${c.dim}[thinking] ${c.reset}`);
+				activeInlineStream = "reasoning";
+				inlineStreamHasOutput = true;
+			}
+			if (event.redacted && !event.reasoning) {
+				write(`${c.dim}[redacted]${c.reset}`);
+				inlineStreamHasOutput = true;
+				break;
+			}
+			write(`${c.dim}${event.reasoning}${c.reset}`);
+			inlineStreamHasOutput = true;
 			break;
 
 		case "tool_call_start": {
+			closeInlineStreamIfNeeded();
 			const inputStr = formatToolInput(event.toolName, event.input);
 			write(
 				`\n${c.dim}[${event.toolName}]${c.reset} ${c.cyan}${inputStr}${c.reset}`,
@@ -803,6 +854,7 @@ function handleEvent(event: AgentEvent, _config: Config): void {
 		}
 
 		case "tool_call_end": {
+			closeInlineStreamIfNeeded();
 			if (event.error) {
 				write(` ${c.red}error: ${event.error}${c.reset}\n`);
 			} else {
@@ -817,12 +869,16 @@ function handleEvent(event: AgentEvent, _config: Config): void {
 		}
 
 		case "done":
+			closeInlineStreamIfNeeded();
 			write(
-				`\n\n${c.dim}── finished: ${event.reason} (${event.iterations} iterations) ──${c.reset}\n`,
+				`\n${c.dim}── finished: ${event.reason} (${event.iterations} iterations) ──${c.reset}\n`,
 			);
+			activeInlineStream = undefined;
+			inlineStreamHasOutput = false;
 			break;
 
 		case "error":
+			closeInlineStreamIfNeeded();
 			writeErr(event.error.message);
 			break;
 	}
@@ -952,6 +1008,7 @@ async function runInteractive(config: Config): Promise<void> {
 		apiKey: config.apiKey,
 		baseUrl: config.baseUrl,
 		knownModels: config.knownModels,
+		thinking: config.thinking,
 		systemPrompt: config.systemPrompt,
 		tools,
 		maxIterations: config.maxIterations,

@@ -689,6 +689,8 @@ export class Agent {
 		let text = "";
 		let textSignature: string | undefined;
 		let reasoning = "";
+		let reasoningSignature: string | undefined;
+		const redactedReasoningBlocks: string[] = [];
 		const toolCalls: PendingToolCall[] = [];
 		const usage = {
 			inputTokens: 0,
@@ -725,6 +727,12 @@ export class Agent {
 
 				case "reasoning":
 					reasoning += chunk.reasoning;
+					if (chunk.signature) {
+						reasoningSignature = chunk.signature;
+					}
+					if (chunk.redacted_data) {
+						redactedReasoningBlocks.push(chunk.redacted_data);
+					}
 					this.emit({
 						type: "reasoning",
 						reasoning: chunk.reasoning,
@@ -755,6 +763,19 @@ export class Agent {
 
 		// Add assistant message to history
 		const assistantContent: ContentBlock[] = [];
+		if (reasoning || redactedReasoningBlocks.length > 0) {
+			assistantContent.push({
+				type: "thinking",
+				thinking: reasoning,
+				signature: reasoningSignature,
+			});
+			for (const redactedData of redactedReasoningBlocks) {
+				assistantContent.push({
+					type: "redacted_thinking",
+					data: redactedData,
+				});
+			}
+		}
 		if (text) {
 			assistantContent.push({ type: "text", text, signature: textSignature });
 		}
