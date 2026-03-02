@@ -36,6 +36,13 @@ export function hasModelCapability(
 }
 
 /**
+ * Check if a model supports explicit thinking/reasoning controls.
+ */
+export function supportsModelThinking(info: ModelInfo): boolean {
+	return Boolean(info.thinkingConfig) || hasModelCapability(info, "reasoning");
+}
+
+/**
  * Get pricing for a model
  */
 export function getModelPricing(info: ModelInfo): ModelPricing {

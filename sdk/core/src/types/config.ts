@@ -7,6 +7,10 @@ export interface CoreModelConfig {
 	apiKey?: string;
 	baseUrl?: string;
 	knownModels?: Record<string, ModelInfo>;
+	/**
+	 * Request model-side thinking/reasoning when supported.
+	 */
+	thinking?: boolean;
 }
 
 export interface CoreRuntimeFeatures {

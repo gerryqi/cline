@@ -50,13 +50,15 @@ export type AuthSettings = z.infer<typeof AuthSettingsSchema>;
 /**
  * Reasoning/thinking configuration
  */
+const ReasoningLevelSchema = z.enum(["none", "low", "medium", "high"]);
+
 export const ReasoningSettingsSchema = z.object({
-	/** Reasoning effort level */
-	effort: z.enum(["low", "medium", "high"]).optional(),
+	/** Enable thinking with provider/model defaults when supported */
+	enabled: z.boolean().optional(),
+	/** Unified reasoning/thinking level */
+	effort: ReasoningLevelSchema.optional(),
 	/** Extended thinking budget in tokens */
 	budgetTokens: z.number().int().positive().optional(),
-	/** Gemini-specific thinking level */
-	thinkingLevel: z.enum(["none", "low", "medium", "high"]).optional(),
 });
 
 export type ReasoningSettings = z.infer<typeof ReasoningSettingsSchema>;
@@ -342,6 +344,11 @@ export function safeParseSettings(
  */
 export function toProviderConfig(settings: ProviderSettings): ProviderConfig {
 	const providerId = settings.provider as ProviderId;
+	const unifiedReasoningLevel = settings.reasoning?.effort;
+	const reasoningEffort =
+		unifiedReasoningLevel && unifiedReasoningLevel !== "none"
+			? unifiedReasoningLevel
+			: undefined;
 
 	// Get provider defaults if available
 	const providerDefaults = OPENAI_COMPATIBLE_PROVIDERS[providerId];
@@ -374,9 +381,9 @@ export function toProviderConfig(settings: ProviderSettings): ProviderConfig {
 		maxContextTokens: settings.contextWindow,
 
 		// Reasoning configuration
-		reasoningEffort: settings.reasoning?.effort,
+		thinking: settings.reasoning?.enabled,
+		reasoningEffort,
 		thinkingBudgetTokens: settings.reasoning?.budgetTokens,
-		thinkingLevel: settings.reasoning?.thinkingLevel,
 
 		// Region configuration
 		region: settings.region ?? settings.aws?.region ?? settings.gcp?.region,

@@ -254,6 +254,7 @@ export interface TeamTeammateRuntimeConfig {
 	apiKey?: string;
 	baseUrl?: string;
 	knownModels?: Record<string, ModelInfo>;
+	thinking?: boolean;
 	maxIterations?: number;
 	hooks?: AgentHooks;
 }
@@ -309,6 +310,7 @@ function spawnTeamTeammate(
 			apiKey: options.teammateRuntime.apiKey,
 			baseUrl: options.teammateRuntime.baseUrl,
 			knownModels: options.teammateRuntime.knownModels,
+			thinking: options.teammateRuntime.thinking,
 			systemPrompt: options.spec.rolePrompt,
 			maxIterations:
 				options.spec.maxIterations ?? options.teammateRuntime.maxIterations,

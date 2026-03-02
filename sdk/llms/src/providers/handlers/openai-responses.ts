@@ -23,6 +23,8 @@ import { withRetry } from "../utils/retry";
 import { getMissingApiKeyError, resolveApiKeyForProvider } from "./auth";
 import { BaseHandler, DEFAULT_MODEL_INFO } from "./base";
 
+const DEFAULT_REASONING_EFFORT = "medium" as const;
+
 /**
  * Convert tool definitions to Responses API format
  */
@@ -193,10 +195,13 @@ export class OpenAIResponsesHandler extends BaseHandler {
 		// Build reasoning config
 		const supportsReasoning =
 			modelInfo.capabilities?.includes("reasoning") ?? false;
+		const effectiveReasoningEffort =
+			this.config.reasoningEffort ??
+			(this.config.thinking ? DEFAULT_REASONING_EFFORT : undefined);
 		const reasoningConfig =
-			supportsReasoning && this.config.reasoningEffort
+			supportsReasoning && effectiveReasoningEffort
 				? {
-						effort: this.config.reasoningEffort as "low" | "medium" | "high",
+						effort: effectiveReasoningEffort,
 						summary: "auto" as const,
 					}
 				: undefined;

@@ -77,7 +77,7 @@ import {
 	upsertSubagentSessionFromHook,
 	writeCliSessionManifest,
 } from "./utils/session";
-import type { ActiveCliSession, Config } from "./utils/types";
+import type { ActiveCliSession, CliOutputMode, Config } from "./utils/types";
 
 let activeCliSession: ActiveCliSession | undefined;
 let cliSessionExitBound = false;
@@ -281,6 +281,53 @@ const c = {
 	red: "\x1b[31m",
 	gray: "\x1b[90m",
 };
+
+let currentOutputMode: CliOutputMode = "text";
+
+function jsonReplacer(_key: string, value: unknown): unknown {
+	if (value instanceof Error) {
+		return {
+			name: value.name,
+			message: value.message,
+			stack: value.stack,
+		};
+	}
+	if (typeof value === "bigint") {
+		return value.toString();
+	}
+	return value;
+}
+
+function emitJsonLine(
+	stream: "stdout" | "stderr",
+	record: Record<string, unknown>,
+): void {
+	const line = `${JSON.stringify(
+		{
+			ts: nowIso(),
+			...record,
+		},
+		jsonReplacer,
+	)}\n`;
+	try {
+		if (stream === "stdout") {
+			process.stdout.write(line);
+		} else {
+			process.stderr.write(line);
+		}
+	} catch (error) {
+		if (!isBrokenPipeError(error)) {
+			throw error;
+		}
+	}
+	if (activeCliSession) {
+		try {
+			appendFileSync(activeCliSession.transcriptPath, line, "utf8");
+		} catch {
+			// Best-effort transcript persistence for desktop discovery.
+		}
+	}
+}
 
 function mergeToolPolicies(
 	base: Record<string, ToolPolicy>,
@@ -528,17 +575,17 @@ function write(text: string): void {
 }
 
 function writeln(text = ""): void {
-	console.log(text);
-	if (activeCliSession) {
-		try {
-			appendFileSync(activeCliSession.transcriptPath, `${text}\n`, "utf8");
-		} catch {
-			// Best-effort transcript persistence for desktop discovery.
-		}
+	if (currentOutputMode === "json" && text.length === 0) {
+		return;
 	}
+	write(`${text}\n`);
 }
 
 function writeErr(text: string): void {
+	if (currentOutputMode === "json") {
+		emitJsonLine("stderr", { type: "error", message: text });
+		return;
+	}
 	console.error(`${c.red}error:${c.reset} ${text}`);
 	if (activeCliSession) {
 		try {
@@ -555,6 +602,16 @@ function writeErr(text: string): void {
 
 function printModelProviderInfo(config: Config): void {
 	const modelSource = config.knownModels ? "live" : "bundled";
+	if (config.outputMode === "json") {
+		emitJsonLine("stdout", {
+			type: "run_start",
+			providerId: config.providerId,
+			modelId: config.modelId,
+			catalog: modelSource,
+			sessionId: activeCliSession?.manifest.session_id,
+		});
+		return;
+	}
 	writeln(
 		`${c.dim}[model] provider=${config.providerId} model=${config.modelId} catalog=${modelSource}${c.reset}`,
 	);
@@ -582,6 +639,13 @@ async function runAgent(prompt: string, config: Config): Promise<void> {
 		onTeamEvent: handleTeamEvent,
 		createSpawnTool: () => createCliSpawnTool(config, hooks),
 		onTeamRestored: () => {
+			if (config.outputMode === "json") {
+				emitJsonLine("stdout", {
+					type: "team_restored",
+					teamName: config.teamName ?? "(unknown team)",
+				});
+				return;
+			}
 			writeln(
 				`${c.dim}[team] restored persisted team state for "${config.teamName ?? "(unknown team)"}"${c.reset}`,
 			);
@@ -627,6 +691,13 @@ async function runAgent(prompt: string, config: Config): Promise<void> {
 	setActiveRuntimeAbort(abortAll);
 	const handleSigint = () => {
 		if (abortAll("sigint")) {
+			if (config.outputMode === "json") {
+				emitJsonLine("stdout", {
+					type: "run_abort_requested",
+					reason: "sigint",
+				});
+				return;
+			}
 			writeln(`\n${c.dim}[abort] requested${c.reset}`);
 		}
 	};
@@ -637,15 +708,31 @@ async function runAgent(prompt: string, config: Config): Promise<void> {
 		const userInput = await buildUserInputMessage(prompt, config.cwd);
 		const result = await agent.run(userInput);
 		persistApiMessages(result.messages);
+		if (config.outputMode === "json") {
+			emitJsonLine("stdout", {
+				type: "run_result",
+				finishReason: result.finishReason,
+				iterations: result.iterations,
+				usage: result.usage,
+				durationMs: result.durationMs,
+				text: result.text,
+				model: result.model,
+			});
+		}
 		if (abortRequested || result.finishReason === "aborted") {
 			updateCliSessionStatus("cancelled", null);
 			writeln();
 			return;
 		}
 
-		writeln();
+		if (config.outputMode === "text") {
+			writeln();
+		}
 
-		if (config.showTimings || config.showUsage) {
+		if (
+			config.outputMode === "text" &&
+			(config.showTimings || config.showUsage)
+		) {
 			const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
 			const parts: string[] = [];
 
@@ -665,7 +752,9 @@ async function runAgent(prompt: string, config: Config): Promise<void> {
 		}
 	} catch (err) {
 		persistCurrentAgentMessages(agent);
-		writeln();
+		if (config.outputMode === "text") {
+			writeln();
+		}
 		if (!errorAlreadyReported) {
 			writeErr(err instanceof Error ? err.message : String(err));
 		}
@@ -683,6 +772,11 @@ async function runAgent(prompt: string, config: Config): Promise<void> {
 const isDev = process.env.NODE_ENV === "development";
 
 function handleEvent(event: AgentEvent, _config: Config): void {
+	if (currentOutputMode === "json") {
+		emitJsonLine("stdout", { type: "agent_event", event });
+		return;
+	}
+
 	switch (event.type) {
 		case "iteration_start":
 			if (isDev) {
@@ -735,6 +829,11 @@ function handleEvent(event: AgentEvent, _config: Config): void {
 }
 
 function handleTeamEvent(event: TeamEvent): void {
+	if (currentOutputMode === "json") {
+		emitJsonLine("stdout", { type: "team_event", event });
+		return;
+	}
+
 	switch (event.type) {
 		case "teammate_spawned":
 			write(
@@ -797,6 +896,11 @@ function handleTeamEvent(event: TeamEvent): void {
 // =============================================================================
 
 async function runInteractive(config: Config): Promise<void> {
+	if (config.outputMode === "json") {
+		writeErr("interactive mode is not supported with --output json");
+		process.exit(1);
+	}
+
 	writeln(
 		`${c.cyan}${config.providerId}${c.reset} ${c.dim}${config.modelId}${c.reset}`,
 	);
@@ -816,6 +920,13 @@ async function runInteractive(config: Config): Promise<void> {
 		onTeamEvent: handleTeamEvent,
 		createSpawnTool: () => createCliSpawnTool(config, hooks),
 		onTeamRestored: () => {
+			if (config.outputMode === "json") {
+				emitJsonLine("stdout", {
+					type: "team_restored",
+					teamName: config.teamName ?? "(unknown team)",
+				});
+				return;
+			}
 			writeln(
 				`${c.dim}[team] restored persisted team state for "${config.teamName ?? "(unknown team)"}"${c.reset}`,
 			);
@@ -866,6 +977,13 @@ async function runInteractive(config: Config): Promise<void> {
 	const handleSigint = () => {
 		if (isRunning) {
 			if (abortAll("sigint")) {
+				if (config.outputMode === "json") {
+					emitJsonLine("stdout", {
+						type: "run_abort_requested",
+						reason: "sigint",
+					});
+					return;
+				}
 				writeln(`\n${c.dim}[abort] requested${c.reset}`);
 			}
 			return;
@@ -1042,6 +1160,9 @@ ${c.bold}OPTIONS${c.reset}
   -i, --interactive           Interactive mode with multi-turn conversation
   -u, --usage                 Show token usage after response
   -t, --timings               Show timing information
+  --thinking                  Enable model thinking/reasoning when supported
+  --output <text|json>        Output format (default: text)
+  --json                      Shorthand for --output json (NDJSON stream)
   --no-tools                  Disable default tools (enabled by default)
   --no-spawn                  Disable spawn_agent tool (enabled by default)
   --no-teams                  Disable agent-team tools (enabled by default)
@@ -1119,6 +1240,13 @@ async function main(): Promise<void> {
 	}
 
 	const args = parseArgs(rawArgs);
+	if (args.invalidOutputMode) {
+		writeErr(
+			`invalid output mode "${args.invalidOutputMode}" (expected "text" or "json")`,
+		);
+		process.exit(1);
+	}
+	currentOutputMode = args.outputMode;
 	const cwd = args.cwd ?? process.cwd();
 	const defaultToolAutoApprove = args.defaultToolAutoApprove;
 	const mergedToolPolicies = mergeToolPolicies({}, args.toolPolicies);
@@ -1168,6 +1296,8 @@ async function main(): Promise<void> {
 		maxIterations: undefined,
 		showUsage: args.showUsage,
 		showTimings: args.showTimings,
+		thinking: args.thinking,
+		outputMode: args.outputMode,
 		defaultToolAutoApprove,
 		toolPolicies,
 		enableSpawnAgent: args.enableSpawnAgent,
@@ -1209,6 +1339,13 @@ async function main(): Promise<void> {
 			}
 			return;
 		}
+	}
+
+	if (config.outputMode === "json" && (args.interactive || !args.prompt)) {
+		writeErr(
+			"JSON output mode requires a prompt argument or piped stdin (interactive mode is unsupported)",
+		);
+		process.exit(1);
 	}
 
 	// Interactive mode

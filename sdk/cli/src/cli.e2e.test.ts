@@ -6,6 +6,9 @@ import { afterEach, describe, expect, it } from "vitest";
 
 const cliRoot = path.resolve(__dirname, "..");
 const cliEntry = path.join(cliRoot, "src", "index.ts");
+const cliPackage = JSON.parse(
+	readFileSync(path.join(cliRoot, "package.json"), "utf8"),
+) as { version: string };
 const bunExec = process.env.BUN_EXEC_PATH ?? "bun";
 
 type CliResult = ReturnType<typeof spawnSync>;
@@ -45,12 +48,20 @@ describe("cli e2e", () => {
 		expect(asText(result.stderr)).toBe("");
 		expect(asText(result.stdout)).toContain("USAGE");
 		expect(asText(result.stdout)).toContain("--tool-require-approval");
+		expect(asText(result.stdout)).toContain("--output <text|json>");
+		expect(asText(result.stdout)).toContain("--thinking");
 	});
 
 	it("prints version output", () => {
 		const result = runCli(["--version"], { env: process.env });
 		expect(result.status).toBe(0);
-		expect(asText(result.stdout).trim()).toBe("0.1.0");
+		expect(asText(result.stdout).trim()).toBe(cliPackage.version);
+	});
+
+	it("rejects unsupported output modes", () => {
+		const result = runCli(["--output", "xml", "hello"], { env: process.env });
+		expect(result.status).toBe(1);
+		expect(asText(result.stderr)).toContain("invalid output mode");
 	});
 
 	it("lists sessions from isolated storage", () => {

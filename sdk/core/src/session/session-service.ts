@@ -3,6 +3,7 @@ import {
 	existsSync,
 	mkdirSync,
 	readdirSync,
+	readFileSync,
 	rmdirSync,
 	unlinkSync,
 	writeFileSync,
@@ -867,7 +868,9 @@ export class CoreSessionService {
 	}
 
 	listCliSessions(limit = 200): SessionRowShape[] {
-		return this.store.queryAll<SessionRowShape>(
+		const requestedLimit = Math.max(1, Math.floor(limit));
+		const scanLimit = Math.min(requestedLimit * 5, 2000);
+		const rows = this.store.queryAll<SessionRowShape>(
 			`SELECT session_id, source, pid, started_at, ended_at, exit_code, status, status_lock, interactive,
 					provider, model, cwd, workspace_root, team_name, enable_tools, enable_spawn, enable_teams,
 					parent_session_id, parent_agent_id, agent_id, conversation_id, is_subagent, prompt,
@@ -875,8 +878,38 @@ export class CoreSessionService {
 			 FROM sessions
 			 ORDER BY started_at DESC
 			 LIMIT ?`,
-			[limit],
+			[scanLimit],
 		);
+		return rows
+			.filter((row) => this.hasPersistedConversation(row))
+			.slice(0, requestedLimit);
+	}
+
+	private hasPersistedConversation(row: SessionRowShape): boolean {
+		if ((row.prompt ?? "").trim().length > 0) {
+			return true;
+		}
+		const messagesPath =
+			row.messages_path?.trim() || this.sessionMessagesPath(row.session_id);
+		if (!messagesPath || !existsSync(messagesPath)) {
+			return false;
+		}
+		try {
+			const raw = readFileSync(messagesPath, "utf8");
+			if (!raw.trim()) {
+				return false;
+			}
+			const parsed = JSON.parse(raw) as { messages?: unknown } | unknown[];
+			const messages = Array.isArray(parsed)
+				? parsed
+				: Array.isArray((parsed as { messages?: unknown })?.messages)
+					? ((parsed as { messages: unknown[] }).messages ?? [])
+					: [];
+			return messages.length > 0;
+		} catch {
+			// Keep the row on parse/read failures rather than hiding potentially valid sessions.
+			return true;
+		}
 	}
 
 	deleteCliSession(sessionId: string): { deleted: boolean } {

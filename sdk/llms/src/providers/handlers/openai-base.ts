@@ -28,6 +28,8 @@ import { ToolCallProcessor } from "../utils/tool-processor";
 import { getMissingApiKeyError, resolveApiKeyForProvider } from "./auth";
 import { BaseHandler, DEFAULT_MODEL_INFO } from "./base";
 
+const DEFAULT_REASONING_EFFORT = "medium" as const;
+
 /**
  * Base handler for OpenAI SDK-based providers
  *
@@ -148,10 +150,15 @@ export class OpenAIBaseHandler extends BaseHandler {
 		}
 
 		// Add reasoning effort for supported models
-		const providerSupportsReasoning =
-			this.config.capabilities?.includes("reasoning") ?? false;
-		if (providerSupportsReasoning && this.config.reasoningEffort) {
-			(requestOptions as any).reasoning_effort = this.config.reasoningEffort;
+		const supportsReasoningEffort =
+			modelInfo.capabilities?.includes("reasoning-effort") ||
+			modelInfo.capabilities?.includes("reasoning") ||
+			false;
+		const effectiveReasoningEffort =
+			this.config.reasoningEffort ??
+			(this.config.thinking ? DEFAULT_REASONING_EFFORT : undefined);
+		if (supportsReasoningEffort && effectiveReasoningEffort) {
+			(requestOptions as any).reasoning_effort = effectiveReasoningEffort;
 		}
 
 		const requestHeaders = this.getRequestHeaders();

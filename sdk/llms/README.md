@@ -68,6 +68,31 @@ Each entry in `providers` (`ProviderSelectionConfig`) supports:
 - `capabilities`: provider capability flags (for handler behavior)
 - `settings`: advanced `ProviderConfig` defaults merged into each `createHandler(...)` call
 
+### Reasoning/Thinking Settings
+
+`settings.reasoning.effort` is the single unified reasoning/thinking level:
+- `"none"` disables reasoning effort/thinking level controls
+- `"low" | "medium" | "high"` maps to provider reasoning/thinking controls
+
+```ts
+const llms = createLlmsSdk({
+  providers: [
+    {
+      id: "openai",
+      models: ["gpt-5-mini"],
+      apiKeyEnv: "OPENAI_API_KEY",
+      settings: {
+        reasoning: {
+          enabled: true,
+          effort: "high",
+          budgetTokens: 2048,
+        },
+      },
+    },
+  ],
+})
+```
+
 ## Vertex AI (Google Cloud) Usage
 
 `@cline/llms` supports Vertex AI through the Gemini handler.

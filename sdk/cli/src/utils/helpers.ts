@@ -271,6 +271,8 @@ export function parseArgs(args: string[]): ParsedArgs {
 		showVersion: false,
 		showUsage: false,
 		showTimings: false,
+		outputMode: "text",
+		thinking: false,
 		enableSpawnAgent: true,
 		enableAgentTeams: true,
 		enableTools: true,
@@ -294,6 +296,17 @@ export function parseArgs(args: string[]): ParsedArgs {
 			result.showUsage = true;
 		} else if (arg === "-t" || arg === "--timings") {
 			result.showTimings = true;
+		} else if (arg === "--thinking") {
+			result.thinking = true;
+		} else if (arg === "--json") {
+			result.outputMode = "json";
+		} else if (arg === "--output") {
+			const mode = (args[++i] ?? "").trim().toLowerCase();
+			if (mode === "text" || mode === "json") {
+				result.outputMode = mode;
+			} else if (mode) {
+				result.invalidOutputMode = mode;
+			}
 		} else if (arg === "--spawn" || arg === "--enable-spawn") {
 			result.enableSpawnAgent = true;
 		} else if (arg === "--no-spawn") {

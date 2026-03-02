@@ -68,6 +68,7 @@ export {
 	type ModelPricing,
 	type ModelWithId,
 	type OpenAICompatibleModelInfo,
+	supportsModelThinking,
 	type ThinkingConfig,
 } from "./model-info";
 // Settings types and functions (Zod-based validation)

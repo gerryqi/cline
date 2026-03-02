@@ -19,11 +19,14 @@ import {
 	type HandlerModelInfo,
 	hasModelCapability,
 	type ProviderConfig,
+	supportsModelThinking,
 } from "../types";
 import type { Message, ToolDefinition } from "../types/messages";
 import { withRetry } from "../utils/retry";
 import { getMissingApiKeyError, resolveApiKeyForProvider } from "./auth";
 import { BaseHandler, DEFAULT_MODEL_INFO } from "./base";
+
+const DEFAULT_THINKING_BUDGET_TOKENS = 1024;
 
 /**
  * Handler for Anthropic's API
@@ -84,11 +87,15 @@ export class AnthropicHandler extends BaseHandler {
 		const abortSignal = this.getAbortSignal();
 		const responseId = this.createResponseId();
 
-		const budgetTokens = this.config.thinkingBudgetTokens ?? 0;
+		const thinkingSupported = supportsModelThinking(model.info);
+		const requestedBudget =
+			this.config.thinkingBudgetTokens ??
+			(this.config.thinking ? DEFAULT_THINKING_BUDGET_TOKENS : 0);
+		const budgetTokens =
+			thinkingSupported && requestedBudget > 0 ? requestedBudget : 0;
 		const nativeToolsOn = tools && tools.length > 0;
 		const supportsPromptCache = hasModelCapability(model.info, "prompt-cache");
-		const reasoningOn =
-			hasModelCapability(model.info, "reasoning") && budgetTokens > 0;
+		const reasoningOn = thinkingSupported && budgetTokens > 0;
 
 		// Convert messages
 		const anthropicMessages = this.getMessages(systemPrompt, messages);

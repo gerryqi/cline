@@ -55,6 +55,7 @@ export interface SpawnAgentToolConfig {
 	apiKey?: string;
 	baseUrl?: string;
 	knownModels?: Record<string, ModelInfo>;
+	thinking?: boolean;
 	defaultMaxIterations?: number;
 	subAgentTools?: Tool[];
 	createSubAgentTools?: (
@@ -132,6 +133,7 @@ export function createSpawnAgentTool(
 				apiKey: config.apiKey,
 				baseUrl: config.baseUrl,
 				knownModels: config.knownModels,
+				thinking: config.thinking,
 				systemPrompt: input.systemPrompt,
 				tools,
 				maxIterations: input.maxIterations ?? config.defaultMaxIterations ?? 10,

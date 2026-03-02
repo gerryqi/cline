@@ -126,6 +126,9 @@ interface ParsedArgs {
   showVersion: boolean          // -v / --version
   showUsage: boolean            // -u / --usage
   showTimings: boolean          // -t / --timings
+  thinking: boolean             // --thinking
+  outputMode: "text" | "json"   // --output / --json
+  invalidOutputMode?: string    // invalid --output value (error path)
   enableSpawnAgent: boolean     // --spawn / --enable-spawn
   enableAgentTeams: boolean     // --teams
   enableTools: boolean          // --tools (default true) / --no-tools
@@ -337,11 +340,14 @@ If the session is a **root session** (not a sub-agent), all child sub-sessions a
 | `--max-iterations <n>` | `-n` | number | `20` | Maximum agentic loop iterations |
 | `--usage` | `-u` | boolean | `false` | Print token usage after each run |
 | `--timings` | `-t` | boolean | `false` | Print elapsed time after each run |
+| `--thinking` | — | boolean | `false` | Enable model thinking/reasoning when supported |
+| `--output <text\|json>` | — | string | `text` | Output format (`text` or NDJSON `json`) |
+| `--json` | — | boolean | `false` | Shorthand for `--output json` |
 | `--tools` | — | boolean | `true` | Enable built-in tools (default on) |
 | `--no-tools` | — | boolean | — | Disable all built-in tools |
-| `--spawn` / `--enable-spawn` | — | boolean | `false` | Enable sub-agent spawning tool |
-| `--teams` | — | boolean | `false` | Enable agent teams runtime |
-| `--team-name <name>` | — | string | `"cli-team"` | Name for the agent team |
+| `--spawn` / `--enable-spawn` | — | boolean | `true` | Enable sub-agent spawning tool |
+| `--teams` | — | boolean | `true` | Enable agent teams runtime |
+| `--team-name <name>` | — | string | `agent-team-<id>` | Name for the agent team |
 | `--cwd <path>` | — | string | `process.cwd()` | Working directory for tools |
 | `--mission-step-interval <n>` | — | number | *(SDK default)* | Mission log interval in steps |
 | `--mission-time-interval-ms <n>` | — | number | *(SDK default)* | Mission log interval in milliseconds |
@@ -365,6 +371,12 @@ All agent output is streamed in real-time via the `onEvent` callback. The event 
 | `done` | `── finished: <reason> (<n> iterations) ──` in dim |
 | `error` | `error: <message>` in red |
 | `iteration_start` | *(dev mode only)* `── iteration N ──` in yellow |
+
+When `--output json` (or `--json`) is used, output switches to **NDJSON**:
+- each line is a JSON object with `ts` and event payload
+- event records include `run_start`, `agent_event`, `team_event`, `run_result`
+- error records are emitted as JSON to stderr (`{ "type": "error", ... }`)
+- interactive mode is rejected in JSON mode; use a prompt argument or piped stdin
 
 **Tool input formatting** (`formatToolInput`):  
 Each tool has a custom compact display format:
@@ -756,9 +768,10 @@ interface Config {
   baseUrl?: string            // optional custom base URL
   knownModels?: Record<string, ModelInfo>  // live model catalog
   systemPrompt: string        // system prompt (default or custom)
-  maxIterations?: number      // max agentic loop iterations (default 20)
+  maxIterations?: number      // max agentic loop iterations
   showUsage: boolean          // -u flag
   showTimings: boolean        // -t flag
+  outputMode: "text" | "json" // --output / --json
   enableSpawnAgent: boolean   // --spawn flag
   enableAgentTeams: boolean   // --teams flag
   enableTools: boolean        // --tools / --no-tools
@@ -881,6 +894,12 @@ agent -p openai -m gpt-4o "What are the best practices for TypeScript?"
 
 # Show timing and token usage
 agent -u -t "Explain quantum entanglement"
+
+# Parseable JSON output (NDJSON)
+agent --output json "Summarize key architecture decisions in this repo"
+
+# JSON mode with stdin
+cat package.json | agent --json "Extract dependency names only"
 
 # Interactive coding session
 agent -i -s "You are an expert TypeScript developer. Help me refactor my code."

@@ -133,6 +133,7 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 						apiKey: config.apiKey ?? "",
 						baseUrl: config.baseUrl,
 						knownModels: config.knownModels,
+						thinking: config.thinking,
 						maxIterations: config.maxIterations,
 						hooks,
 					},

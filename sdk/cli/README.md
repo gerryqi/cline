@@ -40,6 +40,11 @@ cat file.txt | clite "Summarize this"
 # Show usage stats
 clite -u -t "Explain quantum computing"
 
+# Stream structured NDJSON output
+clite --output json "Summarize this repository"
+# equivalent
+clite --json "Summarize this repository"
+
 # Use persistent team state name
 clite --team-name dev-team "Continue yesterday's team workflow"
 
@@ -59,6 +64,9 @@ clite -p openrouter -m google/gemini-3-pro -k sk-your-google-gemini-api-key "Set
 | `-i, --interactive` | Interactive mode |
 | `-u, --usage` | Show token usage |
 | `-t, --timings` | Show timing info |
+| `--thinking` | Enable model thinking/reasoning when supported |
+| `--output <text|json>` | Output format (default: `text`) |
+| `--json` | Shorthand for `--output json` (NDJSON stream) |
 | `--tools` | Enable default tools (enabled by default) |
 | `--no-tools` | Disable default tools |
 | `--spawn` | Enable `spawn_agent` (enabled by default) |
@@ -78,6 +86,7 @@ clite -p openrouter -m google/gemini-3-pro -k sk-your-google-gemini-api-key "Set
 | `-h, --help` | Show help |
 | `-v, --version` | Show version |
 
+`--output json` is non-interactive and requires either a prompt argument or piped stdin.
 
 ## Development
 
@@ -128,6 +137,7 @@ bun install -g @cline/cli
 - **Agent teams runtime** - Team tools (tasks/mailbox/mission log) are available by default unless disabled
 - **Pipe support** - Accepts piped input for processing files
 - **Interactive mode** - Multi-turn conversations
+- **JSON output mode** - NDJSON records for run lifecycle, agent/team events, and final result (`--output json` / `--json`)
 - **Minimal dependencies** - Fast startup time
 - **Multiple providers** - Works with Anthropic, OpenAI, and more
 
@@ -157,4 +167,7 @@ clite --team-name release-team "Plan, implement, and verify release checklist"
 
 # Interactive coding session
 clite -i -s "You are an expert Python developer"
+
+# Parseable JSON output (NDJSON)
+clite --json "List the key modules in this project"
 ```

@@ -1,5 +1,10 @@
 import { convertToolsToAnthropic } from "../transform/anthropic-format";
-import type { ApiStream, HandlerModelInfo, ProviderConfig } from "../types";
+import {
+	type ApiStream,
+	type HandlerModelInfo,
+	type ProviderConfig,
+	supportsModelThinking,
+} from "../types";
 import type { Message, ToolDefinition } from "../types/messages";
 import { withRetry } from "../utils/retry";
 import { BaseHandler, DEFAULT_MODEL_INFO } from "./base";
@@ -22,6 +27,8 @@ type AiModule = {
 };
 
 let cachedAiModule: AiModule | undefined;
+const DEFAULT_THINKING_BUDGET_TOKENS = 1024;
+const DEFAULT_REASONING_EFFORT = "medium" as const;
 
 async function loadAiModule(): Promise<AiModule> {
 	if (cachedAiModule) {
@@ -95,14 +102,29 @@ export class BedrockHandler extends BaseHandler {
 			bedrockOptions.anthropicBeta = ["context-1m-2025-08-07"];
 		}
 
-		const budgetTokens = this.config.thinkingBudgetTokens ?? 0;
-		if (budgetTokens > 0 && modelId.includes("anthropic")) {
+		const thinkingSupported = supportsModelThinking(model.info);
+		const budgetTokens =
+			this.config.thinkingBudgetTokens ??
+			(this.config.thinking ? DEFAULT_THINKING_BUDGET_TOKENS : 0);
+		let reasoningEnabled = false;
+		if (
+			thinkingSupported &&
+			budgetTokens > 0 &&
+			modelId.includes("anthropic")
+		) {
 			bedrockOptions.reasoningConfig = { type: "enabled", budgetTokens };
-		} else if (this.config.reasoningEffort && modelId.includes("amazon.nova")) {
-			bedrockOptions.reasoningConfig = {
-				type: "enabled",
-				maxReasoningEffort: this.config.reasoningEffort,
-			};
+			reasoningEnabled = true;
+		} else if (thinkingSupported && modelId.includes("amazon.nova")) {
+			const reasoningEffort =
+				this.config.reasoningEffort ??
+				(this.config.thinking ? DEFAULT_REASONING_EFFORT : undefined);
+			if (reasoningEffort) {
+				bedrockOptions.reasoningConfig = {
+					type: "enabled",
+					maxReasoningEffort: reasoningEffort,
+				};
+				reasoningEnabled = true;
+			}
 		}
 
 		if (Object.keys(bedrockOptions).length > 0) {
@@ -114,7 +136,7 @@ export class BedrockHandler extends BaseHandler {
 			messages: this.getMessages(systemPrompt, messages),
 			tools: toAiSdkTools(tools),
 			maxTokens: model.info.maxTokens ?? undefined,
-			temperature: budgetTokens > 0 ? undefined : (model.info.temperature ?? 0),
+			temperature: reasoningEnabled ? undefined : (model.info.temperature ?? 0),
 			providerOptions:
 				Object.keys(providerOptions).length > 0 ? providerOptions : undefined,
 			abortSignal,

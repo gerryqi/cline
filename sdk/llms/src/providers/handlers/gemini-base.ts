@@ -15,15 +15,18 @@ import {
 	convertToGeminiMessages,
 	convertToolsToGemini,
 } from "../transform/gemini-format";
-import type {
-	ApiStream,
-	HandlerModelInfo,
-	ModelInfo,
-	ProviderConfig,
+import {
+	type ApiStream,
+	type HandlerModelInfo,
+	type ModelInfo,
+	type ProviderConfig,
+	supportsModelThinking,
 } from "../types";
 import type { Message, ToolDefinition } from "../types/messages";
 import { RetriableError, withRetry } from "../utils/retry";
 import { BaseHandler, DEFAULT_MODEL_INFO } from "./base";
+
+const DEFAULT_THINKING_BUDGET_TOKENS = 1024;
 
 /**
  * Handler for Google's Gemini API
@@ -89,21 +92,31 @@ export class GeminiHandler extends BaseHandler {
 		// Convert messages
 		const contents = this.getMessages(systemPrompt, messages);
 
-		// Configure thinking
-		const thinkingBudget = Math.min(
-			this.config.thinkingBudgetTokens ?? 0,
-			info.thinkingConfig?.maxBudget ?? 24576,
-		);
-
+		const thinkingSupported = supportsModelThinking(info);
+		const thinkingRequested =
+			this.config.thinking === true ||
+			typeof this.config.thinkingBudgetTokens === "number" ||
+			typeof this.config.reasoningEffort === "string";
+		let thinkingBudget = 0;
 		let thinkingLevel: ThinkingLevel | undefined;
-		// If thinkingConfig has a thinkingLevel, it supports thinking level control
-		if (info.thinkingConfig?.thinkingLevel) {
-			const level =
-				this.config.thinkingLevel ?? info.thinkingConfig.thinkingLevel;
-			if (level === "high") {
-				thinkingLevel = ThinkingLevel.HIGH;
-			} else if (level === "low") {
-				thinkingLevel = ThinkingLevel.LOW;
+
+		if (thinkingSupported && thinkingRequested) {
+			const requestedBudget =
+				this.config.thinkingBudgetTokens ??
+				(this.config.thinking ? DEFAULT_THINKING_BUDGET_TOKENS : 0);
+			thinkingBudget = Math.min(
+				Math.max(0, requestedBudget),
+				info.thinkingConfig?.maxBudget ?? 24576,
+			);
+
+			// If thinkingConfig has a thinkingLevel, it supports thinking level control
+			if (info.thinkingConfig?.thinkingLevel) {
+				const level = this.config.reasoningEffort;
+				if (level === "high") {
+					thinkingLevel = ThinkingLevel.HIGH;
+				} else if (level === "low" || level === "medium") {
+					thinkingLevel = ThinkingLevel.LOW;
+				}
 			}
 		}
 
@@ -117,12 +130,17 @@ export class GeminiHandler extends BaseHandler {
 			temperature: info.temperature ?? 1,
 		};
 
-		// Add thinking config if supported
-		if (info.thinkingConfig) {
+		// Add thinking config only when explicitly requested and supported.
+		if (
+			info.thinkingConfig &&
+			thinkingSupported &&
+			thinkingRequested &&
+			(thinkingBudget > 0 || !!thinkingLevel)
+		) {
 			requestConfig.thinkingConfig = {
 				thinkingBudget: thinkingLevel ? undefined : thinkingBudget,
 				thinkingLevel,
-				includeThoughts: thinkingBudget > 0 || !!thinkingLevel,
+				includeThoughts: true,
 			};
 		}
 

@@ -766,6 +766,10 @@ export interface AgentConfig {
 	 * Maximum tokens for thinking/reasoning
 	 */
 	thinkingBudgetTokens?: number;
+	/**
+	 * Enable default thinking/reasoning behavior for supported models.
+	 */
+	thinking?: boolean;
 
 	// -------------------------------------------------------------------------
 	// Callbacks
@@ -835,6 +839,7 @@ export const AgentConfigSchema = z.object({
 	// Reasoning Settings
 	reasoningEffort: ReasoningEffortSchema.optional(),
 	thinkingBudgetTokens: z.number().positive().optional(),
+	thinking: z.boolean().optional(),
 
 	// Callbacks
 	onEvent: z

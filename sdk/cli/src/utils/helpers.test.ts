@@ -39,6 +39,8 @@ describe("parseArgs", () => {
 			showVersion: false,
 			showUsage: false,
 			showTimings: false,
+			outputMode: "text",
+			thinking: false,
 			enableSpawnAgent: true,
 			enableAgentTeams: true,
 			enableTools: true,
@@ -75,6 +77,7 @@ describe("parseArgs", () => {
 			"abc123",
 			"--usage",
 			"--timings",
+			"--thinking",
 			"Audit",
 			"the",
 			"repo",
@@ -87,6 +90,8 @@ describe("parseArgs", () => {
 		expect(parsed.defaultToolAutoApprove).toBe(false);
 		expect(parsed.showUsage).toBe(true);
 		expect(parsed.showTimings).toBe(true);
+		expect(parsed.thinking).toBe(true);
+		expect(parsed.outputMode).toBe("text");
 		expect(parsed.cwd).toBe("/tmp/work");
 		expect(parsed.teamName).toBe("dev-team");
 		expect(parsed.missionLogIntervalSteps).toBe(4);
@@ -112,6 +117,19 @@ describe("parseArgs", () => {
 			"",
 		]);
 		expect(parsed.toolPolicies).toEqual({});
+	});
+
+	it("supports json output flags and validates explicit output modes", () => {
+		const parsedJsonAlias = parseArgs(["--json", "hello"]);
+		expect(parsedJsonAlias.outputMode).toBe("json");
+		expect(parsedJsonAlias.prompt).toBe("hello");
+
+		const parsedJsonValue = parseArgs(["--output", "json"]);
+		expect(parsedJsonValue.outputMode).toBe("json");
+
+		const parsedInvalid = parseArgs(["--output", "xml"]);
+		expect(parsedInvalid.outputMode).toBe("text");
+		expect(parsedInvalid.invalidOutputMode).toBe("xml");
 	});
 });
 

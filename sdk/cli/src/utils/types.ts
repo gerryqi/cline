@@ -2,10 +2,13 @@ import type { ToolPolicy } from "@cline/agents";
 import type { CoreSessionConfig, SessionManifest } from "@cline/core/server";
 import type { Message, ModelInfo } from "@cline/llms/providers";
 
+export type CliOutputMode = "text" | "json";
+
 export interface Config extends CoreSessionConfig {
 	apiKey: string;
 	knownModels?: Record<string, ModelInfo>;
 	systemPrompt: string;
+	thinking: boolean;
 	enableSpawnAgent: boolean;
 	enableAgentTeams: boolean;
 	enableTools: boolean;
@@ -15,6 +18,7 @@ export interface Config extends CoreSessionConfig {
 	missionLogIntervalMs: number;
 	showUsage: boolean;
 	showTimings: boolean;
+	outputMode: CliOutputMode;
 	defaultToolAutoApprove: boolean;
 	toolPolicies: Record<string, ToolPolicy>;
 }
@@ -63,6 +67,9 @@ export interface ParsedArgs {
 	showVersion: boolean;
 	showUsage: boolean;
 	showTimings: boolean;
+	outputMode: CliOutputMode;
+	thinking: boolean;
+	invalidOutputMode?: string;
 	enableSpawnAgent: boolean;
 	enableAgentTeams: boolean;
 	enableTools: boolean;

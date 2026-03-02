@@ -124,6 +124,7 @@ export class Agent {
 			maxOutputTokens: config.maxTokensPerTurn,
 			reasoningEffort: config.reasoningEffort,
 			thinkingBudgetTokens: config.thinkingBudgetTokens,
+			thinking: config.thinking,
 			abortSignal: config.abortSignal,
 		});
 

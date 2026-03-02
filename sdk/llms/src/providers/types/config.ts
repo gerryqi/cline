@@ -112,8 +112,8 @@ export interface ReasoningConfig {
 	reasoningEffort?: "low" | "medium" | "high";
 	/** Extended thinking budget in tokens */
 	thinkingBudgetTokens?: number;
-	/** Gemini-specific thinking level */
-	thinkingLevel?: "none" | "low" | "medium" | "high";
+	/** Enable thinking with provider/model defaults when supported */
+	thinking?: boolean;
 }
 
 /**
