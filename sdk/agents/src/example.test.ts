@@ -116,8 +116,8 @@ Examples of when to use:
 				abortSignal: context.abortSignal,
 				onEvent: (event) => {
 					// Log sub-agent events with prefix for debugging
-					if (event.type === "text") {
-						console.log(`[SubAgent] ${event.text}`);
+					if (event.type === "content_start" && event.contentType === "text") {
+						console.log(`[SubAgent] ${event.text ?? ""}`);
 					}
 				},
 			});
@@ -345,24 +345,26 @@ function handleAgentEvent(event: AgentEvent): void {
 		case "iteration_start":
 			console.log(`\n--- Iteration ${event.iteration} ---`);
 			break;
-		case "text":
-			process.stdout.write(event.text);
-			break;
-		case "reasoning":
-			if (!event.redacted) {
-				console.log(`[Thinking] ${event.reasoning}`);
+		case "content_start":
+			if (event.contentType === "text") {
+				process.stdout.write(event.text ?? "");
+			} else if (event.contentType === "reasoning") {
+				if (!event.redacted) {
+					console.log(`[Thinking] ${event.reasoning ?? ""}`);
+				}
+			} else if (event.contentType === "tool") {
+				console.log(`\n[Tool] Calling ${event.toolName}...`);
 			}
 			break;
-		case "tool_call_start":
-			console.log(`\n[Tool] Calling ${event.toolName}...`);
-			break;
-		case "tool_call_end":
-			if (event.error) {
-				console.log(`[Tool] ${event.toolName} failed: ${event.error}`);
-			} else {
-				console.log(
-					`[Tool] ${event.toolName} completed in ${event.durationMs}ms`,
-				);
+		case "content_end":
+			if (event.contentType === "tool") {
+				if (event.error) {
+					console.log(`[Tool] ${event.toolName} failed: ${event.error}`);
+				} else {
+					console.log(
+						`[Tool] ${event.toolName} completed in ${event.durationMs}ms`,
+					);
+				}
 			}
 			break;
 		case "usage":

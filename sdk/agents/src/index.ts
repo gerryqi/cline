@@ -275,6 +275,9 @@ export {
 	// Config Types
 	type AgentConfig,
 	AgentConfigSchema,
+	type AgentContentEndEvent,
+	type AgentContentStartEvent,
+	type AgentContentType,
 	// Event Types
 	type AgentDoneEvent,
 	type AgentErrorEvent,
@@ -310,12 +313,8 @@ export {
 	type AgentHookTurnStartContext,
 	type AgentIterationEndEvent,
 	type AgentIterationStartEvent,
-	type AgentReasoningEvent,
 	type AgentResult,
 	AgentResultSchema,
-	type AgentTextEvent,
-	type AgentToolCallEndEvent,
-	type AgentToolCallStartEvent,
 	type AgentUsage,
 	type AgentUsageEvent,
 	AgentUsageSchema,

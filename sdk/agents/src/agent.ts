@@ -482,7 +482,8 @@ export class Agent {
 					{
 						onToolCallStart: async (call) => {
 							this.emit({
-								type: "tool_call_start",
+								type: "content_start",
+								contentType: "tool",
 								toolName: call.name,
 								toolCallId: call.id,
 								input: call.input,
@@ -527,7 +528,8 @@ export class Agent {
 						},
 						onToolCallEnd: async (record) => {
 							this.emit({
-								type: "tool_call_end",
+								type: "content_end",
+								contentType: "tool",
 								toolName: record.name,
 								toolCallId: record.id,
 								output: record.output,
@@ -722,7 +724,12 @@ export class Agent {
 					if (chunk.signature) {
 						textSignature = chunk.signature;
 					}
-					this.emit({ type: "text", text: chunk.text, accumulated: text });
+					this.emit({
+						type: "content_start",
+						contentType: "text",
+						text: chunk.text,
+						accumulated: text,
+					});
 					break;
 
 				case "reasoning":
@@ -734,7 +741,8 @@ export class Agent {
 						redactedReasoningBlocks.push(chunk.redacted_data);
 					}
 					this.emit({
-						type: "reasoning",
+						type: "content_start",
+						contentType: "reasoning",
 						reasoning: chunk.reasoning,
 						redacted: !!chunk.redacted_data,
 					});
@@ -763,7 +771,19 @@ export class Agent {
 
 		// Add assistant message to history
 		const assistantContent: ContentBlock[] = [];
+		if (text) {
+			this.emit({
+				type: "content_end",
+				contentType: "text",
+				text,
+			});
+		}
 		if (reasoning || redactedReasoningBlocks.length > 0) {
+			this.emit({
+				type: "content_end",
+				contentType: "reasoning",
+				reasoning,
+			});
 			assistantContent.push({
 				type: "thinking",
 				thinking: reasoning,

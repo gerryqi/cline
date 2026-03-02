@@ -216,54 +216,52 @@ export const ToolCallRecordSchema = z.object({
  * Events emitted during agent execution
  */
 export type AgentEvent =
-	| AgentTextEvent
-	| AgentReasoningEvent
-	| AgentToolCallStartEvent
-	| AgentToolCallEndEvent
+	| AgentContentStartEvent
+	| AgentContentEndEvent
 	| AgentIterationStartEvent
 	| AgentIterationEndEvent
 	| AgentUsageEvent
 	| AgentDoneEvent
 	| AgentErrorEvent;
 
-export interface AgentTextEvent {
-	type: "text";
+export type AgentContentType = "text" | "reasoning" | "tool";
+
+export interface AgentContentStartEvent {
+	type: "content_start";
+	contentType: AgentContentType;
 	/** The text chunk received from the model */
-	text: string;
+	text?: string;
 	/** Accumulated text so far in this turn */
 	accumulated?: string;
-}
-
-export interface AgentReasoningEvent {
-	type: "reasoning";
 	/** The reasoning/thinking text from the model */
-	reasoning: string;
+	reasoning?: string;
 	/** Whether this is redacted reasoning */
 	redacted?: boolean;
-}
-
-export interface AgentToolCallStartEvent {
-	type: "tool_call_start";
 	/** Name of the tool being called */
-	toolName: string;
+	toolName?: string;
 	/** Unique identifier for this tool call */
-	toolCallId: string;
+	toolCallId?: string;
 	/** Input being passed to the tool */
-	input: unknown;
+	input?: unknown;
 }
 
-export interface AgentToolCallEndEvent {
-	type: "tool_call_end";
-	/** Name of the tool that was called */
-	toolName: string;
+export interface AgentContentEndEvent {
+	type: "content_end";
+	contentType: AgentContentType;
+	/** Final text generated for this turn */
+	text?: string;
+	/** Final reasoning/thinking text generated for this turn */
+	reasoning?: string;
+	/** Name of the tool that completed */
+	toolName?: string;
 	/** Unique identifier for this tool call */
-	toolCallId: string;
+	toolCallId?: string;
 	/** Output from the tool */
-	output: unknown;
+	output?: unknown;
 	/** Error message if the tool failed */
 	error?: string;
-	/** Time taken in milliseconds */
-	durationMs: number;
+	/** Time taken in milliseconds for tool content */
+	durationMs?: number;
 }
 
 export interface AgentIterationStartEvent {

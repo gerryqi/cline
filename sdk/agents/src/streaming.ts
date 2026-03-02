@@ -19,8 +19,8 @@ import type { AgentConfig, AgentEvent, AgentResult } from "./types.js";
  * const stream = streamRun(agent, "Hello")
  *
  * for await (const event of stream) {
- *   if (event.type === "text") {
- *     process.stdout.write(event.text)
+ *   if (event.type === "content_start" && event.contentType === "text") {
+ *     process.stdout.write(event.text ?? "")
  *   }
  * }
  *
@@ -186,14 +186,15 @@ class AgentStreamImpl implements AgentStream {
  *
  * for await (const event of stream) {
  *   switch (event.type) {
- *     case "text":
- *       process.stdout.write(event.text)
+ *     case "content_start":
+ *       if (event.contentType === "text") {
+ *         process.stdout.write(event.text ?? "")
+ *       }
  *       break
- *     case "tool_call_start":
- *       console.log(`\nCalling ${event.toolName}...`)
- *       break
- *     case "tool_call_end":
- *       console.log(`Done (${event.durationMs}ms)`)
+ *     case "content_end":
+ *       if (event.contentType === "tool") {
+ *         console.log(`Done (${event.durationMs}ms)`)
+ *       }
  *       break
  *   }
  * }
@@ -310,8 +311,8 @@ export async function* streamText(
 	const stream = streamRun(agent, message);
 
 	for await (const event of stream) {
-		if (event.type === "text") {
-			yield event.text;
+		if (event.type === "content_start" && event.contentType === "text") {
+			yield event.text ?? "";
 		}
 	}
 }

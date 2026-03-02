@@ -674,7 +674,7 @@ async function runAgent(prompt: string, config: Config): Promise<void> {
 		if (event.type === "error") {
 			errorAlreadyReported = true;
 		}
-		if (event.type === "reasoning") {
+		if (event.type === "content_start" && event.contentType === "reasoning") {
 			reasoningChunkCount += 1;
 			if (event.redacted) {
 				redactedReasoningChunkCount += 1;
@@ -819,54 +819,64 @@ function handleEvent(event: AgentEvent, _config: Config): void {
 			}
 			break;
 
-		case "text":
-			if (activeInlineStream !== "text") {
-				closeInlineStreamIfNeeded();
-				activeInlineStream = "text";
-			}
-			write(event.text);
-			inlineStreamHasOutput = true;
-			break;
-
-		case "reasoning":
-			if (activeInlineStream !== "reasoning") {
-				closeInlineStreamIfNeeded();
-				write(`${c.dim}[thinking] ${c.reset}`);
-				activeInlineStream = "reasoning";
-				inlineStreamHasOutput = true;
-			}
-			if (event.redacted && !event.reasoning) {
-				write(`${c.dim}[redacted]${c.reset}`);
-				inlineStreamHasOutput = true;
-				break;
-			}
-			write(`${c.dim}${event.reasoning}${c.reset}`);
-			inlineStreamHasOutput = true;
-			break;
-
-		case "tool_call_start": {
-			closeInlineStreamIfNeeded();
-			const inputStr = formatToolInput(event.toolName, event.input);
-			write(
-				`\n${c.dim}[${event.toolName}]${c.reset} ${c.cyan}${inputStr}${c.reset}`,
-			);
-			break;
-		}
-
-		case "tool_call_end": {
-			closeInlineStreamIfNeeded();
-			if (event.error) {
-				write(` ${c.red}error: ${event.error}${c.reset}\n`);
-			} else {
-				const outputStr = formatToolOutput(event.output);
-				if (outputStr) {
-					write(`\n  ${c.dim}-> ${outputStr}${c.reset}\n`);
-				} else {
-					write(` ${c.green}ok${c.reset}\n`);
+		case "content_start":
+			switch (event.contentType) {
+				case "text":
+					if (activeInlineStream !== "text") {
+						closeInlineStreamIfNeeded();
+						activeInlineStream = "text";
+					}
+					write(event.text ?? "");
+					inlineStreamHasOutput = true;
+					break;
+				case "reasoning":
+					if (activeInlineStream !== "reasoning") {
+						closeInlineStreamIfNeeded();
+						write(`${c.dim}[thinking] ${c.reset}`);
+						activeInlineStream = "reasoning";
+						inlineStreamHasOutput = true;
+					}
+					if (event.redacted && !event.reasoning) {
+						write(`${c.dim}[redacted]${c.reset}`);
+						inlineStreamHasOutput = true;
+						break;
+					}
+					write(`${c.dim}${event.reasoning ?? ""}${c.reset}`);
+					inlineStreamHasOutput = true;
+					break;
+				case "tool": {
+					closeInlineStreamIfNeeded();
+					const toolName = event.toolName ?? "unknown_tool";
+					const inputStr = formatToolInput(toolName, event.input);
+					write(
+						`\n${c.dim}[${toolName}]${c.reset} ${c.cyan}${inputStr}${c.reset}`,
+					);
+					break;
 				}
 			}
 			break;
-		}
+
+		case "content_end":
+			switch (event.contentType) {
+				case "text":
+				case "reasoning":
+					closeInlineStreamIfNeeded();
+					break;
+				case "tool":
+					closeInlineStreamIfNeeded();
+					if (event.error) {
+						write(` ${c.red}error: ${event.error}${c.reset}\n`);
+					} else {
+						const outputStr = formatToolOutput(event.output);
+						if (outputStr) {
+							write(`\n  ${c.dim}-> ${outputStr}${c.reset}\n`);
+						} else {
+							write(` ${c.green}ok${c.reset}\n`);
+						}
+					}
+					break;
+			}
+			break;
 
 		case "done":
 			closeInlineStreamIfNeeded();

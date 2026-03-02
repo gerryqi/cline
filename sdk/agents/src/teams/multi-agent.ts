@@ -1320,8 +1320,15 @@ export class AgentTeamsRuntime {
 			return;
 		}
 
-		if (event.type === "tool_call_end" && !event.error) {
-			this.recordProgressStep(agentId, `Finished tool "${event.toolName}"`);
+		if (
+			event.type === "content_end" &&
+			event.contentType === "tool" &&
+			!event.error
+		) {
+			this.recordProgressStep(
+				agentId,
+				`Finished tool "${event.toolName ?? "unknown"}"`,
+			);
 			return;
 		}
 
