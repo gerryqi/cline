@@ -19,7 +19,21 @@
 			"suspicious": {
 				"noConfusingVoidType": "info",
 				"noExplicitAny": "info",
-				"noAssignInExpressions": "info"
+				"noAssignInExpressions": "info",
+				"noArrayIndexKey": "info",
+				"noUnknownAtRules": {
+					"level": "info",
+					"options": {
+						"ignore": [
+							"tailwind",
+							"layer",
+							"apply",
+							"responsive",
+							"screen",
+							"variants"
+						]
+					}
+				}
 			},
 			"style": {
 				"noNonNullAssertion": "info"
@@ -29,6 +43,11 @@
 	"javascript": {
 		"formatter": {
 			"quoteStyle": "double"
+		}
+	},
+	"css": {
+		"parser": {
+			"tailwindDirectives": true
 		}
 	},
 	"assist": {

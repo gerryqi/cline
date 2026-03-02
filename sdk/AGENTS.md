@@ -1,17 +1,18 @@
 ---
-description: Contributor and agent guide for the Cline packages workspace (Bun + TypeScript + Biome + Vitest).
+description: Contributor and agent guide for the Cline packages workspace (Bun + TypeScript + Biome + Vitest + Tauri/Next.js desktop app).
 globs: "*.ts,*.tsx,*.js,*.jsx,*.json,*.md"
 alwaysApply: true
 ---
 
 ## Scope
 
-This repository is a Bun workspace with four packages:
+This repository is a Bun workspace with five packages:
 
 - `llms` (`@cline/llms`)
 - `agents` (`@cline/agents`)
 - `core` (`@cline/core`)
 - `cli` (`@cline/cli`)
+- `desktop` (`@cline/desktop`)
 
 Primary goal: keep package boundaries clear and validate changes with typecheck, tests, and Biome.
 
@@ -20,7 +21,8 @@ Primary goal: keep package boundaries clear and validate changes with typecheck,
 - Runtime/tooling: Bun workspaces and scripts
 - Language/module format: TypeScript + ESM
 - Lint/format: Biome (`biome.json`)
-- Testing: Vitest in all packages (`llms`, `agents`, `core`, `cli`)
+- Testing: Vitest in SDK/CLI packages (`llms`, `agents`, `core`, `cli`)
+- Desktop validation: `desktop` package `typecheck`/`build` and Tauri build smoke checks
 - Build: package-local Bun build/tsc scripts from root workspace scripts
 
 Do not write new tests with `bun:test` in this repo. Use Vitest.
@@ -29,16 +31,30 @@ Do not write new tests with `bun:test` in this repo. Use Vitest.
 
 - Install deps: `bun install`
 - Build all packages: `bun run build`
-- Build one package: `bun run build:llms|build:agents|build:core|build:cli`
+- Build SDK + apps: `bun run build:apps`
+- Build one package: `bun run build:llms|build:agents|build:core|build:cli|build:desktop`
 - Regenerate model metadata: `bun run build:models`
 - Run CLI from source: `bun run dev:cli -- "<prompt>"`
+- Run desktop app from root (recommended): `bun run dev`
+- Run desktop app directly: `bun run dev:desktop`
 - Typecheck all packages: `bun run typecheck`
 - Run all tests: `bun run test`
-- Run package tests: `bun run test:llms|test:agents|test:core|test:cli`
+- Run package tests: `bun run test:llms|test:agents|test:core|test:cli|test:desktop`
 - Lint + formatter check: `bun run check`
 - Lint only: `bun run lint`
 - Format check only: `bun run format`
 - Apply fixes: `bun run fix`
+
+## Desktop Commands
+
+Run these from `desktop/` for package-local desktop development:
+
+- Frontend dev server only: `bun run dev:web` (Next.js on port `3124`)
+- Tauri desktop dev: `bun run dev`
+- Build web assets: `bun run build`
+- Build desktop binary: `bun run build:binary`
+- Typecheck desktop package: `bun run typecheck`
+- Clean Next/Cargo outputs: `bun run clean`
 
 ## Testing Rules (Vitest)
 
@@ -54,8 +70,9 @@ Do not write new tests with `bun:test` in this repo. Use Vitest.
 - `agents/`: agent loop, tools, hooks, and multi-agent/team primitives
 - `core/`: runtime composition, sessions, storage, orchestration
 - `cli/`: executable app wiring `llms + agents + core`
+- `desktop/`: Tauri + Next.js desktop app wiring `llms + agents + core`
 
-When debugging end-to-end behavior, start at `cli/src/index.ts`, then follow into `core`, `agents`, and `llms`.
+When debugging end-to-end behavior, start at `cli/src/index.ts` (CLI flow) or `desktop/src-tauri/src/main.rs` (desktop flow), then follow into `core`, `agents`, and `llms`.
 
 ## Code Style and Hygiene
 

@@ -1,13 +1,14 @@
 # Cline SDK Packages
 
-This repository contains the SDK and CLI packages that power Cline-style agent runtimes.
+This repository contains the SDK, CLI, and desktop app packages that power Cline-style agent runtimes.
 
-It is organized as a Bun workspace with four main packages:
+It is organized as a Bun workspace with five main packages:
 
 - `@cline/llms`: model/provider selection and handler creation
 - `@cline/agents`: agent loop + tools + hooks + teams runtime primitives
 - `@cline/core`: stateful orchestration, sessions, storage, runtime assembly
 - `@cline/cli`: production CLI that composes the three SDK packages
+- `@cline/desktop`: Tauri desktop app that embeds a Next.js UI and composes the SDK packages
 
 ## Prerequisites
 
@@ -36,10 +37,14 @@ bun run build
 
 Useful workspace scripts (root `package.json`):
 
-- `bun run build` - install dependencies and build all packages (`llms -> agents -> core -> cli`)
-- `bun run build:llms|build:agents|build:core|build:cli` - build one workspace package
+- `bun run build` - build SDK packages (`llms -> agents -> core`)
+- `bun run build:apps` - build SDK packages plus app targets (`cli` + `desktop`)
+- `bun run build:llms|build:agents|build:core|build:cli|build:desktop` - build one workspace package
+- `bun run build:desktop` - build desktop web assets (`next build`)
 - `bun run build:models` - regenerate model metadata in `llms`
 - `bun run dev:cli -- "your prompt"` - run CLI from source
+- `bun run dev` - build SDK packages, then launch desktop app (`tauri dev`)
+- `bun run dev:desktop` - launch desktop app directly
 - `bun run typecheck` - typecheck all packages
 - `bun run clean` - remove build outputs across packages
 
@@ -56,10 +61,10 @@ Tip: run `bun run fix` before opening a PR, then `bun run check` to verify every
 
 ## Testing (Vitest)
 
-All packages in this workspace use Vitest for testing (`llms`, `agents`, `core`, and `cli`).
+SDK/CLI packages in this workspace use Vitest for testing (`llms`, `agents`, `core`, and `cli`).
 
 - `bun run test` - run all package test suites from the repo root
-- `bun run test:llms|test:agents|test:core|test:cli` - run tests for one package
+- `bun run test:llms|test:agents|test:core|test:cli|test:desktop` - run tests for one package
 
 Package-level scripts also expose Vitest directly (for example `test:watch`, and in `cli`, `test:unit` and `test:e2e`).
 
@@ -97,12 +102,17 @@ Package-level scripts also expose Vitest directly (for example `test:watch`, and
 │       ├── session/
 │       ├── storage/
 │       └── server/
-└── cli/
+├── cli/
     ├── README.md
     ├── Doc.md
     └── src/
         ├── index.ts
         └── utils/
+└── desktop/
+    ├── README.md
+    ├── app/
+    ├── src/
+    └── src-tauri/
 ```
 
 ## Package Guide
@@ -181,9 +191,29 @@ Docs:
 - `cli/README.md` (usage-oriented)
 - `cli/Doc.md` (deep command/features breakdown)
 
-## How CLI Composes `llms`, `agents`, and `core`
+### `desktop/` (`@cline/desktop`)
 
-The CLI is the clearest end-to-end example in this repo.
+Purpose: desktop reference app that wires the SDK packages into a local GUI.
+
+The desktop package combines:
+
+- Next.js frontend (`desktop/app`, `desktop/src`)
+- Tauri host/runtime (`desktop/src-tauri`)
+- shared SDK packages (`@cline/llms`, `@cline/agents`, `@cline/core`)
+
+Common commands:
+
+- from repo root: `bun run dev` (recommended; builds SDK packages first, then starts desktop dev)
+- from repo root: `bun run dev:desktop` (starts desktop app directly)
+- from `desktop/`: `bun run dev:web` (frontend-only Next.js dev server on port `3124`)
+- from `desktop/`: `bun run build` (build web assets)
+- from `desktop/`: `bun run build:binary` (build desktop binary with Tauri)
+- from `desktop/`: `bun run typecheck`
+- from `desktop/`: `bun run clean` (clears Next + Cargo artifacts)
+
+## How Apps Compose `llms`, `agents`, and `core`
+
+The CLI and desktop app are the clearest end-to-end examples in this repo.
 
 Flow:
 
@@ -197,6 +227,11 @@ Flow:
    - constructs tools (`createBuiltinTools`, spawn tool helpers)
    - creates and runs the `Agent` loop (`agent.run`, `agent.continue`)
    - processes tool calls/hooks/streaming events
+
+Desktop entry points to follow:
+
+- frontend: `desktop/app/` and `desktop/src/`
+- tauri backend/runtime bridge: `desktop/src-tauri/src/main.rs`
 
 Minimal composition sketch:
 
@@ -227,6 +262,6 @@ console.log(result.text)
 ## Navigation Tips
 
 - Read each package `README.md` first, then `ARCHITECTURE.md`/`DOC.md` files.
-- Follow imports from `cli/src/index.ts` to understand package boundaries.
+- Follow imports from `cli/src/index.ts` and `desktop/src-tauri/src/main.rs` to understand package boundaries.
 - Prefer `src/` for implementation and `dist/` only for built output verification.
 - Start debugging integration behavior from `cli/src/index.ts`, then drill into `core/src/runtime`, `agents/src/agent.ts`, and `llms/src/sdk.ts`.
