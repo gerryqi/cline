@@ -4,13 +4,7 @@
  * The main class for building and running agentic loops with LLMs.
  */
 
-import {
-	type ApiHandler,
-	type ApiStreamChunk,
-	type ContentBlock,
-	createHandler,
-	type Message,
-} from "@cline/llms/providers";
+import { providers } from "@cline/llms";
 import {
 	type AgentExtensionRunner,
 	createExtensionRunner,
@@ -81,9 +75,9 @@ export class Agent {
 		>
 	> &
 		AgentConfig;
-	private handler: ApiHandler;
+	private handler: providers.ApiHandler;
 	private toolRegistry: Map<string, Tool>;
-	private messages: Message[] = [];
+	private messages: providers.Message[] = [];
 	private conversationId: string;
 	private agentId: string;
 	private parentAgentId: string | null;
@@ -114,7 +108,7 @@ export class Agent {
 		this.toolRegistry = createToolRegistry([]);
 
 		// Create handler
-		this.handler = createHandler({
+		this.handler = providers.createHandler({
 			providerId: config.providerId,
 			modelId: config.modelId,
 			apiKey: config.apiKey,
@@ -185,7 +179,7 @@ export class Agent {
 	/**
 	 * Get the current conversation messages
 	 */
-	getMessages(): Message[] {
+	getMessages(): providers.Message[] {
 		return [...this.messages];
 	}
 
@@ -770,7 +764,7 @@ export class Agent {
 		}
 
 		// Add assistant message to history
-		const assistantContent: ContentBlock[] = [];
+		const assistantContent: providers.ContentBlock[] = [];
 		if (text) {
 			this.emit({
 				type: "content_end",
@@ -830,7 +824,7 @@ export class Agent {
 	 * Process a tool call streaming chunk
 	 */
 	private processToolCallChunk(
-		chunk: ApiStreamChunk & { type: "tool_calls" },
+		chunk: providers.ApiStreamChunk & { type: "tool_calls" },
 		pendingMap: Map<
 			string,
 			{ name?: string; arguments: string; signature?: string }
@@ -906,8 +900,8 @@ export class Agent {
 		_calls: PendingToolCall[],
 		results: ToolCallRecord[],
 		iteration: number,
-	): Message {
-		const content: ContentBlock[] = [];
+	): providers.Message {
+		const content: providers.ContentBlock[] = [];
 
 		// Add tool results
 		for (const result of results) {
@@ -1261,7 +1255,7 @@ export class Agent {
 
 	private async invokeExtensionBeforeAgentStart(payload: unknown): Promise<{
 		systemPrompt: string;
-		appendMessages: Message[];
+		appendMessages: providers.Message[];
 		control?: AgentHookControl;
 	}> {
 		try {

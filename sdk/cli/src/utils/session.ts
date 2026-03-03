@@ -9,7 +9,7 @@ import {
 	type SessionManifest,
 	SqliteSessionStore,
 } from "@cline/core/server";
-import type { Message } from "@cline/llms/providers";
+import type { providers as LlmsProviders } from "@cline/llms";
 
 const store = new SqliteSessionStore();
 const coreSessions = new CoreSessionService(store);
@@ -87,7 +87,7 @@ export function onTeamTaskEnd(
 	agentId: string,
 	status: SessionManifest["status"],
 	summary?: string,
-	messages?: Message[],
+	messages?: LlmsProviders.Message[],
 ): void {
 	coreSessions.onTeamTaskEnd(agentId, status, summary, messages);
 }

@@ -1,17 +1,11 @@
-import {
-	type ProviderConfig,
-	type ProviderSettings,
-	ProviderSettingsSchema,
-	toProviderConfig,
-} from "@cline/llms/providers";
+import { providers } from "@cline/llms";
 import { z } from "zod";
 
-export {
-	type ProviderConfig,
-	type ProviderSettings,
-	ProviderSettingsSchema,
-	toProviderConfig,
-};
+export type ProviderConfig = providers.ProviderConfig;
+export type ProviderSettings = providers.ProviderSettings;
+export const ProviderSettingsSchema: z.ZodType<ProviderSettings> =
+	providers.ProviderSettingsSchema;
+export const toProviderConfig = providers.toProviderConfig;
 
 export interface StoredProviderSettingsEntry {
 	settings: ProviderSettings;
@@ -26,7 +20,7 @@ export interface StoredProviderSettings {
 
 export const StoredProviderSettingsEntrySchema: z.ZodType<StoredProviderSettingsEntry> =
 	z.object({
-		settings: ProviderSettingsSchema,
+		settings: providers.ProviderSettingsSchema,
 		updatedAt: z.string().datetime(),
 	});
 

@@ -4,7 +4,7 @@
  * Functions for creating tools with proper typing.
  */
 
-import type { ToolDefinition } from "@cline/llms/providers";
+import type { providers as LlmsProviders } from "@cline/llms";
 import { z } from "zod";
 import { zodToJsonSchema } from "../default-tools/zod-utils.js";
 import type { JsonSchema, Tool, ToolContext } from "../types.js";
@@ -80,7 +80,7 @@ export function createTool<TInput, TOutput>(config: {
  * This transforms our internal Tool format into the format expected
  * by the provider's API.
  */
-export function toToolDefinition(tool: Tool): ToolDefinition {
+export function toToolDefinition(tool: Tool): LlmsProviders.ToolDefinition {
 	return {
 		name: tool.name,
 		description: tool.description,
@@ -95,6 +95,8 @@ export function toToolDefinition(tool: Tool): ToolDefinition {
 /**
  * Convert an array of Tools to ToolDefinitions
  */
-export function toToolDefinitions(tools: Tool[]): ToolDefinition[] {
+export function toToolDefinitions(
+	tools: Tool[],
+): LlmsProviders.ToolDefinition[] {
 	return tools.map(toToolDefinition);
 }

@@ -8,6 +8,10 @@ The desktop app is split into three layers:
 2. **Desktop Runtime (Tauri/Rust)**: process orchestration and event bridge.
 3. **Execution Engine (CLI + Agents)**: actual agent/task execution with hooks.
 
+Boundary note:
+- SDK imports are root-only (`@cline/llms`, `@cline/agents`, `@cline/core`)
+- Node-only core services remain scoped to `@cline/core/server` in runtime hosts
+
 ## Layer Details
 
 ### 1) Frontend

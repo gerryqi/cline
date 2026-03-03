@@ -12,6 +12,16 @@
 - Tracks progress via lifecycle hook events (`tool_call`, `tool_result`, `agent_end`, `session_shutdown`).
 - Persists shared session registry in SQLite with optimistic status locking.
 
+## SDK Import Boundary
+
+Desktop consumes SDK packages through root imports:
+
+- `@cline/llms`
+- `@cline/agents`
+- `@cline/core`
+
+Node-specific runtime services remain behind `@cline/core/server` and are consumed by CLI/runtime hosts, not frontend UI modules.
+
 ## Scripts
 
 From `packages/desktop`:

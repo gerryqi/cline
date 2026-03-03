@@ -48,7 +48,7 @@ import {
 	type SessionManifest,
 	SessionSource,
 } from "@cline/core/server";
-import { getLiveModelsCatalog } from "@cline/llms/providers";
+import { providers } from "@cline/llms";
 import { version } from "../package.json";
 import {
 	appendHookAudit,
@@ -1356,7 +1356,7 @@ async function main(): Promise<void> {
 
 	let knownModels: Config["knownModels"];
 	try {
-		const liveCatalog = await getLiveModelsCatalog();
+		const liveCatalog = await providers.getLiveModelsCatalog();
 		knownModels = liveCatalog[provider];
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);

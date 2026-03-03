@@ -1,8 +1,4 @@
-import type {
-	Message,
-	TextContent,
-	ToolResultContent,
-} from "@cline/llms/providers";
+import type { providers as LlmsProviders } from "@cline/llms";
 
 const DEFAULT_MAX_TOOL_RESULT_CHARS = 50_000;
 const TARGET_TOOL_NAMES = new Set([
@@ -29,7 +25,7 @@ export class MessageBuilder {
 		private readonly targetToolNames = TARGET_TOOL_NAMES,
 	) {}
 
-	buildForApi(messages: Message[]): Message[] {
+	buildForApi(messages: LlmsProviders.Message[]): LlmsProviders.Message[] {
 		const toolNameById = this.buildToolNameMap(messages);
 		const readPathsByToolUseId = this.buildReadPathsFromToolUseMap(
 			messages,
@@ -93,7 +89,9 @@ export class MessageBuilder {
 		});
 	}
 
-	private buildToolNameMap(messages: Message[]): Map<string, string> {
+	private buildToolNameMap(
+		messages: LlmsProviders.Message[],
+	): Map<string, string> {
 		const toolNameById = new Map<string, string>();
 
 		for (const message of messages) {
@@ -113,7 +111,7 @@ export class MessageBuilder {
 	}
 
 	private buildReadPathsFromToolUseMap(
-		messages: Message[],
+		messages: LlmsProviders.Message[],
 		toolNameById: Map<string, string>,
 	): Map<string, string[]> {
 		const readPathsByToolUseId = new Map<string, string[]>();
@@ -144,7 +142,7 @@ export class MessageBuilder {
 	}
 
 	private buildLatestReadToolUseByPath(
-		messages: Message[],
+		messages: LlmsProviders.Message[],
 		toolNameById: Map<string, string>,
 		readPathsByToolUseId: Map<string, string[]>,
 	): Map<string, string> {
@@ -182,7 +180,7 @@ export class MessageBuilder {
 	}
 
 	private getReadResultRecord(
-		block: ToolResultContent,
+		block: LlmsProviders.ToolResultContent,
 		fallbackPaths: string[] | undefined,
 	): ReadResultRecord | undefined {
 		const parsedPaths = this.extractReadPathsFromToolResultContent(
@@ -225,7 +223,7 @@ export class MessageBuilder {
 	}
 
 	private extractReadPathsFromToolResultContent(
-		content: ToolResultContent["content"],
+		content: LlmsProviders.ToolResultContent["content"],
 	): string[] {
 		if (typeof content !== "string") {
 			return [];
@@ -275,9 +273,9 @@ export class MessageBuilder {
 	}
 
 	private replaceOutdatedReadContent(
-		content: ToolResultContent["content"],
+		content: LlmsProviders.ToolResultContent["content"],
 		outdatedPaths: string[],
-	): ToolResultContent["content"] {
+	): LlmsProviders.ToolResultContent["content"] {
 		const outdatedPathSet = new Set(outdatedPaths);
 
 		if (typeof content === "string") {
@@ -298,7 +296,7 @@ export class MessageBuilder {
 			);
 			if (replaced === null) {
 				return {
-					...(entry as TextContent),
+					...(entry as LlmsProviders.TextContent),
 					text: OUTDATED_FILE_CONTENT,
 				};
 			}
@@ -306,7 +304,7 @@ export class MessageBuilder {
 				return entry;
 			}
 			return {
-				...(entry as TextContent),
+				...(entry as LlmsProviders.TextContent),
 				text: replaced,
 			};
 		});
@@ -381,8 +379,8 @@ export class MessageBuilder {
 	}
 
 	private truncateToolResultContent(
-		content: ToolResultContent["content"],
-	): ToolResultContent["content"] {
+		content: LlmsProviders.ToolResultContent["content"],
+	): LlmsProviders.ToolResultContent["content"] {
 		if (typeof content === "string") {
 			return this.truncateMiddle(content);
 		}
@@ -398,7 +396,7 @@ export class MessageBuilder {
 			}
 
 			return {
-				...(entry as TextContent),
+				...(entry as LlmsProviders.TextContent),
 				text,
 			};
 		});

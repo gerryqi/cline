@@ -1,6 +1,6 @@
 "use client";
 
-import { CLINE_DEFAULT_MODEL } from "@cline/llms/models";
+import { models } from "@cline/llms";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -39,7 +39,7 @@ export const DEFAULT_CHAT_CONFIG: ChatSessionConfig = {
 	workspaceRoot: "",
 	cwd: "",
 	provider: "cline",
-	model: CLINE_DEFAULT_MODEL,
+	model: models.CLINE_DEFAULT_MODEL,
 	apiKey: "",
 	systemPrompt: DEFAULT_SYSTEM_PROMPT,
 	maxIterations: 10,

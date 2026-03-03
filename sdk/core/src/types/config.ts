@@ -1,12 +1,12 @@
 import type { AgentHooks, HookErrorMode, TeamEvent, Tool } from "@cline/agents";
-import type { ModelInfo } from "@cline/llms/providers";
+import type { providers as LlmsProviders } from "@cline/llms";
 
 export interface CoreModelConfig {
 	providerId: string;
 	modelId: string;
 	apiKey?: string;
 	baseUrl?: string;
-	knownModels?: Record<string, ModelInfo>;
+	knownModels?: Record<string, LlmsProviders.ModelInfo>;
 	/**
 	 * Request model-side thinking/reasoning when supported.
 	 */

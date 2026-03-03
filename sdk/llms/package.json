@@ -10,34 +10,6 @@
 		".": {
 			"import": "./dist/index.js",
 			"types": "./dist/index.d.ts"
-		},
-		"./sdk": {
-			"import": "./dist/sdk.js",
-			"types": "./dist/sdk.d.ts"
-		},
-		"./types": {
-			"import": "./dist/types.js",
-			"types": "./dist/types.d.ts"
-		},
-		"./providers": {
-			"import": "./dist/providers/index.js",
-			"types": "./dist/providers/index.d.ts"
-		},
-		"./models": {
-			"import": "./dist/models/index.js",
-			"types": "./dist/models/index.d.ts"
-		},
-		"./providers/handlers/*": {
-			"import": "./dist/providers/handlers/*.js",
-			"types": "./dist/providers/handlers/*.d.ts"
-		},
-		"./models/providers/*": {
-			"import": "./dist/models/providers/*.js",
-			"types": "./dist/models/providers/*.d.ts"
-		},
-		"./models/schemas": {
-			"import": "./dist/models/schemas/index.js",
-			"types": "./dist/models/schemas/index.d.ts"
 		}
 	},
 	"files": [

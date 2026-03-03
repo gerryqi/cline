@@ -53,8 +53,12 @@ Run these from `desktop/` for package-local desktop development:
 - Tauri desktop dev: `bun run dev`
 - Build web assets: `bun run build`
 - Build desktop binary: `bun run build:binary`
-- Typecheck desktop package: `bun run typecheck`
+- Typecheck desktop package: `bun run typecheck` (runs `next typegen && tsc --noEmit`)
 - Clean Next/Cargo outputs: `bun run clean`
+
+Desktop TypeScript note:
+- Include `.next/types/**/*.ts` for generated Next route/types.
+- Do not include `.next/dev/types/**/*.ts` in `tsconfig.json` (dev-generated validator files can produce unstable `@ts-expect-error` diagnostics).
 
 ## Testing Rules (Vitest)
 

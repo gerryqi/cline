@@ -14,7 +14,7 @@ import type {
 	SubAgentEndContext,
 	SubAgentStartContext,
 } from "@cline/agents";
-import type { Message } from "@cline/llms/providers";
+import type { providers as LlmsProviders } from "@cline/llms";
 import { z } from "zod";
 import type { SqliteSessionStore } from "../storage/sqlite-session-store";
 import { SessionSource, type SessionStatus } from "../types/common";
@@ -652,7 +652,10 @@ export class CoreSessionService {
 		appendFileSync(path, `${line}\n`, "utf8");
 	}
 
-	persistSessionMessages(sessionId: string, messages: Message[]): void {
+	persistSessionMessages(
+		sessionId: string,
+		messages: LlmsProviders.Message[],
+	): void {
 		const row = this.store.queryOne<{ messages_path?: string | null }>(
 			`SELECT messages_path FROM sessions WHERE session_id = ?`,
 			[sessionId],
@@ -799,7 +802,7 @@ export class CoreSessionService {
 		agentId: string,
 		status: SessionStatus,
 		summary?: string,
-		messages?: Message[],
+		messages?: LlmsProviders.Message[],
 	): void {
 		const queue = this.teamTaskSessionsByAgent.get(agentId);
 		if (!queue || queue.length === 0) {

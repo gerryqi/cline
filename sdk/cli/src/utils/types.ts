@@ -1,12 +1,12 @@
 import type { ToolPolicy } from "@cline/agents";
 import type { CoreSessionConfig, SessionManifest } from "@cline/core/server";
-import type { Message, ModelInfo } from "@cline/llms/providers";
+import type { providers as LlmsProviders } from "@cline/llms";
 
 export type CliOutputMode = "text" | "json";
 
 export interface Config extends CoreSessionConfig {
 	apiKey: string;
-	knownModels?: Record<string, ModelInfo>;
+	knownModels?: Record<string, LlmsProviders.ModelInfo>;
 	systemPrompt: string;
 	thinking: boolean;
 	enableSpawnAgent: boolean;
@@ -34,7 +34,7 @@ export interface ActiveCliSession {
 export interface StoredApiMessages {
 	version: 1;
 	updated_at: string;
-	messages: Message[];
+	messages: LlmsProviders.Message[];
 }
 
 export interface SessionDbRow {

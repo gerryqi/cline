@@ -5,7 +5,7 @@
  * for agent configuration, tools, events, and results.
  */
 
-import type { Message, ModelInfo } from "@cline/llms/providers";
+import type { providers as LlmsProviders } from "@cline/llms";
 import { z } from "zod";
 
 // =============================================================================
@@ -384,7 +384,7 @@ export interface AgentHookTurnStartContext {
 	conversationId: string;
 	parentAgentId: string | null;
 	iteration: number;
-	messages: Message[];
+	messages: LlmsProviders.Message[];
 }
 
 export interface AgentHookTurnEndContext {
@@ -453,7 +453,7 @@ export interface AgentExtensionFlag {
 
 export interface AgentExtensionMessageRenderer {
 	name: string;
-	render: (message: Message) => string;
+	render: (message: LlmsProviders.Message) => string;
 }
 
 export interface AgentExtensionProvider {
@@ -496,13 +496,13 @@ export interface AgentExtensionBeforeAgentStartContext {
 	parentAgentId: string | null;
 	iteration: number;
 	systemPrompt: string;
-	messages: Message[];
+	messages: LlmsProviders.Message[];
 }
 
 export interface AgentExtensionBeforeAgentStartControl
 	extends AgentHookControl {
 	systemPrompt?: string;
-	appendMessages?: Message[];
+	appendMessages?: LlmsProviders.Message[];
 }
 
 export interface AgentExtensionApi {
@@ -647,7 +647,7 @@ export interface AgentResult {
 	/** Aggregated token usage and cost */
 	usage: AgentUsage;
 	/** Full conversation history */
-	messages: Message[];
+	messages: LlmsProviders.Message[];
 	/** All tool calls made during execution */
 	toolCalls: ToolCallRecord[];
 	/** Number of loop iterations */
@@ -658,7 +658,7 @@ export interface AgentResult {
 	model: {
 		id: string;
 		provider: string;
-		info?: ModelInfo;
+		info?: LlmsProviders.ModelInfo;
 	};
 	/** Start time of the run */
 	startedAt: Date;
@@ -671,14 +671,14 @@ export interface AgentResult {
 export const AgentResultSchema = z.object({
 	text: z.string(),
 	usage: AgentUsageSchema,
-	messages: z.array(z.custom<Message>()),
+	messages: z.array(z.custom<LlmsProviders.Message>()),
 	toolCalls: z.array(ToolCallRecordSchema),
 	iterations: z.number(),
 	finishReason: AgentFinishReasonSchema,
 	model: z.object({
 		id: z.string(),
 		provider: z.string(),
-		info: z.custom<ModelInfo>().optional(),
+		info: z.custom<LlmsProviders.ModelInfo>().optional(),
 	}),
 	startedAt: z.date(),
 	endedAt: z.date(),
@@ -715,7 +715,7 @@ export interface AgentConfig {
 	/** Additional headers for API requests */
 	headers?: Record<string, string>;
 	/** Optional provider model catalog overrides */
-	knownModels?: Record<string, ModelInfo>;
+	knownModels?: Record<string, LlmsProviders.ModelInfo>;
 
 	// -------------------------------------------------------------------------
 	// Agent Behavior
@@ -823,7 +823,7 @@ export const AgentConfigSchema = z.object({
 	apiKey: z.string().optional(),
 	baseUrl: z.string().url().optional(),
 	headers: z.record(z.string()).optional(),
-	knownModels: z.record(z.custom<ModelInfo>()).optional(),
+	knownModels: z.record(z.custom<LlmsProviders.ModelInfo>()).optional(),
 
 	// Agent Behavior
 	systemPrompt: z.string(),
@@ -937,9 +937,7 @@ export interface ProcessedTurn {
 // Re-exports from providers for convenience
 // =============================================================================
 
-export type {
-	ContentBlock,
-	Message,
-	ModelInfo,
-	ToolDefinition,
-} from "@cline/llms/providers";
+export type ContentBlock = LlmsProviders.ContentBlock;
+export type Message = LlmsProviders.Message;
+export type ModelInfo = LlmsProviders.ModelInfo;
+export type ToolDefinition = LlmsProviders.ToolDefinition;

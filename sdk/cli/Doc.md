@@ -697,7 +697,7 @@ When the lead agent calls `spawn_agent`, the hook handler inserts a record into 
 
 ### Provider & Model Configuration
 
-**Source:** `src/index.ts` → `main()`, `getLiveModelsCatalog` from `@cline/llms/providers`
+**Source:** `src/index.ts` → `main()`, `getLiveModelsCatalog` from `@cline/llms`
 
 #### Provider Selection
 

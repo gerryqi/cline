@@ -34,16 +34,16 @@ This document explains how `@cline/llms` is structured after consolidating the o
 
 ## Export Surfaces
 
-`package.json` exports the package in three layers:
+`package.json` exports a single public entrypoint:
 
 - `@cline/llms`
-  - SDK + config helpers
-- `@cline/llms/models`
-  - model-centric APIs (catalog, queries, registry)
-- `@cline/llms/providers`
-  - provider handler APIs (create handlers, register custom handlers, transforms, utils)
 
-This allows consumers to stay on one npm package while importing only the layer they need.
+Root exports include namespaces:
+
+- `models` for model-centric APIs (catalog, queries, registry)
+- `providers` for provider APIs (handler creation, registry, transforms, utils)
+
+Workspace consumers should treat `src/models/*` and `src/providers/*` as internal implementation modules.
 
 ## Core Boundaries
 
@@ -205,13 +205,13 @@ This is intentionally strict: config defines what is allowed, not just preferred
 
 - Package build: `bun run build` (TypeScript emit to `dist`)
 - Package typecheck: `bun run typecheck`
-- Root scripts call `llms` first, then downstream packages (`agents`, `cli`, `web`, `desktop`).
+- Root scripts call `llms` first, then downstream packages (`agents`, `core`, `cli`, `desktop`).
 
 ## Design Tradeoffs
 
 - Keeping `models/*` and `providers/*` as internal submodules preserves separation of concerns while removing multi-package overhead.
 - Single-package distribution simplifies dependency management for consumers.
-- Subpath exports maintain clean API boundaries and avoid forcing SDK-only usage.
+- A single root export keeps workspace boundaries explicit and avoids cross-package deep import sprawl.
 
 ## Future Improvements
 

@@ -7,7 +7,7 @@
 	"scripts": {
 		"dev:web": "next dev -p 3124 --turbo",
 		"build": "next build",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "next typegen && tsc --noEmit",
 		"clean": "rm -rf .next out node_modules dist && cargo clean",
 		"dev": "tauri dev",
 		"build:binary": "tauri build"

@@ -68,6 +68,21 @@ SDK/CLI packages in this workspace use Vitest for testing (`llms`, `agents`, `co
 
 Package-level scripts also expose Vitest directly (for example `test:watch`, and in `cli`, `test:unit` and `test:e2e`).
 
+## Workspace Import Boundaries
+
+Allowed cross-workspace imports:
+
+- `@cline/llms`
+- `@cline/agents`
+- `@cline/core`
+- `@cline/core/server` (intentional Node-runtime-only exception)
+
+Disallowed:
+
+- all other deep imports like `@cline/llms/*`, `@cline/agents/*`, `@cline/core/*` (except `@cline/core/server`)
+
+The boundary check is enforced by `bun run check:boundaries`.
+
 ## Repository Structure
 
 ```text
@@ -182,7 +197,7 @@ Purpose: executable reference implementation of the SDK stack.
 Use this package to see how the SDK packages are composed in a real app:
 
 - argument parsing + runtime config (`cli/src/index.ts`)
-- provider/model refresh (`@cline/llms/providers`)
+- provider/model refresh (`@cline/llms`)
 - runtime assembly/session management (`@cline/core/server`)
 - agent loop execution + tools + hooks (`@cline/agents`)
 
@@ -218,7 +233,7 @@ The CLI and desktop app are the clearest end-to-end examples in this repo.
 Flow:
 
 1. `@cline/llms`:
-   - fetches provider model metadata (`getLiveModelsCatalog`)
+   - fetches provider model metadata (`providers.getLiveModelsCatalog`)
    - picks provider/model defaults for the current run
 2. `@cline/core`:
    - builds runtime environment (`DefaultRuntimeBuilder`)
@@ -238,9 +253,9 @@ Minimal composition sketch:
 ```ts
 import { Agent, createBuiltinTools } from "@cline/agents"
 import { DefaultRuntimeBuilder } from "@cline/core/server"
-import { getLiveModelsCatalog } from "@cline/llms/providers"
+import { providers } from "@cline/llms"
 
-const catalog = await getLiveModelsCatalog()
+const catalog = await providers.getLiveModelsCatalog()
 const providerId = "anthropic"
 const modelId = catalog[providerId]?.[0]?.id ?? "claude-sonnet-4-6"
 

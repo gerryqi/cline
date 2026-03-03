@@ -2,6 +2,10 @@
 
 This document explains how `@cline/cli` consumes `@cline/core`, `@cline/agents`, and `@cline/llms`, with a focus on how streamed model output reaches the terminal.
 
+Workspace boundary rule:
+- use `@cline/llms` and `@cline/agents` root imports only
+- `@cline/core/server` is the one allowed deep import for Node runtime services
+
 ## Package Role
 
 `@cline/cli` is the executable shell around the agent runtime. It does four main jobs:
@@ -54,7 +58,7 @@ Two paths:
 - Direct in CLI:
   - `getLiveModelsCatalog()` to resolve/refresh provider model lists at startup.
 - Indirect through agents:
-  - `Agent` constructs a provider handler with `createHandler(...)` from `@cline/llms/providers`.
+  - `Agent` constructs a provider handler with `createHandler(...)` from `@cline/llms`.
   - Streaming chunks from handlers are normalized as `ApiStreamChunk` values.
 
 ## Runtime Composition Flow

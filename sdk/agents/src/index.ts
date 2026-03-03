@@ -350,14 +350,5 @@ export {
 // Re-exports from Dependencies
 // =============================================================================
 
-// Re-export commonly used types and functions from providers
-export {
-	type ApiHandler,
-	type ApiStream,
-	type ApiStreamChunk,
-	createHandler,
-	type ProviderConfig,
-} from "@cline/llms/providers";
-
-// Note: For model queries and information, import directly from @cline/llms/models:
-// import { getModel, queryModels, getModelsForProvider } from "@cline/llms/models"
+// Re-export grouped llms provider APIs.
+export { providers as llmsProviders } from "@cline/llms";

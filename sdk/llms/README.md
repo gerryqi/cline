@@ -4,16 +4,21 @@ Config-driven SDK for selecting, validating, and extending the providers/models 
 
 This package is the main LLM entrypoint in the monorepo:
 - `@cline/llms`: SDK orchestration + config
-- `@cline/llms/providers`: handler APIs and provider runtime config
-- `@cline/llms/models`: model catalog and registry APIs
+- `providers` namespace on `@cline/llms`: handler APIs and provider runtime config
+- `models` namespace on `@cline/llms`: model catalog and registry APIs
+
+## Workspace Import Boundary
+
+Within this workspace, import from `@cline/llms` only.
+Do not deep import `@cline/llms/*` subpaths.
 
 ## Canonical Provider Settings Schema
 
-`@cline/llms/providers` is the canonical source of truth for provider settings/config shapes used across packages:
+`@cline/llms` is the canonical source of truth for provider settings/config shapes used across packages:
 
-- User-facing schema: `ProviderSettingsSchema` and `ProviderSettings`
-- Runtime handler config: `ProviderConfig`
-- Conversion helper: `toProviderConfig(settings)`
+- User-facing schema: `providers.ProviderSettingsSchema` and `providers.ProviderSettings`
+- Runtime handler config: `providers.ProviderConfig`
+- Conversion helper: `providers.toProviderConfig(settings)`
 
 Upstream packages (`@cline/core`, `@cline/agents`, `@cline/cli`, desktop) should consume these types/functions rather than redefining provider settings schemas.
 
@@ -395,13 +400,9 @@ llms.registerModel({
 
 ## API Surface
 
-- `createLlmsSdk(config)`
-- `loadLlmsConfigFromFile(path)`
-- `defineLlmsConfig(config)`
-- `llms.createHandler(input)` / `llms.createHandlerAsync(input)`
-- `llms.registerProvider(input)`
-- `llms.registerModel(input)`
-- `llms.getProviders()`
-- `llms.getModels(providerId)`
-- `llms.isProviderConfigured(providerId)`
-- `llms.isModelConfigured(providerId, modelId)`
+Root exports are intentionally minimal and grouped:
+
+- SDK/config: `createLlmsSdk`, `defineLlmsConfig`, `loadLlmsConfigFromFile`
+- Models group: `models.*`
+- Providers group: `providers.*`
+- Shared SDK config types: `CustomProviderConfig`, `ProviderSelectionConfig`, `LlmsConfig`, `LlmsSdk`

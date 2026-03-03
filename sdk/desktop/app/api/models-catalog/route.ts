@@ -1,10 +1,4 @@
-import {
-	ANTHROPIC_MODELS,
-	CLINE_MODELS,
-	GEMINI_MODELS,
-	OPENAI_MODELS,
-} from "@cline/llms/models";
-import { getLiveModelsCatalog } from "@cline/llms/providers";
+import { models, providers } from "@cline/llms";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-static";
@@ -65,45 +59,45 @@ function uniqueSorted(values: string[]): string[] {
 export async function GET() {
 	const providerModels: Record<string, string[]> = {
 		cline: uniqueSorted([
-			...toModelIds(CLINE_MODELS),
+			...toModelIds(models.CLINE_MODELS),
 			...FALLBACK_PROVIDER_MODELS.cline,
 		]),
 		anthropic: uniqueSorted([
-			...toModelIds(ANTHROPIC_MODELS),
+			...toModelIds(models.ANTHROPIC_MODELS),
 			...FALLBACK_PROVIDER_MODELS.anthropic,
 		]),
 		openai: uniqueSorted([
-			...toModelIds(OPENAI_MODELS),
+			...toModelIds(models.OPENAI_MODELS),
 			...FALLBACK_PROVIDER_MODELS.openai,
 		]),
 		openrouter: uniqueSorted(FALLBACK_PROVIDER_MODELS.openrouter),
 		gemini: uniqueSorted([
-			...toModelIds(GEMINI_MODELS),
+			...toModelIds(models.GEMINI_MODELS),
 			...FALLBACK_PROVIDER_MODELS.gemini,
 		]),
 	};
 	const providerReasoningModels: Record<string, string[]> = {
 		cline: uniqueSorted([
-			...toReasoningModelIds(CLINE_MODELS),
+			...toReasoningModelIds(models.CLINE_MODELS),
 			...FALLBACK_PROVIDER_REASONING_MODELS.cline,
 		]),
 		anthropic: uniqueSorted([
-			...toReasoningModelIds(ANTHROPIC_MODELS),
+			...toReasoningModelIds(models.ANTHROPIC_MODELS),
 			...FALLBACK_PROVIDER_REASONING_MODELS.anthropic,
 		]),
 		openai: uniqueSorted([
-			...toReasoningModelIds(OPENAI_MODELS),
+			...toReasoningModelIds(models.OPENAI_MODELS),
 			...FALLBACK_PROVIDER_REASONING_MODELS.openai,
 		]),
 		openrouter: uniqueSorted(FALLBACK_PROVIDER_REASONING_MODELS.openrouter),
 		gemini: uniqueSorted([
-			...toReasoningModelIds(GEMINI_MODELS),
+			...toReasoningModelIds(models.GEMINI_MODELS),
 			...FALLBACK_PROVIDER_REASONING_MODELS.gemini,
 		]),
 	};
 
 	try {
-		const liveCatalog = await getLiveModelsCatalog();
+		const liveCatalog = await providers.getLiveModelsCatalog();
 		for (const [providerId, models] of Object.entries(liveCatalog)) {
 			const modelIds = toModelIds(models as Record<string, unknown>);
 			const reasoningModelIds = toReasoningModelIds(

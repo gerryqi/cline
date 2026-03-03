@@ -1,20 +1,7 @@
 "use client";
 
-import {
-	ANTHROPIC_MODELS,
-	ANTHROPIC_PROVIDER,
-	BEDROCK_MODELS,
-	BEDROCK_PROVIDER,
-	GEMINI_MODELS,
-	GEMINI_PROVIDER,
-} from "@cline/llms/models";
-import type { ProviderCapability } from "@cline/llms/providers";
-import { OPENAI_COMPATIBLE_PROVIDERS } from "@cline/llms/providers";
-import { createLlmsSdk } from "@cline/llms/sdk";
-import type {
-	CustomProviderConfig,
-	ProviderSelectionConfig,
-} from "@cline/llms/types";
+import type { CustomProviderConfig, ProviderSelectionConfig } from "@cline/llms";
+import { createLlmsSdk, models, providers } from "@cline/llms";
 import {
 	AlertCircle,
 	Braces,
@@ -105,7 +92,7 @@ const CAPABILITY_OPTIONS = [
 	"prompt_caching",
 ] as const;
 const PLAYGROUND_CAPABILITY_FROM_PROVIDER: Partial<
-	Record<ProviderCapability, string>
+	Record<providers.ProviderCapability, string>
 > = {
 	reasoning: "reasoning",
 	"prompt-cache": "prompt_caching",
@@ -173,7 +160,7 @@ function presetFromCollection(
 	provider: {
 		defaultModelId: string;
 		baseUrl?: string;
-		capabilities?: ProviderCapability[];
+		capabilities?: providers.ProviderCapability[];
 	},
 	models: Record<string, unknown>,
 ): BuiltInProviderPreset {
@@ -193,22 +180,23 @@ const BUILT_IN_PROVIDERS: BuiltInProviderPreset[] = [
 	presetFromCollection(
 		"anthropic",
 		"Anthropic",
-		ANTHROPIC_PROVIDER.provider,
-		ANTHROPIC_MODELS,
+		models.ANTHROPIC_PROVIDER.provider,
+		models.ANTHROPIC_MODELS,
 	),
 	presetFromCollection(
 		"bedrock",
 		"AWS Bedrock",
-		BEDROCK_PROVIDER.provider,
-		BEDROCK_MODELS,
+		models.BEDROCK_PROVIDER.provider,
+		models.BEDROCK_MODELS,
 	),
 	presetFromCollection(
 		"gemini",
 		"Google Gemini",
-		GEMINI_PROVIDER.provider,
-		GEMINI_MODELS,
+		models.GEMINI_PROVIDER.provider,
+		models.GEMINI_MODELS,
 	),
-	...Object.entries(OPENAI_COMPATIBLE_PROVIDERS).map(([id, defaults]) => ({
+	...Object.entries(providers.OPENAI_COMPATIBLE_PROVIDERS).map(
+		([id, defaults]) => ({
 		id,
 		label: BUILT_IN_PROVIDER_LABELS[id] ?? titleCaseProviderId(id),
 		models: sortModelList(
@@ -220,7 +208,8 @@ const BUILT_IN_PROVIDERS: BuiltInProviderPreset[] = [
 		capabilities: (defaults.capabilities ?? [])
 			.map((capability) => PLAYGROUND_CAPABILITY_FROM_PROVIDER[capability])
 			.filter((capability): capability is string => Boolean(capability)),
-	})),
+		}),
+	),
 	{
 		id: "openai-compat",
 		label: "OpenAI-Compatible (Custom)",
@@ -258,7 +247,7 @@ function createEmptyProvider(): ProviderConfig {
 
 const PLAYGROUND_CAPABILITY_MAP: Record<
 	(typeof CAPABILITY_OPTIONS)[number],
-	ProviderCapability
+	providers.ProviderCapability
 > = {
 	streaming: "streaming",
 	tools: "tools",
@@ -321,7 +310,7 @@ function normalizeHeaders(
 
 function normalizeCapabilities(
 	capabilities: string[],
-): ProviderCapability[] | undefined {
+): providers.ProviderCapability[] | undefined {
 	const mapped = capabilities
 		.map(
 			(capability) =>
@@ -329,7 +318,7 @@ function normalizeCapabilities(
 					capability as keyof typeof PLAYGROUND_CAPABILITY_MAP
 				],
 		)
-		.filter((capability): capability is ProviderCapability =>
+		.filter((capability): capability is providers.ProviderCapability =>
 			Boolean(capability),
 		);
 	return mapped.length > 0 ? mapped : undefined;

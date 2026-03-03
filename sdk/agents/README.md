@@ -11,9 +11,9 @@ Runtime primitives for building agentic loops with LLMs.
 - Streaming/event utilities for host apps
 
 Stateful app orchestration now lives in `@cline/core` (session lifecycle, storage, runtime composition).
-Provider settings schema ownership lives in `@cline/llms/providers` (`ProviderSettingsSchema` and `ProviderConfig`).
+Provider settings schema ownership lives in `@cline/llms` (`providers.ProviderSettingsSchema` and `providers.ProviderConfig`).
 
-For broader API coverage, see `/Users/beatrix/dev/cline/packages/agents/DOC.md`.
+For broader API coverage, see `agents/DOC.md`.
 
 ## Install
 
@@ -65,10 +65,10 @@ Use `@cline/core` for:
 - Session storage and transcript/message persistence
 - Runtime assembly for full app/CLI environments
 
-Use `@cline/llms/providers` for:
+Use `@cline/llms` for:
 
 - Canonical provider settings/config types and validation
-- Conversion from user settings to handler config (`toProviderConfig`)
+- Conversion from user settings to handler config (`providers.toProviderConfig`)
 
 ## Extensions and Hooks
 
@@ -121,4 +121,4 @@ Use team primitives when a lead agent must coordinate sub-agents:
 
 For runtime internals, see:
 
-- `/Users/beatrix/dev/cline/packages/agents/ARCHITECTURE.md`
+- `agents/ARCHITECTURE.md`

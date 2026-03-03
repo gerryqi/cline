@@ -1,4 +1,4 @@
-import type { Message } from "@cline/llms/providers";
+import type { providers as LlmsProviders } from "@cline/llms";
 import type { CoreSessionEvent } from "./types/events";
 
 export type {
@@ -45,7 +45,7 @@ export type { WorkspaceInfo } from "./types/workspace";
 export interface StoredMessages {
 	version: 1;
 	updatedAt: string;
-	messages: Message[];
+	messages: LlmsProviders.Message[];
 }
 
 // Backward-compat alias with previous event naming.

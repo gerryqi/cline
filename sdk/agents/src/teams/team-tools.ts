@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ModelInfo } from "@cline/llms/providers";
+import type { providers as LlmsProviders } from "@cline/llms";
 import { createTool } from "../tools/create.js";
 import type { AgentHooks, Tool } from "../types.js";
 import type {
@@ -253,7 +253,7 @@ export interface TeamTeammateRuntimeConfig {
 	modelId: string;
 	apiKey?: string;
 	baseUrl?: string;
-	knownModels?: Record<string, ModelInfo>;
+	knownModels?: Record<string, LlmsProviders.ModelInfo>;
 	thinking?: boolean;
 	maxIterations?: number;
 	hooks?: AgentHooks;

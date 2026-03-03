@@ -2,7 +2,7 @@
  * Reusable spawn_agent tool for delegating tasks to sub-agents.
  */
 
-import type { ModelInfo } from "@cline/llms/providers";
+import type { providers as LlmsProviders } from "@cline/llms";
 import { Agent } from "../agent.js";
 import { createTool } from "../tools/create.js";
 import type {
@@ -54,7 +54,7 @@ export interface SpawnAgentToolConfig {
 	modelId: string;
 	apiKey?: string;
 	baseUrl?: string;
-	knownModels?: Record<string, ModelInfo>;
+	knownModels?: Record<string, LlmsProviders.ModelInfo>;
 	thinking?: boolean;
 	defaultMaxIterations?: number;
 	subAgentTools?: Tool[];

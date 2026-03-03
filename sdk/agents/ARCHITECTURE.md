@@ -3,27 +3,27 @@
 ## Goals
 
 - Provide a compact, high-level runtime for agentic tool-calling loops.
-- Keep model/provider integration abstract via `@cline/llms/providers`.
-- Consume canonical provider config contracts from `@cline/llms/providers` without owning persistence schemas.
+- Keep model/provider integration abstract via `@cline/llms`.
+- Consume canonical provider config contracts from `@cline/llms` without owning persistence schemas.
 - Support first-class extension interception across session, input, model start, tools, and shutdown.
 
 ## Core Building Blocks
 
-- `Agent` (`/Users/beatrix/dev/cline/packages/agents/src/agent.ts`)
+- `Agent` (`/Users/beatrix/dev/cline-packages/agents/src/agent.ts`)
   - Owns loop state (`messages`, iterations, usage, tool records)
   - Coordinates model turns and tool execution
   - Integrates hooks and extensions across lifecycle boundaries
-- Extensions runtime (`/Users/beatrix/dev/cline/packages/agents/src/extensions.ts`)
+- Extensions runtime (`/Users/beatrix/dev/cline-packages/agents/src/extensions.ts`)
   - Loads extension modules
   - Supports filesystem discovery/loading helpers for startup/reload workflows
   - Exposes registration API for tools/commands/shortcuts/flags/renderers/providers
   - Dispatches extension lifecycle events and merges controls
-- Hooks bridge (`/Users/beatrix/dev/cline/packages/agents/src/hooks.ts`)
+- Hooks bridge (`/Users/beatrix/dev/cline-packages/agents/src/hooks.ts`)
   - Subprocess hook adapter (`runHook`, `createSubprocessHooks`)
   - Pi-style event payload dispatch (`tool_call`, `tool_result`, `agent_end`, `session_shutdown`)
-- Tool layer (`/Users/beatrix/dev/cline/packages/agents/src/tools/*`)
+- Tool layer (`/Users/beatrix/dev/cline-packages/agents/src/tools/*`)
   - Tool definition validation and execution (authorization/timeout/retry/abort)
-- Types/contracts (`/Users/beatrix/dev/cline/packages/agents/src/types.ts`)
+- Types/contracts (`/Users/beatrix/dev/cline-packages/agents/src/types.ts`)
   - Public API contracts for agent config, hooks, extensions, events, and results
 
 ## Extensions vs Hooks
@@ -177,8 +177,8 @@ Authorization order for each tool call:
 
 ## File Map
 
-- `/Users/beatrix/dev/cline/packages/agents/src/agent.ts`
-- `/Users/beatrix/dev/cline/packages/agents/src/extensions.ts`
-- `/Users/beatrix/dev/cline/packages/agents/src/hooks.ts`
-- `/Users/beatrix/dev/cline/packages/agents/src/types.ts`
-- `/Users/beatrix/dev/cline/packages/agents/src/tools/execution.ts`
+- `/Users/beatrix/dev/cline-packages/agents/src/agent.ts`
+- `/Users/beatrix/dev/cline-packages/agents/src/extensions.ts`
+- `/Users/beatrix/dev/cline-packages/agents/src/hooks.ts`
+- `/Users/beatrix/dev/cline-packages/agents/src/types.ts`
+- `/Users/beatrix/dev/cline-packages/agents/src/tools/execution.ts`

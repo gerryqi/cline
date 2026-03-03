@@ -29,14 +29,22 @@ Keep `@cline/agents` for:
 - The `Agent` execution loop
 - Tool/hook/team runtime primitives
 
+## Runtime Boundary
+
+- `@cline/core`: runtime-agnostic contracts and shared state types
+- `@cline/core/server`: Node runtime services (`DefaultRuntimeBuilder`, session/storage services)
+
 ## Key Exports
 
+From `@cline/core`:
+- `ProviderSettingsManager`
+- `ProviderSettingsSchema`, `toProviderConfig` (re-exported from `@cline/llms` via core)
+
+From `@cline/core/server`:
 - `resolveCredentials`, `DefaultCredentialsResolver`
 - `DefaultRuntimeBuilder`, `createTeamName`
 - `CoreSessionService`
 - `SqliteSessionStore`
-- `ProviderSettingsManager`
-- `ProviderSettingsSchema`, `toProviderConfig` (re-exported from `@cline/llms/providers` via core)
 - `deriveSubsessionStatus`, `makeSubSessionId`, `makeTeamTaskSubSessionId`, `sanitizeSessionToken`
 
 ## Runtime + Session Composition Example
@@ -49,7 +57,7 @@ import {
 	SqliteSessionStore,
 	resolveCredentials,
 	type CoreSessionConfig,
-} from "@cline/core"
+} from "@cline/core/server"
 
 const credentials = resolveCredentials({
 	providerId: "anthropic",
