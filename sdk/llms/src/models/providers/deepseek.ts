@@ -19,6 +19,7 @@ export const DEEPSEEK_PROVIDER: ModelCollection = {
 		baseUrl: "https://api.deepseek.com/v1",
 		defaultModelId: DEEPSEEK_DEFAULT_MODEL,
 		capabilities: ["reasoning", "prompt-cache"],
+		env: ["DEEPSEEK_API_KEY"],
 	},
 	models: DEEPSEEK_MODELS,
 };

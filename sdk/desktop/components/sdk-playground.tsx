@@ -1,7 +1,14 @@
 "use client";
 
-import type { CustomProviderConfig, ProviderSelectionConfig } from "@cline/llms";
-import { createLlmsSdk, models, providers } from "@cline/llms";
+import type {
+	CustomProviderConfig,
+	ProviderSelectionConfig,
+} from "@cline/llms";
+import {
+	type ProviderCapability as CatalogProviderCapability,
+	models,
+	OPENAI_COMPATIBLE_PROVIDERS,
+} from "@cline/llms/catalog";
 import {
 	AlertCircle,
 	Braces,
@@ -92,7 +99,7 @@ const CAPABILITY_OPTIONS = [
 	"prompt_caching",
 ] as const;
 const PLAYGROUND_CAPABILITY_FROM_PROVIDER: Partial<
-	Record<providers.ProviderCapability, string>
+	Record<CatalogProviderCapability, string>
 > = {
 	reasoning: "reasoning",
 	"prompt-cache": "prompt_caching",
@@ -106,6 +113,10 @@ interface BuiltInProviderPreset {
 	baseUrl: string;
 	capabilities: string[];
 }
+
+type RuntimeProviderCapability = NonNullable<
+	ProviderSelectionConfig["capabilities"]
+>[number];
 
 const BUILT_IN_PROVIDER_LABELS: Record<string, string> = {
 	openai: "OpenAI",
@@ -160,7 +171,7 @@ function presetFromCollection(
 	provider: {
 		defaultModelId: string;
 		baseUrl?: string;
-		capabilities?: providers.ProviderCapability[];
+		capabilities?: CatalogProviderCapability[];
 	},
 	models: Record<string, unknown>,
 ): BuiltInProviderPreset {
@@ -195,8 +206,7 @@ const BUILT_IN_PROVIDERS: BuiltInProviderPreset[] = [
 		models.GEMINI_PROVIDER.provider,
 		models.GEMINI_MODELS,
 	),
-	...Object.entries(providers.OPENAI_COMPATIBLE_PROVIDERS).map(
-		([id, defaults]) => ({
+	...Object.entries(OPENAI_COMPATIBLE_PROVIDERS).map(([id, defaults]) => ({
 		id,
 		label: BUILT_IN_PROVIDER_LABELS[id] ?? titleCaseProviderId(id),
 		models: sortModelList(
@@ -208,8 +218,7 @@ const BUILT_IN_PROVIDERS: BuiltInProviderPreset[] = [
 		capabilities: (defaults.capabilities ?? [])
 			.map((capability) => PLAYGROUND_CAPABILITY_FROM_PROVIDER[capability])
 			.filter((capability): capability is string => Boolean(capability)),
-		}),
-	),
+	})),
 	{
 		id: "openai-compat",
 		label: "OpenAI-Compatible (Custom)",
@@ -247,7 +256,7 @@ function createEmptyProvider(): ProviderConfig {
 
 const PLAYGROUND_CAPABILITY_MAP: Record<
 	(typeof CAPABILITY_OPTIONS)[number],
-	providers.ProviderCapability
+	RuntimeProviderCapability
 > = {
 	streaming: "streaming",
 	tools: "tools",
@@ -310,7 +319,7 @@ function normalizeHeaders(
 
 function normalizeCapabilities(
 	capabilities: string[],
-): providers.ProviderCapability[] | undefined {
+): RuntimeProviderCapability[] | undefined {
 	const mapped = capabilities
 		.map(
 			(capability) =>
@@ -318,7 +327,7 @@ function normalizeCapabilities(
 					capability as keyof typeof PLAYGROUND_CAPABILITY_MAP
 				],
 		)
-		.filter((capability): capability is providers.ProviderCapability =>
+		.filter((capability): capability is RuntimeProviderCapability =>
 			Boolean(capability),
 		);
 	return mapped.length > 0 ? mapped : undefined;
@@ -1588,25 +1597,20 @@ export function SdkPlayground() {
 					);
 				}
 
-				const llms = createLlmsSdk({
-					providers: runtimeProviders,
-					customProviders: Object.values(registeredProviders),
-				});
-
-				if (!llms.isProviderConfigured(providerId)) {
+				const configuredProvider = runtimeProviders.find(
+					(provider) => provider.id === providerId,
+				);
+				if (!configuredProvider) {
 					throw new Error(
 						`Provider "${providerId}" is not configured in this playground config.`,
 					);
 				}
 
-				if (!llms.isModelConfigured(providerId, modelId)) {
+				if (!configuredProvider.models.includes(modelId)) {
 					throw new Error(
 						`Model "${modelId}" is not configured for provider "${providerId}".`,
 					);
 				}
-
-				const handler = llms.createHandler({ providerId, modelId });
-				const model = handler.getModel();
 
 				const warningSuffix =
 					warnings.length > 0 ? ` Warnings: ${warnings.join(" ")}` : "";
@@ -1619,7 +1623,7 @@ export function SdkPlayground() {
 						providerId,
 						modelId,
 						status: "success",
-						message: `SDK validation passed. Handler initialized for "${providerId}/${model.id}".${warningSuffix}`,
+						message: `SDK config validation passed for "${providerId}/${modelId}".${warningSuffix}`,
 						timestamp: Date.now(),
 					},
 				]);

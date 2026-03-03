@@ -1,55 +1,55 @@
-import { AIHUBMIX_PROVIDER } from "../../models/providers/aihubmix.js";
-import { ANTHROPIC_PROVIDER } from "../../models/providers/anthropic.js";
-import { BEDROCK_PROVIDER } from "../../models/providers/bedrock.js";
-import { HUGGINGFACE_PROVIDER } from "../../models/providers/huggingface.js";
-import { LMSTUDIO_PROVIDER } from "../../models/providers/lmstudio.js";
-import { OLLAMA_PROVIDER } from "../../models/providers/ollama.js";
-import { OPENAI_PROVIDER } from "../../models/providers/openai.js";
-import { OPENROUTER_PROVIDER } from "../../models/providers/openrouter.js";
-import { REQUESTY_PROVIDER } from "../../models/providers/requesty.js";
-import { ZAI_PROVIDER } from "../../models/providers/zai.js";
+import * as modelProviderExports from "../../models/providers/index.js";
+import type { ModelCollection } from "../../models/schemas/index.js";
 
 const PROVIDER_ID_ALIASES: Record<string, string> = {
 	openai: "openai-native",
+	togetherai: "together",
 };
 
-const ENV_KEYS_BY_PROVIDER: Record<string, readonly string[]> = {
-	[ANTHROPIC_PROVIDER.provider.id]: ANTHROPIC_PROVIDER.provider.env ?? [],
-	[BEDROCK_PROVIDER.provider.id]: BEDROCK_PROVIDER.provider.env ?? [],
-	[OPENAI_PROVIDER.provider.id]: OPENAI_PROVIDER.provider.env ?? [],
-	openai: OPENAI_PROVIDER.provider.env ?? [],
-	[OPENROUTER_PROVIDER.provider.id]: OPENROUTER_PROVIDER.provider.env ?? [],
-	[REQUESTY_PROVIDER.provider.id]: REQUESTY_PROVIDER.provider.env ?? [],
-	[OLLAMA_PROVIDER.provider.id]: OLLAMA_PROVIDER.provider.env ?? [],
-	[LMSTUDIO_PROVIDER.provider.id]: LMSTUDIO_PROVIDER.provider.env ?? [],
-	[AIHUBMIX_PROVIDER.provider.id]: AIHUBMIX_PROVIDER.provider.env ?? [],
-	[HUGGINGFACE_PROVIDER.provider.id]: HUGGINGFACE_PROVIDER.provider.env ?? [],
-	[ZAI_PROVIDER.provider.id]: ZAI_PROVIDER.provider.env ?? [],
-	// OpenAI-compatible providers covered in the legacy provider list.
-	deepseek: ["DEEPSEEK_API_KEY"],
-	together: ["TOGETHER_API_KEY", "TOGETHERAI_API_KEY"],
-	fireworks: ["FIREWORKS_API_KEY"],
-	groq: ["GROQ_API_KEY"],
-	xai: ["XAI_API_KEY"],
-	cerebras: ["CEREBRAS_API_KEY"],
-	sambanova: ["SAMBANOVA_API_KEY"],
-	nebius: ["NEBIUS_API_KEY"],
-	baseten: ["BASETEN_API_KEY"],
-	litellm: ["LITELLM_API_KEY"],
-	"vercel-ai-gateway": ["VERCEL_AI_GATEWAY_API_KEY"],
-	"huawei-cloud-maas": ["HUAWEI_CLOUD_MAAS_API_KEY"],
-	hicap: ["HICAP_API_KEY"],
-	nousResearch: ["NOUS_RESEARCH_API_KEY", "NOUSRESEARCH_API_KEY"],
-	gemini: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-	vertex: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-	cline: ["CLINE_API_KEY"],
-};
+const DEFAULT_FALLBACK_PROVIDER_IDS = [
+	"cline",
+	"anthropic",
+	"openai-native",
+	"gemini",
+] as const;
 
-const DEFAULT_FALLBACK_ENV_KEYS = [
-	"CLINE_API_KEY",
-	...(ANTHROPIC_PROVIDER.provider.env ?? []),
-	...(OPENAI_PROVIDER.provider.env ?? []),
-];
+function isModelCollection(value: unknown): value is ModelCollection {
+	if (!value || typeof value !== "object") {
+		return false;
+	}
+
+	const maybeCollection = value as Partial<ModelCollection>;
+	return (
+		typeof maybeCollection.provider === "object" &&
+		typeof maybeCollection.models === "object"
+	);
+}
+
+function dedupe(values: readonly string[]): string[] {
+	return [...new Set(values)];
+}
+
+function buildProviderEnvKeys(): Record<string, readonly string[]> {
+	const envKeysByProvider: Record<string, readonly string[]> = {};
+
+	for (const value of Object.values(modelProviderExports)) {
+		if (!isModelCollection(value)) {
+			continue;
+		}
+
+		const providerId = value.provider.id;
+		envKeysByProvider[providerId] = dedupe(value.provider.env ?? []);
+	}
+
+	return envKeysByProvider;
+}
+
+const ENV_KEYS_BY_PROVIDER = buildProviderEnvKeys();
+const DEFAULT_FALLBACK_ENV_KEYS = dedupe(
+	DEFAULT_FALLBACK_PROVIDER_IDS.flatMap(
+		(providerId) => ENV_KEYS_BY_PROVIDER[providerId] ?? [],
+	),
+);
 
 function readTrimmed(
 	env: Record<string, string | undefined>,

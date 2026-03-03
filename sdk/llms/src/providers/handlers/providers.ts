@@ -6,6 +6,10 @@
  */
 /** biome-ignore-all lint/style/noNonNullAssertion: static */
 
+import {
+	fetchModelsDevProviderModels,
+	sortModelsByReleaseDate,
+} from "../../models/models-dev-catalog.js";
 import * as modelProviderExports from "../../models/providers/index.js";
 import type {
 	ModelCollection,
@@ -33,32 +37,6 @@ export interface ProviderDefaults {
 
 export const DEFAULT_MODELS_CATALOG_URL = "https://models.dev/api.json";
 const DEFAULT_MODELS_CATALOG_CACHE_TTL_MS = 10 * 60 * 1000;
-
-interface ModelsDevModel {
-	name?: string;
-	tool_call?: boolean;
-	reasoning?: boolean;
-	limit?: {
-		context?: number;
-		output?: number;
-	};
-	cost?: {
-		input?: number;
-		output?: number;
-		cache_read?: number;
-		cache_write?: number;
-	};
-	modalities?: {
-		input?: string[];
-	};
-	status?: "active" | "preview" | "deprecated" | "legacy" | string;
-}
-
-interface ModelsDevProviderPayload {
-	models?: Record<string, ModelsDevModel>;
-}
-
-type ModelsDevPayload = Record<string, ModelsDevProviderPayload>;
 
 // Cline's internal provider key: key used in models.dev
 const MODELS_DEV_PROVIDER_KEY_MAP: Record<string, string> = {
@@ -126,94 +104,17 @@ async function mergeKnownModels(
 			(generatedKey) => generatedProviderModels[generatedKey] ?? {},
 		),
 	);
-	return { ...generated, ...liveModels, ...knownModels };
-}
-
-function toCapabilities(model: ModelsDevModel): ModelInfo["capabilities"] {
-	const capabilities: NonNullable<ModelInfo["capabilities"]> = [];
-	if (model.modalities?.input?.includes("image")) {
-		capabilities.push("images");
-	}
-	if (model.tool_call === true) {
-		capabilities.push("tools");
-	}
-	if (model.reasoning === true) {
-		capabilities.push("reasoning");
-	}
-	return capabilities;
-}
-
-function toStatus(status: ModelsDevModel["status"]): ModelInfo["status"] {
-	if (
-		status === "active" ||
-		status === "preview" ||
-		status === "deprecated" ||
-		status === "legacy"
-	) {
-		return status;
-	}
-	return undefined;
-}
-
-function toModelInfo(modelId: string, model: ModelsDevModel): ModelInfo {
-	const status = toStatus(model.status);
-	return {
-		id: modelId,
-		name: model.name || modelId,
-		contextWindow: model.limit?.context ?? 4096,
-		maxTokens: model.limit?.output ?? 4096,
-		capabilities: toCapabilities(model),
-		pricing: {
-			input: model.cost?.input ?? 0,
-			output: model.cost?.output ?? 0,
-			cacheRead: model.cost?.cache_read ?? 0,
-			cacheWrite: model.cost?.cache_write ?? 0,
-		},
-		status,
-	};
-}
-
-function normalizeModelsDevPayload(
-	payload: ModelsDevPayload,
-): Record<string, Record<string, ModelInfo>> {
-	const providerModels: Record<string, Record<string, ModelInfo>> = {};
-
-	for (const [sourceProviderId, targetProviderId] of Object.entries(
-		MODELS_DEV_PROVIDER_KEY_MAP,
-	)) {
-		const sourceProvider = payload[sourceProviderId];
-		if (!sourceProvider?.models) {
-			continue;
-		}
-
-		const models: Record<string, ModelInfo> = {};
-		for (const [modelId, model] of Object.entries(sourceProvider.models)) {
-			if (model.tool_call !== true) {
-				continue;
-			}
-			models[modelId] = toModelInfo(modelId, model);
-		}
-
-		if (Object.keys(models).length > 0) {
-			providerModels[targetProviderId] = models;
-		}
-	}
-
-	return providerModels;
+	return sortModelsByReleaseDate({
+		...generated,
+		...liveModels,
+		...knownModels,
+	});
 }
 
 async function fetchLiveModelsCatalog(
 	url: string,
 ): Promise<Record<string, Record<string, ModelInfo>>> {
-	const response = await fetch(url);
-	if (!response.ok) {
-		throw new Error(
-			`Failed to load model catalog from ${url}: HTTP ${response.status}`,
-		);
-	}
-
-	const payload = (await response.json()) as ModelsDevPayload;
-	return normalizeModelsDevPayload(payload);
+	return fetchModelsDevProviderModels(url, MODELS_DEV_PROVIDER_KEY_MAP);
 }
 
 export async function getLiveModelsCatalog(

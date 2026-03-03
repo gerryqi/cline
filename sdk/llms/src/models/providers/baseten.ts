@@ -15,6 +15,7 @@ export const BASETEN_PROVIDER: ModelCollection = {
 		protocol: "openai-chat",
 		baseUrl: "https://model-api.baseten.co/v1",
 		defaultModelId: Object.keys(BASETEN_MODELS)[0],
+		env: ["BASETEN_API_KEY"],
 	},
 	models: BASETEN_MODELS,
 };

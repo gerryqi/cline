@@ -17,6 +17,7 @@ export const VERCEL_AI_GATEWAY_PROVIDER: ModelCollection = {
 		baseUrl: "https://ai-gateway.vercel.app/v1",
 		defaultModelId: Object.keys(VERCEL_AI_GATEWAY_MODELS)[0],
 		capabilities: ["reasoning"],
+		env: ["AI_GATEWAY_API_KEY"],
 	},
 	models: getGeneratedModelsForProvider("vercel-ai-gateway"),
 };

@@ -1261,7 +1261,7 @@ ${c.bold}ENVIRONMENT${c.reset}
   CLINE_TEAM_DATA_DIR         Override team persistence directory
   OPENAI_API_KEY              API key for OpenAI (when using -p openai)
   OPENROUTER_API_KEY          API key for Openrouter (when using -p openrouter)
-  VERCEL_AI_GATEWAY_API_KEY   API key for Vercel AI Gateway (when using -p vercel-ai-gateway)
+  AI_GATEWAY_API_KEY          API key for Vercel AI Gateway (when using -p vercel-ai-gateway)
 
 ${c.bold}EXAMPLES${c.reset}
   clite "What is 2+2?"

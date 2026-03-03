@@ -11,7 +11,7 @@
 	"scripts": {
 		"build": "bun run build:packages",
 		"build:packages": "bun run build:llms && bun run build:agents && bun run build:core",
-		"build:apps": "bun run build && bun run build:cli && bun run build:desktop",
+		"build:apps": "bun run build:cli && bun run build:desktop",
 		"build:llms": "cd llms && bun run build",
 		"build:models": "cd llms && bun run generate:models",
 		"build:agents": "cd agents && bun run build",

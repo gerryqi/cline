@@ -20,6 +20,7 @@ export const FIREWORKS_PROVIDER: ModelCollection = {
 		protocol: "openai-chat",
 		baseUrl: "https://api.fireworks.ai/inference/v1",
 		defaultModelId: FIREWORKS_DEFAULT_MODEL,
+		env: ["FIREWORKS_API_KEY"],
 	},
 	models: FIREWORKS_MODELS,
 };

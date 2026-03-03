@@ -21,6 +21,7 @@ export const TOGETHER_PROVIDER: ModelCollection = {
 		baseUrl: "https://api.together.xyz/v1",
 		defaultModelId: TOGETHER_DEFAULT_MODEL,
 		capabilities: ["reasoning"],
+		env: ["TOGETHER_API_KEY"],
 	},
 	models: TOGETHER_MODELS,
 };

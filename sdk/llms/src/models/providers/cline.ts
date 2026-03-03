@@ -19,6 +19,7 @@ export const CLINE_PROVIDER: ModelCollection = {
 		baseUrl: "https://api.cline.bot/api/v1",
 		defaultModelId: CLINE_DEFAULT_MODEL,
 		capabilities: ["reasoning", "prompt-cache"],
+		env: ["CLINE_API_KEY"],
 	},
 	models: CLINE_MODELS,
 };

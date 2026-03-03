@@ -18,6 +18,7 @@ export const NEBIUS_PROVIDER: ModelCollection = {
 		protocol: "openai-chat",
 		baseUrl: "https://api.studio.nebius.ai/v1",
 		defaultModelId: NEBIUS_DEFAULT_MODEL,
+		env: ["NEBIUS_API_KEY"],
 	},
 	models: NEBIUS_MODELS,
 };

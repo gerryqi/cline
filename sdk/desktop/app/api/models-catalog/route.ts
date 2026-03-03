@@ -1,4 +1,4 @@
-import { models, providers } from "@cline/llms";
+import { models } from "@cline/llms/catalog";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-static";
@@ -18,6 +18,16 @@ const FALLBACK_PROVIDER_REASONING_MODELS: Record<string, string[]> = {
 	openrouter: ["anthropic/claude-sonnet-4.6"],
 	gemini: ["gemini-2.5-pro"],
 };
+
+const MODELS_DEV_PROVIDER_KEY_MAP: Record<string, string> = {
+	anthropic: "anthropic",
+	google: "gemini",
+	openai: "openai-native",
+	openrouter: "openrouter",
+	vercel: "vercel-ai-gateway",
+};
+
+const MODELS_DEV_URL = "https://models.dev/api.json";
 
 function toReasoningModelIds(
 	models: Record<string, unknown> | undefined,
@@ -54,6 +64,45 @@ function toModelIds(models: Record<string, unknown> | undefined): string[] {
 
 function uniqueSorted(values: string[]): string[] {
 	return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
+}
+
+async function getLiveProviderModels(): Promise<Record<string, Record<string, unknown>>> {
+	const response = await fetch(MODELS_DEV_URL, { next: { revalidate: 3600 } });
+	if (!response.ok) {
+		throw new Error(`Failed to fetch models catalog: ${response.status}`);
+	}
+
+	const body = (await response.json()) as {
+		data?: Array<{
+			id?: string;
+			models?: Array<{
+				id?: string;
+			}>;
+		}>;
+	};
+	const data = Array.isArray(body.data) ? body.data : [];
+
+	const liveByProvider: Record<string, Record<string, unknown>> = {};
+	for (const entry of data) {
+		const sourceId = entry.id;
+		if (!sourceId) {
+			continue;
+		}
+		const providerId = MODELS_DEV_PROVIDER_KEY_MAP[sourceId];
+		if (!providerId) {
+			continue;
+		}
+		const providerModels = liveByProvider[providerId] ?? {};
+		for (const model of entry.models ?? []) {
+			if (!model.id) {
+				continue;
+			}
+			providerModels[model.id] = model;
+		}
+		liveByProvider[providerId] = providerModels;
+	}
+
+	return liveByProvider;
 }
 
 export async function GET() {
@@ -97,12 +146,10 @@ export async function GET() {
 	};
 
 	try {
-		const liveCatalog = await providers.getLiveModelsCatalog();
-		for (const [providerId, models] of Object.entries(liveCatalog)) {
-			const modelIds = toModelIds(models as Record<string, unknown>);
-			const reasoningModelIds = toReasoningModelIds(
-				models as Record<string, unknown>,
-			);
+		const liveCatalog = await getLiveProviderModels();
+		for (const [providerId, providerCatalog] of Object.entries(liveCatalog)) {
+			const modelIds = toModelIds(providerCatalog);
+			const reasoningModelIds = toReasoningModelIds(providerCatalog);
 			if (modelIds.length === 0) {
 				continue;
 			}

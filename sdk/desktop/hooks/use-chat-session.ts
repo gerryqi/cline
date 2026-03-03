@@ -1,6 +1,6 @@
 "use client";
 
-import { models } from "@cline/llms";
+import { models } from "@cline/llms/catalog";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {

@@ -153,7 +153,10 @@ export {
 // Generated Catalog Exports
 // =============================================================================
 
-export { GENERATED_PROVIDER_MODELS } from "./generated.js";
+export {
+	getGeneratedModelsForProvider,
+	getGeneratedProviderModels,
+} from "./generated-access.js";
 
 // =============================================================================
 // Provider Model Exports

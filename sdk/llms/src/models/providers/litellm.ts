@@ -13,6 +13,7 @@ export const LITELLM_PROVIDER: ModelCollection = {
 		baseUrl: "http://localhost:4000/v1",
 		defaultModelId: "gpt-4o",
 		capabilities: ["prompt-cache"],
+		env: ["LITELLM_API_KEY"],
 	},
 	models: {},
 };

@@ -18,6 +18,7 @@ export const CEREBRAS_PROVIDER: ModelCollection = {
 		protocol: "openai-chat",
 		baseUrl: "https://api.cerebras.ai/v1",
 		defaultModelId: CEREBRAS_DEFAULT_MODEL,
+		env: ["CEREBRAS_API_KEY"],
 	},
 	models: CEREBRAS_MODELS,
 };

@@ -17,6 +17,7 @@ export const SAMBANOVA_PROVIDER: ModelCollection = {
 		protocol: "openai-chat",
 		baseUrl: "https://api.sambanova.ai/v1",
 		defaultModelId: SAMBANOVA_DEFAULT_MODEL,
+		env: ["SAMBANOVA_API_KEY"],
 	},
 	models: SAMBANOVA_MODELS,
 };

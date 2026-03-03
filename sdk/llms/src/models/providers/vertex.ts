@@ -28,6 +28,8 @@ export const VERTEX_PROVIDER: ModelCollection = {
 			"GCP_PROJECT_ID",
 			"GOOGLE_CLOUD_PROJECT",
 			"GOOGLE_APPLICATION_CREDENTIALS",
+			"GEMINI_API_KEY",
+			"GOOGLE_API_KEY",
 		],
 	},
 	models: VERTEX_MODELS,

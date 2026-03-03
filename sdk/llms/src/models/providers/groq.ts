@@ -19,6 +19,7 @@ export const GROQ_PROVIDER: ModelCollection = {
 		protocol: "openai-chat",
 		baseUrl: "https://api.groq.com/openai/v1",
 		defaultModelId: GROQ_DEFAULT_MODEL,
+		env: ["GROQ_API_KEY"],
 	},
 	models: GROQ_MODELS,
 };

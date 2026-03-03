@@ -19,6 +19,7 @@ export const XAI_PROVIDER: ModelCollection = {
 		baseUrl: "https://api.x.ai/v1",
 		defaultModelId: XAI_DEFAULT_MODEL,
 		capabilities: ["reasoning"],
+		env: ["XAI_API_KEY"],
 	},
 	models: XAI_MODELS,
 };

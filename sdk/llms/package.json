@@ -10,6 +10,10 @@
 		".": {
 			"import": "./dist/index.js",
 			"types": "./dist/index.d.ts"
+		},
+		"./catalog": {
+			"import": "./dist/catalog.js",
+			"types": "./dist/catalog.d.ts"
 		}
 	},
 	"files": [

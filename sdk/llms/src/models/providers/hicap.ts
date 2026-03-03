@@ -12,6 +12,7 @@ export const HICAP_PROVIDER: ModelCollection = {
 		protocol: "openai-chat",
 		baseUrl: "https://api.hicap.ai/v1",
 		defaultModelId: "hicap-pro",
+		env: ["HICAP_API_KEY"],
 	},
 	models: {},
 };

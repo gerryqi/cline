@@ -40,6 +40,9 @@ export const ModelCapabilitySchema = z.enum([
 	"reasoning-effort", // Reasoning effort parameter
 	"computer-use", // Computer use tools
 	"global-endpoint", // Global endpoint (Vertex AI)
+	"structured_output", // Structured output formats
+	"temperature", // Supports temperature parameter
+	"files", // File inputs (e.g. PDFs)
 ]);
 
 export type ModelCapability = z.infer<typeof ModelCapabilitySchema>;
@@ -192,7 +195,11 @@ export type ModelEntry = z.infer<typeof ModelEntrySchema>;
 /**
  * Provider capability (applies to all models from this provider)
  */
-export const ProviderCapabilitySchema = z.enum(["reasoning", "prompt-cache"]);
+export const ProviderCapabilitySchema = z.enum([
+	"reasoning",
+	"prompt-cache",
+	"tools",
+]);
 
 export type ProviderCapability = z.infer<typeof ProviderCapabilitySchema>;
 

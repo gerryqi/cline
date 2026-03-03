@@ -405,13 +405,16 @@ export function resolveSandboxDataDir(
 	explicitDir?: string,
 ): string {
 	const envDir = process.env.CLINE_SANDBOX_DATA_DIR?.trim();
-	const baseDir = explicitDir?.trim() || envDir || join(tmpdir(), "cline-sandbox");
+	const baseDir =
+		explicitDir?.trim() || envDir || join(tmpdir(), "cline-sandbox");
 	return resolve(cwd, baseDir);
 }
 
-export function configureSandboxEnvironment(
-	options: { enabled: boolean; cwd: string; explicitDir?: string },
-): string | undefined {
+export function configureSandboxEnvironment(options: {
+	enabled: boolean;
+	cwd: string;
+	explicitDir?: string;
+}): string | undefined {
 	if (!options.enabled) {
 		return undefined;
 	}
