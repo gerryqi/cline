@@ -7,6 +7,16 @@ This package is the main LLM entrypoint in the monorepo:
 - `@cline/llms/providers`: handler APIs and provider runtime config
 - `@cline/llms/models`: model catalog and registry APIs
 
+## Canonical Provider Settings Schema
+
+`@cline/llms/providers` is the canonical source of truth for provider settings/config shapes used across packages:
+
+- User-facing schema: `ProviderSettingsSchema` and `ProviderSettings`
+- Runtime handler config: `ProviderConfig`
+- Conversion helper: `toProviderConfig(settings)`
+
+Upstream packages (`@cline/core`, `@cline/agents`, `@cline/cli`, desktop) should consume these types/functions rather than redefining provider settings schemas.
+
 ## Installation
 
 ```bash

@@ -11,6 +11,7 @@ Runtime primitives for building agentic loops with LLMs.
 - Streaming/event utilities for host apps
 
 Stateful app orchestration now lives in `@cline/core` (session lifecycle, storage, runtime composition).
+Provider settings schema ownership lives in `@cline/llms/providers` (`ProviderSettingsSchema` and `ProviderConfig`).
 
 For broader API coverage, see `/Users/beatrix/dev/cline/packages/agents/DOC.md`.
 
@@ -63,6 +64,11 @@ Use `@cline/core` for:
 - Persistent sessions and session graph state
 - Session storage and transcript/message persistence
 - Runtime assembly for full app/CLI environments
+
+Use `@cline/llms/providers` for:
+
+- Canonical provider settings/config types and validation
+- Conversion from user settings to handler config (`toProviderConfig`)
 
 ## Extensions and Hooks
 

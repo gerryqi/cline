@@ -43,6 +43,7 @@ import {
 	DefaultRuntimeBuilder,
 	enrichPromptWithMentions,
 	generateWorkspaceInfo,
+	ProviderSettingsManager,
 	prewarmFastFileList,
 	type SessionManifest,
 	SessionSource,
@@ -1339,9 +1340,19 @@ async function main(): Promise<void> {
 		return;
 	}
 
-	// Resolve API key
-	const provider = normalizeProviderId(args.provider ?? "anthropic");
-	const apiKey = args.key?.trim() || undefined;
+	const providerSettingsManager = new ProviderSettingsManager();
+	const lastUsedProviderSettings =
+		providerSettingsManager.getLastUsedProviderSettings();
+	const provider = normalizeProviderId(
+		args.provider?.trim() || lastUsedProviderSettings?.provider || "anthropic",
+	);
+	const selectedProviderSettings =
+		providerSettingsManager.getProviderSettings(provider);
+	const persistedApiKey =
+		selectedProviderSettings?.apiKey?.trim() ||
+		selectedProviderSettings?.auth?.apiKey?.trim() ||
+		undefined;
+	const apiKey = args.key?.trim() || persistedApiKey || undefined;
 
 	let knownModels: Config["knownModels"];
 	try {
@@ -1356,7 +1367,11 @@ async function main(): Promise<void> {
 
 	const config: Config = {
 		providerId: provider,
-		modelId: args.model ?? knownModels?.[0]?.id ?? "claude-sonnet-4-6",
+		modelId:
+			args.model ??
+			selectedProviderSettings?.model ??
+			knownModels?.[0]?.id ??
+			"claude-sonnet-4-6",
 		apiKey: apiKey ?? "",
 		knownModels,
 		systemPrompt: args.systemPrompt ?? (await buildDefaultSystemPrompt(cwd)),
@@ -1385,6 +1400,19 @@ async function main(): Promise<void> {
 				? args.missionLogIntervalMs
 				: 120000,
 	};
+	try {
+		providerSettingsManager.saveProviderSettings({
+			...(selectedProviderSettings ?? {}),
+			provider,
+			model: config.modelId,
+			...(apiKey ? { apiKey } : {}),
+		});
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		writeln(
+			`${c.dim}[provider-settings] failed to persist selection (${message})${c.reset}`,
+		);
+	}
 	bindCliSessionExitHandlers();
 
 	// Check for piped input

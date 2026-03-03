@@ -7,7 +7,7 @@ Stateful orchestration primitives shared by CLI and desktop runtimes.
 - `auth`: provider/environment credential resolution
 - `runtime`: runtime composition and bootstrap wiring
 - `session`: root/sub-agent session lifecycle and status transitions
-- `storage`: durable session persistence (`SqliteSessionStore`)
+- `storage`: durable session persistence and provider settings persistence (`SqliteSessionStore`, `ProviderSettingsManager`)
 - `types`: shared contracts for session manager/store/runtime builders
 
 ## Install
@@ -35,6 +35,8 @@ Keep `@cline/agents` for:
 - `DefaultRuntimeBuilder`, `createTeamName`
 - `CoreSessionService`
 - `SqliteSessionStore`
+- `ProviderSettingsManager`
+- `ProviderSettingsSchema`, `toProviderConfig` (re-exported from `@cline/llms/providers` via core)
 - `deriveSubsessionStatus`, `makeSubSessionId`, `makeTeamTaskSubSessionId`, `sanitizeSessionToken`
 
 ## Runtime + Session Composition Example
@@ -81,3 +83,25 @@ const sessions = new CoreSessionService(store)
 
 // Host app can now create/update root/sub-agent sessions around runtime usage.
 ```
+
+## Provider Settings Persistence
+
+`@cline/core` exposes a unified provider settings manager that uses the canonical llms schema.
+
+```ts
+import { ProviderSettingsManager } from "@cline/core"
+
+const settings = new ProviderSettingsManager()
+
+settings.saveProviderSettings({
+	provider: "anthropic",
+	model: "claude-sonnet-4-6",
+	apiKey: process.env.ANTHROPIC_API_KEY,
+})
+
+const last = settings.getLastUsedProviderConfig()
+// { providerId, modelId, ... } in llms ProviderConfig shape
+```
+
+Storage path defaults to `~/.cline/data/settings/providers.json`.
+Set `CLINE_PROVIDER_SETTINGS_PATH` to override.

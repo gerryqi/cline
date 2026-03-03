@@ -26,6 +26,9 @@ Primary usage in `cli/src/index.ts`:
   - Enriches `@mentions`/file context in user prompts.
 - `generateWorkspaceInfo`
   - Builds workspace metadata used to construct the default system prompt.
+- `ProviderSettingsManager`
+  - Loads persisted provider settings (provider/model/auth) from core-managed storage.
+  - Persists the effective provider/model selection so future CLI/desktop runs reuse the same defaults.
 - Session and manifest types/services (through CLI utilities)
   - CLI writes and updates session artifacts for local auditability.
 
@@ -59,7 +62,10 @@ Two paths:
 ```mermaid
 flowchart TD
   A[CLI args/env/stdin] --> B[Build Config]
-  B --> C[core: DefaultRuntimeBuilder.build]
+  B --> B1[core: ProviderSettingsManager load]
+  B1 --> B2[Resolve provider/model/apiKey defaults]
+  B2 --> B3[core: ProviderSettingsManager save]
+  B3 --> C[core: DefaultRuntimeBuilder.build]
   C --> D[tools + optional team runtime]
   D --> E[agents: new Agent]
   E --> F[agent.run or agent.continue]
@@ -131,6 +137,11 @@ In both cases, streamed text appears through the same `onEvent -> handleEvent ->
 ## Notes on Core vs CLI Responsibilities
 
 - Core runtime builder is responsible for capability composition (tools/team runtime lifecycle).
+- Core settings manager is responsible for provider settings schema + persistence shape.
 - CLI is responsible for presentation, session artifact persistence, and user I/O.
+- CLI is responsible for precedence and selection policy at startup:
+  - explicit CLI flags
+  - persisted provider-scoped settings from core
+  - built-in defaults/live catalog fallback
 - Agents owns loop semantics and event emission.
 - LLMS owns provider-specific streaming and normalization into unified chunks.

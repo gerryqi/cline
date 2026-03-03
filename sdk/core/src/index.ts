@@ -13,6 +13,7 @@ export {
 	ChatSummarySchema,
 	ChatViewStateSchema,
 } from "./chat/chat-schema";
+export { ProviderSettingsManager } from "./storage/provider-settings-manager";
 // Compatibility barrel (legacy imports).
 export type { RuntimeEnvironment, SessionEvent, StoredMessages } from "./types";
 export type { SessionStatus } from "./types/common";
@@ -28,6 +29,19 @@ export type {
 	SessionEndedEvent,
 	SessionToolEvent,
 } from "./types/events";
+export type {
+	ProviderConfig,
+	ProviderSettings,
+	StoredProviderSettings,
+	StoredProviderSettingsEntry,
+} from "./types/provider-settings";
+export {
+	emptyStoredProviderSettings,
+	ProviderSettingsSchema,
+	StoredProviderSettingsEntrySchema,
+	StoredProviderSettingsSchema,
+	toProviderConfig,
+} from "./types/provider-settings";
 export type { SessionRecord, SessionRef } from "./types/sessions";
 export type { ArtifactStore, SessionStore, TeamStore } from "./types/storage";
 export type { WorkspaceInfo } from "./types/workspace";

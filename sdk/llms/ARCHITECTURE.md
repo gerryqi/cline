@@ -70,6 +70,7 @@ Responsibilities:
 - Build concrete handlers by provider (`index.ts`, `handlers/*`)
 - Translate normalized messages/tools into provider-native wire format (`transform/*`)
 - Stream and normalize provider output into unified chunks (`utils/stream-processor.ts`)
+- Serve as canonical provider settings schema source for upstream packages (`ProviderSettingsSchema`/`ProviderConfig` in `types/settings.ts` and `types/config.ts`)
 
 Key behavior:
 

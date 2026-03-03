@@ -4,6 +4,7 @@
 
 - Provide a compact, high-level runtime for agentic tool-calling loops.
 - Keep model/provider integration abstract via `@cline/llms/providers`.
+- Consume canonical provider config contracts from `@cline/llms/providers` without owning persistence schemas.
 - Support first-class extension interception across session, input, model start, tools, and shutdown.
 
 ## Core Building Blocks

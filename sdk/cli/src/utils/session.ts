@@ -11,47 +11,8 @@ import {
 } from "@cline/core/server";
 import type { Message } from "@cline/llms/providers";
 
-export type SessionDbRow = {
-	session_id: string;
-	provider: string;
-	model: string;
-	cwd: string;
-	workspace_root: string;
-	team_name?: string | null;
-	enable_tools: number;
-	enable_spawn: number;
-	enable_teams: number;
-	prompt?: string | null;
-};
-
 const store = new SqliteSessionStore();
 const coreSessions = new CoreSessionService(store);
-
-export function ensureSessionsDir(): string {
-	return coreSessions.ensureSessionsDir();
-}
-
-export function createRootCliSession(input: {
-	sessionId: string;
-	source: SessionManifest["source"];
-	pid: number;
-	startedAt: string;
-	interactive: boolean;
-	provider: string;
-	model: string;
-	cwd: string;
-	workspaceRoot: string;
-	teamName?: string;
-	enableTools: boolean;
-	enableSpawn: boolean;
-	enableTeams: boolean;
-	prompt?: string;
-	transcriptPath: string;
-	hookPath: string;
-	messagesPath: string;
-}): void {
-	coreSessions.createRootSession(input);
-}
 
 export function createRootCliSessionWithArtifacts(input: {
 	sessionId: string;
@@ -116,13 +77,6 @@ export function applySubagentStatus(
 	event: HookEventPayload,
 ): void {
 	coreSessions.applySubagentStatus(subSessionId, event);
-}
-
-export function applyStatusToRunningChildSessions(
-	parentSessionId: string,
-	status: Exclude<SessionManifest["status"], "running">,
-): void {
-	coreSessions.applyStatusToRunningChildSessions(parentSessionId, status);
 }
 
 export function onTeamTaskStart(agentId: string, message: string): void {

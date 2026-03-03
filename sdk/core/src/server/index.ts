@@ -46,5 +46,6 @@ export {
 	WorkspaceInfoSchema,
 	WorkspaceManifestSchema,
 } from "../session/workspace-manifest";
+export { ProviderSettingsManager } from "../storage/provider-settings-manager";
 export { SqliteSessionStore } from "../storage/sqlite-session-store";
 export type { WorkspaceInfo } from "../types/workspace";
