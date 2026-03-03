@@ -409,6 +409,7 @@ export function toProviderConfig(settings: ProviderSettings): ProviderConfig {
 		gcp: settings.gcp
 			? {
 					projectId: settings.gcp.projectId,
+					region: settings.gcp.region,
 				}
 			: undefined,
 

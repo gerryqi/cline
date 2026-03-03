@@ -28,6 +28,7 @@
 		"@ai-sdk/amazon-bedrock": "^4.0.67",
 		"@aws-sdk/credential-providers": "^3.922.0",
 		"@anthropic-ai/sdk": "^0.52.0",
+		"@anthropic-ai/vertex-sdk": "^0.6.4",
 		"@google/genai": "^1.0.0",
 		"@streamparser/json": "^0.0.21",
 		"ai": "^5.0.0",

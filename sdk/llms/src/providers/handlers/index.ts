@@ -47,3 +47,4 @@ export {
 	registerHandler,
 	unregisterHandler,
 } from "./registry";
+export { createVertexHandler, VertexHandler } from "./vertex";

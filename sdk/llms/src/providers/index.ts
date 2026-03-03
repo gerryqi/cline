@@ -149,6 +149,7 @@ export {
 	createOpenAIHandler,
 	createOpenAIResponsesHandler,
 	createR1Handler,
+	createVertexHandler,
 	DEFAULT_MODEL_INFO,
 	DEFAULT_MODELS_CATALOG_URL,
 	GeminiHandler,
@@ -174,6 +175,8 @@ export {
 	registerHandler,
 	resolveProviderConfig,
 	unregisterHandler,
+	// Vertex AI handler
+	VertexHandler,
 } from "./handlers";
 
 // =============================================================================
@@ -240,12 +243,14 @@ import {
 	hasRegisteredHandler,
 	isRegisteredHandlerAsync,
 } from "./handlers/registry";
+import { VertexHandler } from "./handlers/vertex";
 import type { ApiHandler, ProviderConfig, ProviderId } from "./types";
 
 const ANTHROPIC_PROVIDER_ID = "anthropic";
 const BEDROCK_PROVIDER_ID = "bedrock";
 const GEMINI_PROVIDER_ID = "gemini";
 const OPENAI_PROVIDER_ID = "openai-native";
+const VERTEX_PROVIDER_ID = "vertex";
 
 function withNormalizedProviderId(config: ProviderConfig): ProviderConfig {
 	const normalizedProviderId = normalizeProviderId(config.providerId);
@@ -305,8 +310,10 @@ export function createHandler(config: ProviderConfig): ApiHandler {
 			return new BedrockHandler(normalizedConfig);
 
 		case GEMINI_PROVIDER_ID:
-		case "vertex":
 			return new GeminiHandler(normalizedConfig);
+
+		case VERTEX_PROVIDER_ID:
+			return new VertexHandler(normalizedConfig);
 
 		case OPENAI_PROVIDER_ID:
 			return new OpenAIResponsesHandler(normalizedConfig);
@@ -418,7 +425,7 @@ export const BUILT_IN_PROVIDERS: ProviderId[] = [
 	BEDROCK_PROVIDER_ID,
 	OPENAI_PROVIDER_ID,
 	GEMINI_PROVIDER_ID,
-	"vertex",
+	VERTEX_PROVIDER_ID,
 	...Object.keys(OPENAI_COMPATIBLE_PROVIDERS),
 ] as ProviderId[];
 
@@ -430,7 +437,7 @@ export function isProviderSupported(providerId: string): boolean {
 		providerId === ANTHROPIC_PROVIDER_ID ||
 		providerId === BEDROCK_PROVIDER_ID ||
 		providerId === GEMINI_PROVIDER_ID ||
-		providerId === "vertex" ||
+		providerId === VERTEX_PROVIDER_ID ||
 		isOpenAICompatibleProvider(providerId) ||
 		hasRegisteredHandler(providerId)
 	);

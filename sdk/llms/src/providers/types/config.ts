@@ -149,6 +149,7 @@ export interface AwsConfig {
  */
 export interface GcpConfig {
 	projectId?: string;
+	region?: string;
 }
 
 /**

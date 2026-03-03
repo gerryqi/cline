@@ -110,7 +110,9 @@ const llms = createLlmsSdk({
 
 ## Vertex AI (Google Cloud) Usage
 
-`@cline/llms` supports Vertex AI through the Gemini handler.
+`@cline/llms` supports Vertex AI through a dedicated `vertex` handler:
+- Gemini models use the Google GenAI Vertex path.
+- Claude models use the Anthropic Vertex path.
 
 - For `createLlmsSdk(...)`, use provider id `vertex` and set `settings.gcp.projectId`.
 - For low-level `providers.createHandler(...)`, use `providerId: "vertex"`.
@@ -128,8 +130,10 @@ const llms = createLlmsSdk(
         models: ["gemini-3-flash", "claude-sonnet-4@20250514"],
         defaultModel: "gemini-3-flash",
         settings: {
-          gcp: { projectId: process.env.GCP_PROJECT_ID! },
-          region: "us-central1",
+          gcp: {
+            projectId: process.env.GCP_PROJECT_ID!,
+            region: "us-central1",
+          },
         },
       },
     ],
@@ -147,12 +151,15 @@ import { providers } from "@cline/llms"
 const handler = providers.createHandler({
   providerId: "vertex",
   modelId: "gemini-3-flash",
-  gcp: { projectId: process.env.GCP_PROJECT_ID! },
-  region: "us-central1",
+  gcp: {
+    projectId: process.env.GCP_PROJECT_ID!,
+    region: "us-central1",
+  },
 })
 ```
 
-When `gcp.projectId` is set, the Gemini handler uses Vertex AI auth flow (ADC/service account) rather than API key auth.
+`gcp.projectId` is required for `providerId: "vertex"`.
+For Claude models on Vertex, set `gcp.region` explicitly.
 
 ## Custom Headers
 
