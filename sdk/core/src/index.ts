@@ -1,4 +1,55 @@
 export type {
+	AgentConfigWatcher,
+	AgentConfigWatcherEvent,
+	AgentYamlConfig,
+	BuildAgentConfigOverridesOptions,
+	CreateAgentConfigWatcherOptions,
+	CreateInstructionWatcherOptions,
+	CreateRulesConfigDefinitionOptions,
+	CreateSkillsConfigDefinitionOptions,
+	CreateUserInstructionConfigWatcherOptions,
+	CreateWorkflowsConfigDefinitionOptions,
+	ParseMarkdownFrontmatterResult,
+	ParseYamlFrontmatterResult,
+	RuleConfig,
+	SkillConfig,
+	UnifiedConfigDefinition,
+	UnifiedConfigFileCandidate,
+	UnifiedConfigFileContext,
+	UnifiedConfigRecord,
+	UnifiedConfigWatcherEvent,
+	UnifiedConfigWatcherOptions,
+	UserInstructionConfig,
+	UserInstructionConfigType,
+	UserInstructionConfigWatcher,
+	UserInstructionConfigWatcherEvent,
+	WorkflowConfig,
+} from "./agents";
+export {
+	createAgentConfigDefinition,
+	createAgentConfigWatcher,
+	createRulesConfigDefinition,
+	createSkillsConfigDefinition,
+	createUserInstructionConfigWatcher,
+	createWorkflowsConfigDefinition,
+	DOCUMENTS_RULES_DIRECTORY_PATH,
+	DOCUMENTS_WORKFLOWS_DIRECTORY_PATH,
+	parseAgentConfigFromYaml,
+	parsePartialAgentConfigFromYaml,
+	parseRuleConfigFromMarkdown,
+	parseSkillConfigFromMarkdown,
+	parseWorkflowConfigFromMarkdown,
+	RULES_CONFIG_DIRECTORY_NAME,
+	resolveAgentTools,
+	resolveRulesConfigSearchPaths,
+	resolveSkillsConfigSearchPaths,
+	resolveWorkflowsConfigSearchPaths,
+	SKILLS_CONFIG_DIRECTORY_NAME,
+	toPartialAgentConfig,
+	UnifiedConfigFileWatcher,
+	WORKFLOWS_CONFIG_DIRECTORY_NAME,
+} from "./agents";
+export type {
 	ChatMessage,
 	ChatSessionConfig,
 	ChatSessionStatus,
@@ -13,6 +64,17 @@ export {
 	ChatSummarySchema,
 	ChatViewStateSchema,
 } from "./chat/chat-schema";
+export {
+	formatRulesForSystemPrompt,
+	isRuleEnabled,
+	listEnabledRulesFromWatcher,
+	loadRulesForSystemPromptFromWatcher,
+} from "./runtime/rules";
+export type { AvailableWorkflow } from "./runtime/workflows";
+export {
+	listAvailableWorkflowsFromWatcher,
+	resolveWorkflowSlashCommandFromWatcher,
+} from "./runtime/workflows";
 export {
 	resolveClineDataDir,
 	resolveProviderSettingsPath,

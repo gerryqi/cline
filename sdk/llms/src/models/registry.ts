@@ -73,6 +73,10 @@ function registerBuiltInProviderLoaders(): void {
 	PROVIDER_LOADERS.set("openai", {
 		load: async () => (await import("./providers/openai.js")).OPENAI_PROVIDER,
 	});
+	PROVIDER_LOADERS.set("openai-codex", {
+		load: async () =>
+			(await import("./providers/openai-codex.js")).OPENAI_CODEX_PROVIDER,
+	});
 
 	// Major third-party providers (individual files)
 	PROVIDER_LOADERS.set("deepseek", {

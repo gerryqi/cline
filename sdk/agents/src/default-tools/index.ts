@@ -14,6 +14,7 @@ export {
 	createEditorTool,
 	createReadFilesTool,
 	createSearchTool,
+	createSkillsTool,
 	createWebFetchTool,
 } from "./definitions.js";
 // Built-in Executors
@@ -49,6 +50,8 @@ export {
 	RunCommandsInputSchema,
 	type SearchCodebaseInput,
 	SearchCodebaseInputSchema,
+	type SkillsInput,
+	SkillsInputSchema,
 	type WebFetchRequest,
 	WebFetchRequestSchema,
 } from "./schemas.js";
@@ -62,6 +65,9 @@ export type {
 	EditorExecutorInput,
 	FileReadExecutor,
 	SearchExecutor,
+	SkillsExecutor,
+	SkillsExecutorSkillMetadata,
+	SkillsExecutorWithMetadata,
 	ToolExecutors,
 	ToolOperationResult,
 	WebFetchExecutor,
@@ -79,7 +85,7 @@ import {
 	createDefaultExecutors,
 	type DefaultExecutorsOptions,
 } from "./executors/index.js";
-import type { CreateDefaultToolsOptions } from "./types.js";
+import type { CreateDefaultToolsOptions, ToolExecutors } from "./types.js";
 
 /**
  * Options for creating default tools with built-in executors
@@ -90,6 +96,10 @@ export interface CreateBuiltinToolsOptions
 	 * Configuration for the built-in executors
 	 */
 	executorOptions?: DefaultExecutorsOptions;
+	/**
+	 * Optional executor overrides/additions for tools without built-ins
+	 */
+	executors?: Partial<ToolExecutors>;
 }
 
 /**
@@ -122,9 +132,16 @@ export interface CreateBuiltinToolsOptions
 export function createBuiltinTools(
 	options: CreateBuiltinToolsOptions = {},
 ): Tool[] {
-	const { executorOptions = {}, ...toolsConfig } = options;
+	const {
+		executorOptions = {},
+		executors: executorOverrides,
+		...toolsConfig
+	} = options;
 
-	const executors = createDefaultExecutors(executorOptions);
+	const executors = {
+		...createDefaultExecutors(executorOptions),
+		...(executorOverrides ?? {}),
+	};
 
 	return createDefaultTools({
 		...toolsConfig,

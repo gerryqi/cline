@@ -1,3 +1,6 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createBuiltinTools, type Tool } from "@cline/agents";
 import { describe, expect, it } from "vitest";
 import { DefaultRuntimeBuilder } from "./runtime-builder";
@@ -41,6 +44,10 @@ function legacyBuildRuntimeEnvironment(
 	return tools;
 }
 
+function makeEmptyWorkspaceCwd(): string {
+	return mkdtempSync(join(tmpdir(), "runtime-parity-"));
+}
+
 function makeSpawnTool(): Tool {
 	return {
 		name: "spawn_agent",
@@ -57,7 +64,7 @@ describe("runtime tool parity", () => {
 			modelId: "claude-sonnet-4-6",
 			apiKey: "key",
 			systemPrompt: "test",
-			cwd: process.cwd(),
+			cwd: makeEmptyWorkspaceCwd(),
 			enableTools: true,
 			enableSpawnAgent: true,
 			enableAgentTeams: false,
@@ -82,7 +89,7 @@ describe("runtime tool parity", () => {
 			modelId: "claude-sonnet-4-6",
 			apiKey: "key",
 			systemPrompt: "test",
-			cwd: process.cwd(),
+			cwd: makeEmptyWorkspaceCwd(),
 			enableTools: false,
 			enableSpawnAgent: true,
 			enableAgentTeams: false,
@@ -107,7 +114,7 @@ describe("runtime tool parity", () => {
 			modelId: "claude-sonnet-4-6",
 			apiKey: "key",
 			systemPrompt: "test",
-			cwd: process.cwd(),
+			cwd: makeEmptyWorkspaceCwd(),
 			enableTools: false,
 			enableSpawnAgent: false,
 			enableAgentTeams: false,

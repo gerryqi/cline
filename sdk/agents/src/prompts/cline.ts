@@ -25,13 +25,13 @@ REMEMBER, always be helpful and proactive! Don't ask for permission to do someth
 When you have completed the task, please provide a summary of what you did and any relevant information that the user should know. This will help ensure that the user understands the changes made and can easily follow up if they have any questions or need further assistance. Do not indicate that you will perform an action without actually doing it. Always provide the final result in your response.
 
 If user asked a simple question without any coding context, answer it directly without using any tools.
-
+{{CLINE_RULES}}
 {{CLINE_METADATA}}`;
 
 export function getClineDefaultSystemPrompt(
 	ide: string,
 	metadata = "",
-	_cwd = "",
+	rules = "",
 ) {
 	return DEFAULT_CLINE_SYSTEM_PROMPT.replace(
 		"{{PLATFORM_NAME}}",
@@ -40,5 +40,6 @@ export function getClineDefaultSystemPrompt(
 		.replace("{{CURRENT_DATE}}", new Date().toLocaleDateString())
 		.replace("{{IDE_NAME}}", ide)
 		.replace("{{CLINE_METADATA}}", metadata)
+		.replace("{{CLINE_RULES}}", rules)
 		.trim();
 }

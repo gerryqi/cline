@@ -15,6 +15,7 @@ export const DefaultToolNames = {
 	RUN_COMMANDS: "run_commands",
 	FETCH_WEB_CONTENT: "fetch_web_content",
 	EDITOR: "editor",
+	SKILLS: "skills",
 } as const;
 
 /**
@@ -26,4 +27,5 @@ export const ALL_DEFAULT_TOOL_NAMES: DefaultToolName[] = [
 	DefaultToolNames.RUN_COMMANDS,
 	DefaultToolNames.FETCH_WEB_CONTENT,
 	DefaultToolNames.EDITOR,
+	DefaultToolNames.SKILLS,
 ];

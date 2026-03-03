@@ -4,6 +4,7 @@ import type {
 	AgentTeamsRuntime,
 	Tool,
 } from "@cline/agents";
+import type { UserInstructionConfigWatcher } from "../agents";
 import type { CoreSessionConfig } from "../types/config";
 
 export interface BuiltRuntime {
@@ -19,6 +20,7 @@ export interface RuntimeBuilderInput {
 	onTeamEvent?: (event: import("@cline/agents").TeamEvent) => void;
 	createSpawnTool?: () => Tool;
 	onTeamRestored?: () => void;
+	userInstructionWatcher?: UserInstructionConfigWatcher;
 }
 
 export interface RuntimeBuilder {

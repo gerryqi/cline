@@ -90,6 +90,11 @@ export function formatToolInput(toolName: string, input: unknown): string {
 			break;
 		case "spawn_agent":
 			return truncate(String(obj.task ?? ""), 50);
+		case "skills":
+			return truncate(
+				`${String(obj.skill ?? "")}${obj.args ? ` ${String(obj.args)}` : ""}`,
+				70,
+			);
 		case "team_spawn_teammate":
 			return truncate(
 				`${String(obj.agentId ?? "")}: ${String(obj.rolePrompt ?? "")}`,

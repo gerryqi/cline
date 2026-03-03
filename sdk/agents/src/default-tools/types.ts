@@ -109,6 +109,46 @@ export type EditorExecutor = (
 ) => Promise<string>;
 
 /**
+ * Executor for invoking configured skills
+ *
+ * @param skill - Skill name to invoke
+ * @param args - Optional arguments for the skill
+ * @param context - Tool execution context
+ * @returns Skill loading/invocation result
+ */
+export type SkillsExecutor = (
+	skill: string,
+	args: string | undefined,
+	context: ToolContext,
+) => Promise<string>;
+
+/**
+ * Skill metadata exposed by SkillsExecutor for clients/UI
+ */
+export interface SkillsExecutorSkillMetadata {
+	/** Normalized skill id (usually lowercased name) */
+	id: string;
+	/** Display name for the skill */
+	name: string;
+	/** Optional short description */
+	description?: string;
+	/** True when configured but intentionally disabled */
+	disabled: boolean;
+}
+
+/**
+ * A callable executor that can also expose configured skill metadata.
+ */
+export interface SkillsExecutorWithMetadata {
+	(
+		skill: string,
+		args: string | undefined,
+		context: ToolContext,
+	): Promise<string>;
+	configuredSkills?: SkillsExecutorSkillMetadata[];
+}
+
+/**
  * Collection of all tool executors
  */
 export interface ToolExecutors {
@@ -122,6 +162,8 @@ export interface ToolExecutors {
 	webFetch?: WebFetchExecutor;
 	/** Filesystem editor implementation */
 	editor?: EditorExecutor;
+	/** Skill invocation implementation */
+	skills?: SkillsExecutorWithMetadata;
 }
 
 // =============================================================================
@@ -136,7 +178,8 @@ export type DefaultToolName =
 	| "search_codebase"
 	| "run_commands"
 	| "fetch_web_content"
-	| "editor";
+	| "editor"
+	| "skills";
 
 /**
  * Configuration for enabling/disabling default tools
@@ -173,6 +216,12 @@ export interface DefaultToolsConfig {
 	enableEditor?: boolean;
 
 	/**
+	 * Enable the skills tool
+	 * @default true
+	 */
+	enableSkills?: boolean;
+
+	/**
 	 * Current working directory for tools that need it
 	 */
 	cwd?: string;
@@ -206,6 +255,12 @@ export interface DefaultToolsConfig {
 	 * @default 30000
 	 */
 	editorTimeoutMs?: number;
+
+	/**
+	 * Timeout for skills operations in milliseconds
+	 * @default 15000
+	 */
+	skillsTimeoutMs?: number;
 }
 
 /**

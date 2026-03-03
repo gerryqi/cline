@@ -21,6 +21,7 @@ import {
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import {
@@ -40,13 +41,23 @@ import {
 } from "@cline/agents";
 import {
 	createTeamName,
+	createUserInstructionConfigWatcher,
 	DefaultRuntimeBuilder,
 	enrichPromptWithMentions,
 	generateWorkspaceInfo,
+	loadRulesForSystemPromptFromWatcher,
 	ProviderSettingsManager,
 	prewarmFastFileList,
+	type RuleConfig,
+	resolveRulesConfigSearchPaths,
+	resolveSkillsConfigSearchPaths,
+	resolveWorkflowSlashCommandFromWatcher,
+	resolveWorkflowsConfigSearchPaths,
 	type SessionManifest,
 	SessionSource,
+	type SkillConfig,
+	type UserInstructionConfigWatcher,
+	type WorkflowConfig,
 } from "@cline/core/server";
 import { providers } from "@cline/llms";
 import { version } from "../package.json";
@@ -60,6 +71,7 @@ import {
 	parseArgs,
 	randomSessionId,
 	readStdinUtf8,
+	resolveWorkspaceRoot,
 	truncate,
 	writeHookJson,
 } from "./utils/helpers";
@@ -261,9 +273,12 @@ async function buildWorkspaceInfo(cwd: string): Promise<string> {
 	return `# Workspace Configuration\n${JSON.stringify(workspaceConfig, null, 2)}`;
 }
 
-async function buildDefaultSystemPrompt(cwd: string): Promise<string> {
+async function buildDefaultSystemPrompt(
+	cwd: string,
+	rules = "",
+): Promise<string> {
 	const WORKSPACE_INFO = await buildWorkspaceInfo(cwd);
-	return getClineDefaultSystemPrompt("Terminal Shell", WORKSPACE_INFO);
+	return getClineDefaultSystemPrompt("Terminal Shell", WORKSPACE_INFO, rules);
 }
 
 function normalizeProviderId(providerId: string): string {
@@ -635,8 +650,12 @@ function closeInlineStreamIfNeeded(): void {
 async function buildUserInputMessage(
 	rawPrompt: string,
 	cwd: string,
+	userInstructionWatcher?: UserInstructionConfigWatcher,
 ): Promise<string> {
-	const enriched = await enrichPromptWithMentions(rawPrompt, cwd);
+	const resolvedPrompt = userInstructionWatcher
+		? resolveWorkflowSlashCommandFromWatcher(rawPrompt, userInstructionWatcher)
+		: rawPrompt;
+	const enriched = await enrichPromptWithMentions(resolvedPrompt, cwd);
 	return `<user_input>${enriched.prompt}</user_input>`;
 }
 
@@ -644,7 +663,11 @@ async function buildUserInputMessage(
 // Agent Runner
 // =============================================================================
 
-async function runAgent(prompt: string, config: Config): Promise<void> {
+async function runAgent(
+	prompt: string,
+	config: Config,
+	userInstructionWatcher?: UserInstructionConfigWatcher,
+): Promise<void> {
 	const startTime = performance.now();
 	void prewarmFastFileList(config.cwd);
 	const hooks = createRuntimeHooks();
@@ -653,6 +676,7 @@ async function runAgent(prompt: string, config: Config): Promise<void> {
 		hooks,
 		onTeamEvent: handleTeamEvent,
 		createSpawnTool: () => createCliSpawnTool(config, hooks),
+		userInstructionWatcher,
 		onTeamRestored: () => {
 			if (config.outputMode === "json") {
 				emitJsonLine("stdout", {
@@ -729,7 +753,11 @@ async function runAgent(prompt: string, config: Config): Promise<void> {
 
 	try {
 		printModelProviderInfo(config);
-		const userInput = await buildUserInputMessage(prompt, config.cwd);
+		const userInput = await buildUserInputMessage(
+			prompt,
+			config.cwd,
+			userInstructionWatcher,
+		);
 		const result = await agent.run(userInput);
 		persistApiMessages(result.messages);
 		if (config.outputMode === "json") {
@@ -791,6 +819,7 @@ async function runAgent(prompt: string, config: Config): Promise<void> {
 		process.exit(1);
 	} finally {
 		persistCurrentAgentMessages(agent);
+		runtime.shutdown("run_complete");
 		process.off("SIGINT", handleSigint);
 		if (activeRuntimeAbort === abortAll) {
 			setActiveRuntimeAbort(undefined);
@@ -963,7 +992,10 @@ function handleTeamEvent(event: TeamEvent): void {
 // Interactive Mode
 // =============================================================================
 
-async function runInteractive(config: Config): Promise<void> {
+async function runInteractive(
+	config: Config,
+	userInstructionWatcher?: UserInstructionConfigWatcher,
+): Promise<void> {
 	if (config.outputMode === "json") {
 		writeErr("interactive mode is not supported with --output json");
 		process.exit(1);
@@ -987,6 +1019,7 @@ async function runInteractive(config: Config): Promise<void> {
 		hooks,
 		onTeamEvent: handleTeamEvent,
 		createSpawnTool: () => createCliSpawnTool(config, hooks),
+		userInstructionWatcher,
 		onTeamRestored: () => {
 			if (config.outputMode === "json") {
 				emitJsonLine("stdout", {
@@ -1092,11 +1125,19 @@ async function runInteractive(config: Config): Promise<void> {
 			let result: AgentResult;
 			if (isFirstMessage) {
 				printModelProviderInfo(config);
-				const userInput = await buildUserInputMessage(input, config.cwd);
+				const userInput = await buildUserInputMessage(
+					input,
+					config.cwd,
+					userInstructionWatcher,
+				);
 				result = await agent.run(userInput);
 				isFirstMessage = false;
 			} else {
-				const userInput = await buildUserInputMessage(input, config.cwd);
+				const userInput = await buildUserInputMessage(
+					input,
+					config.cwd,
+					userInstructionWatcher,
+				);
 				result = await agent.continue(userInput);
 			}
 			persistApiMessages(result.messages);
@@ -1218,6 +1259,8 @@ ${c.bold}USAGE${c.reset}
   clite [OPTIONS] [PROMPT]
   clite -i                    Interactive mode
   clite hook < payload.json   Handle hook payload from stdin
+  clite list <workflows|rules|skills>
+                              List enabled workflow/rule/skill configs
   echo "prompt" | clite       Pipe input
 
 ${c.bold}OPTIONS${c.reset}
@@ -1264,6 +1307,9 @@ ${c.bold}ENVIRONMENT${c.reset}
   AI_GATEWAY_API_KEY          API key for Vercel AI Gateway (when using -p vercel-ai-gateway)
 
 ${c.bold}EXAMPLES${c.reset}
+  clite list workflows
+  clite list rules --json
+  clite list skills
   clite "What is 2+2?"
   clite "Read package.json and summarize it"
   clite "Search for TODO comments in the codebase"
@@ -1277,6 +1323,177 @@ ${c.bold}EXAMPLES${c.reset}
 
 function showVersion(): void {
 	writeln(version);
+}
+
+async function runWorkflowsListCommand(
+	cwd: string,
+	outputMode: CliOutputMode,
+): Promise<number> {
+	const workflowsById = new Map<
+		string,
+		{ id: string; name: string; instructions: string; path: string }
+	>();
+	const directories = resolveWorkflowsConfigSearchPaths(cwd).filter(
+		(directory) => existsSync(directory),
+	);
+	for (const directory of directories) {
+		const watcher = createUserInstructionConfigWatcher({
+			skills: { directories: [] },
+			rules: { directories: [] },
+			workflows: { directories: [directory] },
+		});
+		try {
+			await watcher.start();
+			const snapshot = watcher.getSnapshot("workflow");
+			for (const [id, record] of snapshot.entries()) {
+				const workflow = record.item as WorkflowConfig;
+				if (workflow.disabled === true || workflowsById.has(id)) {
+					continue;
+				}
+				workflowsById.set(id, {
+					id,
+					name: workflow.name,
+					instructions: workflow.instructions,
+					path: record.filePath,
+				});
+			}
+		} catch {
+			// Best-effort listing across config roots.
+		} finally {
+			watcher.stop();
+		}
+	}
+	const workflows = [...workflowsById.values()].sort((a, b) =>
+		a.name.localeCompare(b.name),
+	);
+	if (outputMode === "json") {
+		process.stdout.write(JSON.stringify(workflows));
+		return 0;
+	}
+	if (workflows.length === 0) {
+		writeln("No enabled workflows found.");
+		return 0;
+	}
+	writeln("Available workflows:");
+	for (const workflow of workflows) {
+		writeln(`  /${workflow.name} (${workflow.path})`);
+	}
+	return 0;
+}
+
+async function runRulesListCommand(
+	cwd: string,
+	outputMode: CliOutputMode,
+): Promise<number> {
+	const rulesByName = new Map<
+		string,
+		{ name: string; instructions: string; path: string }
+	>();
+	const directories = resolveRulesConfigSearchPaths(cwd).filter((directory) =>
+		existsSync(directory),
+	);
+	for (const directory of directories) {
+		const watcher = createUserInstructionConfigWatcher({
+			skills: { directories: [] },
+			rules: { directories: [directory] },
+			workflows: { directories: [] },
+		});
+		try {
+			await watcher.start();
+			const snapshot = watcher.getSnapshot("rule");
+			for (const record of snapshot.values()) {
+				const rule = record.item as RuleConfig;
+				if (rule.disabled === true || rulesByName.has(rule.name)) {
+					continue;
+				}
+				rulesByName.set(rule.name, {
+					name: rule.name,
+					instructions: rule.instructions,
+					path: record.filePath,
+				});
+			}
+		} catch {
+			// Best-effort listing across config roots.
+		} finally {
+			watcher.stop();
+		}
+	}
+	const rules = [...rulesByName.values()].sort((a, b) =>
+		a.name.localeCompare(b.name),
+	);
+	if (outputMode === "json") {
+		process.stdout.write(JSON.stringify(rules));
+		return 0;
+	}
+	if (rules.length === 0) {
+		writeln("No enabled rules found.");
+		return 0;
+	}
+	writeln("Enabled rules:");
+	for (const rule of rules) {
+		writeln(`  ${rule.name} (${rule.path})`);
+	}
+	return 0;
+}
+
+async function runSkillsListCommand(
+	cwd: string,
+	outputMode: CliOutputMode,
+): Promise<number> {
+	const skillDirectories = [
+		...resolveSkillsConfigSearchPaths(cwd),
+		join(homedir(), "Documents", "Cline", "Skills"),
+	];
+	const skillsByName = new Map<
+		string,
+		SkillConfig & {
+			path: string;
+		}
+	>();
+	const directories = [...new Set(skillDirectories)].filter((directory) =>
+		existsSync(directory),
+	);
+	for (const directory of directories) {
+		const watcher = createUserInstructionConfigWatcher({
+			skills: { directories: [directory] },
+			rules: { directories: [] },
+			workflows: { directories: [] },
+		});
+		try {
+			await watcher.start();
+			const snapshot = watcher.getSnapshot("skill");
+			for (const record of snapshot.values()) {
+				const skill = record.item as SkillConfig;
+				if (skill.disabled === true || skillsByName.has(skill.name)) {
+					continue;
+				}
+				skillsByName.set(skill.name, {
+					...skill,
+					path: record.filePath,
+				});
+			}
+		} catch {
+			// Best-effort listing across config roots.
+		} finally {
+			watcher.stop();
+		}
+	}
+	const skills = [...skillsByName.values()].sort((a, b) =>
+		a.name.localeCompare(b.name),
+	);
+	if (outputMode === "json") {
+		process.stdout.write(JSON.stringify(skills));
+		return 0;
+	}
+	if (skills.length === 0) {
+		writeln("No enabled skills found.");
+		return 0;
+	}
+	writeln("Enabled skills:");
+	for (const skill of skills) {
+		writeln(`  ${skill.name} (${skill.path})`);
+	}
+	return 0;
 }
 
 // =============================================================================
@@ -1299,6 +1516,31 @@ async function main(): Promise<void> {
 
 	if (rawArgs[0] === "hook") {
 		const code = await runHookCommand();
+		process.exit(code);
+	}
+	if (rawArgs[0] === "list") {
+		if (args.invalidOutputMode) {
+			writeErr(
+				`invalid output mode "${args.invalidOutputMode}" (expected "text" or "json")`,
+			);
+			process.exit(1);
+		}
+		currentOutputMode = args.outputMode;
+		const listCwd = resolveWorkspaceRoot(cwd);
+		const listTarget = rawArgs[1]?.trim().toLowerCase();
+		let code = 1;
+		if (listTarget === "workflows") {
+			code = await runWorkflowsListCommand(listCwd, args.outputMode);
+		} else if (listTarget === "rules") {
+			code = await runRulesListCommand(listCwd, args.outputMode);
+		} else if (listTarget === "skills") {
+			code = await runSkillsListCommand(listCwd, args.outputMode);
+		} else {
+			writeErr(
+				`list requires one of: workflows, rules, skills (got "${rawArgs[1] ?? ""}")`,
+			);
+			process.exit(1);
+		}
 		process.exit(code);
 	}
 	if (rawArgs[0] === "sessions" && rawArgs[1] === "list") {
@@ -1356,6 +1598,17 @@ async function main(): Promise<void> {
 	}
 
 	const providerSettingsManager = new ProviderSettingsManager();
+	const userInstructionWatcher = createUserInstructionConfigWatcher({
+		skills: { workspacePath: cwd },
+		rules: { workspacePath: cwd },
+		workflows: { workspacePath: cwd },
+	});
+	await userInstructionWatcher.start().catch(() => {});
+	const stopUserInstructionWatcher = () => {
+		userInstructionWatcher.stop();
+	};
+	process.on("exit", stopUserInstructionWatcher);
+
 	const lastUsedProviderSettings =
 		providerSettingsManager.getLastUsedProviderSettings();
 	const provider = normalizeProviderId(
@@ -1389,7 +1642,12 @@ async function main(): Promise<void> {
 			"claude-sonnet-4-6",
 		apiKey: apiKey ?? "",
 		knownModels,
-		systemPrompt: args.systemPrompt ?? (await buildDefaultSystemPrompt(cwd)),
+		systemPrompt:
+			args.systemPrompt ??
+			(await buildDefaultSystemPrompt(
+				cwd,
+				loadRulesForSystemPromptFromWatcher(userInstructionWatcher),
+			)),
 		maxIterations: undefined,
 		sandbox: sandboxEnabled,
 		sandboxDataDir,
@@ -1445,15 +1703,19 @@ async function main(): Promise<void> {
 				? `${args.prompt}\n\n${pipedInput}`
 				: pipedInput;
 			activeCliSession = createCliSession(config, prompt, false);
-			await runAgent(prompt, config);
+			await runAgent(prompt, config, userInstructionWatcher);
 			if (activeCliSession?.manifest.status === "running") {
 				updateCliSessionStatus("completed", 0);
 			}
+			stopUserInstructionWatcher();
+			process.off("exit", stopUserInstructionWatcher);
 			return;
 		}
 	}
 
 	if (config.outputMode === "json" && (args.interactive || !args.prompt)) {
+		stopUserInstructionWatcher();
+		process.off("exit", stopUserInstructionWatcher);
 		writeErr(
 			"JSON output mode requires a prompt argument or piped stdin (interactive mode is unsupported)",
 		);
@@ -1463,21 +1725,25 @@ async function main(): Promise<void> {
 	// Interactive mode
 	if (args.interactive || !args.prompt) {
 		activeCliSession = createCliSession(config, undefined, true);
-		await runInteractive(config);
+		await runInteractive(config, userInstructionWatcher);
 		if (activeCliSession?.manifest.status === "running") {
 			updateCliSessionStatus("completed", 0);
 		}
+		stopUserInstructionWatcher();
+		process.off("exit", stopUserInstructionWatcher);
 		return;
 	}
 
 	// Single prompt mode
 	activeCliSession = createCliSession(config, args.prompt, false);
-	await runAgent(args.prompt, config);
+	await runAgent(args.prompt, config, userInstructionWatcher);
 	if (activeCliSession?.manifest.status === "running") {
 		updateCliSessionStatus("completed", 0);
 	}
+	stopUserInstructionWatcher();
+	process.off("exit", stopUserInstructionWatcher);
 	// Exit once agent is done in non-interactive mode
-	process.exit(0);
+	return;
 }
 
 main().catch((err) => {

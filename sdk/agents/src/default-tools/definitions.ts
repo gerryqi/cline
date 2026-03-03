@@ -17,6 +17,8 @@ import {
 	RunCommandsInputSchema,
 	type SearchCodebaseInput,
 	SearchCodebaseInputSchema,
+	type SkillsInput,
+	SkillsInputSchema,
 } from "./schemas.js";
 import type {
 	BashExecutor,
@@ -25,6 +27,7 @@ import type {
 	EditorExecutor,
 	FileReadExecutor,
 	SearchExecutor,
+	SkillsExecutor,
 	ToolOperationResult,
 	WebFetchExecutor,
 } from "./types.js";
@@ -338,6 +341,42 @@ export function createEditorTool(
 	});
 }
 
+/**
+ * Create the skills tool
+ *
+ * Invokes a configured skill by name and optional arguments.
+ */
+export function createSkillsTool(
+	executor: SkillsExecutor,
+	config: Pick<DefaultToolsConfig, "skillsTimeoutMs"> = {},
+): Tool<SkillsInput, string> {
+	const timeoutMs = config.skillsTimeoutMs ?? 15000;
+
+	return createTool<SkillsInput, string>({
+		name: "skills",
+		description:
+			"Execute a skill within the main conversation. " +
+			"When users ask you to perform tasks, check if any available skills match. " +
+			'When users reference a slash command (for example "/commit" or "/review-pr"), invoke this tool. ' +
+			'Input: `skill` (required) and optional `args`. Example: `skill: "pdf"`, `skill: "commit", args: "-m \\"Fix bug\\""`, `skill: "review-pr", args: "123"`, `skill: "ms-office-suite:pdf"`. ' +
+			"Available skills are listed in system-reminder messages in the conversation. " +
+			"When a skill matches the user's request, invoking this tool is a blocking requirement before any other response. " +
+			"Never mention a skill without invoking this tool.",
+		inputSchema: zodToJsonSchema(SkillsInputSchema),
+		timeoutMs,
+		retryable: false,
+		maxRetries: 0,
+		execute: async (input, context) => {
+			const validatedInput = validateWithZod(SkillsInputSchema, input);
+			return withTimeout(
+				executor(validatedInput.skill, validatedInput.args, context),
+				timeoutMs,
+				`Skills operation timed out after ${timeoutMs}ms`,
+			);
+		},
+	});
+}
+
 // =============================================================================
 // Default Tools Factory
 // =============================================================================
@@ -388,6 +427,7 @@ export function createDefaultTools(options: CreateDefaultToolsOptions): Tool[] {
 		enableBash = true,
 		enableWebFetch = true,
 		enableEditor = true,
+		enableSkills = true,
 		...config
 	} = options;
 
@@ -417,6 +457,11 @@ export function createDefaultTools(options: CreateDefaultToolsOptions): Tool[] {
 	// Add editor tool if enabled and executor provided
 	if (enableEditor && executors.editor) {
 		tools.push(createEditorTool(executors.editor, config));
+	}
+
+	// Add skills tool if enabled and executor provided
+	if (enableSkills && executors.skills) {
+		tools.push(createSkillsTool(executors.skills, config));
 	}
 
 	return tools;

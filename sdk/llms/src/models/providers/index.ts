@@ -78,6 +78,10 @@ export {
 	OPENAI_MODELS,
 	OPENAI_PROVIDER,
 } from "./openai.js";
+export {
+	OPENAI_CODEX_DEFAULT_MODEL,
+	OPENAI_CODEX_PROVIDER,
+} from "./openai-codex.js";
 export { OPENROUTER_PROVIDER } from "./openrouter.js";
 export { REQUESTY_PROVIDER } from "./requesty.js";
 export {

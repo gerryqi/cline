@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -51,6 +57,9 @@ describe("cli e2e", () => {
 		expect(asText(result.stdout)).toContain("--output <text|json>");
 		expect(asText(result.stdout)).toContain("--sandbox");
 		expect(asText(result.stdout)).toContain("--thinking");
+		expect(asText(result.stdout)).toContain(
+			"clite list <workflows|rules|skills>",
+		);
 	});
 
 	it("prints version output", () => {
@@ -88,6 +97,226 @@ describe("cli e2e", () => {
 		expect(asText(result.stderr)).toContain(
 			"sessions delete requires --session-id <id>",
 		);
+	});
+
+	it("lists enabled workflows in text mode", () => {
+		const workspace = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-workflows-"));
+		tempDirs.push(workspace);
+		const workflowsDir = path.join(workspace, ".clinerules", "workflows");
+		mkdirSync(workflowsDir, { recursive: true });
+		writeFileSync(
+			path.join(workflowsDir, "release.md"),
+			`---
+name: release
+---
+Release checklist.`,
+			"utf8",
+		);
+		writeFileSync(
+			path.join(workflowsDir, "disabled.md"),
+			`---
+name: disabled
+disabled: true
+---
+Do not list this.`,
+			"utf8",
+		);
+
+		const result = runCli(["list", "workflows"], {
+			cwd: workspace,
+			env: process.env,
+		});
+		expect(result.status).toBe(0);
+		expect(asText(result.stdout)).toContain("Available workflows:");
+		expect(asText(result.stdout)).toContain("/release");
+		expect(asText(result.stdout)).toContain(
+			path.join(workflowsDir, "release.md"),
+		);
+		expect(asText(result.stdout)).not.toContain("/disabled");
+	});
+
+	it("lists workflows from workspace root when run in a subdirectory", () => {
+		const workspace = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-workflows-"));
+		tempDirs.push(workspace);
+		const workflowsDir = path.join(workspace, ".clinerules", "workflows");
+		const nestedDir = path.join(workspace, "packages", "app");
+		mkdirSync(workflowsDir, { recursive: true });
+		mkdirSync(nestedDir, { recursive: true });
+		writeFileSync(
+			path.join(workflowsDir, "release.md"),
+			`---
+name: release
+---
+Release checklist.`,
+			"utf8",
+		);
+		spawnSync("git", ["init"], {
+			cwd: workspace,
+			encoding: "utf8",
+		});
+
+		const result = runCli(["list", "workflows"], {
+			cwd: nestedDir,
+			env: process.env,
+		});
+		expect(result.status).toBe(0);
+		expect(asText(result.stdout)).toContain("/release");
+	});
+
+	it("lists enabled workflows in json mode", () => {
+		const workspace = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-workflows-"));
+		tempDirs.push(workspace);
+		const workflowsDir = path.join(workspace, ".clinerules", "workflows");
+		mkdirSync(workflowsDir, { recursive: true });
+		writeFileSync(
+			path.join(workflowsDir, "review.md"),
+			`---
+name: review
+---
+Review checklist.`,
+			"utf8",
+		);
+
+		const result = runCli(["list", "workflows", "--json"], {
+			cwd: workspace,
+			env: process.env,
+		});
+		expect(result.status).toBe(0);
+		const parsed = JSON.parse(asText(result.stdout)) as Array<{
+			name: string;
+		}>;
+		expect(parsed.some((workflow) => workflow.name === "review")).toBe(true);
+	});
+
+	it("includes Documents/Cline workflows", () => {
+		const homeDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-home-"));
+		const workspace = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-workspace-"));
+		tempDirs.push(homeDir, workspace);
+		const docsWorkflowsDir = path.join(
+			homeDir,
+			"Documents",
+			"Cline",
+			"Workflows",
+		);
+		mkdirSync(docsWorkflowsDir, { recursive: true });
+		writeFileSync(
+			path.join(docsWorkflowsDir, "docs-release.md"),
+			`---
+name: docs-release
+---
+Release from docs path.`,
+			"utf8",
+		);
+
+		const result = runCli(["list", "workflows"], {
+			cwd: workspace,
+			env: {
+				...process.env,
+				HOME: homeDir,
+			},
+		});
+		expect(result.status).toBe(0);
+		expect(asText(result.stdout)).toContain("/docs-release");
+	});
+
+	it("lists enabled rules", () => {
+		const workspace = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-rules-"));
+		tempDirs.push(workspace);
+		const rulesDir = path.join(workspace, ".clinerules");
+		mkdirSync(rulesDir, { recursive: true });
+		writeFileSync(
+			path.join(rulesDir, "rule.md"),
+			`---
+name: no-force-push
+---
+Do not force push.`,
+			"utf8",
+		);
+
+		const result = runCli(["list", "rules"], {
+			cwd: workspace,
+			env: process.env,
+		});
+		expect(result.status).toBe(0);
+		expect(asText(result.stdout)).toContain("Enabled rules:");
+		expect(asText(result.stdout)).toContain("no-force-push");
+		expect(asText(result.stdout)).toContain(path.join(rulesDir, "rule.md"));
+	});
+
+	it("lists enabled skills", () => {
+		const workspace = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-skills-"));
+		tempDirs.push(workspace);
+		const skillsDir = path.join(workspace, ".clinerules", "skills", "commit");
+		mkdirSync(skillsDir, { recursive: true });
+		writeFileSync(
+			path.join(skillsDir, "SKILL.md"),
+			`---
+name: commit
+---
+Create a concise commit message.`,
+			"utf8",
+		);
+
+		const result = runCli(["list", "skills"], {
+			cwd: workspace,
+			env: process.env,
+		});
+		expect(result.status).toBe(0);
+		expect(asText(result.stdout)).toContain("Enabled skills:");
+		expect(asText(result.stdout)).toContain("commit");
+		expect(asText(result.stdout)).toContain(path.join(skillsDir, "SKILL.md"));
+	});
+
+	it("includes Documents/Cline rules and skills", () => {
+		const homeDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-home-"));
+		const workspace = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-workspace-"));
+		tempDirs.push(homeDir, workspace);
+		const docsRulesDir = path.join(homeDir, "Documents", "Cline", "Rules");
+		const docsSkillsDir = path.join(
+			homeDir,
+			"Documents",
+			"Cline",
+			"Skills",
+			"review",
+		);
+		mkdirSync(docsRulesDir, { recursive: true });
+		mkdirSync(docsSkillsDir, { recursive: true });
+		writeFileSync(
+			path.join(docsRulesDir, "docs-rule.md"),
+			`---
+name: docs-rule
+---
+Rule from docs path.`,
+			"utf8",
+		);
+		writeFileSync(
+			path.join(docsSkillsDir, "SKILL.md"),
+			`---
+name: docs-skill
+---
+Skill from docs path.`,
+			"utf8",
+		);
+
+		const rulesResult = runCli(["list", "rules"], {
+			cwd: workspace,
+			env: {
+				...process.env,
+				HOME: homeDir,
+			},
+		});
+		expect(rulesResult.status).toBe(0);
+		expect(asText(rulesResult.stdout)).toContain("docs-rule");
+
+		const skillsResult = runCli(["list", "skills"], {
+			cwd: workspace,
+			env: {
+				...process.env,
+				HOME: homeDir,
+			},
+		});
+		expect(skillsResult.status).toBe(0);
+		expect(asText(skillsResult.stdout)).toContain("docs-skill");
 	});
 
 	it("rejects invalid hook payloads", () => {

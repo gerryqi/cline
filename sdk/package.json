@@ -17,6 +17,7 @@
 		"build:agents": "cd agents && bun run build",
 		"build:core": "cd core && bun run build",
 		"build:cli": "cd cli && bun run build",
+		"build:app": "cd app && bun run build",
 		"build:desktop": "cd desktop && bun run build",
 		"dev": "bun run build && bun run dev:desktop",
 		"dev:cli": "cd cli && bun run dev",

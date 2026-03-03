@@ -114,6 +114,19 @@ export const EditFileInputSchema = z
 		}
 	});
 
+/**
+ * Schema for skills tool input
+ */
+export const SkillsInputSchema = z.object({
+	skill: z
+		.string()
+		.min(1)
+		.describe(
+			'The skill name. E.g., "commit", "review-pr", "pdf", or "ms-office-suite:pdf"',
+		),
+	args: z.string().optional().describe("Optional arguments for the skill"),
+});
+
 // =============================================================================
 // Type Definitions (derived from Zod schemas)
 // =============================================================================
@@ -147,3 +160,8 @@ export type FetchWebContentInput = z.infer<typeof FetchWebContentInputSchema>;
  * Input for the editor tool
  */
 export type EditFileInput = z.infer<typeof EditFileInputSchema>;
+
+/**
+ * Input for the skills tool
+ */
+export type SkillsInput = z.infer<typeof SkillsInputSchema>;
