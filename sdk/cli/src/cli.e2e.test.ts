@@ -49,6 +49,7 @@ describe("cli e2e", () => {
 		expect(asText(result.stdout)).toContain("USAGE");
 		expect(asText(result.stdout)).toContain("--tool-require-approval");
 		expect(asText(result.stdout)).toContain("--output <text|json>");
+		expect(asText(result.stdout)).toContain("--sandbox");
 		expect(asText(result.stdout)).toContain("--thinking");
 	});
 

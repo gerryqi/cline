@@ -50,6 +50,7 @@ export {
 	createAgentTeamsTools,
 	FileTeamPersistenceStore,
 	type FileTeamPersistenceStoreOptions,
+	resolveTeamDataDir,
 	reviveTeamStateDates,
 	sanitizeTeamName,
 	type TeamPersistenceStore,

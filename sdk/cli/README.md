@@ -127,6 +127,7 @@ bun install -g @cline/cli
 ## Environment Variables
 
 - `ANTHROPIC_API_KEY` - API key for Anthropic
+- `CLINE_DATA_DIR` - Base data directory for sessions/settings/teams/hooks
 - `CLINE_SANDBOX` - Set to `1` to force sandbox mode
 - `CLINE_SANDBOX_DATA_DIR` - Override sandbox state directory
 - `CLINE_TEAM_DATA_DIR` - Override team persistence directory

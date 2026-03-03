@@ -45,6 +45,18 @@ export interface FileTeamPersistenceStoreOptions {
 	baseDir?: string;
 }
 
+export function resolveTeamDataDir(): string {
+	const explicitDir = process.env.CLINE_TEAM_DATA_DIR?.trim();
+	if (explicitDir) {
+		return explicitDir;
+	}
+	const clineDataDir = process.env.CLINE_DATA_DIR?.trim();
+	if (clineDataDir) {
+		return join(clineDataDir, "teams");
+	}
+	return join(homedir(), ".cline", "data", "teams");
+}
+
 export class FileTeamPersistenceStore implements TeamPersistenceStore {
 	private readonly dirPath: string;
 	private readonly statePath: string;
@@ -53,10 +65,7 @@ export class FileTeamPersistenceStore implements TeamPersistenceStore {
 
 	constructor(options: FileTeamPersistenceStoreOptions) {
 		const safeTeamName = sanitizeTeamName(options.teamName);
-		const baseDir =
-			options.baseDir?.trim() ||
-			process.env.CLINE_TEAM_DATA_DIR?.trim() ||
-			join(homedir(), ".cline", "data", "teams");
+		const baseDir = options.baseDir?.trim() || resolveTeamDataDir();
 		this.dirPath = join(baseDir, safeTeamName);
 		this.statePath = join(this.dirPath, "state.json");
 		this.taskHistoryPath = join(this.dirPath, "task-history.jsonl");

@@ -46,6 +46,11 @@ export {
 	WorkspaceInfoSchema,
 	WorkspaceManifestSchema,
 } from "../session/workspace-manifest";
+export {
+	resolveClineDataDir,
+	resolveProviderSettingsPath,
+	resolveSessionDataDir,
+} from "../storage/paths";
 export { ProviderSettingsManager } from "../storage/provider-settings-manager";
 export { SqliteSessionStore } from "../storage/sqlite-session-store";
 export type { WorkspaceInfo } from "../types/workspace";

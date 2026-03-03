@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import {
 	emptyStoredProviderSettings,
 	type ProviderConfig,
@@ -10,17 +9,10 @@ import {
 	StoredProviderSettingsSchema,
 	toProviderConfig,
 } from "../types/provider-settings";
+import { resolveProviderSettingsPath } from "./paths";
 
 function nowIso(): string {
 	return new Date().toISOString();
-}
-
-function defaultProviderSettingsPath(): string {
-	const explicitPath = process.env.CLINE_PROVIDER_SETTINGS_PATH?.trim();
-	if (explicitPath) {
-		return explicitPath;
-	}
-	return join(homedir(), ".cline", "data", "settings", "providers.json");
 }
 
 export interface ProviderSettingsManagerOptions {
@@ -35,7 +27,7 @@ export class ProviderSettingsManager {
 	private readonly filePath: string;
 
 	constructor(options: ProviderSettingsManagerOptions = {}) {
-		this.filePath = options.filePath ?? defaultProviderSettingsPath();
+		this.filePath = options.filePath ?? resolveProviderSettingsPath();
 	}
 
 	getFilePath(): string {

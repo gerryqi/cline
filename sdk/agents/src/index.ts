@@ -131,6 +131,7 @@ export {
 	type SpawnTeammateOptions,
 	type SubAgentEndContext,
 	type SubAgentStartContext,
+	resolveTeamDataDir,
 	sanitizeTeamName,
 	type TaskResult,
 	type TeamEvent,

@@ -208,11 +208,19 @@ export function ensureHookLogDir(filePath?: string): string {
 		}
 		return resolved;
 	}
-	const dir = join(homedir(), ".cline");
+	const dir = join(resolveClineDataDir(), "hooks");
 	if (!existsSync(dir)) {
 		mkdirSync(dir, { recursive: true });
 	}
 	return dir;
+}
+
+function resolveClineDataDir(): string {
+	const envPath = process.env.CLINE_DATA_DIR?.trim();
+	if (envPath) {
+		return envPath;
+	}
+	return join(homedir(), ".cline", "data");
 }
 
 function defaultSessionDataDir(): string {
@@ -220,7 +228,7 @@ function defaultSessionDataDir(): string {
 	if (envPath) {
 		return envPath;
 	}
-	return join(homedir(), ".cline", "data", "sessions");
+	return join(resolveClineDataDir(), "sessions");
 }
 
 function defaultSessionHookPath(sessionId: string): string {
@@ -410,6 +418,7 @@ export function configureSandboxEnvironment(
 	const dataDir = resolveSandboxDataDir(options.cwd, options.explicitDir);
 	process.env.CLINE_SANDBOX = "1";
 	process.env.CLINE_SANDBOX_DATA_DIR = dataDir;
+	process.env.CLINE_DATA_DIR = dataDir;
 	process.env.CLINE_SESSION_DATA_DIR = join(dataDir, "sessions");
 	process.env.CLINE_TEAM_DATA_DIR = join(dataDir, "teams");
 	process.env.CLINE_PROVIDER_SETTINGS_PATH = join(

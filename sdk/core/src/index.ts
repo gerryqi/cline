@@ -13,6 +13,11 @@ export {
 	ChatSummarySchema,
 	ChatViewStateSchema,
 } from "./chat/chat-schema";
+export {
+	resolveClineDataDir,
+	resolveProviderSettingsPath,
+	resolveSessionDataDir,
+} from "./storage/paths";
 export { ProviderSettingsManager } from "./storage/provider-settings-manager";
 // Compatibility barrel (legacy imports).
 export type { RuntimeEnvironment, SessionEvent, StoredMessages } from "./types";

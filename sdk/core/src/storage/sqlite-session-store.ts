@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import type { SessionStatus } from "../types/common";
 import type { SessionRecord } from "../types/sessions";
 import type { SessionStore } from "../types/storage";
+import { resolveSessionDataDir } from "./paths";
 
 type SqliteStatement = {
 	run: (...params: unknown[]) => { changes?: number };
@@ -31,11 +31,7 @@ function nowIso(): string {
 }
 
 function defaultSessionsDir(): string {
-	const envPath = process.env.CLINE_SESSION_DATA_DIR?.trim();
-	if (envPath) {
-		return envPath;
-	}
-	return join(homedir(), ".cline", "data", "sessions");
+	return resolveSessionDataDir();
 }
 
 function toBoolInt(value: boolean): number {

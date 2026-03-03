@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	appendHookAudit,
+	configureSandboxEnvironment,
 	formatToolInput,
 	formatToolOutput,
 	isCliHookPayload,
@@ -11,6 +12,7 @@ import {
 } from "./helpers";
 
 type EnvSnapshot = {
+	CLINE_DATA_DIR: string | undefined;
 	CLINE_HOOKS_LOG_PATH: string | undefined;
 	CLINE_SESSION_ID: string | undefined;
 	CLINE_SESSION_DATA_DIR: string | undefined;
@@ -18,6 +20,7 @@ type EnvSnapshot = {
 
 function captureEnv(): EnvSnapshot {
 	return {
+		CLINE_DATA_DIR: process.env.CLINE_DATA_DIR,
 		CLINE_HOOKS_LOG_PATH: process.env.CLINE_HOOKS_LOG_PATH,
 		CLINE_SESSION_ID: process.env.CLINE_SESSION_ID,
 		CLINE_SESSION_DATA_DIR: process.env.CLINE_SESSION_DATA_DIR,
@@ -25,6 +28,7 @@ function captureEnv(): EnvSnapshot {
 }
 
 function restoreEnv(snapshot: EnvSnapshot): void {
+	process.env.CLINE_DATA_DIR = snapshot.CLINE_DATA_DIR;
 	process.env.CLINE_HOOKS_LOG_PATH = snapshot.CLINE_HOOKS_LOG_PATH;
 	process.env.CLINE_SESSION_ID = snapshot.CLINE_SESSION_ID;
 	process.env.CLINE_SESSION_DATA_DIR = snapshot.CLINE_SESSION_DATA_DIR;
@@ -40,6 +44,7 @@ describe("parseArgs", () => {
 			showUsage: false,
 			showTimings: false,
 			outputMode: "text",
+			sandbox: false,
 			thinking: false,
 			enableSpawnAgent: true,
 			enableAgentTeams: true,
@@ -99,10 +104,17 @@ describe("parseArgs", () => {
 		expect(parsed.provider).toBe("openai");
 		expect(parsed.model).toBe("gpt-5");
 		expect(parsed.key).toBe("abc123");
+		expect(parsed.sandbox).toBe(false);
 		expect(parsed.toolPolicies).toEqual({
 			read_files: { enabled: true, autoApprove: false },
 			run_commands: { autoApprove: true },
 		});
+	});
+
+	it("parses sandbox flags", () => {
+		const parsed = parseArgs(["--sandbox", "--sandbox-dir", "./.tmp-cline"]);
+		expect(parsed.sandbox).toBe(true);
+		expect(parsed.sandboxDir).toBe("./.tmp-cline");
 	});
 
 	it("ignores empty tool names for tool-policy flags", () => {
@@ -256,5 +268,55 @@ describe("hook payload validation and audit logging", () => {
 		expect(existsSync(expectedPath)).toBe(true);
 		const content = readFileSync(expectedPath, "utf8");
 		expect(content).toContain('"hook_event_name":"tool_result"');
+	});
+});
+
+describe("sandbox environment", () => {
+	it("sets sandbox-specific storage paths", () => {
+		const root = mkdtempSync(path.join(os.tmpdir(), "cli-helper-sandbox-"));
+		const previous = {
+			CLINE_SANDBOX: process.env.CLINE_SANDBOX,
+			CLINE_SANDBOX_DATA_DIR: process.env.CLINE_SANDBOX_DATA_DIR,
+			CLINE_DATA_DIR: process.env.CLINE_DATA_DIR,
+			CLINE_SESSION_DATA_DIR: process.env.CLINE_SESSION_DATA_DIR,
+			CLINE_TEAM_DATA_DIR: process.env.CLINE_TEAM_DATA_DIR,
+			CLINE_PROVIDER_SETTINGS_PATH: process.env.CLINE_PROVIDER_SETTINGS_PATH,
+			CLINE_HOOKS_LOG_PATH: process.env.CLINE_HOOKS_LOG_PATH,
+		};
+		try {
+			const resolved = configureSandboxEnvironment({
+				enabled: true,
+				cwd: root,
+				explicitDir: "./sandbox-state",
+			});
+			expect(resolved).toBe(path.join(root, "sandbox-state"));
+			expect(process.env.CLINE_SANDBOX).toBe("1");
+			expect(process.env.CLINE_SANDBOX_DATA_DIR).toBe(
+				path.join(root, "sandbox-state"),
+			);
+			expect(process.env.CLINE_DATA_DIR).toBe(path.join(root, "sandbox-state"));
+			expect(process.env.CLINE_SESSION_DATA_DIR).toBe(
+				path.join(root, "sandbox-state", "sessions"),
+			);
+			expect(process.env.CLINE_TEAM_DATA_DIR).toBe(
+				path.join(root, "sandbox-state", "teams"),
+			);
+			expect(process.env.CLINE_PROVIDER_SETTINGS_PATH).toBe(
+				path.join(root, "sandbox-state", "settings", "providers.json"),
+			);
+			expect(process.env.CLINE_HOOKS_LOG_PATH).toBe(
+				path.join(root, "sandbox-state", "hooks", "hooks.jsonl"),
+			);
+		} finally {
+			process.env.CLINE_SANDBOX = previous.CLINE_SANDBOX;
+			process.env.CLINE_SANDBOX_DATA_DIR = previous.CLINE_SANDBOX_DATA_DIR;
+			process.env.CLINE_DATA_DIR = previous.CLINE_DATA_DIR;
+			process.env.CLINE_SESSION_DATA_DIR = previous.CLINE_SESSION_DATA_DIR;
+			process.env.CLINE_TEAM_DATA_DIR = previous.CLINE_TEAM_DATA_DIR;
+			process.env.CLINE_PROVIDER_SETTINGS_PATH =
+				previous.CLINE_PROVIDER_SETTINGS_PATH;
+			process.env.CLINE_HOOKS_LOG_PATH = previous.CLINE_HOOKS_LOG_PATH;
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });

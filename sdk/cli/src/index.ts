@@ -1255,6 +1255,7 @@ ${c.bold}OPTIONS${c.reset}
 ${c.bold}ENVIRONMENT${c.reset}
   ANTHROPIC_API_KEY           API key for Anthropic
   CLINE_API_KEY               API key for CLINE (when using -p cline)
+  CLINE_DATA_DIR              Base data directory (sessions/settings/teams/hooks)
   CLINE_SANDBOX               Set to 1 to force sandbox mode
   CLINE_SANDBOX_DATA_DIR      Override sandbox state directory
   CLINE_TEAM_DATA_DIR         Override team persistence directory

@@ -1,0 +1,238 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import {
+	createTool,
+	createToolRegistry,
+	executeTool,
+	executeToolsInParallel,
+	executeToolsSequentially,
+	executeToolWithRetry,
+	formatToolCallRecord,
+	formatToolResult,
+	formatToolResultsSummary,
+	getToolNames,
+	validateToolDefinition,
+	validateToolInput,
+	validateTools,
+} from "./tools/index.js";
+import type { PendingToolCall, Tool, ToolContext } from "./types.js";
+
+const baseContext: ToolContext = {
+	agentId: "agent-1",
+	conversationId: "conv-1",
+	iteration: 1,
+};
+
+describe("tools utilities", () => {
+	beforeEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("creates tools from zod/json schema and validates definitions", () => {
+		const jsonTool = createTool({
+			name: "echo",
+			description: "Echo value",
+			inputSchema: {
+				type: "object",
+				properties: { value: { type: "string" } },
+				required: ["value"],
+			},
+			execute: async ({ value }: { value: string }) => value,
+		});
+
+		const zodTool = createTool({
+			name: "math",
+			description: "Math tool",
+			inputSchema: z.object({ a: z.number(), b: z.number() }),
+			execute: async ({ a, b }) => a + b,
+		});
+
+		expect(jsonTool.timeoutMs).toBe(30000);
+		expect(zodTool.inputSchema.properties.a?.type).toBe("number");
+		expect(validateToolDefinition(jsonTool as Tool)).toEqual({
+			valid: true,
+			errors: [],
+		});
+	});
+
+	it("validates tool collections and inputs", () => {
+		const tool = createTool({
+			name: "parse",
+			description: "Parse record",
+			inputSchema: {
+				type: "object",
+				properties: {
+					count: { type: "integer" },
+					name: { type: "string" },
+				},
+				required: ["count"],
+			},
+			execute: async () => "ok",
+		});
+
+		validateTools([tool]);
+		expect(() => validateTools([tool, tool])).toThrow(
+			"Duplicate tool name: parse",
+		);
+
+		expect(validateToolInput(tool, { count: 3, name: "x" }).valid).toBe(true);
+		expect(validateToolInput(tool, { name: "x" })).toEqual({
+			valid: false,
+			error: "Missing required field: count",
+		});
+		expect(validateToolInput(tool, { count: 1.2 })).toEqual({
+			valid: false,
+			error: 'Field "count" must be an integer',
+		});
+	});
+
+	it("builds registries and handles duplicate tool names", () => {
+		const a = createTool({
+			name: "a",
+			description: "a",
+			inputSchema: { type: "object", properties: {} },
+			execute: async () => "a",
+		});
+		const b = createTool({
+			name: "b",
+			description: "b",
+			inputSchema: { type: "object", properties: {} },
+			execute: async () => "b",
+		});
+
+		const registry = createToolRegistry([a, b]);
+		expect(getToolNames(registry)).toEqual(["a", "b"]);
+		expect(() => createToolRegistry([a, a])).toThrow("Duplicate tool name: a");
+	});
+
+	it("executes tools with timeout, retry, and authorization", async () => {
+		const transient = vi
+			.fn()
+			.mockRejectedValueOnce(new Error("transient"))
+			.mockResolvedValueOnce({ ok: true });
+		const retryTool = createTool({
+			name: "retry_tool",
+			description: "retry",
+			inputSchema: { type: "object", properties: {} },
+			execute: transient,
+			maxRetries: 1,
+			retryable: true,
+		});
+
+		vi.useFakeTimers();
+		const retryPromise = executeToolWithRetry(retryTool, {}, baseContext);
+		await vi.advanceTimersByTimeAsync(1000);
+		const retryResult = await retryPromise;
+		expect(retryResult.error).toBeUndefined();
+		expect(retryResult.output).toEqual({ ok: true });
+
+		const timeoutTool = createTool({
+			name: "slow_tool",
+			description: "slow",
+			inputSchema: { type: "object", properties: {} },
+			timeoutMs: 5,
+			execute: async () => {
+				await new Promise((resolve) => setTimeout(resolve, 50));
+				return "late";
+			},
+		});
+		const timeoutPromise = executeTool(timeoutTool, {}, baseContext);
+		await vi.advanceTimersByTimeAsync(10);
+		const timeoutResult = await timeoutPromise;
+		expect(timeoutResult.error).toContain("timed out");
+	});
+
+	it("executes parallel and sequential calls with observer + authorizer", async () => {
+		const successTool = createTool({
+			name: "success",
+			description: "ok",
+			inputSchema: { type: "object", properties: {} },
+			execute: async () => ({ ok: true }),
+			retryable: false,
+		});
+		const denyTool = createTool({
+			name: "deny",
+			description: "deny",
+			inputSchema: { type: "object", properties: {} },
+			execute: async () => ({ denied: false }),
+			retryable: false,
+		});
+
+		const registry = createToolRegistry([successTool, denyTool]);
+		const calls: PendingToolCall[] = [
+			{ id: "1", name: "success", input: {} },
+			{ id: "2", name: "deny", input: {} },
+			{ id: "3", name: "missing", input: {} },
+		];
+
+		const starts: string[] = [];
+		const ends: string[] = [];
+
+		const observer = {
+			onToolCallStart: async (call: PendingToolCall) => {
+				starts.push(call.name);
+			},
+			onToolCallEnd: async (record: { name: string }) => {
+				ends.push(record.name);
+			},
+		};
+
+		const authorizer = {
+			authorize: async (call: PendingToolCall) =>
+				call.name === "deny"
+					? { allowed: false as const, reason: "blocked by policy" }
+					: { allowed: true as const },
+		};
+
+		const parallel = await executeToolsInParallel(
+			registry,
+			calls,
+			baseContext,
+			observer,
+			authorizer,
+		);
+		expect(parallel).toHaveLength(3);
+		expect(parallel.find((r) => r.name === "success")?.error).toBeUndefined();
+		expect(parallel.find((r) => r.name === "deny")?.error).toBe(
+			"blocked by policy",
+		);
+		expect(parallel.find((r) => r.name === "missing")?.error).toContain(
+			"Unknown tool",
+		);
+
+		const sequential = await executeToolsSequentially(
+			registry,
+			calls,
+			baseContext,
+			observer,
+			authorizer,
+		);
+		expect(sequential).toHaveLength(3);
+		expect(starts).toContain("success");
+		expect(ends).toContain("missing");
+	});
+
+	it("formats tool output and summaries", () => {
+		expect(formatToolResult("hello")).toBe("hello");
+		expect(formatToolResult({ ok: true })).toBe('{"ok":true}');
+		expect(formatToolResult(undefined)).toBe("null");
+		expect(formatToolResult(null, "boom")).toBe('{"error":"boom"}');
+
+		const record = {
+			id: "call-1",
+			name: "echo",
+			input: { value: "x" },
+			output: "x",
+			durationMs: 12,
+			startedAt: new Date("2026-01-01T00:00:00.000Z"),
+			endedAt: new Date("2026-01-01T00:00:00.012Z"),
+		};
+		const summary = formatToolResultsSummary([record]);
+		expect(summary).toContain("echo: SUCCESS (12ms)");
+		expect(formatToolResultsSummary([])).toBe("No tools were called.");
+
+		const detail = formatToolCallRecord(record);
+		expect(detail).toContain("Tool: echo");
+		expect(detail).toContain("Status: SUCCESS");
+	});
+});
