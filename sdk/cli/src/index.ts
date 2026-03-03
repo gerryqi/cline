@@ -52,6 +52,7 @@ import { providers } from "@cline/llms";
 import { version } from "../package.json";
 import {
 	appendHookAudit,
+	configureSandboxEnvironment,
 	formatToolInput,
 	formatToolOutput,
 	isCliHookPayload,
@@ -1231,6 +1232,8 @@ ${c.bold}OPTIONS${c.reset}
   --thinking                  Enable model thinking/reasoning when supported
   --output <text|json>        Output format (default: text)
   --json                      Shorthand for --output json (NDJSON stream)
+  --sandbox                   Run with isolated local state (no writes to ~/.cline)
+  --sandbox-dir <path>        Sandbox state directory (default: $CLINE_SANDBOX_DATA_DIR or /tmp/cline-sandbox)
   --no-tools                  Disable default tools (enabled by default)
   --no-spawn                  Disable spawn_agent tool (enabled by default)
   --no-teams                  Disable agent-team tools (enabled by default)
@@ -1252,6 +1255,9 @@ ${c.bold}OPTIONS${c.reset}
 ${c.bold}ENVIRONMENT${c.reset}
   ANTHROPIC_API_KEY           API key for Anthropic
   CLINE_API_KEY               API key for CLINE (when using -p cline)
+  CLINE_SANDBOX               Set to 1 to force sandbox mode
+  CLINE_SANDBOX_DATA_DIR      Override sandbox state directory
+  CLINE_TEAM_DATA_DIR         Override team persistence directory
   OPENAI_API_KEY              API key for OpenAI (when using -p openai)
   OPENROUTER_API_KEY          API key for Openrouter (when using -p openrouter)
   VERCEL_AI_GATEWAY_API_KEY   API key for Vercel AI Gateway (when using -p vercel-ai-gateway)
@@ -1280,6 +1286,16 @@ async function main(): Promise<void> {
 	installStreamErrorGuards();
 
 	const rawArgs = process.argv.slice(2);
+	const args = parseArgs(rawArgs);
+	const cwd = args.cwd ?? process.cwd();
+	const sandboxEnabled =
+		args.sandbox || process.env.CLINE_SANDBOX?.trim() === "1";
+	const sandboxDataDir = configureSandboxEnvironment({
+		enabled: sandboxEnabled,
+		cwd,
+		explicitDir: args.sandboxDir,
+	});
+
 	if (rawArgs[0] === "hook") {
 		const code = await runHookCommand();
 		process.exit(code);
@@ -1307,7 +1323,6 @@ async function main(): Promise<void> {
 		process.exit(0);
 	}
 
-	const args = parseArgs(rawArgs);
 	if (args.invalidOutputMode) {
 		writeErr(
 			`invalid output mode "${args.invalidOutputMode}" (expected "text" or "json")`,
@@ -1315,7 +1330,6 @@ async function main(): Promise<void> {
 		process.exit(1);
 	}
 	currentOutputMode = args.outputMode;
-	const cwd = args.cwd ?? process.cwd();
 	const defaultToolAutoApprove = args.defaultToolAutoApprove;
 	const mergedToolPolicies = mergeToolPolicies({}, args.toolPolicies);
 	const toolPolicies: Record<string, ToolPolicy> = {
@@ -1376,6 +1390,8 @@ async function main(): Promise<void> {
 		knownModels,
 		systemPrompt: args.systemPrompt ?? (await buildDefaultSystemPrompt(cwd)),
 		maxIterations: undefined,
+		sandbox: sandboxEnabled,
+		sandboxDataDir,
 		showUsage: args.showUsage,
 		showTimings: args.showTimings,
 		thinking: args.thinking,

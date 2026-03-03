@@ -67,6 +67,8 @@ clite -p openrouter -m google/gemini-3-pro -k sk-your-google-gemini-api-key "Set
 | `--thinking` | Enable model thinking/reasoning when supported |
 | `--output <text|json>` | Output format (default: `text`) |
 | `--json` | Shorthand for `--output json` (NDJSON stream) |
+| `--sandbox` | Run with isolated local state; avoids writing to `~/.cline` |
+| `--sandbox-dir <path>` | Sandbox state directory (default: `$CLINE_SANDBOX_DATA_DIR` or `/tmp/cline-sandbox`) |
 | `--tools` | Enable default tools (enabled by default) |
 | `--no-tools` | Disable default tools |
 | `--spawn` | Enable `spawn_agent` (enabled by default) |
@@ -125,6 +127,9 @@ bun install -g @cline/cli
 ## Environment Variables
 
 - `ANTHROPIC_API_KEY` - API key for Anthropic
+- `CLINE_SANDBOX` - Set to `1` to force sandbox mode
+- `CLINE_SANDBOX_DATA_DIR` - Override sandbox state directory
+- `CLINE_TEAM_DATA_DIR` - Override team persistence directory
 - `OPENAI_API_KEY` - API key for OpenAI (when using `-p openai`)
 - `OPENROUTER_API_KEY` - API key for OpenRouter
 

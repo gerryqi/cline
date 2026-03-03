@@ -8,6 +8,8 @@ export interface Config extends CoreSessionConfig {
 	apiKey: string;
 	knownModels?: Record<string, LlmsProviders.ModelInfo>;
 	systemPrompt: string;
+	sandbox: boolean;
+	sandboxDataDir?: string;
 	thinking: boolean;
 	enableSpawnAgent: boolean;
 	enableAgentTeams: boolean;
@@ -70,6 +72,8 @@ export interface ParsedArgs {
 	outputMode: CliOutputMode;
 	thinking: boolean;
 	invalidOutputMode?: string;
+	sandbox: boolean;
+	sandboxDir?: string;
 	enableSpawnAgent: boolean;
 	enableAgentTeams: boolean;
 	enableTools: boolean;

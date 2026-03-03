@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import type { HookEventPayload } from "@cline/agents";
 import type { ParsedArgs } from "./types";
 
@@ -272,6 +272,7 @@ export function parseArgs(args: string[]): ParsedArgs {
 		showUsage: false,
 		showTimings: false,
 		outputMode: "text",
+		sandbox: false,
 		thinking: false,
 		enableSpawnAgent: true,
 		enableAgentTeams: true,
@@ -300,6 +301,10 @@ export function parseArgs(args: string[]): ParsedArgs {
 			result.thinking = true;
 		} else if (arg === "--json") {
 			result.outputMode = "json";
+		} else if (arg === "--sandbox") {
+			result.sandbox = true;
+		} else if (arg === "--sandbox-dir") {
+			result.sandboxDir = args[++i];
 		} else if (arg === "--output") {
 			const mode = (args[++i] ?? "").trim().toLowerCase();
 			if (mode === "text" || mode === "json") {
@@ -385,4 +390,33 @@ export function parseArgs(args: string[]): ParsedArgs {
 	}
 
 	return result;
+}
+
+export function resolveSandboxDataDir(
+	cwd: string,
+	explicitDir?: string,
+): string {
+	const envDir = process.env.CLINE_SANDBOX_DATA_DIR?.trim();
+	const baseDir = explicitDir?.trim() || envDir || join(tmpdir(), "cline-sandbox");
+	return resolve(cwd, baseDir);
+}
+
+export function configureSandboxEnvironment(
+	options: { enabled: boolean; cwd: string; explicitDir?: string },
+): string | undefined {
+	if (!options.enabled) {
+		return undefined;
+	}
+	const dataDir = resolveSandboxDataDir(options.cwd, options.explicitDir);
+	process.env.CLINE_SANDBOX = "1";
+	process.env.CLINE_SANDBOX_DATA_DIR = dataDir;
+	process.env.CLINE_SESSION_DATA_DIR = join(dataDir, "sessions");
+	process.env.CLINE_TEAM_DATA_DIR = join(dataDir, "teams");
+	process.env.CLINE_PROVIDER_SETTINGS_PATH = join(
+		dataDir,
+		"settings",
+		"providers.json",
+	);
+	process.env.CLINE_HOOKS_LOG_PATH = join(dataDir, "hooks", "hooks.jsonl");
+	return dataDir;
 }

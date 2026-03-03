@@ -11,8 +11,15 @@ import {
 } from "@cline/core/server";
 import type { providers as LlmsProviders } from "@cline/llms";
 
-const store = new SqliteSessionStore();
-const coreSessions = new CoreSessionService(store);
+let coreSessions: CoreSessionService | undefined;
+
+function getCoreSessions(): CoreSessionService {
+	if (!coreSessions) {
+		const store = new SqliteSessionStore();
+		coreSessions = new CoreSessionService(store);
+	}
+	return coreSessions;
+}
 
 export function createRootCliSessionWithArtifacts(input: {
 	sessionId: string;
@@ -30,14 +37,14 @@ export function createRootCliSessionWithArtifacts(input: {
 	prompt?: string;
 	startedAt?: string;
 }): RootSessionArtifacts {
-	return coreSessions.createRootSessionWithArtifacts(input);
+	return getCoreSessions().createRootSessionWithArtifacts(input);
 }
 
 export function writeCliSessionManifest(
 	manifestPath: string,
 	manifest: SessionManifest,
 ): void {
-	coreSessions.writeSessionManifest(manifestPath, manifest);
+	getCoreSessions().writeSessionManifest(manifestPath, manifest);
 }
 
 export function updateCliSessionStatusInStore(
@@ -45,42 +52,42 @@ export function updateCliSessionStatusInStore(
 	status: SessionManifest["status"],
 	exitCode?: number | null,
 ): { updated: boolean; endedAt?: string } {
-	return coreSessions.updateSessionStatus(sessionId, status, exitCode);
+	return getCoreSessions().updateSessionStatus(sessionId, status, exitCode);
 }
 
 export function queueSpawnRequest(event: HookEventPayload): void {
-	coreSessions.queueSpawnRequest(event);
+	getCoreSessions().queueSpawnRequest(event);
 }
 
 export function upsertSubagentSessionFromHook(
 	event: HookEventPayload,
 ): string | undefined {
-	return coreSessions.upsertSubagentSessionFromHook(event);
+	return getCoreSessions().upsertSubagentSessionFromHook(event);
 }
 
 export function appendSubagentHookAudit(
 	subSessionId: string,
 	event: HookEventPayload,
 ): void {
-	coreSessions.appendSubagentHookAudit(subSessionId, event);
+	getCoreSessions().appendSubagentHookAudit(subSessionId, event);
 }
 
 export function appendSubagentTranscriptLine(
 	subSessionId: string,
 	line: string,
 ): void {
-	coreSessions.appendSubagentTranscriptLine(subSessionId, line);
+	getCoreSessions().appendSubagentTranscriptLine(subSessionId, line);
 }
 
 export function applySubagentStatus(
 	subSessionId: string,
 	event: HookEventPayload,
 ): void {
-	coreSessions.applySubagentStatus(subSessionId, event);
+	getCoreSessions().applySubagentStatus(subSessionId, event);
 }
 
 export function onTeamTaskStart(agentId: string, message: string): void {
-	coreSessions.onTeamTaskStart(agentId, message);
+	getCoreSessions().onTeamTaskStart(agentId, message);
 }
 
 export function onTeamTaskEnd(
@@ -89,21 +96,21 @@ export function onTeamTaskEnd(
 	summary?: string,
 	messages?: LlmsProviders.Message[],
 ): void {
-	coreSessions.onTeamTaskEnd(agentId, status, summary, messages);
+	getCoreSessions().onTeamTaskEnd(agentId, status, summary, messages);
 }
 
 export function handleSubAgentStart(context: SubAgentStartContext): void {
-	coreSessions.handleSubAgentStart(context);
+	getCoreSessions().handleSubAgentStart(context);
 }
 
 export function handleSubAgentEnd(context: SubAgentEndContext): void {
-	coreSessions.handleSubAgentEnd(context);
+	getCoreSessions().handleSubAgentEnd(context);
 }
 
 export function listCliSessions(limit = 200): unknown[] {
-	return coreSessions.listCliSessions(limit);
+	return getCoreSessions().listCliSessions(limit);
 }
 
 export function deleteCliSession(sessionId: string): { deleted: boolean } {
-	return coreSessions.deleteCliSession(sessionId);
+	return getCoreSessions().deleteCliSession(sessionId);
 }
