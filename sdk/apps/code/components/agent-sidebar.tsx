@@ -1,0 +1,736 @@
+"use client";
+
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import {
+	AlertCircle,
+	CheckCircle2,
+	ChevronDown,
+	Clock,
+	Filter,
+	Loader2,
+	Pin,
+	Plus,
+	Search,
+	Settings,
+	XCircle,
+} from "lucide-react";
+import {
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuRadioGroup,
+	DropdownMenuRadioItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import type {
+	SessionHistoryItem,
+	SessionHistoryStatus,
+} from "@/lib/session-history";
+import { cn } from "@/lib/utils";
+import { Button } from "./ui/button";
+import { normalizeTitle } from "./utils";
+
+type CliDiscoveredSession = Omit<SessionHistoryItem, "status"> & {
+	status: string;
+};
+
+interface Thread {
+	id: string;
+	title: string;
+	codebase: string;
+	time: string;
+	provider: string;
+	model: string;
+	inputTokens?: number;
+	outputTokens?: number;
+	totalCostUsd?: number;
+	status: SessionHistoryStatus;
+	pinned?: boolean;
+}
+
+type SessionHookEvent = {
+	inputTokens?: number;
+	outputTokens?: number;
+	totalCost?: number;
+};
+
+type SessionMessage = {
+	role?: string;
+	content?: string;
+};
+
+const filterOptions = ["All", "Running", "Recent", "Pinned"] as const;
+type FilterOption = (typeof filterOptions)[number];
+
+function normalizeDiscoveredStatus(
+	status: string,
+	prompt?: string,
+): SessionHistoryStatus {
+	const normalized = status.toLowerCase();
+	const hasPrompt = Boolean(prompt?.trim());
+	if (normalized.includes("complete") || normalized.includes("done"))
+		return "completed";
+	if (
+		normalized.includes("cancel") ||
+		normalized.includes("abort") ||
+		normalized.includes("interrupt")
+	)
+		return "cancelled";
+	if (normalized.includes("fail") || normalized.includes("error"))
+		return "failed";
+	if (normalized.includes("run") || normalized.includes("start"))
+		return hasPrompt ? "running" : "idle";
+	if (normalized === "idle") return "idle";
+	return "idle";
+}
+
+function formatRelativeTime(value?: string): string {
+	if (!value) return "just now";
+	const trimmed = value.trim();
+	const maybeEpoch = Number(trimmed);
+	const date =
+		Number.isFinite(maybeEpoch) && trimmed.length >= 10
+			? new Date(maybeEpoch)
+			: new Date(value);
+	if (Number.isNaN(date.getTime())) return "";
+
+	const diffMs = Date.now() - date.getTime();
+	const minute = 60 * 1000;
+	const hour = 60 * minute;
+	const day = 24 * hour;
+
+	if (diffMs < minute) return "now";
+	if (diffMs < hour) return `${Math.max(1, Math.floor(diffMs / minute))}m`;
+	if (diffMs < day) return `${Math.max(1, Math.floor(diffMs / hour))}h`;
+	return `${Math.max(1, Math.floor(diffMs / day))}d`;
+}
+
+function basenamePath(input?: string): string {
+	if (!input) return "workspace";
+	const trimmed = input.replace(/[\\/]+$/, "");
+	if (!trimmed) return "workspace";
+	const parts = trimmed.split(/[\\/]/);
+	return parts[parts.length - 1] || "workspace";
+}
+
+function toTitle(session: SessionHistoryItem): string {
+	const line = session.prompt?.trim().split("\n")[0]?.trim();
+	if (line) return line.slice(0, 70);
+	return `Session ${session.sessionId.slice(-6)}`;
+}
+
+function stripUserInputTags(value: string): string {
+	return value.replace(/<user_input>(.*?)<\/user_input>/g, "$1");
+}
+
+function titleFromMessages(messages: SessionMessage[]): string | null {
+	for (const message of messages) {
+		if (message.role !== "user") {
+			continue;
+		}
+		const content = typeof message.content === "string" ? message.content : "";
+		const line = stripUserInputTags(content).trim().split("\n")[0]?.trim();
+		if (line) {
+			return line.slice(0, 70);
+		}
+	}
+	return null;
+}
+
+function toThread(session: SessionHistoryItem): Thread {
+	return {
+		id: session.sessionId,
+		title: toTitle(session),
+		codebase: basenamePath(session.workspaceRoot || session.cwd),
+		time: formatRelativeTime(session.endedAt || session.startedAt),
+		provider: session.provider || "",
+		model: session.model || "",
+		status: normalizeDiscoveredStatus(session.status, session.prompt),
+	};
+}
+
+function formatTokenCount(inputTokens?: number, outputTokens?: number): string {
+	const inCount = inputTokens ?? 0;
+	const outCount = outputTokens ?? 0;
+	const total = inCount + outCount;
+	if (total <= 0) {
+		return "0 tok";
+	}
+	if (total >= 1000) {
+		return `${(total / 1000).toFixed(total >= 10000 ? 0 : 1)}k tok`;
+	}
+	return `${total} tok`;
+}
+
+function formatCostUsd(value?: number): string {
+	if (typeof value !== "number" || !Number.isFinite(value)) {
+		return "$-";
+	}
+	if (value < 0.01) {
+		return `$${value.toFixed(4)}`;
+	}
+	if (value < 1) {
+		return `$${value.toFixed(3)}`;
+	}
+	return `$${value.toFixed(2)}`;
+}
+
+export function AgentSidebar({
+	onNewThread,
+	onOpenSession,
+	activeSessionId,
+}: {
+	onNewThread?: () => void;
+	onOpenSession?: (session: SessionHistoryItem) => void;
+	activeSessionId?: string | null;
+}) {
+	const [sessions, setSessions] = useState<SessionHistoryItem[]>([]);
+	const [threads, setThreads] = useState<Thread[]>([]);
+	const [activeThread, setActiveThread] = useState("");
+	const [filter, setFilter] = useState<FilterOption>("All");
+	const [searchOpen, setSearchOpen] = useState(false);
+	const [searchQuery, setSearchQuery] = useState("");
+	const [showMoreCount, setShowMoreCount] = useState(10);
+	const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+	const usageLoadingRef = useRef<Set<string>>(new Set());
+	const titleLoadingRef = useRef<Set<string>>(new Set());
+
+	const refreshSessions = useCallback(async () => {
+		setIsLoadingHistory(true);
+		try {
+			const [cliDiscovered, chatDiscovered] = await Promise.all([
+				invoke<CliDiscoveredSession[]>("list_cli_sessions", {
+					limit: 300,
+				}).catch(() => []),
+				invoke<CliDiscoveredSession[]>("list_chat_sessions", {
+					limit: 300,
+				}).catch(() => []),
+			]);
+			const discovered = [...chatDiscovered, ...cliDiscovered];
+			const topLevelSessions: SessionHistoryItem[] = discovered
+				.filter((session) => !session.isSubagent && !session.parentSessionId)
+				.map((session) => ({
+					...session,
+					status: normalizeDiscoveredStatus(session.status, session.prompt),
+				}))
+				.sort((a, b) => {
+					const aTs = new Date(a.startedAt).getTime();
+					const bTs = new Date(b.startedAt).getTime();
+					return (Number.isNaN(bTs) ? 0 : bTs) - (Number.isNaN(aTs) ? 0 : aTs);
+				});
+
+			setSessions(topLevelSessions);
+			const mapped = topLevelSessions.map(toThread);
+			setThreads((current) => {
+				const existingById = new Map(
+					current.map((thread) => [thread.id, thread]),
+				);
+				const usageById = new Map(
+					current.map((thread) => [
+						thread.id,
+						{
+							inputTokens: thread.inputTokens,
+							outputTokens: thread.outputTokens,
+							totalCostUsd: thread.totalCostUsd,
+						},
+					]),
+				);
+				return mapped.map((thread) => {
+					const existing = existingById.get(thread.id);
+					const keepExistingTitle =
+						Boolean(existing) &&
+						thread.title.startsWith("Session ") &&
+						!(existing?.title.startsWith("Session ") ?? true);
+					return {
+						...thread,
+						title:
+							keepExistingTitle && existing ? existing.title : thread.title,
+						...usageById.get(thread.id),
+					};
+				});
+			});
+			setActiveThread((current) => {
+				if (current && mapped.some((thread) => thread.id === current)) {
+					return current;
+				}
+				return mapped[0]?.id ?? "";
+			});
+		} catch {
+			// Ignore in browser mode or when tauri command is unavailable.
+		} finally {
+			setIsLoadingHistory(false);
+		}
+	}, []);
+
+	useEffect(() => {
+		let disposed = false;
+		let unlistenEnded: UnlistenFn | undefined;
+
+		const runRefresh = () => {
+			if (!disposed) {
+				void refreshSessions();
+			}
+		};
+
+		runRefresh();
+		const interval = window.setInterval(() => {
+			void invoke("poll_sessions").catch(() => {
+				// Ignore when tauri command is unavailable.
+			});
+			runRefresh();
+		}, 3500);
+
+		void listen<{ sessionId: string }>("agent://session-ended", () => {
+			runRefresh();
+		}).then((unlisten) => {
+			if (disposed) {
+				unlisten();
+			} else {
+				unlistenEnded = unlisten;
+			}
+		});
+
+		return () => {
+			disposed = true;
+			window.clearInterval(interval);
+			if (unlistenEnded) {
+				unlistenEnded();
+			}
+		};
+	}, [refreshSessions]);
+
+	useEffect(() => {
+		setActiveThread(activeSessionId ?? "");
+	}, [activeSessionId]);
+
+	useEffect(() => {
+		const recent = sessions.slice(0, 24);
+		for (const session of recent) {
+			const sessionId = session.sessionId;
+			if (!sessionId) {
+				continue;
+			}
+			if (usageLoadingRef.current.has(sessionId)) {
+				continue;
+			}
+			const existing = threads.find((item) => item.id === sessionId);
+			if (
+				existing?.inputTokens !== undefined ||
+				existing?.outputTokens !== undefined
+			) {
+				continue;
+			}
+			usageLoadingRef.current.add(sessionId);
+			void invoke<SessionHookEvent[]>("read_session_hooks", {
+				sessionId,
+				limit: 1200,
+			})
+				.then((events) => {
+					const inputTokens = events.reduce(
+						(sum, event) => sum + (event.inputTokens ?? 0),
+						0,
+					);
+					const outputTokens = events.reduce(
+						(sum, event) => sum + (event.outputTokens ?? 0),
+						0,
+					);
+					const totalCostUsd = events.reduce(
+						(sum, event) => sum + (event.totalCost ?? 0),
+						0,
+					);
+					setThreads((current) =>
+						current.map((thread) =>
+							thread.id === sessionId
+								? { ...thread, inputTokens, outputTokens, totalCostUsd }
+								: thread,
+						),
+					);
+				})
+				.catch(() => {
+					// Ignore sessions without hook logs.
+					setThreads((current) =>
+						current.map((thread) =>
+							thread.id === sessionId
+								? { ...thread, inputTokens: 0, outputTokens: 0 }
+								: thread,
+						),
+					);
+				})
+				.finally(() => {
+					usageLoadingRef.current.delete(sessionId);
+				});
+		}
+	}, [sessions, threads]);
+
+	useEffect(() => {
+		const recent = sessions.slice(0, 24);
+		for (const session of recent) {
+			const sessionId = session.sessionId;
+			if (!sessionId) {
+				continue;
+			}
+			if (titleLoadingRef.current.has(sessionId)) {
+				continue;
+			}
+			const existing = threads.find((item) => item.id === sessionId);
+			if (!existing || !existing.title.startsWith("Session ")) {
+				continue;
+			}
+			titleLoadingRef.current.add(sessionId);
+			void invoke<SessionMessage[]>("read_session_messages", {
+				sessionId,
+				maxMessages: 80,
+			})
+				.then((messages) => {
+					const nextTitle = titleFromMessages(messages);
+					if (!nextTitle) {
+						return;
+					}
+					setThreads((current) =>
+						current.map((thread) =>
+							thread.id === sessionId
+								? { ...thread, title: nextTitle }
+								: thread,
+						),
+					);
+				})
+				.catch(() => {
+					// Ignore sessions that cannot be hydrated.
+				})
+				.finally(() => {
+					titleLoadingRef.current.delete(sessionId);
+				});
+		}
+	}, [sessions, threads]);
+
+	const filteredThreads = useMemo(() => {
+		let filtered = threads;
+		if (searchQuery) {
+			const q = searchQuery.toLowerCase();
+			filtered = filtered.filter(
+				(t) =>
+					t.title.toLowerCase().includes(q) ||
+					t.codebase.toLowerCase().includes(q),
+			);
+		}
+		switch (filter) {
+			case "Running":
+				return filtered.filter((t) => t.status === "running");
+			case "Recent":
+				return filtered.slice(0, 8);
+			case "Pinned":
+				return filtered.filter((t) => t.pinned);
+			default:
+				return filtered;
+		}
+	}, [filter, searchQuery, threads]);
+
+	const pinnedThreads = useMemo(
+		() => filteredThreads.filter((t) => t.pinned),
+		[filteredThreads],
+	);
+	const runningThreads = useMemo(
+		() => filteredThreads.filter((t) => t.status === "running" && !t.pinned),
+		[filteredThreads],
+	);
+	const recentThreads = useMemo(
+		() => filteredThreads.filter((t) => t.status !== "running" && !t.pinned),
+		[filteredThreads],
+	);
+	const displayedThreads =
+		filter === "All" ? null : filteredThreads.slice(0, showMoreCount);
+	const filterMenu = (
+		<DropdownMenu>
+			<DropdownMenuTrigger asChild>
+				<Button
+					aria-label="Filter sessions"
+					className="flex items-center gap-1 rounded-md p-1 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+					size="icon-sm"
+					variant="ghost"
+				>
+					<Filter className="h-2 w-2" />
+				</Button>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="end" className="w-36">
+				<DropdownMenuRadioGroup
+					onValueChange={(value) => {
+						setFilter(value as FilterOption);
+						setShowMoreCount(10);
+					}}
+					value={filter}
+				>
+					{filterOptions.map((opt) => (
+						<DropdownMenuRadioItem key={opt} value={opt}>
+							{opt}
+						</DropdownMenuRadioItem>
+					))}
+				</DropdownMenuRadioGroup>
+			</DropdownMenuContent>
+		</DropdownMenu>
+	);
+
+	return (
+		<div className="flex h-full min-h-0 min-w-0 shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
+			<div className="flex flex-col gap-1 p-3 w-full">
+				<Button
+					className="justify-start"
+					onClick={() => onNewThread?.()}
+					variant="sidebar"
+				>
+					<Plus className="h-4 w-4" />
+					New Session
+				</Button>
+			</div>
+
+			<div className="px-3 pb-2 w-full">
+				{searchOpen ? (
+					<div className="flex items-center gap-2 rounded-md bg-sidebar-accent px-2 py-1.5">
+						<Search className="h-3.5 w-3.5 text-muted-foreground" />
+						<input
+							className="flex-1 bg-transparent text-sm text-sidebar-foreground outline-none placeholder:text-muted-foreground"
+							onBlur={() => {
+								if (!searchQuery) setSearchOpen(false);
+							}}
+							onChange={(e) => setSearchQuery(e.target.value)}
+							placeholder="Search sessions..."
+							value={searchQuery}
+						/>
+					</div>
+				) : (
+					<Button
+						className="px-2 py-1.5"
+						onClick={() => setSearchOpen(true)}
+						type="button"
+						variant="sidebarItem"
+					>
+						<Search className="h-3.5 w-3.5" />
+						<span>Search</span>
+					</Button>
+				)}
+			</div>
+
+			<div className="min-h-0 flex-1 w-full">
+				<ScrollArea className="h-full min-h-0 w-full">
+					<div className="flex min-w-0 flex-col gap-0.5 overflow-x-hidden px-2 pb-3">
+						{isLoadingHistory && threads.length === 0 ? (
+							<div className="px-3 py-4 text-xs text-muted-foreground">
+								Loading session history...
+							</div>
+						) : filter === "All" ? (
+							<>
+								{pinnedThreads.length > 0 && (
+									<ThreadSection label="Pinned">
+										{pinnedThreads.map((thread) => (
+											<ThreadItem
+												isActive={activeThread === thread.id}
+												key={thread.id}
+												onClick={() => {
+													setActiveThread(thread.id);
+													const session = sessions.find(
+														(item) => item.sessionId === thread.id,
+													);
+													if (session) {
+														onOpenSession?.(session);
+													}
+												}}
+												thread={thread}
+											/>
+										))}
+									</ThreadSection>
+								)}
+
+								{runningThreads.length > 0 && (
+									<ThreadSection label="Running">
+										{runningThreads.map((thread) => (
+											<ThreadItem
+												isActive={activeThread === thread.id}
+												key={thread.id}
+												onClick={() => {
+													setActiveThread(thread.id);
+													const session = sessions.find(
+														(item) => item.sessionId === thread.id,
+													);
+													if (session) {
+														onOpenSession?.(session);
+													}
+												}}
+												thread={thread}
+											/>
+										))}
+									</ThreadSection>
+								)}
+
+								{recentThreads.length > 0 && (
+									<ThreadSection action={filterMenu} label="Sessions">
+										{recentThreads.slice(0, showMoreCount).map((thread) => (
+											<ThreadItem
+												isActive={activeThread === thread.id}
+												key={thread.id}
+												onClick={() => {
+													setActiveThread(thread.id);
+													const session = sessions.find(
+														(item) => item.sessionId === thread.id,
+													);
+													if (session) {
+														onOpenSession?.(session);
+													}
+												}}
+												thread={thread}
+											/>
+										))}
+										{recentThreads.length > showMoreCount && (
+											<Button
+												onClick={() => setShowMoreCount((c) => c + 10)}
+												type="button"
+												variant="sidebarText"
+											>
+												<ChevronDown className="h-3 w-3" />
+												Show more
+											</Button>
+										)}
+									</ThreadSection>
+								)}
+
+								{filteredThreads.length === 0 && (
+									<div className="px-3 py-4 text-xs text-muted-foreground">
+										{searchQuery
+											? "No sessions match your search."
+											: "No sessions found in history."}
+									</div>
+								)}
+							</>
+						) : (
+							<ThreadSection action={filterMenu} label={filter}>
+								{displayedThreads?.map((thread) => (
+									<ThreadItem
+										isActive={activeThread === thread.id}
+										key={thread.id}
+										onClick={() => {
+											setActiveThread(thread.id);
+											const session = sessions.find(
+												(item) => item.sessionId === thread.id,
+											);
+											if (session) {
+												onOpenSession?.(session);
+											}
+										}}
+										thread={thread}
+									/>
+								))}
+								{filteredThreads.length > showMoreCount && (
+									<Button
+										onClick={() => setShowMoreCount((c) => c + 10)}
+										type="button"
+										variant="sidebarText"
+									>
+										<ChevronDown className="h-3 w-3" />
+										Show more
+									</Button>
+								)}
+							</ThreadSection>
+						)}
+					</div>
+				</ScrollArea>
+			</div>
+
+			<div className="shrink-0 border-t border-sidebar-border bg-sidebar p-3">
+				<Button type="button" variant="sidebarItem">
+					<Settings className="h-4 w-4" />
+					Settings
+				</Button>
+			</div>
+		</div>
+	);
+}
+
+function ThreadSection({
+	label,
+	action,
+	children,
+}: {
+	label: string;
+	action?: ReactNode;
+	children: ReactNode;
+}) {
+	return (
+		<div className="mb-1 w-full min-w-0 max-w-full overflow-x-hidden">
+			<div className="flex w-full min-w-0 max-w-full items-center justify-between px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+				<span>{label}</span>
+				{action}
+			</div>
+			{children}
+		</div>
+	);
+}
+
+function ThreadItem({
+	thread,
+	isActive,
+	onClick,
+}: {
+	thread: Thread;
+	isActive: boolean;
+	onClick: () => void;
+}) {
+	return (
+		<Button
+			className={cn(
+				"font-normal",
+				isActive
+					? "bg-sidebar-accent text-sidebar-accent-foreground"
+					: "text-sidebar-foreground/80 hover:bg-sidebar-accent/50",
+			)}
+			onClick={onClick}
+			type="button"
+			variant="session"
+		>
+			<div className="mt-0.5 shrink-0">
+				{thread.status === "running" ? (
+					<Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+				) : thread.status === "completed" ? (
+					<CheckCircle2 className="h-3.5 w-3.5 text-primary" />
+				) : thread.status === "failed" ? (
+					<XCircle className="h-3.5 w-3.5 text-destructive" />
+				) : thread.status === "cancelled" ? (
+					<AlertCircle className="h-3.5 w-3.5 text-warning" />
+				) : (
+					<Clock className="h-3.5 w-3.5 text-muted-foreground" />
+				)}
+			</div>
+			<div className="min-w-0 flex-1">
+				<div className="flex w-full min-w-0 max-w-full items-center gap-1.5 overflow-hidden">
+					<span className="block min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-tight">
+						{normalizeTitle(thread.title)}
+					</span>
+					{thread.pinned && (
+						<Pin className="h-3 w-3 shrink-0 text-muted-foreground" />
+					)}
+				</div>
+				<div className="mt-0.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+					<span className="truncate rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px]">
+						{thread.codebase}
+					</span>
+					<span className="ml-auto">{thread.time}</span>
+				</div>
+				{/* <div className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden text-[10px] text-muted-foreground">
+					<span className="truncate">{thread.model || "unknown-model"}</span>
+					<span>·</span>
+					<span className="shrink-0">
+						{formatTokenCount(thread.inputTokens, thread.outputTokens)}
+					</span>
+					<span>·</span>
+					<span className="shrink-0">{formatCostUsd(thread.totalCostUsd)}</span>
+				</div> */}
+			</div>
+		</Button>
+	);
+}

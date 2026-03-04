@@ -8,11 +8,12 @@ alwaysApply: true
 
 This repository is a Bun workspace with five packages:
 
-- `llms` (`@cline/llms`)
-- `agents` (`@cline/agents`)
-- `core` (`@cline/core`)
-- `cli` (`@cline/cli`)
-- `desktop` (`@cline/desktop`)
+- `packages/llms` (`@cline/llms`)
+- `packages/agents` (`@cline/agents`)
+- `packages/core` (`@cline/core`)
+- `apps/cli` (`@cline/cli`)
+- `apps/cli` (`@cline/code`)
+- `apps/desktop` (`@cline/desktop`)
 
 Primary goal: keep package boundaries clear and validate changes with typecheck, tests, and Biome.
 

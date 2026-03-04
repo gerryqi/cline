@@ -1,13 +1,17 @@
 # Cline SDK Packages
 
-This repository contains the SDK, CLI, and desktop app packages that power Cline-style agent runtimes.
+This repository contains the SDK packages that power Cline agent runtimes.
 
-It is organized as a Bun workspace with five main packages:
+It is organized as a Bun workspace with three main packages:
 
 - `@cline/llms`: model/provider selection and handler creation
 - `@cline/agents`: agent loop + tools + hooks + teams runtime primitives
 - `@cline/core`: stateful orchestration, sessions, storage, runtime assembly
-- `@cline/cli`: production CLI that composes the three SDK packages
+  
+Apps built with the Cline SDK:
+
+- `@cline/cli`: Lightweight CLI that composes the three SDK packages
+- `@cline/code`: Tauri desktop app that embeds a Next.js UI and composes the SDK packages
 - `@cline/desktop`: Tauri desktop app that embeds a Next.js UI and composes the SDK packages
 
 ## Prerequisites
@@ -32,13 +36,16 @@ node --version
 ```bash
 # from repo root
 bun install
+# Build all the SDK packages
 bun run build
+# Build all the apps
+bun run build:apps
 ```
 
 Useful workspace scripts (root `package.json`):
 
 - `bun run build` - build SDK packages (`llms -> agents -> core`)
-- `bun run build:apps` - build SDK packages plus app targets (`cli` + `desktop`)
+- `bun run build:apps` - build SDK packages plus app targets (`cli` + `code` + `desktop`)
 - `bun run build:llms|build:agents|build:core|build:cli|build:desktop` - build one workspace package
 - `bun run build:desktop` - build desktop web assets (`next build`)
 - `bun run build:models` - regenerate model metadata in `llms`
