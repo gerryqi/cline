@@ -379,7 +379,7 @@ export function NewAgentDialog({
 					</div>
 					<div className="flex flex-col gap-2">
 						{tasks.map((task, index) => (
-							<div className="flex items-center gap-2" key={index}>
+							<div className="flex items-center gap-2" key={task}>
 								<span className="w-5 text-right font-mono text-[10px] text-muted-foreground">
 									{index + 1}.
 								</span>

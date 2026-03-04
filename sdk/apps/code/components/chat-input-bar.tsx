@@ -106,7 +106,7 @@ export function ChatInputBar({
 	const [modelSupportsReasoning, setModelSupportsReasoning] = useState(() =>
 		hasReasoningCapability(FALLBACK_PROVIDER_REASONING_MODELS, provider, model),
 	);
-	const actionLabel = status === "running" ? "Stop" : "Send";
+	const _actionLabel = status === "running" ? "Stop" : "Send";
 	const canSend =
 		(promptInput.trim().length > 0 || attachments.length > 0) && !isBusy;
 	const fileInputRef = useRef<HTMLInputElement | null>(null);

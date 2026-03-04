@@ -128,17 +128,13 @@ function toTitle(session: SessionHistoryItem): string {
 	return `Session ${session.sessionId.slice(-6)}`;
 }
 
-function stripUserInputTags(value: string): string {
-	return value.replace(/<user_input>(.*?)<\/user_input>/g, "$1");
-}
-
 function titleFromMessages(messages: SessionMessage[]): string | null {
 	for (const message of messages) {
 		if (message.role !== "user") {
 			continue;
 		}
 		const content = typeof message.content === "string" ? message.content : "";
-		const line = stripUserInputTags(content).trim().split("\n")[0]?.trim();
+		const line = normalizeTitle(content).trim().split("\n")[0]?.trim();
 		if (line) {
 			return line.slice(0, 70);
 		}

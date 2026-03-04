@@ -1,4 +1,4 @@
-import { models } from "@cline/llms/catalog";
+import { models } from "@cline/llms";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-static";

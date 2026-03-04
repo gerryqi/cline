@@ -4,11 +4,7 @@ import type {
 	CustomProviderConfig,
 	ProviderSelectionConfig,
 } from "@cline/llms";
-import {
-	type ProviderCapability as CatalogProviderCapability,
-	models,
-	OPENAI_COMPATIBLE_PROVIDERS,
-} from "@cline/llms/catalog";
+import { providers as llmProviders, models } from "@cline/llms";
 import {
 	AlertCircle,
 	Braces,
@@ -78,6 +74,8 @@ interface ProviderConfig {
 		}
 	>;
 }
+
+type CatalogProviderCapability = models.ProviderCapability;
 
 interface TestResult {
 	providerId: string;
@@ -206,19 +204,21 @@ const BUILT_IN_PROVIDERS: BuiltInProviderPreset[] = [
 		models.GEMINI_PROVIDER.provider,
 		models.GEMINI_MODELS,
 	),
-	...Object.entries(OPENAI_COMPATIBLE_PROVIDERS).map(([id, defaults]) => ({
-		id,
-		label: BUILT_IN_PROVIDER_LABELS[id] ?? titleCaseProviderId(id),
-		models: sortModelList(
-			Object.keys(defaults.knownModels ?? {}),
-			defaults.modelId,
-		),
-		defaultModel: defaults.modelId,
-		baseUrl: defaults.baseUrl ?? "",
-		capabilities: (defaults.capabilities ?? [])
-			.map((capability) => PLAYGROUND_CAPABILITY_FROM_PROVIDER[capability])
-			.filter((capability): capability is string => Boolean(capability)),
-	})),
+	...Object.entries(llmProviders.OPENAI_COMPATIBLE_PROVIDERS).map(
+		([id, defaults]) => ({
+			id,
+			label: BUILT_IN_PROVIDER_LABELS[id] ?? titleCaseProviderId(id),
+			models: sortModelList(
+				Object.keys(defaults.knownModels ?? {}),
+				defaults.modelId,
+			),
+			defaultModel: defaults.modelId,
+			baseUrl: defaults.baseUrl ?? "",
+			capabilities: (defaults.capabilities ?? [])
+				.map((capability) => PLAYGROUND_CAPABILITY_FROM_PROVIDER[capability])
+				.filter((capability): capability is string => Boolean(capability)),
+		}),
+	),
 	{
 		id: "openai-compat",
 		label: "OpenAI-Compatible (Custom)",
@@ -641,7 +641,7 @@ function HeadersEditor({
 	return (
 		<div className="flex flex-col gap-2">
 			{entries.map(([key, value], idx) => (
-				<div className="flex items-center gap-2" key={idx}>
+				<div className="flex items-center gap-2" key={`${key}-${value}`}>
 					<Input
 						className="h-8 flex-1 border-border bg-background font-mono text-xs text-foreground"
 						onChange={(e) => updateKey(key, e.target.value, idx)}
@@ -768,14 +768,12 @@ function ProviderCard({
 	return (
 		<div className="rounded-xl border border-border bg-card">
 			{/* Card header */}
-			<div
-				className="flex cursor-pointer items-center justify-between px-4 py-3"
-				onClick={() => setExpanded(!expanded)}
-				onKeyDown={(e) => e.key === "Enter" && setExpanded(!expanded)}
-				role="button"
-				tabIndex={0}
-			>
-				<div className="flex items-center gap-3">
+			<div className="flex items-center justify-between gap-2 px-4 py-3">
+				<button
+					className="flex min-w-0 flex-1 items-center gap-3 text-left"
+					onClick={() => setExpanded(!expanded)}
+					type="button"
+				>
 					{expanded ? (
 						<ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
 					) : (
@@ -799,7 +797,7 @@ function ProviderCard({
 							</span>
 						)}
 					</div>
-				</div>
+				</button>
 				<div className="flex items-center gap-2">
 					<span className="text-[10px] text-muted-foreground">
 						{provider.models.length} model
@@ -1784,10 +1782,8 @@ export function SdkPlayground() {
 				</div>
 
 				<div
-					aria-label="Resize sidebar"
 					className="group hidden w-2 cursor-col-resize items-stretch justify-center bg-transparent lg:flex"
 					onPointerDown={handleResizeStart}
-					role="separator"
 				>
 					<div className="w-px bg-border transition-colors group-hover:bg-chart-5/50" />
 				</div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { models } from "@cline/llms/catalog";
+import { models } from "@cline/llms";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -300,10 +300,10 @@ export function useChatSession() {
 				}
 
 				if (typeof result?.usage?.inputTokens === "number") {
-					setTokensIn((prev) => prev + result.usage?.inputTokens!);
+					setTokensIn((prev) => prev + (result.usage?.inputTokens ?? 0));
 				}
 				if (typeof result?.usage?.outputTokens === "number") {
-					setTokensOut((prev) => prev + result.usage?.outputTokens!);
+					setTokensOut((prev) => prev + (result.usage?.outputTokens ?? 0));
 				}
 
 				if (result?.finishReason === "error") {

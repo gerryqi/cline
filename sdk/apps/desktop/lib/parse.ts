@@ -1,5 +1,6 @@
 import type { ParsedLogEvent } from "./types";
 
+// biome-ignore lint/suspicious/noControlCharactersInRegex: We need to match ANSI escape codes to strip them out of logs.
 const ANSI_PATTERN = /\u001b\[[0-9;]*m/g;
 
 export function stripAnsi(input: string): string {

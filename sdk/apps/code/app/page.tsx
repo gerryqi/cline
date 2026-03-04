@@ -41,7 +41,7 @@ export default function Home() {
 		{ id: makeThreadId() },
 	]);
 	const [activeThreadId, setActiveThreadId] = useState<string>(
-		() => threads[0]!.id,
+		() => threads[0]?.id,
 	);
 	const handleNewThread = useCallback(() => {
 		const id = makeThreadId();
@@ -81,7 +81,7 @@ export default function Home() {
 					return [fallback];
 				}
 				if (!next.some((thread) => thread.id === activeThreadId)) {
-					setActiveThreadId(next[0]!.id);
+					setActiveThreadId(next[0]?.id);
 				}
 				return next;
 			});

@@ -156,6 +156,7 @@ export function AgentCard({
 					aria-expanded={expanded}
 					className="w-full p-3 text-left"
 					onClick={() => setExpanded(!expanded)}
+					type="button"
 				>
 					<div className="flex items-start justify-between gap-2">
 						<div className="flex items-center gap-2">
@@ -423,7 +424,7 @@ export function AgentCard({
 								</span>
 							</div>
 							<div className="max-h-24 overflow-y-auto rounded-md bg-background p-2">
-								{agent.logs.map((log, i) => (
+								{agent.logs.map((log) => (
 									<p
 										className={cn(
 											"font-mono text-[10px] leading-relaxed",
@@ -433,7 +434,7 @@ export function AgentCard({
 													? "text-warning"
 													: "text-muted-foreground",
 										)}
-										key={i}
+										key={log}
 									>
 										<span className="text-muted-foreground/50">{">"}</span>{" "}
 										{log}

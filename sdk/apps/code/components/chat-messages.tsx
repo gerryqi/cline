@@ -16,6 +16,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ChatMessage, ChatSessionStatus } from "@/lib/chat-schema";
 import { cn } from "@/lib/utils";
 import { MemoizedMarkdown } from "./ui/markdown";
+import { normalizeTitle } from "./utils";
 
 type ChatMessagesProps = {
 	sessionId: string | null;
@@ -203,10 +204,7 @@ function MessageBubble({
 		return <ToolMessageBlock message={message} />;
 	}
 
-	const normalizedContent = message.content.replace(
-		/<user_input>(.*?)<\/user_input>/g,
-		"$1",
-	);
+	const normalizedContent = normalizeTitle(message.content);
 
 	return (
 		<div
@@ -222,9 +220,7 @@ function MessageBubble({
 				)}
 			>
 				{isStreaming && message.role === "assistant" ? (
-					<div className="whitespace-pre-wrap break-words">
-						{normalizedContent || " "}
-					</div>
+					<div className="whitespace-pre-wrap">{normalizedContent || " "}</div>
 				) : (
 					<MemoizedMarkdown
 						content={normalizedContent || " "}
@@ -520,8 +516,8 @@ function ToolMessageBlock({ message }: { message: ChatMessage }) {
 				</Button>
 				{expanded && details.length > 0 ? (
 					<div className="space-y-1 pl-6 text-muted-foreground">
-						{details.map((detail, index) => (
-							<div className="text-sm" key={`${message.id}_${index}`}>
+						{details.map((detail) => (
+							<div className="text-sm" key={`${message.id}_${detail}`}>
 								{detail}
 							</div>
 						))}

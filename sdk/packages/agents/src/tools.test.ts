@@ -1,6 +1,6 @@
+import { getEventListeners } from "node:events";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { getEventListeners } from "node:events";
 import {
 	createTool,
 	createToolRegistry,

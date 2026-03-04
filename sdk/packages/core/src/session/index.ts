@@ -1,3 +1,4 @@
+export { RpcCoreSessionService } from "./rpc-session-service";
 export {
 	deriveSubsessionStatus,
 	makeSubSessionId,
@@ -11,7 +12,6 @@ export type {
 	RootSessionArtifacts,
 } from "./session-service";
 export { CoreSessionService } from "./session-service";
-export { RpcCoreSessionService } from "./rpc-session-service";
 export type {
 	WorkspaceManager,
 	WorkspaceManagerEvent,

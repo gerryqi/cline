@@ -359,7 +359,7 @@ const agent = new Agent({
 	tools: runtime.tools.length ? runtime.tools : createBuiltinTools({ cwd: process.cwd() }),
 })
 
-const result = await agent.run("<user_input>Summarize this repository.</user_input>")
+const result = await agent.run("<user_input mode="mode">Summarize this repository.</user_input>")
 console.log(result.text)
 ```
 

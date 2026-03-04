@@ -813,7 +813,7 @@ export function AgentTeam() {
 									filteredMissionLog.length === 0 &&
 									filteredHistory.length > 0 && (
 										<ul className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
-											{filteredHistory.map((item, index) => {
+											{filteredHistory.map((item) => {
 												const task = item.task as {
 													agentId?: string;
 													id?: string;
@@ -823,7 +823,7 @@ export function AgentTeam() {
 												return (
 													<li
 														className="rounded-lg border border-border bg-card p-3"
-														key={`${item.ts}-${index}`}
+														key={`${item.ts}-${task.id ?? task.title ?? item.type}`}
 													>
 														<div className="flex items-center justify-between">
 															<p className="font-medium text-foreground">

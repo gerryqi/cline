@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	fetchModelsDevProviderModels,
-	normalizeModelsDevProviderModels,
 	type ModelsDevPayload,
+	normalizeModelsDevProviderModels,
 } from "./models-dev-catalog";
 
 describe("models-dev-catalog", () => {

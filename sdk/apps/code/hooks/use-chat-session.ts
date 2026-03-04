@@ -1,6 +1,6 @@
 "use client";
 
-import { models } from "@cline/llms/catalog";
+import { models } from "@cline/llms";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -231,7 +231,7 @@ export function useChatSession() {
 	const [activeAssistantMessageId, setActiveAssistantMessageId] = useState<
 		string | null
 	>(null);
-	const [hydratedHistorySessionId, setHydratedHistorySessionId] = useState<
+	const [_hydratedHistorySessionId, setHydratedHistorySessionId] = useState<
 		string | null
 	>(null);
 	const [pendingToolApprovals, setPendingToolApprovals] = useState<
@@ -788,81 +788,84 @@ export function useChatSession() {
 		setPendingToolApprovals([]);
 	}, [sessionId]);
 
-	const hydrateSession = useCallback(async (session: SessionHistoryItem) => {
-		const requestId = hydrationRequestIdRef.current + 1;
-		hydrationRequestIdRef.current = requestId;
-		setError(null);
-		setStatus("starting");
-		setIsHydratingSession(true);
-		setSessionId(session.sessionId);
-		setConfig((prev) => ({
-			...prev,
-			provider: session.provider || prev.provider,
-			model: session.model || prev.model,
-			workspaceRoot: session.workspaceRoot || prev.workspaceRoot,
-			cwd: session.cwd || prev.cwd,
-		}));
-		activeSessionIdRef.current = session.sessionId;
-		activeAssistantMessageIdRef.current = null;
-		setActiveAssistantMessageId(null);
-		setHydratedHistorySessionId(session.sessionId);
-		setPendingToolApprovals([]);
+	const hydrateSession = useCallback(
+		async (session: SessionHistoryItem) => {
+			const requestId = hydrationRequestIdRef.current + 1;
+			hydrationRequestIdRef.current = requestId;
+			setError(null);
+			setStatus("starting");
+			setIsHydratingSession(true);
+			setSessionId(session.sessionId);
+			setConfig((prev) => ({
+				...prev,
+				provider: session.provider || prev.provider,
+				model: session.model || prev.model,
+				workspaceRoot: session.workspaceRoot || prev.workspaceRoot,
+				cwd: session.cwd || prev.cwd,
+			}));
+			activeSessionIdRef.current = session.sessionId;
+			activeAssistantMessageIdRef.current = null;
+			setActiveAssistantMessageId(null);
+			setHydratedHistorySessionId(session.sessionId);
+			setPendingToolApprovals([]);
 
-		try {
-			const historyMessages = await invoke<ChatMessage[]>(
-				"read_session_messages",
-				{
-					sessionId: session.sessionId,
-					maxMessages: 800,
-				},
-			);
-			if (hydrationRequestIdRef.current !== requestId) {
-				return;
-			}
-
-			if (historyMessages.length > 0) {
-				setMessages(historyMessages);
-				setRawTranscript(
-					historyMessages.map((message) => message.content).join("\n\n"),
+			try {
+				const historyMessages = await invoke<ChatMessage[]>(
+					"read_session_messages",
+					{
+						sessionId: session.sessionId,
+						maxMessages: 800,
+					},
 				);
+				if (hydrationRequestIdRef.current !== requestId) {
+					return;
+				}
+
+				if (historyMessages.length > 0) {
+					setMessages(historyMessages);
+					setRawTranscript(
+						historyMessages.map((message) => message.content).join("\n\n"),
+					);
+					setToolCalls(0);
+					setTokensIn(0);
+					setTokensOut(0);
+					setFileDiffs([]);
+					setStatus(mapHistoryStatusToChatStatus(session.status));
+					void refreshSessionDiffSummary(session.sessionId);
+					return;
+				}
+				setMessages([]);
+				setRawTranscript("");
 				setToolCalls(0);
 				setTokensIn(0);
 				setTokensOut(0);
 				setFileDiffs([]);
 				setStatus(mapHistoryStatusToChatStatus(session.status));
 				void refreshSessionDiffSummary(session.sessionId);
-				return;
+			} catch (err) {
+				if (hydrationRequestIdRef.current !== requestId) {
+					return;
+				}
+				const message = err instanceof Error ? err.message : String(err);
+				setError(message);
+				setStatus("error");
+				setMessages([
+					{
+						id: makeId("error"),
+						sessionId: session.sessionId,
+						role: "error",
+						content: message,
+						createdAt: Date.now(),
+					},
+				]);
+			} finally {
+				if (hydrationRequestIdRef.current === requestId) {
+					setIsHydratingSession(false);
+				}
 			}
-			setMessages([]);
-			setRawTranscript("");
-			setToolCalls(0);
-			setTokensIn(0);
-			setTokensOut(0);
-			setFileDiffs([]);
-			setStatus(mapHistoryStatusToChatStatus(session.status));
-			void refreshSessionDiffSummary(session.sessionId);
-		} catch (err) {
-			if (hydrationRequestIdRef.current !== requestId) {
-				return;
-			}
-			const message = err instanceof Error ? err.message : String(err);
-			setError(message);
-			setStatus("error");
-			setMessages([
-				{
-					id: makeId("error"),
-					sessionId: session.sessionId,
-					role: "error",
-					content: message,
-					createdAt: Date.now(),
-				},
-			]);
-		} finally {
-			if (hydrationRequestIdRef.current === requestId) {
-				setIsHydratingSession(false);
-			}
-		}
-	}, []);
+		},
+		[refreshSessionDiffSummary],
+	);
 
 	const summary = useMemo(
 		() => ({

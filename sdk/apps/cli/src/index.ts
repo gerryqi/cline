@@ -599,7 +599,9 @@ function writeHookInvocation(
 		);
 		return;
 	}
-	write(`\n${c.dim}[hook:${hookName}]${c.reset}${details}\n`);
+	if (details) {
+		write(`\n${c.dim}[hook:${hookName}]${c.reset}${details}\n`);
+	}
 }
 
 function createRuntimeHooks(): AgentHooks | undefined {

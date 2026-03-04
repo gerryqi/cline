@@ -36,32 +36,52 @@ interface DiffViewerDialogProps {
 function DiffHunk({ oldCode, newCode }: { oldCode: string; newCode: string }) {
 	const oldLines = oldCode.split("\n").filter(Boolean);
 	const newLines = newCode.split("\n").filter(Boolean);
+	const oldOccurrences = new Map<string, number>();
+	const oldLineEntries = oldLines.map((line, lineNumber) => {
+		const occurrence = (oldOccurrences.get(line) ?? 0) + 1;
+		oldOccurrences.set(line, occurrence);
+		return {
+			key: `old-${lineNumber + 1}-${occurrence}-${line}`,
+			line,
+			lineNumber: lineNumber + 1,
+		};
+	});
+	const newOccurrences = new Map<string, number>();
+	const newLineEntries = newLines.map((line, lineNumber) => {
+		const occurrence = (newOccurrences.get(line) ?? 0) + 1;
+		newOccurrences.set(line, occurrence);
+		return {
+			key: `new-${oldLines.length + lineNumber + 1}-${occurrence}-${line}`,
+			line,
+			lineNumber: oldLines.length + lineNumber + 1,
+		};
+	});
 
 	return (
 		<div className="overflow-x-auto rounded-md border border-border bg-background font-mono text-[10px] leading-5 sm:text-[11px]">
-			{oldLines.map((line, i) => (
-				<div key={`old-${i}`} className="flex bg-destructive/10">
+			{oldLineEntries.map((entry) => (
+				<div key={entry.key} className="flex bg-destructive/10">
 					<span className="hidden w-10 shrink-0 select-none items-center justify-center border-r border-border text-muted-foreground/40 sm:flex">
-						{i + 1}
+						{entry.lineNumber}
 					</span>
 					<span className="flex w-5 shrink-0 items-center justify-center text-destructive sm:w-6">
 						<Minus className="h-2.5 w-2.5" />
 					</span>
 					<span className="min-w-0 flex-1 whitespace-pre px-1.5 text-destructive/90 sm:px-2">
-						{line}
+						{entry.line}
 					</span>
 				</div>
 			))}
-			{newLines.map((line, i) => (
-				<div key={`new-${i}`} className="flex bg-success/10">
+			{newLineEntries.map((entry) => (
+				<div key={entry.key} className="flex bg-success/10">
 					<span className="hidden w-10 shrink-0 select-none items-center justify-center border-r border-border text-muted-foreground/40 sm:flex">
-						{oldLines.length + i + 1}
+						{entry.lineNumber}
 					</span>
 					<span className="flex w-5 shrink-0 items-center justify-center text-success sm:w-6">
 						<Plus className="h-2.5 w-2.5" />
 					</span>
 					<span className="min-w-0 flex-1 whitespace-pre px-1.5 text-success/90 sm:px-2">
-						{line}
+						{entry.line}
 					</span>
 				</div>
 			))}
@@ -131,8 +151,12 @@ function FileEntry({
 			</div>
 			{expanded && (
 				<div className="border-t border-border px-3 py-2">
-					{diff.hunks.map((hunk, i) => (
-						<DiffHunk key={i} oldCode={hunk.old} newCode={hunk.new} />
+					{diff.hunks.map((hunk) => (
+						<DiffHunk
+							key={`${hunk.old.length}-${hunk.new.length}-${hunk.old.slice(0, 24)}-${hunk.new.slice(0, 24)}`}
+							oldCode={hunk.old}
+							newCode={hunk.new}
+						/>
 					))}
 				</div>
 			)}

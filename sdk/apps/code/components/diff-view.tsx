@@ -14,7 +14,7 @@ type DiffViewProps = {
 export function DiffView({ fileDiffs, onClose }: DiffViewProps) {
 	const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
 
-	const totals = useMemo(
+	const _totals = useMemo(
 		() =>
 			fileDiffs.reduce(
 				(acc, file) => {
@@ -125,8 +125,11 @@ function DiffFileSection({
 							No hunk details available.
 						</p>
 					) : (
-						file.hunks.map((hunk, idx) => (
-							<DiffHunk hunk={hunk} key={`${file.path}-${idx}`} />
+						file.hunks.map((hunk) => (
+							<DiffHunk
+								hunk={hunk}
+								key={`${file.path}-${hunk.oldStart}-${hunk.newStart}-${hunk.old.length}-${hunk.new.length}`}
+							/>
 						))
 					)}
 				</div>
@@ -138,32 +141,52 @@ function DiffFileSection({
 function DiffHunk({ hunk }: { hunk: SessionFileDiff["hunks"][number] }) {
 	const oldLines = hunk.old.length > 0 ? hunk.old.split("\n") : [];
 	const newLines = hunk.new.length > 0 ? hunk.new.split("\n") : [];
+	const oldOccurrences = new Map<string, number>();
+	const oldLineEntries = oldLines.map((line, offset) => {
+		const occurrence = (oldOccurrences.get(line) ?? 0) + 1;
+		oldOccurrences.set(line, occurrence);
+		return {
+			key: `old-${hunk.oldStart + offset}-${occurrence}-${line}`,
+			line,
+			lineNumber: hunk.oldStart + offset,
+		};
+	});
+	const newOccurrences = new Map<string, number>();
+	const newLineEntries = newLines.map((line, offset) => {
+		const occurrence = (newOccurrences.get(line) ?? 0) + 1;
+		newOccurrences.set(line, occurrence);
+		return {
+			key: `new-${hunk.newStart + offset}-${occurrence}-${line}`,
+			line,
+			lineNumber: hunk.newStart + offset,
+		};
+	});
 
 	return (
 		<div className="overflow-x-auto rounded-md border border-border bg-background font-mono text-[11px] leading-5">
-			{oldLines.map((line, index) => (
-				<div className="flex bg-destructive/10" key={`old-${index}`}>
+			{oldLineEntries.map((entry) => (
+				<div className="flex bg-destructive/10" key={entry.key}>
 					<span className="hidden w-12 shrink-0 select-none items-center justify-end border-r border-border px-2 text-muted-foreground/40 sm:flex">
-						{hunk.oldStart + index}
+						{entry.lineNumber}
 					</span>
 					<span className="flex w-6 shrink-0 items-center justify-center text-destructive">
 						<Minus className="h-2.5 w-2.5" />
 					</span>
 					<span className="min-w-0 flex-1 whitespace-pre px-2 text-destructive/90">
-						{line || " "}
+						{entry.line || " "}
 					</span>
 				</div>
 			))}
-			{newLines.map((line, index) => (
-				<div className="flex bg-primary/10" key={`new-${index}`}>
+			{newLineEntries.map((entry) => (
+				<div className="flex bg-primary/10" key={entry.key}>
 					<span className="hidden w-12 shrink-0 select-none items-center justify-end border-r border-border px-2 text-muted-foreground/40 sm:flex">
-						{hunk.newStart + index}
+						{entry.lineNumber}
 					</span>
 					<span className="flex w-6 shrink-0 items-center justify-center text-primary">
 						<Plus className="h-2.5 w-2.5" />
 					</span>
 					<span className="min-w-0 flex-1 whitespace-pre px-2 text-primary">
-						{line || " "}
+						{entry.line || " "}
 					</span>
 				</div>
 			))}

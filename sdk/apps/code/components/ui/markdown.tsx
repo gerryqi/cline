@@ -27,10 +27,18 @@ export function parseMarkdownIntoBlocks(markdown: string): string[] {
 export const MemoizedMarkdown = memo(
 	({ content, id }: { content: string; id: string }) => {
 		const blocks = useMemo(() => parseMarkdownIntoBlocks(content), [content]);
+		const occurrences = new Map<string, number>();
 
-		return blocks.map((block, index) => (
-			<MemoizedMarkdownBlock content={block} key={`${id}-block_${index}`} />
-		));
+		return blocks.map((block) => {
+			const occurrence = (occurrences.get(block) ?? 0) + 1;
+			occurrences.set(block, occurrence);
+			return (
+				<MemoizedMarkdownBlock
+					content={block}
+					key={`${id}-block_${occurrence}-${block.slice(0, 24)}`}
+				/>
+			);
+		});
 	},
 );
 
