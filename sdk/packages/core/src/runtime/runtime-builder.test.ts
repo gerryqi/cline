@@ -34,6 +34,25 @@ describe("DefaultRuntimeBuilder", () => {
 		expect(names).not.toContain("spawn_agent");
 	});
 
+	it("uses readonly preset in plan mode", () => {
+		const runtime = new DefaultRuntimeBuilder().build({
+			config: {
+				providerId: "anthropic",
+				modelId: "claude-sonnet-4-6",
+				apiKey: "key",
+				systemPrompt: "test",
+				cwd: process.cwd(),
+				mode: "plan",
+				enableTools: true,
+				enableSpawnAgent: false,
+				enableAgentTeams: false,
+			},
+		});
+
+		const names = runtime.tools.map((tool) => tool.name);
+		expect(names).not.toContain("editor");
+	});
+
 	it("omits builtin tools when disabled", () => {
 		const runtime = new DefaultRuntimeBuilder().build({
 			config: {

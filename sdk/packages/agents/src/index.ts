@@ -99,6 +99,7 @@ export {
 // =============================================================================
 
 export { getClineDefaultSystemPrompt } from "./prompts/index.js";
+export { formatFileContentBlock } from "./input-formatting.js";
 
 // =============================================================================
 // Teams

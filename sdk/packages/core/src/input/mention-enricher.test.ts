@@ -23,8 +23,7 @@ describe("enrichPromptWithMentions", () => {
 
 			expect(result.matchedFiles).toEqual(["src/index.ts"]);
 			expect(result.ignoredMentions).toEqual([]);
-			expect(result.prompt).toContain("<attached_files_from_mentions>");
-			expect(result.prompt).toContain('path="src/index.ts"');
+			expect(result.prompt).toContain('<file_content path="src/index.ts">');
 			expect(result.prompt).toContain("export const answer = 42");
 		} finally {
 			await rm(cwd, { recursive: true, force: true });
@@ -43,7 +42,7 @@ describe("enrichPromptWithMentions", () => {
 
 			expect(result.matchedFiles).toEqual([]);
 			expect(result.ignoredMentions).toEqual(["missing/file.ts"]);
-			expect(result.prompt).not.toContain("<attached_files_from_mentions>");
+			expect(result.prompt).not.toContain("<file_content");
 		} finally {
 			await rm(cwd, { recursive: true, force: true });
 		}

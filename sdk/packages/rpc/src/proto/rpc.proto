@@ -1,0 +1,276 @@
+syntax = "proto3";
+
+package cline.rpc.v1;
+
+service RpcGateway {
+  rpc Health(HealthRequest) returns (HealthResponse);
+  rpc RegisterClient(RegisterClientRequest) returns (RegisterClientResponse);
+  rpc EnsureSession(EnsureSessionRequest) returns (EnsureSessionResponse);
+  rpc UpsertSession(UpsertSessionRequest) returns (UpsertSessionResponse);
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc UpdateSession(UpdateSessionRequest) returns (UpdateSessionResponse);
+  rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
+  rpc EnqueueSpawnRequest(EnqueueSpawnRequestRequest) returns (EnqueueSpawnRequestResponse);
+  rpc ClaimSpawnRequest(ClaimSpawnRequestRequest) returns (ClaimSpawnRequestResponse);
+  rpc StartTask(StartTaskRequest) returns (TaskResponse);
+  rpc CompleteTask(CompleteTaskRequest) returns (TaskResponse);
+  rpc PublishEvent(PublishEventRequest) returns (PublishEventResponse);
+  rpc StreamEvents(StreamEventsRequest) returns (stream RoutedEvent);
+  rpc RequestToolApproval(RequestToolApprovalRequest) returns (RequestToolApprovalResponse);
+  rpc RespondToolApproval(RespondToolApprovalRequest) returns (RespondToolApprovalResponse);
+  rpc ListPendingApprovals(ListPendingApprovalsRequest) returns (ListPendingApprovalsResponse);
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  string server_id = 1;
+  string address = 2;
+  bool running = 3;
+}
+
+message RegisterClientRequest {
+  string client_id = 1;
+  string client_type = 2;
+  map<string, string> metadata = 3;
+}
+
+message RegisterClientResponse {
+  string client_id = 1;
+  bool registered = 2;
+}
+
+message SessionRecord {
+  string session_id = 1;
+  string source = 2;
+  int32 pid = 3;
+  string started_at = 4;
+  string ended_at = 5;
+  int32 exit_code = 6;
+  string status = 7;
+  int32 status_lock = 8;
+  bool interactive = 9;
+  string provider = 10;
+  string model = 11;
+  string cwd = 12;
+  string workspace_root = 13;
+  string team_name = 14;
+  bool enable_tools = 15;
+  bool enable_spawn = 16;
+  bool enable_teams = 17;
+  string parent_session_id = 18;
+  string parent_agent_id = 19;
+  string agent_id = 20;
+  string conversation_id = 21;
+  bool is_subagent = 22;
+  string prompt = 23;
+  string transcript_path = 24;
+  string hook_path = 25;
+  string messages_path = 26;
+  string updated_at = 27;
+}
+
+message EnsureSessionRequest {
+  string session_id = 1;
+  string client_id = 2;
+  string workspace_root = 3;
+  string status = 4;
+  string metadata_json = 5;
+}
+
+message EnsureSessionResponse {
+  string session_id = 1;
+  bool created = 2;
+  string status = 3;
+}
+
+message UpsertSessionRequest {
+  SessionRecord session = 1;
+}
+
+message UpsertSessionResponse {
+  bool persisted = 1;
+}
+
+message GetSessionRequest {
+  string session_id = 1;
+}
+
+message GetSessionResponse {
+  SessionRecord session = 1;
+}
+
+message ListSessionsRequest {
+  int32 limit = 1;
+  string parent_session_id = 2;
+  string status = 3;
+}
+
+message ListSessionsResponse {
+  repeated SessionRecord sessions = 1;
+}
+
+message UpdateSessionRequest {
+  string session_id = 1;
+  string status = 2;
+  string ended_at = 3;
+  int32 exit_code = 4;
+  bool has_exit_code = 5;
+  string prompt = 6;
+  bool has_prompt = 7;
+  string parent_session_id = 8;
+  bool has_parent_session_id = 9;
+  string parent_agent_id = 10;
+  bool has_parent_agent_id = 11;
+  string agent_id = 12;
+  bool has_agent_id = 13;
+  string conversation_id = 14;
+  bool has_conversation_id = 15;
+  int32 expected_status_lock = 16;
+  bool has_expected_status_lock = 17;
+  bool set_running = 18;
+}
+
+message UpdateSessionResponse {
+  bool updated = 1;
+  int32 status_lock = 2;
+}
+
+message DeleteSessionRequest {
+  string session_id = 1;
+  bool cascade = 2;
+}
+
+message DeleteSessionResponse {
+  bool deleted = 1;
+}
+
+message EnqueueSpawnRequestRequest {
+  string root_session_id = 1;
+  string parent_agent_id = 2;
+  string task = 3;
+  string system_prompt = 4;
+}
+
+message EnqueueSpawnRequestResponse {
+  bool enqueued = 1;
+}
+
+message SpawnQueueItem {
+  int64 id = 1;
+  string root_session_id = 2;
+  string parent_agent_id = 3;
+  string task = 4;
+  string system_prompt = 5;
+  string created_at = 6;
+  string consumed_at = 7;
+}
+
+message ClaimSpawnRequestRequest {
+  string root_session_id = 1;
+  string parent_agent_id = 2;
+}
+
+message ClaimSpawnRequestResponse {
+  SpawnQueueItem item = 1;
+}
+
+message StartTaskRequest {
+  string session_id = 1;
+  string task_id = 2;
+  string title = 3;
+  string payload_json = 4;
+}
+
+message CompleteTaskRequest {
+  string session_id = 1;
+  string task_id = 2;
+  string status = 3;
+  string result_json = 4;
+}
+
+message TaskResponse {
+  string session_id = 1;
+  string task_id = 2;
+  string status = 3;
+  bool updated = 4;
+}
+
+message PublishEventRequest {
+  string event_id = 1;
+  string session_id = 2;
+  string task_id = 3;
+  string event_type = 4;
+  string payload_json = 5;
+  string source_client_id = 6;
+}
+
+message PublishEventResponse {
+  string event_id = 1;
+  bool accepted = 2;
+}
+
+message StreamEventsRequest {
+  string client_id = 1;
+  repeated string session_ids = 2;
+}
+
+message RoutedEvent {
+  string event_id = 1;
+  string session_id = 2;
+  string task_id = 3;
+  string event_type = 4;
+  string payload_json = 5;
+  string source_client_id = 6;
+  string ts = 7;
+}
+
+message RequestToolApprovalRequest {
+  string approval_id = 1;
+  string session_id = 2;
+  string task_id = 3;
+  string tool_call_id = 4;
+  string tool_name = 5;
+  string input_json = 6;
+  string requester_client_id = 7;
+  int32 timeout_ms = 8;
+}
+
+message RequestToolApprovalResponse {
+  string approval_id = 1;
+  bool decided = 2;
+  bool approved = 3;
+  string reason = 4;
+}
+
+message RespondToolApprovalRequest {
+  string approval_id = 1;
+  string responder_client_id = 2;
+  bool approved = 3;
+  string reason = 4;
+}
+
+message RespondToolApprovalResponse {
+  string approval_id = 1;
+  bool applied = 2;
+}
+
+message ListPendingApprovalsRequest {
+  string session_id = 1;
+}
+
+message PendingApproval {
+  string approval_id = 1;
+  string session_id = 2;
+  string task_id = 3;
+  string tool_call_id = 4;
+  string tool_name = 5;
+  string input_json = 6;
+  string requester_client_id = 7;
+  string created_at = 8;
+}
+
+message ListPendingApprovalsResponse {
+  repeated PendingApproval approvals = 1;
+}

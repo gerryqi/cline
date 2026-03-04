@@ -77,6 +77,9 @@ Use `@cline/llms` for:
 - Use `extensions` for modular policy/plugins and registration (`tools`, `commands`, `shortcuts`, `flags`, `providers`)
 - Use `hooks` for lifecycle callbacks and subprocess bridges
 - Use `createSubprocessHooks()` to emit Pi-style hook events (`tool_call`, `tool_result`, `agent_end`, `session_shutdown`)
+- Use `requestToolApproval(...)` for explicit tool approval decisions when policy requires it
+
+Approval is not handled by extensions/hooks automatically. The host app must provide `requestToolApproval` if any effective policy sets `autoApprove: false`.
 
 ## Tool Policy and Approval
 
@@ -107,6 +110,8 @@ const agent = new Agent({
 ```
 
 If a tool is disabled or not approved, execution is skipped and the tool call is returned as an error record.
+
+Because approval is callback-based, hosts can plug in terminal prompts, desktop UIs, or RPC-backed workflows without changing agent loop semantics.
 
 ## Teams
 

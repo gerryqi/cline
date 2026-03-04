@@ -4,10 +4,9 @@ import {
 	ArrowUp,
 	ChevronDown,
 	CircleStop,
-	Folder,
+	Coins,
 	GitBranch,
 	Mic,
-	Monitor,
 	Paperclip,
 	RotateCcw,
 	X,
@@ -51,12 +50,14 @@ type ChatInputBarProps = {
 	status: ChatSessionStatus;
 	provider: string;
 	model: string;
+	mode: "act" | "plan";
 	gitBranch: string;
 	workspaceRoot: string;
 	promptInput: string;
 	onPromptInputChange: (value: string) => void;
 	onProviderChange: (provider: string) => void;
 	onModelChange: (model: string) => void;
+	onModeToggle: () => void;
 	onRefreshGitBranch: () => void;
 	onListGitBranches: () => Promise<{ current: string; branches: string[] }>;
 	onListWorkspaces: () => Promise<string[]>;
@@ -79,11 +80,13 @@ export function ChatInputBar({
 	status,
 	provider,
 	model,
+	mode,
 	gitBranch,
 	promptInput,
 	onPromptInputChange,
 	onProviderChange,
 	onModelChange,
+	onModeToggle,
 	onRefreshGitBranch,
 	onListGitBranches,
 	onListWorkspaces,
@@ -117,19 +120,6 @@ export function ChatInputBar({
 
 	return (
 		<div className="border-t border-border bg-card">
-			{/* Changes summary bar */}
-			<div className="flex items-center justify-between border-b border-border px-4 py-2">
-				<div className="flex items-center gap-2 text-sm" />
-				{tokensSummary && (
-					<button
-						className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent transition-colors"
-						type="button"
-					>
-						{tokensSummary}
-					</button>
-				)}
-			</div>
-
 			{/* Input area */}
 			<div className="px-4 py-3">
 				<div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2.5 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
@@ -235,8 +225,11 @@ export function ChatInputBar({
 			{/* Status bar */}
 			<div className="flex items-center justify-between border-t border-border px-4 py-1.5 text-[11px] text-muted-foreground">
 				<div className="flex items-center gap-3">
-					<StatusItem icon={Monitor} label={status} />
-					{/* <StatusItem icon={Shield} label={actionLabel} /> */}
+					<StatusItem
+						label={mode === "act" ? "Act" : "Plan"}
+						onClick={onModeToggle}
+					/>
+					{tokensSummary && <StatusItem icon={Coins} label={tokensSummary} />}
 				</div>
 				{/* GIT BRANCH */}
 				<div className="flex items-center gap-3">
@@ -256,7 +249,7 @@ export function ChatInputBar({
 						<RotateCcw className="h-3 w-3" />
 					</button>
 					<button
-						className=" flex items-center gap-1 hover:text-foreground transition-colors"
+						className="hidden items-center gap-1 hover:text-foreground transition-colors"
 						onClick={onReset}
 						type="button"
 					>
@@ -376,10 +369,9 @@ function GitBranchSelector({
 				}}
 				type="button"
 			>
-				<Folder className="h-3 w-3" />
+				<GitBranch className="h-3 w-3" />
 				<span className="max-w-20 truncate">{workspaceName}</span>
 				<span className="text-muted-foreground">/</span>
-				<GitBranch className="h-3 w-3" />
 				<span className="max-w-20 truncate">{currentBranch}</span>
 				<ChevronDown className="h-2.5 w-2.5" />
 			</button>
@@ -680,16 +672,19 @@ function EffortSelector({ disabled }: { disabled: boolean }) {
 function StatusItem({
 	icon: Icon,
 	label,
+	onClick,
 }: {
-	icon: React.ComponentType<{ className?: string }>;
+	icon?: React.ComponentType<{ className?: string }>;
 	label: string;
+	onClick?: () => void;
 }) {
 	return (
 		<button
 			className="flex items-center gap-1 hover:text-foreground transition-colors"
+			onClick={onClick}
 			type="button"
 		>
-			<Icon className="h-3 w-3" />
+			{Icon ? <Icon className="h-3 w-3" /> : null}
 			<span>{label}</span>
 			<ChevronDown className="h-2.5 w-2.5" />
 		</button>

@@ -354,6 +354,7 @@ export function parseArgs(args: string[]): ParsedArgs {
 		showUsage: false,
 		showTimings: false,
 		outputMode: "text",
+		mode: "act",
 		sandbox: false,
 		thinking: false,
 		enableSpawnAgent: true,
@@ -393,6 +394,13 @@ export function parseArgs(args: string[]): ParsedArgs {
 				result.outputMode = mode;
 			} else if (mode) {
 				result.invalidOutputMode = mode;
+			}
+		} else if (arg === "--mode") {
+			const mode = (args[++i] ?? "").trim().toLowerCase();
+			if (mode === "act" || mode === "plan") {
+				result.mode = mode;
+			} else if (mode) {
+				result.invalidMode = mode;
 			}
 		} else if (arg === "--spawn" || arg === "--enable-spawn") {
 			result.enableSpawnAgent = true;

@@ -6,11 +6,14 @@ alwaysApply: true
 
 ## Scope
 
-This repository is a Bun workspace with five packages:
+NOTE: The packages in this repository are all work in development and not being used in production, so refactor can be done without backward compability required.
+
+This repository is a Bun workspace with core packages and apps:
 
 - `packages/llms` (`@cline/llms`)
 - `packages/agents` (`@cline/agents`)
 - `packages/core` (`@cline/core`)
+- `packages/rpc` (`@cline/rpc`)
 - `apps/cli` (`@cline/cli`)
 - `apps/cli` (`@cline/code`)
 - `apps/desktop` (`@cline/desktop`)
@@ -34,6 +37,7 @@ Do not write new tests with `bun:test` in this repo. Use Vitest.
 - Build all packages: `bun run build`
 - Build SDK + apps: `bun run build:apps`
 - Build one package: `bun run build:llms|build:agents|build:core|build:cli|build:desktop`
+- Build one package: `bun run build:llms|build:agents|build:core|build:rpc|build:cli|build:desktop`
 - Regenerate model metadata: `bun run build:models`
 - Run CLI from source: `bun run dev:cli -- "<prompt>"`
 - Run desktop app from root (recommended): `bun run dev`

@@ -3,6 +3,7 @@ import type { CoreSessionConfig, SessionManifest } from "@cline/core/server";
 import type { providers as LlmsProviders } from "@cline/llms";
 
 export type CliOutputMode = "text" | "json";
+export type CliAgentMode = "act" | "plan";
 
 export interface Config extends CoreSessionConfig {
 	apiKey: string;
@@ -21,6 +22,7 @@ export interface Config extends CoreSessionConfig {
 	showUsage: boolean;
 	showTimings: boolean;
 	outputMode: CliOutputMode;
+	mode: CliAgentMode;
 	defaultToolAutoApprove: boolean;
 	toolPolicies: Record<string, ToolPolicy>;
 }
@@ -70,8 +72,10 @@ export interface ParsedArgs {
 	showUsage: boolean;
 	showTimings: boolean;
 	outputMode: CliOutputMode;
+	mode: CliAgentMode;
 	thinking: boolean;
 	invalidOutputMode?: string;
+	invalidMode?: string;
 	sandbox: boolean;
 	sandboxDir?: string;
 	enableSpawnAgent: boolean;

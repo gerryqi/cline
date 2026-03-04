@@ -1,0 +1,33 @@
+{
+	"name": "@cline/rpc",
+	"version": "0.0.0",
+	"description": "gRPC routing server for clients, sessions, tasks, and tool approvals",
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"src"
+	],
+	"scripts": {
+		"build": "bun run generate:proto && rm -rf dist && bun build ./src/index.ts --outdir ./dist --target node --format esm --packages external && bun tsc --emitDeclarationOnly",
+		"clean": "rm -rf dist node_modules",
+		"generate:proto": "proto-loader-gen-types --longs=String --enums=String --defaults --oneofs --grpcLib=@grpc/grpc-js -O ./src/proto/generated ./src/proto/rpc.proto",
+		"typecheck": "bun tsc --noEmit"
+	},
+	"dependencies": {
+		"@grpc/grpc-js": "^1.14.0",
+		"@grpc/proto-loader": "^0.8.0",
+		"better-sqlite3": "^11.10.0"
+	},
+	"devDependencies": {
+		"@types/node": "^20.0.0",
+		"typescript": "^5.7.2"
+	}
+}

@@ -108,9 +108,10 @@ export default function Home() {
 				</Sidebar>
 				<SidebarInset className="min-h-0 min-w-0 overflow-hidden">
 					{activeThread ? (
-						<div className="flex min-h-0 flex-1 flex-col" key={activeThread.id}>
+						<div className="flex min-h-0 flex-1 flex-col">
 							<ChatThreadPane
 								historySession={activeThread.historySession}
+								threadId={activeThread.id}
 								onDeleteSession={handleDeleteSession}
 								onNewThread={handleNewThread}
 							/>
@@ -123,10 +124,12 @@ export default function Home() {
 }
 
 function ChatThreadPane({
+	threadId,
 	historySession,
 	onDeleteSession,
 	onNewThread,
 }: {
+	threadId: string;
 	historySession?: SessionHistoryItem;
 	onDeleteSession?: (sessionId: string) => void;
 	onNewThread?: () => void;
@@ -134,13 +137,18 @@ function ChatThreadPane({
 	const {
 		sessionId,
 		status,
+		isHydratingSession,
+		activeAssistantMessageId,
 		config,
 		messages,
 		error,
 		summary,
 		fileDiffs,
+		pendingToolApprovals,
 		setConfig,
 		sendPrompt,
+		approveToolApproval,
+		rejectToolApproval,
 		reset,
 		abort,
 		hydrateSession,
@@ -151,6 +159,7 @@ function ChatThreadPane({
 	const [deletingSession, setDeletingSession] = useState(false);
 	const [gitBranch, setGitBranch] = useState("no-git");
 	const hydratedSessionRef = useRef<string | null>(null);
+	const resetThreadRef = useRef<string | null>(null);
 
 	const refreshGitBranch = useCallback(async () => {
 		try {
@@ -268,6 +277,21 @@ function ChatThreadPane({
 	}, [refreshGitBranch]);
 
 	useEffect(() => {
+		if (historySession) {
+			resetThreadRef.current = null;
+			return;
+		}
+		if (resetThreadRef.current === threadId) {
+			return;
+		}
+		resetThreadRef.current = threadId;
+		hydratedSessionRef.current = null;
+		setPromptInput("");
+		setPendingAttachments([]);
+		void reset();
+	}, [historySession, reset, threadId]);
+
+	useEffect(() => {
 		if (!historySession) {
 			return;
 		}
@@ -362,14 +386,23 @@ function ChatThreadPane({
 					/>
 				) : (
 					<ChatMessages
+						onApproveToolApproval={(requestId) =>
+							void approveToolApproval(requestId)
+						}
+						onRejectToolApproval={(requestId) =>
+							void rejectToolApproval(requestId)
+						}
 						error={error}
 						messages={messages}
 						model={config.model}
+						pendingToolApprovals={pendingToolApprovals}
 						onPromptInputChange={setPromptInput}
 						onSend={() => void handleSend()}
 						promptInput={promptInput}
 						provider={config.provider}
 						sessionId={sessionId}
+						streamingMessageId={activeAssistantMessageId}
+						isSessionSwitching={isHydratingSession}
 						status={status}
 					/>
 				)}
@@ -412,6 +445,12 @@ function ChatThreadPane({
 					onModelChange={(nextModel) =>
 						setConfig((prev) => ({ ...prev, model: nextModel }))
 					}
+					onModeToggle={() =>
+						setConfig((prev) => ({
+							...prev,
+							mode: prev.mode === "plan" ? "act" : "plan",
+						}))
+					}
 					onPromptInputChange={setPromptInput}
 					onProviderChange={(nextProvider) =>
 						setConfig((prev) => ({ ...prev, provider: nextProvider }))
@@ -423,6 +462,7 @@ function ChatThreadPane({
 					onSend={() => void handleSend()}
 					gitBranch={gitBranch}
 					model={config.model}
+					mode={config.mode}
 					promptInput={promptInput}
 					provider={config.provider}
 					status={status}

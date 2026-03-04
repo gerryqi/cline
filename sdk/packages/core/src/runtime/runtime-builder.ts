@@ -4,6 +4,7 @@ import {
 	AgentTeamsRuntime,
 	bootstrapAgentTeams,
 	createBuiltinTools,
+	ToolPresets,
 	FileTeamPersistenceStore,
 	type SkillsExecutor,
 	type TeamEvent,
@@ -16,7 +17,7 @@ import {
 	type SkillConfig,
 	type UserInstructionConfigWatcher,
 } from "../agents";
-import type { CoreSessionConfig } from "../types/config";
+import type { CoreAgentMode, CoreSessionConfig } from "../types/config";
 import type {
 	RuntimeBuilder,
 	RuntimeBuilderInput,
@@ -40,15 +41,15 @@ export function createTeamName(): string {
 
 function createBuiltinToolsList(
 	cwd: string,
+	mode: CoreAgentMode,
 	skillsExecutor?: SkillsExecutorWithMetadata,
 	executorOverrides?: Partial<ToolExecutors>,
 ): Tool[] {
+	const preset =
+		mode === "plan" ? ToolPresets.readonly : ToolPresets.development;
 	return createBuiltinTools({
 		cwd,
-		enableReadFiles: true,
-		enableSearch: true,
-		enableBash: true,
-		enableWebFetch: true,
+		...preset,
 		enableSkills: !!skillsExecutor,
 		executors: {
 			...(skillsExecutor
@@ -251,6 +252,7 @@ function normalizeConfig(
 ): Required<
 	Pick<
 		CoreSessionConfig,
+		| "mode"
 		| "enableTools"
 		| "enableSpawnAgent"
 		| "enableAgentTeams"
@@ -259,6 +261,7 @@ function normalizeConfig(
 	>
 > {
 	return {
+		mode: config.mode === "plan" ? "plan" : "act",
 		enableTools: config.enableTools !== false,
 		enableSpawnAgent: config.enableSpawnAgent !== false,
 		enableAgentTeams: config.enableAgentTeams !== false,
@@ -325,6 +328,7 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 			tools.push(
 				...createBuiltinToolsList(
 					config.cwd,
+					normalized.mode,
 					skillsExecutor,
 					defaultToolExecutors,
 				),
@@ -373,6 +377,7 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 						? () =>
 								createBuiltinToolsList(
 									config.cwd,
+									normalized.mode,
 									skillsExecutor,
 									defaultToolExecutors,
 								)

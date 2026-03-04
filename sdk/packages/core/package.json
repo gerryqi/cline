@@ -20,7 +20,7 @@
 		"src"
 	],
 	"scripts": {
-		"build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --target node --format esm --external @cline/agents --external @cline/llms && bun build ./src/server/index.ts --outdir ./dist/server --target node --format esm --external @cline/agents --external @cline/llms && bun tsc --emitDeclarationOnly",
+		"build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --target node --format esm --external @cline/agents --external @cline/llms --external @cline/rpc && bun build ./src/server/index.ts --outdir ./dist/server --target node --format esm --external @cline/agents --external @cline/llms --external @cline/rpc && bun tsc --emitDeclarationOnly",
 		"clean": "rm -rf dist node_modules",
 		"typecheck": "bun tsc --noEmit",
 		"test": "vitest run",
@@ -29,6 +29,7 @@
 	"dependencies": {
 		"@cline/agents": "workspace:*",
 		"@cline/llms": "workspace:*",
+		"@cline/rpc": "workspace:*",
 		"better-sqlite3": "^11.10.0",
 		"nanoid": "^5.1.6",
 		"simple-git": "^3.32.3",

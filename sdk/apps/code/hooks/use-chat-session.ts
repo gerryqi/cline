@@ -48,6 +48,18 @@ type ToolCallEndEvent = {
 	durationMs?: number;
 };
 
+type ToolApprovalRequestItem = {
+	requestId: string;
+	sessionId: string;
+	createdAt: string;
+	toolCallId: string;
+	toolName: string;
+	input?: unknown;
+	iteration?: number;
+	agentId?: string;
+	conversationId?: string;
+};
+
 type ChatApiResult = {
 	text: string;
 	inputTokens?: number;
@@ -85,6 +97,7 @@ export const DEFAULT_CHAT_CONFIG: ChatSessionConfig = {
 	cwd: "",
 	provider: "anthropic",
 	model: models.ANTHROPIC_DEFAULT_MODEL,
+	mode: "act",
 	apiKey: process.env.ANTHROPIC_API_KEY || "",
 	systemPrompt: DEFAULT_SYSTEM_PROMPT,
 	maxIterations: 10,
@@ -125,6 +138,11 @@ function mapHistoryStatusToChatStatus(
 			return "idle";
 	}
 }
+
+type ChatSessionHookEvent = SessionHookEvent & {
+	inputTokens?: number;
+	outputTokens?: number;
+};
 
 async function postSession(body: Record<string, unknown>) {
 	const payload = (await invoke("chat_session_command", {
@@ -199,6 +217,7 @@ async function serializeAttachments(
 export function useChatSession() {
 	const [sessionId, setSessionId] = useState<string | null>(null);
 	const [status, setStatus] = useState<ChatSessionStatus>("idle");
+	const [isHydratingSession, setIsHydratingSession] = useState(false);
 	const [config, setConfig] = useState<ChatSessionConfig>(DEFAULT_CHAT_CONFIG);
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
 	const [rawTranscript, setRawTranscript] = useState("");
@@ -215,9 +234,13 @@ export function useChatSession() {
 	const [hydratedHistorySessionId, setHydratedHistorySessionId] = useState<
 		string | null
 	>(null);
+	const [pendingToolApprovals, setPendingToolApprovals] = useState<
+		ToolApprovalRequestItem[]
+	>([]);
 	const liveToolMessageIdsRef = useRef<Record<string, string>>({});
 	const activeSessionIdRef = useRef<string | null>(null);
 	const activeAssistantMessageIdRef = useRef<string | null>(null);
+	const hydrationRequestIdRef = useRef(0);
 
 	useEffect(() => {
 		activeSessionIdRef.current = sessionId;
@@ -230,13 +253,25 @@ export function useChatSession() {
 	const refreshSessionDiffSummary = useCallback(
 		async (targetSessionId: string) => {
 			try {
-				const events = await invoke<SessionHookEvent[]>("read_session_hooks", {
-					sessionId: targetSessionId,
-					limit: 800,
-				});
+				const events = await invoke<ChatSessionHookEvent[]>(
+					"read_session_hooks",
+					{
+						sessionId: targetSessionId,
+						limit: 800,
+					},
+				);
 				const diffState = buildSessionDiffState(events);
 				setFileDiffs(diffState.fileDiffs);
 				setDiffSummary(diffState.summary);
+				setToolCalls(
+					events.filter((event) => event.hookEventName === "tool_call").length,
+				);
+				setTokensIn(
+					events.reduce((sum, event) => sum + (event.inputTokens ?? 0), 0),
+				);
+				setTokensOut(
+					events.reduce((sum, event) => sum + (event.outputTokens ?? 0), 0),
+				);
 			} catch {
 				// Ignore in non-Tauri mode.
 			}
@@ -300,10 +335,51 @@ export function useChatSession() {
 		if (!sessionId) {
 			setFileDiffs([]);
 			setDiffSummary(EMPTY_DIFF_SUMMARY);
+			setPendingToolApprovals([]);
 			return;
 		}
 		void refreshSessionDiffSummary(sessionId);
 	}, [refreshSessionDiffSummary, sessionId]);
+
+	useEffect(() => {
+		let disposed = false;
+		let timer: ReturnType<typeof setInterval> | null = null;
+		const activeSessionId = sessionId;
+		if (!activeSessionId) {
+			setPendingToolApprovals([]);
+			return;
+		}
+
+		const poll = async () => {
+			try {
+				const pending = await invoke<ToolApprovalRequestItem[]>(
+					"poll_tool_approvals",
+					{
+						sessionId: activeSessionId,
+						limit: 20,
+					},
+				);
+				if (disposed) {
+					return;
+				}
+				setPendingToolApprovals(pending);
+			} catch {
+				// Ignore in non-Tauri mode.
+			}
+		};
+
+		void poll();
+		timer = setInterval(() => {
+			void poll();
+		}, 500);
+
+		return () => {
+			disposed = true;
+			if (timer) {
+				clearInterval(timer);
+			}
+		};
+	}, [sessionId]);
 
 	useEffect(() => {
 		let disposed = false;
@@ -314,7 +390,14 @@ export function useChatSession() {
 				return;
 			}
 			const payload = event.payload;
-			if (!payload || payload.stream !== "chat_text") {
+			if (!payload) {
+				return;
+			}
+			if (
+				payload.stream !== "chat_text" &&
+				payload.stream !== "chat_tool_call_start" &&
+				payload.stream !== "chat_tool_call_end"
+			) {
 				return;
 			}
 			const listeningSessionId = activeSessionIdRef.current;
@@ -442,6 +525,7 @@ export function useChatSession() {
 
 			setError(null);
 			setStatus("starting");
+			setIsHydratingSession(false);
 			setMessages([]);
 			setRawTranscript("");
 			setToolCalls(0);
@@ -494,6 +578,7 @@ export function useChatSession() {
 			}
 
 			setError(null);
+			setIsHydratingSession(false);
 			let activeSessionId = sessionId;
 			const runtimeConfig = normalizeRuntimeConfig(config);
 			const parsed = ChatSessionConfigSchema.safeParse(runtimeConfig);
@@ -625,6 +710,41 @@ export function useChatSession() {
 		],
 	);
 
+	const respondToolApproval = useCallback(
+		async (requestId: string, approved: boolean) => {
+			const activeSessionId = activeSessionIdRef.current;
+			if (!activeSessionId) {
+				return;
+			}
+			await invoke("respond_tool_approval", {
+				sessionId: activeSessionId,
+				requestId,
+				approved,
+				reason: approved
+					? undefined
+					: "Tool call rejected from desktop approval prompt",
+			});
+			setPendingToolApprovals((prev) =>
+				prev.filter((item) => item.requestId !== requestId),
+			);
+		},
+		[],
+	);
+
+	const approveToolApproval = useCallback(
+		async (requestId: string) => {
+			await respondToolApproval(requestId, true);
+		},
+		[respondToolApproval],
+	);
+
+	const rejectToolApproval = useCallback(
+		async (requestId: string) => {
+			await respondToolApproval(requestId, false);
+		},
+		[respondToolApproval],
+	);
+
 	const abort = useCallback(async () => {
 		if (!sessionId) {
 			return;
@@ -652,6 +772,7 @@ export function useChatSession() {
 		}
 		setSessionId(null);
 		setStatus("idle");
+		setIsHydratingSession(false);
 		setMessages([]);
 		setRawTranscript("");
 		setError(null);
@@ -664,11 +785,15 @@ export function useChatSession() {
 		activeAssistantMessageIdRef.current = null;
 		setActiveAssistantMessageId(null);
 		setHydratedHistorySessionId(null);
+		setPendingToolApprovals([]);
 	}, [sessionId]);
 
 	const hydrateSession = useCallback(async (session: SessionHistoryItem) => {
+		const requestId = hydrationRequestIdRef.current + 1;
+		hydrationRequestIdRef.current = requestId;
 		setError(null);
 		setStatus("starting");
+		setIsHydratingSession(true);
 		setSessionId(session.sessionId);
 		setConfig((prev) => ({
 			...prev,
@@ -681,6 +806,7 @@ export function useChatSession() {
 		activeAssistantMessageIdRef.current = null;
 		setActiveAssistantMessageId(null);
 		setHydratedHistorySessionId(session.sessionId);
+		setPendingToolApprovals([]);
 
 		try {
 			const historyMessages = await invoke<ChatMessage[]>(
@@ -690,6 +816,9 @@ export function useChatSession() {
 					maxMessages: 800,
 				},
 			);
+			if (hydrationRequestIdRef.current !== requestId) {
+				return;
+			}
 
 			if (historyMessages.length > 0) {
 				setMessages(historyMessages);
@@ -701,6 +830,7 @@ export function useChatSession() {
 				setTokensOut(0);
 				setFileDiffs([]);
 				setStatus(mapHistoryStatusToChatStatus(session.status));
+				void refreshSessionDiffSummary(session.sessionId);
 				return;
 			}
 			setMessages([]);
@@ -710,7 +840,11 @@ export function useChatSession() {
 			setTokensOut(0);
 			setFileDiffs([]);
 			setStatus(mapHistoryStatusToChatStatus(session.status));
+			void refreshSessionDiffSummary(session.sessionId);
 		} catch (err) {
+			if (hydrationRequestIdRef.current !== requestId) {
+				return;
+			}
 			const message = err instanceof Error ? err.message : String(err);
 			setError(message);
 			setStatus("error");
@@ -723,6 +857,10 @@ export function useChatSession() {
 					createdAt: Date.now(),
 				},
 			]);
+		} finally {
+			if (hydrationRequestIdRef.current === requestId) {
+				setIsHydratingSession(false);
+			}
 		}
 	}, []);
 
@@ -746,16 +884,21 @@ export function useChatSession() {
 	return {
 		sessionId,
 		status,
+		isHydratingSession,
+		activeAssistantMessageId,
 		config,
 		messages,
 		rawTranscript,
 		error,
 		summary,
 		fileDiffs,
+		pendingToolApprovals,
 		setConfig,
 		start,
 		hydrateSession,
 		sendPrompt,
+		approveToolApproval,
+		rejectToolApproval,
 		abort,
 		stop,
 		reset,

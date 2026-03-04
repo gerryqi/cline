@@ -78,6 +78,7 @@ export type {
 export type { WorkspaceManifest } from "./session/workspace-manifest";
 export type { SessionSource, SessionStatus } from "./types/common";
 export type {
+	CoreAgentMode,
 	CoreModelConfig,
 	CoreRuntimeFeatures,
 	CoreSessionConfig,

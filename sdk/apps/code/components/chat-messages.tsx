@@ -10,7 +10,7 @@ import {
 	Search,
 	Terminal,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ChatMessage, ChatSessionStatus } from "@/lib/chat-schema";
@@ -20,22 +20,44 @@ import { MemoizedMarkdown } from "./ui/markdown";
 type ChatMessagesProps = {
 	sessionId: string | null;
 	status: ChatSessionStatus;
+	isSessionSwitching?: boolean;
 	provider: string;
 	model: string;
 	messages: ChatMessage[];
 	error: string | null;
+	streamingMessageId?: string | null;
+	pendingToolApprovals: ToolApprovalRequestItem[];
+	onApproveToolApproval: (requestId: string) => void;
+	onRejectToolApproval: (requestId: string) => void;
 	promptInput: string;
 	onPromptInputChange: (value: string) => void;
 	onSend: () => void;
 };
 
+type ToolApprovalRequestItem = {
+	requestId: string;
+	sessionId: string;
+	createdAt: string;
+	toolCallId: string;
+	toolName: string;
+	input?: unknown;
+	iteration?: number;
+	agentId?: string;
+	conversationId?: string;
+};
+
 export function ChatMessages({
 	sessionId,
 	status,
+	isSessionSwitching = false,
 	provider,
 	model,
 	messages,
 	error,
+	streamingMessageId = null,
+	pendingToolApprovals,
+	onApproveToolApproval,
+	onRejectToolApproval,
 }: ChatMessagesProps) {
 	const hasMessages = messages.length > 0;
 	const lastErrorMessage = [...messages]
@@ -43,11 +65,27 @@ export function ChatMessages({
 		.find((message) => message.role === "error");
 	const shouldShowErrorBanner =
 		Boolean(error) && (!lastErrorMessage || lastErrorMessage.content !== error);
+	const [showSwitchTransition, setShowSwitchTransition] = useState(false);
+	const showIdleDetails =
+		!hasMessages && !isSessionSwitching && !showSwitchTransition;
+
+	useEffect(() => {
+		if (!isSessionSwitching) {
+			setShowSwitchTransition(false);
+			return;
+		}
+		const timer = window.setTimeout(() => {
+			setShowSwitchTransition(true);
+		}, 180);
+		return () => {
+			window.clearTimeout(timer);
+		};
+	}, [isSessionSwitching]);
 
 	return (
 		<ScrollArea className="h-full min-h-0">
-			<div className="mx-auto w-full px-6 py-6">
-				{!hasMessages ? (
+			<div className="relative mx-auto w-full px-6 py-6">
+				{showIdleDetails ? (
 					<div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
 						<div>
 							{provider} / {model}
@@ -57,12 +95,85 @@ export function ChatMessages({
 					</div>
 				) : (
 					<div className="flex flex-col gap-2 h-full">
+						{pendingToolApprovals.length > 0 ? (
+							<div className="rounded-xl border border-border bg-card p-3">
+								<div className="text-sm font-medium text-foreground">
+									Tool approval required
+								</div>
+								<div className="mt-2 flex flex-col gap-2">
+									{pendingToolApprovals.map((item) => {
+										const inputPreview = item.input
+											? JSON.stringify(item.input)
+											: "{}";
+										return (
+											<div
+												className="rounded-lg border border-border/80 bg-background/50 p-3"
+												key={item.requestId}
+											>
+												<div className="text-sm text-foreground">
+													{item.toolName}
+												</div>
+												<div className="mt-1 text-xs text-muted-foreground break-all">
+													{inputPreview}
+												</div>
+												<div className="mt-2 flex items-center gap-2">
+													<Button
+														onClick={() =>
+															onApproveToolApproval(item.requestId)
+														}
+														size="sm"
+														type="button"
+														variant="default"
+													>
+														Approve
+													</Button>
+													<Button
+														onClick={() => onRejectToolApproval(item.requestId)}
+														size="sm"
+														type="button"
+														variant="outline"
+													>
+														Reject
+													</Button>
+												</div>
+											</div>
+										);
+									})}
+								</div>
+							</div>
+						) : null}
 						{messages.map((message) => (
-							<MessageBubble key={message.id} message={message} />
+							<MessageBubble
+								isStreaming={streamingMessageId === message.id}
+								key={message.id}
+								message={message}
+							/>
 						))}
 					</div>
 				)}
-				{status === "starting" ? (
+				{showSwitchTransition ? (
+					hasMessages ? (
+						<div className="pointer-events-none absolute right-6 top-6 z-20 rounded-full border border-border/70 bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-[1px]">
+							<div className="flex items-center gap-1.5">
+								<Loader2 className="h-3.5 w-3.5 animate-spin" />
+								Switching session...
+							</div>
+						</div>
+					) : (
+						<div className="rounded-xl border border-border/70 bg-card p-4">
+							<div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
+								<Loader2 className="h-4 w-4 animate-spin" />
+								Loading session...
+							</div>
+							<div className="space-y-3">
+								<div className="h-4 w-2/5 animate-pulse rounded bg-muted/70" />
+								<div className="h-4 w-4/5 animate-pulse rounded bg-muted/70" />
+								<div className="h-4 w-3/5 animate-pulse rounded bg-muted/70" />
+							</div>
+						</div>
+					)
+				) : null}
+				{status === "starting" && !isSessionSwitching ? (
 					<div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
 						<Loader2 className="h-4 w-4 animate-spin" />
 						Thinking...
@@ -78,7 +189,13 @@ export function ChatMessages({
 	);
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({
+	message,
+	isStreaming = false,
+}: {
+	message: ChatMessage;
+	isStreaming?: boolean;
+}) {
 	const isUser = message.role === "user";
 	const isError = message.role === "error";
 
@@ -104,7 +221,16 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 						"bg-destructive/10 border border-destructive/40 text-destructive",
 				)}
 			>
-				<MemoizedMarkdown content={normalizedContent || " "} id={message.id} />
+				{isStreaming && message.role === "assistant" ? (
+					<div className="whitespace-pre-wrap break-words">
+						{normalizedContent || " "}
+					</div>
+				) : (
+					<MemoizedMarkdown
+						content={normalizedContent || " "}
+						id={message.id}
+					/>
+				)}
 			</div>
 		</div>
 	);

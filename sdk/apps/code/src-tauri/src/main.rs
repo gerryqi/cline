@@ -54,6 +54,8 @@ struct StartSessionRequest {
     cwd: Option<String>,
     provider: String,
     model: String,
+    #[serde(default = "default_agent_mode")]
+    mode: String,
     api_key: String,
     prompt: Option<String>,
     system_prompt: Option<String>,
@@ -76,6 +78,10 @@ struct ChatRunTurnRequest {
     prompt: String,
     #[serde(default)]
     attachments: Option<ChatTurnAttachments>,
+}
+
+fn default_agent_mode() -> String {
+    "act".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -314,6 +320,11 @@ fn resolve_chat_config_api_key(config: &mut StartSessionRequest) -> Result<(), S
             )
         })?;
     config.api_key = effective_api_key;
+    config.mode = if config.mode.trim().eq_ignore_ascii_case("plan") {
+        "plan".to_string()
+    } else {
+        "act".to_string()
+    };
     Ok(())
 }
 
@@ -585,6 +596,51 @@ fn shared_session_messages_write_path(session_id: &str) -> Option<PathBuf> {
     shared_session_artifact_write_path(session_id, "messages.json")
 }
 
+fn append_chat_usage_hook_event(session_id: &str, result: &ChatTurnResult) {
+    let Some(path) = shared_session_artifact_write_path(session_id, "hooks.jsonl") else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
+    let input_tokens = result
+        .usage
+        .as_ref()
+        .and_then(|usage| usage.input_tokens)
+        .or(result.input_tokens);
+    let output_tokens = result
+        .usage
+        .as_ref()
+        .and_then(|usage| usage.output_tokens)
+        .or(result.output_tokens);
+    let total_cost = result
+        .usage
+        .as_ref()
+        .and_then(|usage| usage.total_cost)
+        .filter(|value| value.is_finite() && *value >= 0.0);
+
+    let payload = serde_json::json!({
+        "ts": now_ms().to_string(),
+        "hook_event_name": "agent_end",
+        "usage": {
+            "inputTokens": input_tokens.unwrap_or(0),
+            "outputTokens": output_tokens.unwrap_or(0),
+            "totalCost": total_cost.unwrap_or(0.0),
+        }
+    });
+
+    if let Ok(line) = serde_json::to_string(&payload) {
+        if let Ok(mut file) = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            let _ = file.write_all(format!("{line}\n").as_bytes());
+        }
+    }
+}
+
 fn read_persisted_chat_messages(session_id: &str) -> Result<Option<Vec<Value>>, String> {
     let Some(path) = shared_session_messages_path(session_id) else {
         return Ok(None);
@@ -846,6 +902,11 @@ fn resolve_cli_workdir(cli_entrypoint: &Path, context: &AppContext) -> PathBuf {
 fn resolve_chat_turn_script_path(context: &AppContext) -> Option<PathBuf> {
     let candidates = [
         PathBuf::from(&context.workspace_root)
+            .join("apps")
+            .join("code")
+            .join("scripts")
+            .join("chat-agent-turn.ts"),
+        PathBuf::from(&context.workspace_root)
             .join("packages")
             .join("app")
             .join("scripts")
@@ -856,6 +917,10 @@ fn resolve_chat_turn_script_path(context: &AppContext) -> Option<PathBuf> {
             .join("chat-agent-turn.ts"),
         PathBuf::from(&context.launch_cwd)
             .join("app")
+            .join("scripts")
+            .join("chat-agent-turn.ts"),
+        PathBuf::from(&context.launch_cwd)
+            .join("..")
             .join("scripts")
             .join("chat-agent-turn.ts"),
         PathBuf::from(&context.launch_cwd)
@@ -868,6 +933,11 @@ fn resolve_chat_turn_script_path(context: &AppContext) -> Option<PathBuf> {
 fn resolve_chat_create_session_script_path(context: &AppContext) -> Option<PathBuf> {
     let candidates = [
         PathBuf::from(&context.workspace_root)
+            .join("apps")
+            .join("code")
+            .join("scripts")
+            .join("chat-create-session.ts"),
+        PathBuf::from(&context.workspace_root)
             .join("packages")
             .join("app")
             .join("scripts")
@@ -878,6 +948,10 @@ fn resolve_chat_create_session_script_path(context: &AppContext) -> Option<PathB
             .join("chat-create-session.ts"),
         PathBuf::from(&context.launch_cwd)
             .join("app")
+            .join("scripts")
+            .join("chat-create-session.ts"),
+        PathBuf::from(&context.launch_cwd)
+            .join("..")
             .join("scripts")
             .join("chat-create-session.ts"),
         PathBuf::from(&context.launch_cwd)
@@ -968,6 +1042,10 @@ fn run_chat_turn_script(
     let stdin_body =
         serde_json::to_string(request).map_err(|e| format!("failed serializing chat turn request: {e}"))?;
 
+    let approval_dir =
+        tool_approval_dir().unwrap_or_else(|| PathBuf::from(".").join(".cline").join("tool-approvals"));
+    let _ = fs::create_dir_all(&approval_dir);
+
     let mut child = Command::new("bun")
         .arg("run")
         .arg(script_path.to_string_lossy().to_string())
@@ -975,6 +1053,10 @@ fn run_chat_turn_script(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .env("CLINE_SESSION_ID", session_id)
+        .env("CLINE_TOOL_APPROVAL_MODE", "desktop")
+        .env("CLINE_TOOL_APPROVAL_SESSION_ID", session_id)
+        .env("CLINE_TOOL_APPROVAL_DIR", approval_dir.to_string_lossy().to_string())
         .spawn()
         .map_err(|e| format!("failed to start chat runner script: {e}"))?;
 
@@ -1234,6 +1316,12 @@ fn start_session(
         request.provider.clone(),
         "-m".into(),
         request.model.clone(),
+        "--mode".into(),
+        if request.mode.trim().eq_ignore_ascii_case("plan") {
+            "plan".into()
+        } else {
+            "act".into()
+        },
         "--mission-step-interval".into(),
         request.mission_step_interval.to_string(),
         "--mission-time-interval-ms".into(),
@@ -2007,6 +2095,10 @@ async fn chat_session_command(
                 let session = sessions
                     .get_mut(&session_id)
                     .ok_or_else(|| "session not found. start a new session.".to_string())?;
+                if let Some(mut next_config) = request.config.clone() {
+                    resolve_chat_config_api_key(&mut next_config)?;
+                    session.config = next_config;
+                }
                 if session.busy {
                     return Err("session is busy. wait for current response to finish.".to_string());
                 }
@@ -2048,6 +2140,7 @@ async fn chat_session_command(
                     session.status =
                         normalize_chat_finish_status(result.finish_reason.as_deref());
                     session.ended_at = Some(now_ms());
+                    append_chat_usage_hook_event(&session_id, result);
                     if !prompt.is_empty() {
                         session.prompt = Some(prompt.clone());
                     }

@@ -18,7 +18,7 @@
 		"dist"
 	],
 	"scripts": {
-		"build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --target node --format esm --external @cline/agents --external @cline/core --external @cline/llms && bun tsc --emitDeclarationOnly --declarationMap false",
+		"build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --target node --format esm --external @cline/agents --external @cline/core --external @cline/llms --external @cline/rpc && bun tsc --emitDeclarationOnly --declarationMap false",
 		"build:binary": "rm -rf dist && bun build ./src/index.ts --compile --outfile ./dist/clite",
 		"dev": "bun ./src/index.ts",
 		"clean": "rm -rf dist node_modules",
@@ -34,6 +34,7 @@
 		"@cline/agents": "workspace:*",
 		"@cline/core": "workspace:*",
 		"@cline/llms": "workspace:*",
+		"@cline/rpc": "workspace:*",
 		"better-sqlite3": "^11.10.0",
 		"nanoid": "^5.1.6"
 	},

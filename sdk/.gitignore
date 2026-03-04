@@ -39,3 +39,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 package-lock.json
 yarn.lock 
 pnpm-lock.yaml
+
+# Protobuf generated code
+packages/rpc/src/proto/generated

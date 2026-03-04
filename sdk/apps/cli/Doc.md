@@ -345,6 +345,12 @@ If the session is a **root session** (not a sub-agent), all child sub-sessions a
 | `--json` | — | boolean | `false` | Shorthand for `--output json` |
 | `--tools` | — | boolean | `true` | Enable built-in tools (default on) |
 | `--no-tools` | — | boolean | — | Disable all built-in tools |
+| `--auto-approve-tools` | — | boolean | `true` | Auto-approve tool calls by default |
+| `--require-tool-approval` | — | boolean | `false` | Require approval before each tool call by default |
+| `--tool-enable <name>` | — | string | — | Explicitly enable a specific tool |
+| `--tool-disable <name>` | — | string | — | Explicitly disable a specific tool |
+| `--tool-autoapprove <name>` | — | string | — | Auto-approve a specific tool |
+| `--tool-require-approval <name>` | — | string | — | Require approval for a specific tool |
 | `--spawn` / `--enable-spawn` | — | boolean | `true` | Enable sub-agent spawning tool |
 | `--teams` | — | boolean | `true` | Enable agent teams runtime |
 | `--team-name <name>` | — | string | `agent-team-<id>` | Name for the agent team |
@@ -421,6 +427,34 @@ Tools are enabled by default (`--tools` is `true`). Pass `--no-tools` to disable
 | `fetch_web_content` | `enableWebFetch: true` | Fetch and analyse web pages |
 
 All built-in tools are scoped to the `cwd` (working directory), which defaults to `process.cwd()` and can be overridden with `--cwd`.
+
+#### Tool Approval Policies
+
+Tool approvals are policy-based:
+- Global default is controlled by `--auto-approve-tools` (default) or `--require-tool-approval`.
+- Per-tool overrides are controlled by `--tool-autoapprove <name>` and `--tool-require-approval <name>`.
+
+Example: require approval for editor only:
+
+```bash
+agent --tool-require-approval editor "Update docs and changelog"
+```
+
+`editor` is the built-in filesystem editing tool name.
+
+#### How User Approval Works in CLI
+
+When a tool call requires approval, the terminal prompt is:
+
+```text
+Approve tool "<tool_name>" with input <preview>? [y/N]
+```
+
+- `y` / `yes`: approve and execute the tool call.
+- Any other input (including empty Enter): reject the tool call.
+- If not running in a TTY (for example, non-interactive stdin/stdout), approval-required tool calls are denied.
+
+When `CLINE_TOOL_APPROVAL_MODE=desktop`, approvals are handled through desktop IPC files instead of terminal prompts.
 
 **Tool assembly flow:**
 

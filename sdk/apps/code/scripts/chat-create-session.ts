@@ -10,6 +10,7 @@ type StartSessionRequest = {
 	cwd?: string;
 	provider: string;
 	model: string;
+	mode?: "act" | "plan";
 	enableTools: boolean;
 	enableSpawn: boolean;
 	enableTeams: boolean;

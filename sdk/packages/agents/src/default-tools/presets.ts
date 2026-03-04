@@ -28,7 +28,7 @@ export const ToolPresets = {
 	},
 
 	/**
-	 * Full development tools (all tools enabled)
+	 * Full development tools (all tools enabled) - Act mode
 	 * Good for coding assistants and task automation
 	 */
 	development: {
@@ -42,17 +42,17 @@ export const ToolPresets = {
 	},
 
 	/**
-	 * Read-only tools (no shell access)
+	 * Read-only tools (no shell access) - Plan mode
 	 * Good for analysis and documentation agents
 	 */
 	readonly: {
 		enableReadFiles: true,
 		enableSearch: true,
-		enableBash: false,
+		enableBash: true,
 		enableWebFetch: true,
 		enableEditor: false,
-		enableSkills: false,
-		enableAskQuestion: false,
+		enableSkills: true,
+		enableAskQuestion: true,
 	},
 
 	/**

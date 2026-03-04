@@ -44,6 +44,7 @@ describe("parseArgs", () => {
 			showUsage: false,
 			showTimings: false,
 			outputMode: "text",
+			mode: "act",
 			sandbox: false,
 			thinking: false,
 			enableSpawnAgent: true,
@@ -83,6 +84,8 @@ describe("parseArgs", () => {
 			"--usage",
 			"--timings",
 			"--thinking",
+			"--mode",
+			"plan",
 			"Audit",
 			"the",
 			"repo",
@@ -97,6 +100,7 @@ describe("parseArgs", () => {
 		expect(parsed.showTimings).toBe(true);
 		expect(parsed.thinking).toBe(true);
 		expect(parsed.outputMode).toBe("text");
+		expect(parsed.mode).toBe("plan");
 		expect(parsed.cwd).toBe("/tmp/work");
 		expect(parsed.teamName).toBe("dev-team");
 		expect(parsed.missionLogIntervalSteps).toBe(4);
@@ -142,6 +146,15 @@ describe("parseArgs", () => {
 		const parsedInvalid = parseArgs(["--output", "xml"]);
 		expect(parsedInvalid.outputMode).toBe("text");
 		expect(parsedInvalid.invalidOutputMode).toBe("xml");
+	});
+
+	it("parses and validates agent mode", () => {
+		const parsedPlan = parseArgs(["--mode", "plan"]);
+		expect(parsedPlan.mode).toBe("plan");
+
+		const parsedInvalid = parseArgs(["--mode", "build"]);
+		expect(parsedInvalid.mode).toBe("act");
+		expect(parsedInvalid.invalidMode).toBe("build");
 	});
 
 	it("parses session resume flag", () => {

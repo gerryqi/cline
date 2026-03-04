@@ -1,5 +1,6 @@
 export type { SessionSource, SessionStatus } from "./common";
 export type {
+	CoreAgentMode,
 	CoreModelConfig,
 	CoreRuntimeFeatures,
 	CoreSessionConfig,

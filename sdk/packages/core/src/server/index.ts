@@ -94,6 +94,7 @@ export type {
 	RootSessionArtifacts,
 } from "../session/session-service";
 export { CoreSessionService } from "../session/session-service";
+export { RpcCoreSessionService } from "../session/rpc-session-service";
 export type {
 	WorkspaceManager,
 	WorkspaceManagerEvent,

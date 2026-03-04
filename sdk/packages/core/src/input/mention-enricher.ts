@@ -1,5 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { formatFileContentBlock } from "@cline/agents";
 import { type FastFileIndexOptions, getFastFileList } from "./fast-file-index";
 
 const DEFAULT_MAX_FILES = 6;
@@ -76,11 +77,9 @@ async function readTextFileSafe(
 function buildAttachmentBlock(
 	entries: Array<{ path: string; content: string }>,
 ): string {
-	const blocks = entries.map(
-		(entry) =>
-			`<file path="${entry.path}">\n\`\`\`\n${entry.content}\n\`\`\`\n</file>`,
-	);
-	return `<attached_files_from_mentions>\n${blocks.join("\n")}\n</attached_files_from_mentions>`;
+	return entries
+		.map((entry) => formatFileContentBlock(entry.path, entry.content))
+		.join("\n\n");
 }
 
 export async function enrichPromptWithMentions(

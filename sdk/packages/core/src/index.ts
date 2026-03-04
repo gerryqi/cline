@@ -86,6 +86,7 @@ export type { RuntimeEnvironment, SessionEvent, StoredMessages } from "./types";
 export type { SessionStatus } from "./types/common";
 export { SessionSource } from "./types/common";
 export type {
+	CoreAgentMode,
 	CoreModelConfig,
 	CoreRuntimeFeatures,
 	CoreSessionConfig,

@@ -41,6 +41,11 @@ struct SessionStore {
     sessions: Mutex<HashMap<String, SessionProcess>>,
 }
 
+struct RpcServerStore {
+    child: Mutex<Option<Child>>,
+    address: String,
+}
+
 #[derive(Clone)]
 struct AppContext {
     launch_cwd: String,
@@ -539,7 +544,17 @@ fn shared_session_artifact_path(session_id: &str, suffix: &str) -> Option<PathBu
 fn resolve_cli_entrypoint_path(context: &AppContext) -> Option<PathBuf> {
     let candidates = [
         PathBuf::from(&context.workspace_root)
+            .join("apps")
+            .join("cli")
+            .join("src")
+            .join("index.ts"),
+        PathBuf::from(&context.workspace_root)
             .join("packages")
+            .join("cli")
+            .join("src")
+            .join("index.ts"),
+        PathBuf::from(&context.launch_cwd)
+            .join("apps")
             .join("cli")
             .join("src")
             .join("index.ts"),
@@ -567,6 +582,64 @@ fn resolve_cli_workdir(cli_entrypoint: &Path, context: &AppContext) -> PathBuf {
         .and_then(|p: &Path| p.parent())
         .map(|p: &Path| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from(&context.launch_cwd))
+}
+
+fn default_rpc_address() -> String {
+    std::env::var("CLINE_RPC_ADDRESS")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "127.0.0.1:4317".to_string())
+}
+
+fn ensure_rpc_server_running(
+    context: &AppContext,
+    rpc_state: &Arc<RpcServerStore>,
+) -> Result<String, String> {
+    {
+        let mut guard = rpc_state
+            .child
+            .lock()
+            .map_err(|_| "failed to lock rpc server state".to_string())?;
+        if let Some(child) = guard.as_mut() {
+            match child.try_wait() {
+                Ok(None) => {
+                    return Ok(rpc_state.address.clone());
+                }
+                Ok(Some(_)) | Err(_) => {
+                    guard.take();
+                }
+            }
+        }
+    }
+
+    let Some(cli_entrypoint) = resolve_cli_entrypoint_path(context) else {
+        return Err(format!(
+            "CLI entrypoint not found. Checked relative to workspace_root={} and launch_cwd={}.",
+            context.workspace_root, context.launch_cwd
+        ));
+    };
+    let cli_workdir = resolve_cli_workdir(&cli_entrypoint, context);
+    let child = Command::new("bun")
+        .current_dir(cli_workdir)
+        .arg("run")
+        .arg(cli_entrypoint.to_string_lossy().to_string())
+        .arg("rpc")
+        .arg("start")
+        .arg("--address")
+        .arg(rpc_state.address.clone())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("failed to start rpc server process: {e}"))?;
+
+    let mut guard = rpc_state
+        .child
+        .lock()
+        .map_err(|_| "failed to lock rpc server state".to_string())?;
+    *guard = Some(child);
+    Ok(rpc_state.address.clone())
 }
 
 fn resolve_chat_turn_script_path(context: &AppContext) -> Option<PathBuf> {
@@ -756,6 +829,7 @@ fn spawn_reader<R: Read + Send + 'static>(
 fn start_session(
     app: AppHandle,
     state: State<'_, Arc<SessionStore>>,
+    rpc_state: State<'_, Arc<RpcServerStore>>,
     context: State<'_, AppContext>,
     request: StartSessionRequest,
 ) -> Result<String, String> {
@@ -767,6 +841,7 @@ fn start_session(
     })?;
 
     let id = format!("sess_{}", state.counter.fetch_add(1, Ordering::Relaxed) + 1);
+    let rpc_address = ensure_rpc_server_running(&context, &rpc_state)?;
 
     let Some(cli_entrypoint) = resolve_cli_entrypoint_path(&context) else {
         return Err(format!(
@@ -850,6 +925,7 @@ fn start_session(
         .env("NO_COLOR", "1")
         .env("FORCE_COLOR", "0")
         .env("CLINE_ENABLE_SUBPROCESS_HOOKS", "1")
+        .env("CLINE_RPC_ADDRESS", rpc_address)
         .env("CLINE_SESSION_ID", id.clone())
         .env("CLINE_TOOL_APPROVAL_MODE", "desktop")
         .env("CLINE_TOOL_APPROVAL_SESSION_ID", id.clone())
@@ -1084,13 +1160,30 @@ fn list_cli_sessions(context: State<'_, AppContext>, limit: Option<usize>) -> Re
         if session_id.is_empty() {
             continue;
         }
+        let source = item
+            .get("source")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        if source != "cli" && source != "cli-subagent" {
+            continue;
+        }
+        let ended_at = item
+            .get("ended_at")
+            .and_then(|v| v.as_str())
+            .map(|v| v.to_string());
+        let status_raw = item
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("running")
+            .to_string();
+        let status = if status_raw == "running" && ended_at.is_some() {
+            "completed".to_string()
+        } else {
+            status_raw
+        };
         out.push(CliDiscoveredSession {
             session_id,
-            status: item
-                .get("status")
-                .and_then(|v| v.as_str())
-                .unwrap_or("running")
-                .to_string(),
+            status,
             provider: item
                 .get("provider")
                 .and_then(|v| v.as_str())
@@ -1147,10 +1240,7 @@ fn list_cli_sessions(context: State<'_, AppContext>, limit: Option<usize>) -> Re
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string(),
-            ended_at: item
-                .get("ended_at")
-                .and_then(|v| v.as_str())
-                .map(|v| v.to_string()),
+            ended_at,
             interactive: item
                 .get("interactive")
                 .and_then(|v| v.as_i64())
@@ -1664,6 +1754,10 @@ fn respond_tool_approval(
 
 fn main() {
     let store = Arc::new(SessionStore::default());
+    let rpc_store = Arc::new(RpcServerStore {
+        child: Mutex::new(None),
+        address: default_rpc_address(),
+    });
     let chat_store = Arc::new(ChatSessionStore::default());
     let launch_cwd = std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
@@ -1676,6 +1770,7 @@ fn main() {
 
     tauri::Builder::default()
         .manage(store)
+        .manage(rpc_store)
         .manage(chat_store)
         .manage(app_context)
         .invoke_handler(tauri::generate_handler![

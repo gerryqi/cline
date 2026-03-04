@@ -28,6 +28,9 @@ clite --require-tool-approval "Inspect and modify this repository"
 # Require approval only for command execution
 clite --tool-require-approval run_commands "Fix failing tests"
 
+# Require approval for editor only
+clite --tool-require-approval editor "Refactor src/index.ts for readability"
+
 # With custom system prompt
 clite -s "You are a pirate" "Tell me about the sea"
 
@@ -44,6 +47,10 @@ clite -u -t "Explain quantum computing"
 clite --output json "Summarize this repository"
 # equivalent
 clite --json "Summarize this repository"
+
+# Start the RPC gateway server (blocks until Ctrl+C)
+clite rpc start
+clite rpc start --address 127.0.0.1:4317
 
 # Use persistent team state name
 clite --team-name dev-team "Continue yesterday's team workflow"
@@ -90,6 +97,48 @@ clite -p openrouter -m google/gemini-3-pro -k sk-your-google-gemini-api-key "Set
 
 `--output json` is non-interactive and requires either a prompt argument or piped stdin.
 
+## Tool Approval
+
+Tool calls are auto-approved by default. Use approval flags to enforce review per tool call.
+
+```bash
+# Require approval for all tools
+clite --require-tool-approval "Inspect and modify this repository"
+
+# Require approval for editor only
+clite --tool-require-approval editor "Update the changelog and README"
+
+# Require approval for all tools, but allow reads without prompts
+clite --require-tool-approval --tool-autoapprove read_files "Audit the current workspace"
+```
+
+When approval is required, the CLI prompts in TTY mode:
+
+```text
+Approve tool "<tool_name>" with input <preview>? [y/N]
+```
+
+- Enter `y` or `yes` to approve.
+- Enter anything else (or press Enter) to reject.
+- If stdin/stdout is not a TTY, required-approval calls are denied in terminal mode.
+
+Desktop-integrated approval mode is also supported via env wiring:
+
+- `CLINE_TOOL_APPROVAL_MODE=desktop`
+- `CLINE_TOOL_APPROVAL_DIR=<path>`
+- `CLINE_TOOL_APPROVAL_SESSION_ID=<session-id>` (falls back to `CLINE_SESSION_ID`)
+
+In desktop mode, CLI writes a request JSON file and waits for a matching decision JSON file.
+
+## RPC Server
+
+`clite rpc start` starts the `@cline/rpc` gRPC gateway.
+
+- Default address: `127.0.0.1:4317`
+- Override with `--address <host:port>` or `CLINE_RPC_ADDRESS`
+- Startup behavior: checks health first; if already running at that address, it prints the running server id and exits without starting a duplicate
+- Shutdown: Ctrl+C / `SIGTERM` cleanly stops the in-process server
+
 ## Development
 
 ```bash
@@ -131,6 +180,10 @@ bun install -g @cline/cli
 - `CLINE_SANDBOX` - Set to `1` to force sandbox mode
 - `CLINE_SANDBOX_DATA_DIR` - Override sandbox state directory
 - `CLINE_TEAM_DATA_DIR` - Override team persistence directory
+- `CLINE_RPC_ADDRESS` - Address used by `clite rpc start` (default `127.0.0.1:4317`)
+- `CLINE_TOOL_APPROVAL_MODE` - Approval mode (`desktop` uses file IPC; unset uses terminal prompt)
+- `CLINE_TOOL_APPROVAL_DIR` - Directory for desktop approval request/decision files
+- `CLINE_TOOL_APPROVAL_SESSION_ID` - Session id namespace for desktop approval files
 - `OPENAI_API_KEY` - API key for OpenAI (when using `-p openai`)
 - `OPENROUTER_API_KEY` - API key for OpenRouter
 

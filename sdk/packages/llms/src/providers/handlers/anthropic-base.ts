@@ -158,6 +158,12 @@ export class AnthropicHandler extends BaseHandler {
 
 		// Track tool call state
 		const currentToolCall = { id: "", name: "", arguments: "" };
+		const usageSnapshot = {
+			inputTokens: 0,
+			outputTokens: 0,
+			cacheReadTokens: 0,
+			cacheWriteTokens: 0,
+		};
 
 		for await (const chunk of stream) {
 			if (debugThinking) {
@@ -171,7 +177,7 @@ export class AnthropicHandler extends BaseHandler {
 				}
 			}
 			yield* this.withResponseIdForAll(
-				this.processChunk(chunk, currentToolCall, responseId),
+				this.processChunk(chunk, currentToolCall, usageSnapshot, responseId),
 				responseId,
 			);
 		}
@@ -191,27 +197,53 @@ export class AnthropicHandler extends BaseHandler {
 	private *processChunk(
 		chunk: RawMessageStreamEvent,
 		currentToolCall: { id: string; name: string; arguments: string },
+		usageSnapshot: {
+			inputTokens: number;
+			outputTokens: number;
+			cacheReadTokens: number;
+			cacheWriteTokens: number;
+		},
 		responseId: string,
 	): Generator<import("../types").ApiStreamChunk> {
 		switch (chunk.type) {
 			case "message_start": {
 				const usage = chunk.message.usage;
+				usageSnapshot.inputTokens = usage.input_tokens || 0;
+				usageSnapshot.outputTokens = usage.output_tokens || 0;
+				usageSnapshot.cacheWriteTokens =
+					(usage as any).cache_creation_input_tokens || 0;
+				usageSnapshot.cacheReadTokens =
+					(usage as any).cache_read_input_tokens || 0;
 				yield {
 					type: "usage",
-					inputTokens: usage.input_tokens || 0,
-					outputTokens: usage.output_tokens || 0,
-					cacheWriteTokens: (usage as any).cache_creation_input_tokens,
-					cacheReadTokens: (usage as any).cache_read_input_tokens,
+					inputTokens: usageSnapshot.inputTokens,
+					outputTokens: usageSnapshot.outputTokens,
+					cacheWriteTokens: usageSnapshot.cacheWriteTokens,
+					cacheReadTokens: usageSnapshot.cacheReadTokens,
+					totalCost: this.calculateCost(
+						usageSnapshot.inputTokens,
+						usageSnapshot.outputTokens,
+						usageSnapshot.cacheReadTokens,
+					),
 					id: responseId,
 				};
 				break;
 			}
 
 			case "message_delta": {
+				usageSnapshot.outputTokens =
+					chunk.usage.output_tokens || usageSnapshot.outputTokens;
 				yield {
 					type: "usage",
-					inputTokens: 0,
-					outputTokens: chunk.usage.output_tokens || 0,
+					inputTokens: usageSnapshot.inputTokens,
+					outputTokens: usageSnapshot.outputTokens,
+					cacheWriteTokens: usageSnapshot.cacheWriteTokens,
+					cacheReadTokens: usageSnapshot.cacheReadTokens,
+					totalCost: this.calculateCost(
+						usageSnapshot.inputTokens,
+						usageSnapshot.outputTokens,
+						usageSnapshot.cacheReadTokens,
+					),
 					id: responseId,
 				};
 				break;

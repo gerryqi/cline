@@ -1,6 +1,6 @@
 # @cline/cli Architecture
 
-This document explains how `@cline/cli` consumes `@cline/core`, `@cline/agents`, and `@cline/llms`, with a focus on how streamed model output reaches the terminal.
+This document explains how `@cline/cli` consumes `@cline/core`, `@cline/agents`, `@cline/llms`, and `@cline/rpc`, with a focus on streaming output and tool-approval flow.
 
 Workspace boundary rule:
 - use `@cline/llms` and `@cline/agents` root imports only
@@ -14,6 +14,7 @@ Workspace boundary rule:
 - Compose runtime capabilities (tools, teams, spawn support) via `@cline/core`.
 - Execute agent loops via `@cline/agents`.
 - Fetch model metadata and provider handlers via `@cline/llms` (indirectly through agents, directly for model catalog lookup).
+- Expose an optional gRPC gateway lifecycle command via `@cline/rpc` (`clite rpc start`).
 
 ## Dependency Boundaries
 
@@ -61,6 +62,17 @@ Two paths:
   - `Agent` constructs a provider handler with `createHandler(...)` from `@cline/llms`.
   - Streaming chunks from handlers are normalized as `ApiStreamChunk` values.
 
+### `@cline/rpc` consumption
+
+Primary usage in `cli/src/index.ts`:
+
+- `getRpcServerHealth(address)`
+  - Probes whether a gateway is already listening.
+- `startRpcServer({ address })`
+  - Starts the singleton in-process server if one is not already active.
+- `stopRpcServer()`
+  - Graceful shutdown on `SIGINT`/`SIGTERM` in `clite rpc start`.
+
 ## Runtime Composition Flow
 
 ```mermaid
@@ -73,6 +85,51 @@ flowchart TD
   C --> D[tools + optional team runtime]
   D --> E[agents: new Agent]
   E --> F[agent.run or agent.continue]
+```
+
+## End-to-End Prompt Payload Flow
+
+For hosts that route prompt turns through the CLI/runtime stack (including desktop/app chat runners), the payload carries:
+
+- `mode` (`act` or `plan`, default `act`)
+- `providerId`
+- `modelId`
+- prompt text
+- optional attachments:
+  - `userImages` (data URLs)
+  - `userFiles` (`name` + `content`)
+
+Flow summary:
+
+1. Host/UI collects prompt + model/provider + mode + attachments.
+2. Host serializes turn request and starts/uses runtime session.
+3. Runtime builder selects tool preset from mode:
+   - `act` -> development preset
+   - `plan` -> readonly preset
+4. Agent executes `run(...)`/`continue(...)` with prompt + attachments.
+5. Streamed events/results flow back to host for rendering/persistence.
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant H as Host UI / Session Bridge
+  participant CLI as @cline/cli Orchestration
+  participant C as @cline/core DefaultRuntimeBuilder
+  participant A as @cline/agents Agent
+  participant L as @cline/llms Handler
+
+  U->>H: prompt + mode + providerId + modelId + files/images
+  H->>CLI: turn request(config + attachments)
+  CLI->>C: build(config.mode, providerId, modelId, cwd)
+  C-->>CLI: tools from mode preset
+  CLI->>A: run/continue(prompt, userImages, userFiles)
+
+  loop streaming response
+    A->>L: createMessage(...)
+    L-->>A: chunks
+    A-->>CLI: AgentEvent stream
+    CLI-->>H: text/tool events + final result
+  end
 ```
 
 ## Streaming Path: Agent to CLI Output
@@ -129,6 +186,20 @@ Key rendering function in CLI:
 
 This means terminal output is event-driven and incremental, not buffered until the end.
 
+## Tool Approval Flow
+
+Approval is enforced by `@cline/agents` via `toolPolicies` + `requestToolApproval(...)`. CLI supplies the approval callback in two modes:
+
+1. Terminal mode (default):
+   - Prompt on TTY: approve/reject per call.
+   - Non-TTY: required approvals are denied.
+2. Desktop file-IPC mode (`CLINE_TOOL_APPROVAL_MODE=desktop`):
+   - CLI writes request JSON into `CLINE_TOOL_APPROVAL_DIR`.
+   - CLI polls for matching decision JSON and resolves approval.
+   - Times out (default 5 minutes) if no decision arrives.
+
+This keeps approval semantics in the shared agent runtime, while host transport/UI can vary.
+
 ## Single Prompt vs Interactive
 
 Both modes use the same streaming mechanism:
@@ -148,4 +219,6 @@ In both cases, streamed text appears through the same `onEvent -> handleEvent ->
   - persisted provider-scoped settings from core
   - built-in defaults/live catalog fallback
 - Agents owns loop semantics and event emission.
+- Agents owns approval policy enforcement (`toolPolicies`, `requestToolApproval` invocation).
 - LLMS owns provider-specific streaming and normalization into unified chunks.
+- RPC package owns gateway transport for cross-client/session/task routing when launched via `clite rpc start`.

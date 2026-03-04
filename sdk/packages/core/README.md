@@ -8,6 +8,7 @@ Stateful orchestration primitives shared by CLI and desktop runtimes.
 - `runtime`: runtime composition and bootstrap wiring
 - `session`: root/sub-agent session lifecycle and status transitions
 - `storage`: durable session persistence and provider settings persistence (`SqliteSessionStore`, `ProviderSettingsManager`)
+- `rpc session adapter`: session/artifact lifecycle over `@cline/rpc` (`RpcCoreSessionService`)
 - `types`: shared contracts for session manager/store/runtime builders
 
 ## Install
@@ -44,6 +45,7 @@ From `@cline/core/server`:
 - `resolveCredentials`, `DefaultCredentialsResolver`
 - `DefaultRuntimeBuilder`, `createTeamName`
 - `CoreSessionService`
+- `RpcCoreSessionService`
 - `SqliteSessionStore`
 - `deriveSubsessionStatus`, `makeSubSessionId`, `makeTeamTaskSubSessionId`, `sanitizeSessionToken`
 
@@ -113,3 +115,10 @@ const last = settings.getLastUsedProviderConfig()
 
 Storage path defaults to `~/.cline/data/settings/providers.json`.
 Set `CLINE_PROVIDER_SETTINGS_PATH` to override.
+
+## Session Service Modes
+
+Choose one of two session service implementations in hosts:
+
+- `CoreSessionService` + `SqliteSessionStore` for direct local SQLite-backed session persistence
+- `RpcCoreSessionService` for session operations routed through an RPC gateway (`@cline/rpc`) while still managing local artifacts/transcripts

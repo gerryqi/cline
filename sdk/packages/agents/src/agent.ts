@@ -10,6 +10,7 @@ import {
 	type AgentExtensionRunner,
 	createExtensionRunner,
 } from "./extensions.js";
+import { formatFileContentBlock } from "./input-formatting.js";
 import { MessageBuilder } from "./message-builder.js";
 import {
 	createToolRegistry,
@@ -1091,11 +1092,14 @@ export class Agent {
 					if (content.includes("\u0000")) {
 						throw new Error("Cannot read binary file into context.");
 					}
-					return `<file_content path="${normalizedPath}">\n${content}\n</file_content>`;
+					return formatFileContentBlock(normalizedPath, content);
 				} catch (error) {
 					const message =
 						error instanceof Error ? error.message : String(error);
-					return `<file_content path="${normalizedPath}">\nError fetching content: ${message}\n</file_content>`;
+					return formatFileContentBlock(
+						normalizedPath,
+						`Error fetching content: ${message}`,
+					);
 				}
 			}),
 		);

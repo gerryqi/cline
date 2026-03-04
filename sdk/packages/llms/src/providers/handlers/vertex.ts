@@ -183,10 +183,16 @@ export class VertexHandler extends BaseHandler {
 		});
 
 		const currentToolCall = { id: "", name: "" };
+		const usageSnapshot = {
+			inputTokens: 0,
+			outputTokens: 0,
+			cacheReadTokens: 0,
+			cacheWriteTokens: 0,
+		};
 
 		for await (const chunk of stream) {
 			yield* this.withResponseIdForAll(
-				this.processChunk(chunk, currentToolCall),
+				this.processChunk(chunk, currentToolCall, usageSnapshot),
 				responseId,
 			);
 		}
@@ -197,25 +203,51 @@ export class VertexHandler extends BaseHandler {
 	private *processChunk(
 		chunk: any,
 		currentToolCall: { id: string; name: string },
+		usageSnapshot: {
+			inputTokens: number;
+			outputTokens: number;
+			cacheReadTokens: number;
+			cacheWriteTokens: number;
+		},
 	): Generator<import("../types").ApiStreamChunk> {
 		switch (chunk.type) {
 			case "message_start": {
 				const usage = chunk.message.usage;
+				usageSnapshot.inputTokens = usage.input_tokens || 0;
+				usageSnapshot.outputTokens = usage.output_tokens || 0;
+				usageSnapshot.cacheWriteTokens =
+					(usage as any).cache_creation_input_tokens || 0;
+				usageSnapshot.cacheReadTokens =
+					(usage as any).cache_read_input_tokens || 0;
 				yield {
 					type: "usage",
-					inputTokens: usage.input_tokens || 0,
-					outputTokens: usage.output_tokens || 0,
-					cacheWriteTokens: (usage as any).cache_creation_input_tokens,
-					cacheReadTokens: (usage as any).cache_read_input_tokens,
+					inputTokens: usageSnapshot.inputTokens,
+					outputTokens: usageSnapshot.outputTokens,
+					cacheWriteTokens: usageSnapshot.cacheWriteTokens,
+					cacheReadTokens: usageSnapshot.cacheReadTokens,
+					totalCost: this.calculateCost(
+						usageSnapshot.inputTokens,
+						usageSnapshot.outputTokens,
+						usageSnapshot.cacheReadTokens,
+					),
 					id: "",
 				};
 				break;
 			}
 			case "message_delta": {
+				usageSnapshot.outputTokens =
+					chunk.usage.output_tokens || usageSnapshot.outputTokens;
 				yield {
 					type: "usage",
-					inputTokens: 0,
-					outputTokens: chunk.usage.output_tokens || 0,
+					inputTokens: usageSnapshot.inputTokens,
+					outputTokens: usageSnapshot.outputTokens,
+					cacheWriteTokens: usageSnapshot.cacheWriteTokens,
+					cacheReadTokens: usageSnapshot.cacheReadTokens,
+					totalCost: this.calculateCost(
+						usageSnapshot.inputTokens,
+						usageSnapshot.outputTokens,
+						usageSnapshot.cacheReadTokens,
+					),
 					id: "",
 				};
 				break;

@@ -30,6 +30,7 @@
 
 - `extensions` are the primary interception and composition mechanism in `AgentConfig.extensions`.
 - `hooks` are lifecycle callbacks in `AgentConfig.hooks` and include the subprocess bridge (`createSubprocessHooks`) for external event handling.
+- Tool approval is a separate host callback contract (`requestToolApproval`) enforced by `Agent` policy resolution, not by hooks or extensions themselves.
 
 ## Discovery and Loading
 
@@ -128,6 +129,51 @@ sequenceDiagram
     A->>H: session_shutdown
 ```
 
+## Prompt Submission Payload Flow
+
+The runtime receives a host-configured payload containing:
+
+- `mode`: `act` or `plan`
+- `providerId`
+- `modelId`
+- `prompt` text
+- optional `userImages` and `userFiles`
+
+`mode` is resolved before the agent loop starts by the host runtime composition layer:
+
+- `act` -> `ToolPresets.development`
+- `plan` -> `ToolPresets.readonly`
+
+From the agent package perspective, attachments are just additional user inputs passed into `run(...)`/`continue(...)`:
+
+- `run(input, userImages?, userFiles?)`
+- `continue(input, userImages?, userFiles?)`
+
+```mermaid
+sequenceDiagram
+    participant H as Host (CLI/Desktop)
+    participant C as Core Runtime Builder
+    participant A as Agent
+    participant L as LLM Handler
+    participant T as Tools
+
+    H->>C: Build runtime with mode/providerId/modelId
+    C-->>H: tools resolved from mode preset
+    H->>A: new Agent(providerId, modelId, tools, policies)
+    H->>A: run/continue(prompt, userImages, userFiles)
+
+    loop Iterations
+        A->>L: createMessage(...)
+        L-->>A: streamed content + tool calls
+        alt tool call
+            A->>T: execute tool
+            T-->>A: tool output/error
+        end
+    end
+
+    A-->>H: AgentResult(messages, usage, finishReason)
+```
+
 ## Extension Contributions
 
 Extensions can register:
@@ -167,6 +213,11 @@ Authorization order for each tool call:
 4. If denied/not approved, return tool error record and skip execution
 5. If allowed, execute tool with existing timeout/retry/abort behavior
 
+This separation is intentional:
+
+- approval decision transport/UI is host-defined (terminal prompt, desktop UI, RPC, etc.)
+- policy enforcement remains centralized in `Agent` so behavior is consistent across hosts
+
 ## Reliability and Error Policy
 
 - Tool execution: timeout + retry + abort propagation
@@ -174,6 +225,7 @@ Authorization order for each tool call:
   - `"ignore"`: emit recoverable error event and continue
   - `"throw"`: fail run on lifecycle invocations that are awaited
 - Unknown tools are captured as tool error records
+- Missing approval handler with `autoApprove: false` produces a denied tool error record
 
 ## File Map
 

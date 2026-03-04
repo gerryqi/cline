@@ -39,7 +39,9 @@ import {
 	type ToolApprovalRequest,
 	type ToolApprovalResult,
 	type ToolPolicy,
+	ToolPresets,
 } from "@cline/agents";
+import { getRpcServerHealth, startRpcServer, stopRpcServer } from "@cline/rpc";
 import {
 	createTeamName,
 	createUserInstructionConfigWatcher,
@@ -172,13 +174,13 @@ function persistCurrentAgentMessages(agent: Agent): void {
 	}
 }
 
-function createCliSession(
+async function createCliSession(
 	config: Config,
 	prompt: string | undefined,
 	interactive: boolean,
-): ActiveCliSession {
+): Promise<ActiveCliSession> {
 	const sessionId = process.env.CLINE_SESSION_ID?.trim() || "";
-	const created = createRootCliSessionWithArtifacts({
+	const created = await createRootCliSessionWithArtifacts({
 		sessionId,
 		source: SessionSource.CLI,
 		pid: process.pid,
@@ -208,14 +210,14 @@ function createCliSession(
 	};
 }
 
-function updateCliSessionStatus(
+async function updateCliSessionStatus(
 	status: SessionManifest["status"],
 	exitCode?: number | null,
-): void {
+): Promise<void> {
 	if (!activeCliSession) {
 		return;
 	}
-	const result = updateCliSessionStatusInStore(
+	const result = await updateCliSessionStatusInStore(
 		activeCliSession.manifest.session_id,
 		status,
 		exitCode,
@@ -227,7 +229,7 @@ function updateCliSessionStatus(
 	activeCliSession.manifest.status = status;
 	activeCliSession.manifest.ended_at = endedAt;
 	activeCliSession.manifest.exit_code = exitCode ?? undefined;
-	writeCliSessionManifest(
+	await writeCliSessionManifest(
 		activeCliSession.manifestPath,
 		activeCliSession.manifest,
 	);
@@ -240,20 +242,20 @@ function bindCliSessionExitHandlers(): void {
 	cliSessionExitBound = true;
 	process.on("exit", (code) => {
 		if (activeCliSession?.manifest.status === "running") {
-			updateCliSessionStatus(code === 0 ? "completed" : "failed", code);
+			void updateCliSessionStatus(code === 0 ? "completed" : "failed", code);
 		}
 	});
 	process.on("SIGTERM", () => {
 		abortActiveRuntime("sigterm");
 		if (activeCliSession?.manifest.status === "running") {
-			updateCliSessionStatus("cancelled", null);
+			void updateCliSessionStatus("cancelled", null);
 		}
 		process.exit(143);
 	});
 	process.on("SIGINT", () => {
 		abortActiveRuntime("sigint");
 		if (activeCliSession?.manifest.status === "running") {
-			updateCliSessionStatus("cancelled", null);
+			void updateCliSessionStatus("cancelled", null);
 		}
 	});
 }
@@ -468,7 +470,7 @@ async function requestTerminalToolApproval(
 			output: process.stdout,
 		});
 		rl.question(
-			`\nApprove tool "${request.toolName}" with input ${preview}? [y/N] `,
+			`\n${c.yellow}Approve ${c.green}"${request.toolName}" ${c.dim}${preview} ${c.reset}[y/N] `,
 			(value) => {
 				rl.close();
 				resolve(value);
@@ -562,13 +564,12 @@ function createRuntimeHooks(): AgentHooks | undefined {
 	}).hooks;
 }
 
-function createBuiltinToolsList(cwd: string): Tool[] {
+function createBuiltinToolsList(cwd: string, mode: Config["mode"]): Tool[] {
+	const preset =
+		mode === "plan" ? ToolPresets.readonly : ToolPresets.development;
 	return createBuiltinTools({
 		cwd,
-		enableReadFiles: true,
-		enableSearch: true,
-		enableBash: true,
-		enableWebFetch: true,
+		...preset,
 		executors: {
 			askQuestion: askQuestionInTerminal,
 		},
@@ -586,12 +587,12 @@ function createCliSpawnTool(
 		baseUrl: config.baseUrl,
 		knownModels: config.knownModels,
 		defaultMaxIterations: 5,
-		createSubAgentTools: () => createBuiltinToolsList(config.cwd),
+		createSubAgentTools: () => createBuiltinToolsList(config.cwd, config.mode),
 		hooks,
 		toolPolicies: config.toolPolicies,
 		requestToolApproval,
 		onSubAgentStart: ({ subAgentId, conversationId, parentAgentId, input }) => {
-			handleSubAgentStart({
+			void handleSubAgentStart({
 				subAgentId,
 				conversationId,
 				parentAgentId,
@@ -606,7 +607,7 @@ function createCliSpawnTool(
 			result,
 			error,
 		}) => {
-			handleSubAgentEnd({
+			void handleSubAgentEnd({
 				subAgentId,
 				conversationId,
 				parentAgentId,
@@ -668,6 +669,7 @@ function writeErr(text: string): void {
 function printModelProviderInfo(config: Config): void {
 	const modelSource = config.knownModels ? "live" : "bundled";
 	const thinkingStatus = config.thinking ? "on" : "off";
+	const mode = config.mode;
 	if (config.outputMode === "json") {
 		emitJsonLine("stdout", {
 			type: "run_start",
@@ -675,12 +677,13 @@ function printModelProviderInfo(config: Config): void {
 			modelId: config.modelId,
 			catalog: modelSource,
 			thinking: thinkingStatus,
+			mode,
 			sessionId: activeCliSession?.manifest.session_id,
 		});
 		return;
 	}
 	writeln(
-		`${c.dim}[model] provider=${config.providerId} model=${config.modelId} catalog=${modelSource} thinking=${thinkingStatus}${c.reset}\n`,
+		`${c.dim}[model] provider=${config.providerId} model=${config.modelId} catalog=${modelSource} thinking=${thinkingStatus} mode=${mode}${c.reset}\n`,
 	);
 }
 
@@ -726,12 +729,14 @@ function parsePersistedMessages(raw: string): providers.Message[] {
 	return messages as providers.Message[];
 }
 
-function loadSessionMessages(sessionId: string): providers.Message[] {
+async function loadSessionMessages(
+	sessionId: string,
+): Promise<providers.Message[]> {
 	const target = sessionId.trim();
 	if (!target) {
 		throw new Error("--session requires <id>");
 	}
-	const rows = listCliSessions(2000) as HistorySessionRow[];
+	const rows = (await listCliSessions(2000)) as HistorySessionRow[];
 	const row = rows.find((item) => item.session_id === target);
 	if (!row) {
 		throw new Error(`could not find session "${target}"`);
@@ -888,7 +893,7 @@ async function runAgent(
 			});
 		}
 		if (abortRequested || result.finishReason === "aborted") {
-			updateCliSessionStatus("cancelled", null);
+			void updateCliSessionStatus("cancelled", null);
 			writeln();
 			return;
 		}
@@ -931,7 +936,7 @@ async function runAgent(
 		if (!errorAlreadyReported) {
 			writeErr(err instanceof Error ? err.message : String(err));
 		}
-		updateCliSessionStatus("failed", 1);
+		await updateCliSessionStatus("failed", 1);
 		process.exit(1);
 	} finally {
 		persistCurrentAgentMessages(agent);
@@ -1016,7 +1021,7 @@ function handleEvent(event: AgentEvent, _config: Config): void {
 					} else {
 						const outputStr = formatToolOutput(event.output);
 						if (outputStr) {
-							write(`  ${c.dim}-> ${outputStr}${c.reset}`);
+							write(`  ${c.dim}-> ${outputStr}${c.reset}\n`);
 						} else {
 							write(` ${c.green}ok${c.reset}\n`);
 						}
@@ -1074,24 +1079,24 @@ function handleTeamEvent(event: TeamEvent): void {
 			);
 			break;
 		case "task_start":
-			onTeamTaskStart(event.agentId, event.message);
+			void onTeamTaskStart(event.agentId, event.message);
 			break;
 		case "task_end":
 			if (event.error) {
-				onTeamTaskEnd(
+				void onTeamTaskEnd(
 					event.agentId,
 					"failed",
 					`[error] ${event.error.message}`,
 				);
 			} else if (event.result?.finishReason === "aborted") {
-				onTeamTaskEnd(
+				void onTeamTaskEnd(
 					event.agentId,
 					"cancelled",
 					"[done] aborted",
 					event.result.messages,
 				);
 			} else {
-				onTeamTaskEnd(
+				void onTeamTaskEnd(
 					event.agentId,
 					"completed",
 					`[done] ${event.result?.finishReason ?? "completed"}`,
@@ -1328,26 +1333,26 @@ async function runHookCommand(): Promise<number> {
 		}
 
 		appendHookAudit(parsed);
-		queueSpawnRequest(parsed);
-		const subSessionId = upsertSubagentSessionFromHook(parsed);
+		await queueSpawnRequest(parsed);
+		const subSessionId = await upsertSubagentSessionFromHook(parsed);
 		if (subSessionId) {
-			appendSubagentHookAudit(subSessionId, parsed);
+			await appendSubagentHookAudit(subSessionId, parsed);
 			if (parsed.hook_event_name === "tool_call") {
-				appendSubagentTranscriptLine(
+				await appendSubagentTranscriptLine(
 					subSessionId,
 					`[tool] ${parsed.tool_call?.name ?? "unknown"}`,
 				);
 			}
 			if (parsed.hook_event_name === "agent_end") {
-				appendSubagentTranscriptLine(subSessionId, "[done] completed");
+				await appendSubagentTranscriptLine(subSessionId, "[done] completed");
 			}
 			if (parsed.hook_event_name === "session_shutdown") {
-				appendSubagentTranscriptLine(
+				await appendSubagentTranscriptLine(
 					subSessionId,
 					`[shutdown] ${parsed.reason ?? "session shutdown"}`,
 				);
 			}
-			applySubagentStatus(subSessionId, parsed);
+			await applySubagentStatus(subSessionId, parsed);
 		}
 
 		switch (parsed.hook_event_name) {
@@ -1381,6 +1386,7 @@ ${c.bold}USAGE${c.reset}
   clite -i                    Interactive mode
   clite list history          List saved history items
   clite hook < payload.json   Handle hook payload from stdin
+  clite rpc start             Start RPC server
   clite list <workflows|rules|skills|agents|history>
                               List configured workflow/rule/skill/agent configs
   echo "prompt" | clite       Pipe input
@@ -1395,6 +1401,7 @@ ${c.bold}OPTIONS${c.reset}
   -u, --usage                 Show token usage after response
   -t, --timings               Show timing information
   --thinking                  Enable model thinking/reasoning when supported
+  --mode <act|plan>           Agent mode for tool presets (default: act)
   --output <text|json>        Output format (default: text)
   --json                      Shorthand for --output json (NDJSON stream)
   --sandbox                   Run with isolated local state (no writes to ~/.cline)
@@ -1436,6 +1443,8 @@ ${c.bold}EXAMPLES${c.reset}
   clite list rules --json
   clite list skills
   clite list agents
+  clite rpc start
+  clite rpc start --address 127.0.0.1:4317
   clite "What is 2+2?"
   clite "Read package.json and summarize it"
   clite "Search for TODO comments in the codebase"
@@ -1445,6 +1454,47 @@ ${c.bold}EXAMPLES${c.reset}
   clite --no-tools "Answer from general knowledge only"
   cat file.txt | clite "Summarize this"
 `);
+}
+
+async function runRpcStartCommand(rawArgs: string[]): Promise<number> {
+	const addressIndex = rawArgs.indexOf("--address");
+	const address =
+		(addressIndex >= 0 && addressIndex + 1 < rawArgs.length
+			? rawArgs[addressIndex + 1]
+			: process.env.CLINE_RPC_ADDRESS) || "127.0.0.1:4317";
+	const normalizedAddress = address.trim();
+	if (!normalizedAddress) {
+		writeErr("rpc start requires a non-empty address");
+		return 1;
+	}
+
+	const existing = await getRpcServerHealth(normalizedAddress);
+	if (existing?.running) {
+		writeln(
+			`${c.dim}[rpc] already running server_id=${existing.serverId} address=${existing.address}${c.reset}`,
+		);
+		return 0;
+	}
+
+	const handle = await startRpcServer({ address: normalizedAddress });
+	writeln(
+		`${c.dim}[rpc] started server_id=${handle.serverId} address=${handle.address}${c.reset}`,
+	);
+	writeln(`${c.dim}[rpc] press Ctrl+C to stop${c.reset}`);
+
+	await new Promise<void>((resolve) => {
+		const shutdown = () => {
+			process.off("SIGINT", shutdown);
+			process.off("SIGTERM", shutdown);
+			resolve();
+		};
+		process.on("SIGINT", shutdown);
+		process.on("SIGTERM", shutdown);
+	});
+
+	await stopRpcServer();
+	writeln(`${c.dim}[rpc] stopped${c.reset}`);
+	return 0;
 }
 
 function showVersion(): void {
@@ -1716,11 +1766,19 @@ async function main(): Promise<void> {
 		const code = await runHookCommand();
 		process.exit(code);
 	}
+	if (rawArgs[0] === "rpc" && rawArgs[1] === "start") {
+		const code = await runRpcStartCommand(rawArgs);
+		process.exit(code);
+	}
 	if (rawArgs[0] === "list") {
 		if (args.invalidOutputMode) {
 			writeErr(
 				`invalid output mode "${args.invalidOutputMode}" (expected "text" or "json")`,
 			);
+			process.exit(1);
+		}
+		if (args.invalidMode) {
+			writeErr(`invalid mode "${args.invalidMode}" (expected "act" or "plan")`);
 			process.exit(1);
 		}
 		currentOutputMode = args.outputMode;
@@ -1741,9 +1799,9 @@ async function main(): Promise<void> {
 				limitIndex >= 0 && limitIndex + 1 < rawArgs.length
 					? Number.parseInt(rawArgs[limitIndex + 1] ?? "200", 10)
 					: 200;
-			const rows = listCliSessions(Number.isFinite(limit) ? limit : 200) as
-				| HistoryListRow[]
-				| undefined;
+			const rows = (await listCliSessions(
+				Number.isFinite(limit) ? limit : 200,
+			)) as HistoryListRow[] | undefined;
 			const lines = (rows ?? []).map((row) => formatHistoryListLine(row));
 			if (lines.length > 0) {
 				process.stdout.write(`${lines.join("\n")}\n`);
@@ -1764,7 +1822,9 @@ async function main(): Promise<void> {
 				? Number.parseInt(rawArgs[limitIndex + 1] ?? "200", 10)
 				: 200;
 		process.stdout.write(
-			JSON.stringify(listCliSessions(Number.isFinite(limit) ? limit : 200)),
+			JSON.stringify(
+				await listCliSessions(Number.isFinite(limit) ? limit : 200),
+			),
 		);
 		process.exit(0);
 	}
@@ -1776,7 +1836,7 @@ async function main(): Promise<void> {
 			writeErr("sessions delete requires --session-id <id>");
 			process.exit(1);
 		}
-		process.stdout.write(JSON.stringify(deleteCliSession(sessionId)));
+		process.stdout.write(JSON.stringify(await deleteCliSession(sessionId)));
 		process.exit(0);
 	}
 	let initialMessages: providers.Message[] | undefined;
@@ -1786,7 +1846,7 @@ async function main(): Promise<void> {
 			writeErr("--session requires <id>");
 			process.exit(1);
 		}
-		initialMessages = loadSessionMessages(sessionId);
+		initialMessages = await loadSessionMessages(sessionId);
 		args = {
 			...args,
 			interactive: true,
@@ -1798,6 +1858,10 @@ async function main(): Promise<void> {
 		writeErr(
 			`invalid output mode "${args.invalidOutputMode}" (expected "text" or "json")`,
 		);
+		process.exit(1);
+	}
+	if (args.invalidMode) {
+		writeErr(`invalid mode "${args.invalidMode}" (expected "act" or "plan")`);
 		process.exit(1);
 	}
 	currentOutputMode = args.outputMode;
@@ -1883,6 +1947,7 @@ async function main(): Promise<void> {
 		showTimings: args.showTimings,
 		thinking: args.thinking,
 		outputMode: args.outputMode,
+		mode: args.mode,
 		defaultToolAutoApprove,
 		toolPolicies,
 		enableSpawnAgent: args.enableSpawnAgent,
@@ -1930,10 +1995,10 @@ async function main(): Promise<void> {
 			const prompt = args.prompt
 				? `${args.prompt}\n\n${pipedInput}`
 				: pipedInput;
-			activeCliSession = createCliSession(config, prompt, false);
+			activeCliSession = await createCliSession(config, prompt, false);
 			await runAgent(prompt, config, userInstructionWatcher);
 			if (activeCliSession?.manifest.status === "running") {
-				updateCliSessionStatus("completed", 0);
+				await updateCliSessionStatus("completed", 0);
 			}
 			stopUserInstructionWatcher();
 			process.off("exit", stopUserInstructionWatcher);
@@ -1952,10 +2017,10 @@ async function main(): Promise<void> {
 
 	// Interactive mode
 	if (args.interactive || !args.prompt) {
-		activeCliSession = createCliSession(config, undefined, true);
+		activeCliSession = await createCliSession(config, undefined, true);
 		await runInteractive(config, userInstructionWatcher, initialMessages);
 		if (activeCliSession?.manifest.status === "running") {
-			updateCliSessionStatus("completed", 0);
+			await updateCliSessionStatus("completed", 0);
 		}
 		stopUserInstructionWatcher();
 		process.off("exit", stopUserInstructionWatcher);
@@ -1963,10 +2028,10 @@ async function main(): Promise<void> {
 	}
 
 	// Single prompt mode
-	activeCliSession = createCliSession(config, args.prompt, false);
+	activeCliSession = await createCliSession(config, args.prompt, false);
 	await runAgent(args.prompt, config, userInstructionWatcher);
 	if (activeCliSession?.manifest.status === "running") {
-		updateCliSessionStatus("completed", 0);
+		await updateCliSessionStatus("completed", 0);
 	}
 	stopUserInstructionWatcher();
 	process.off("exit", stopUserInstructionWatcher);
@@ -1974,8 +2039,8 @@ async function main(): Promise<void> {
 	return;
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
 	writeErr(err instanceof Error ? err.message : String(err));
-	updateCliSessionStatus("failed", 1);
+	await updateCliSessionStatus("failed", 1);
 	process.exit(1);
 });

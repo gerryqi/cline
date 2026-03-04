@@ -1,6 +1,8 @@
 import type { AgentHooks, HookErrorMode, TeamEvent, Tool } from "@cline/agents";
 import type { providers as LlmsProviders } from "@cline/llms";
 
+export type CoreAgentMode = "act" | "plan";
+
 export interface CoreModelConfig {
 	providerId: string;
 	modelId: string;
@@ -22,6 +24,7 @@ export interface CoreRuntimeFeatures {
 export interface CoreSessionConfig
 	extends CoreModelConfig,
 		CoreRuntimeFeatures {
+	mode?: CoreAgentMode;
 	sessionId?: string;
 	cwd: string;
 	workspaceRoot?: string;

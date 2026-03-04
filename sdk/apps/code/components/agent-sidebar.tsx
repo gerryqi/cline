@@ -158,12 +158,15 @@ function toThread(session: SessionHistoryItem): Thread {
 	};
 }
 
-function formatTokenCount(inputTokens?: number, outputTokens?: number): string {
+function formatTokenCount(
+	inputTokens?: number,
+	outputTokens?: number,
+): string | null {
 	const inCount = inputTokens ?? 0;
 	const outCount = outputTokens ?? 0;
 	const total = inCount + outCount;
 	if (total <= 0) {
-		return "0 tok";
+		return null;
 	}
 	if (total >= 1000) {
 		return `${(total / 1000).toFixed(total >= 10000 ? 0 : 1)}k tok`;
@@ -171,9 +174,9 @@ function formatTokenCount(inputTokens?: number, outputTokens?: number): string {
 	return `${total} tok`;
 }
 
-function formatCostUsd(value?: number): string {
-	if (typeof value !== "number" || !Number.isFinite(value)) {
-		return "$-";
+function formatCostUsd(value?: number): string | null {
+	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+		return null;
 	}
 	if (value < 0.01) {
 		return `$${value.toFixed(4)}`;
@@ -202,6 +205,9 @@ export function AgentSidebar({
 	const [showMoreCount, setShowMoreCount] = useState(10);
 	const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 	const usageLoadingRef = useRef<Set<string>>(new Set());
+	const usageHydratedStatusRef = useRef<Map<string, SessionHistoryStatus>>(
+		new Map(),
+	);
 	const titleLoadingRef = useRef<Set<string>>(new Set());
 
 	const refreshSessions = useCallback(async () => {
@@ -323,10 +329,15 @@ export function AgentSidebar({
 				continue;
 			}
 			const existing = threads.find((item) => item.id === sessionId);
-			if (
+			const hasUsage =
 				existing?.inputTokens !== undefined ||
-				existing?.outputTokens !== undefined
-			) {
+				existing?.outputTokens !== undefined;
+			const lastHydratedStatus = usageHydratedStatusRef.current.get(sessionId);
+			const shouldFetch =
+				!hasUsage ||
+				session.status === "running" ||
+				lastHydratedStatus !== session.status;
+			if (!shouldFetch) {
 				continue;
 			}
 			usageLoadingRef.current.add(sessionId);
@@ -357,15 +368,18 @@ export function AgentSidebar({
 				})
 				.catch(() => {
 					// Ignore sessions without hook logs.
-					setThreads((current) =>
-						current.map((thread) =>
-							thread.id === sessionId
-								? { ...thread, inputTokens: 0, outputTokens: 0 }
-								: thread,
-						),
-					);
+					if (!hasUsage) {
+						setThreads((current) =>
+							current.map((thread) =>
+								thread.id === sessionId
+									? { ...thread, inputTokens: 0, outputTokens: 0 }
+									: thread,
+							),
+						);
+					}
 				})
 				.finally(() => {
+					usageHydratedStatusRef.current.set(sessionId, session.status);
 					usageLoadingRef.current.delete(sessionId);
 				});
 		}
@@ -681,6 +695,9 @@ function ThreadItem({
 	isActive: boolean;
 	onClick: () => void;
 }) {
+	const tokenLabel = formatTokenCount(thread.inputTokens, thread.outputTokens);
+	const costLabel = formatCostUsd(thread.totalCostUsd);
+
 	return (
 		<Button
 			className={cn(
@@ -695,15 +712,15 @@ function ThreadItem({
 		>
 			<div className="mt-0.5 shrink-0">
 				{thread.status === "running" ? (
-					<Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+					<Loader2 className="size-3 animate-spin text-primary" />
 				) : thread.status === "completed" ? (
-					<CheckCircle2 className="h-3.5 w-3.5 text-primary" />
+					<CheckCircle2 className="size-3 text-primary" />
 				) : thread.status === "failed" ? (
-					<XCircle className="h-3.5 w-3.5 text-destructive" />
+					<XCircle className="size-3 text-destructive" />
 				) : thread.status === "cancelled" ? (
-					<AlertCircle className="h-3.5 w-3.5 text-warning" />
+					<AlertCircle className="size-3 text-warning" />
 				) : (
-					<Clock className="h-3.5 w-3.5 text-muted-foreground" />
+					<Clock className="size-3 text-muted-foreground" />
 				)}
 			</div>
 			<div className="min-w-0 flex-1">
@@ -721,15 +738,21 @@ function ThreadItem({
 					</span>
 					<span className="ml-auto">{thread.time}</span>
 				</div>
-				{/* <div className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden text-[10px] text-muted-foreground">
-					<span className="truncate">{thread.model || "unknown-model"}</span>
-					<span>·</span>
-					<span className="shrink-0">
-						{formatTokenCount(thread.inputTokens, thread.outputTokens)}
-					</span>
-					<span>·</span>
-					<span className="shrink-0">{formatCostUsd(thread.totalCostUsd)}</span>
-				</div> */}
+				<div className="hidden mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden text-[10px] text-muted-foreground">
+					<span className="truncate">{thread.model}</span>
+					{tokenLabel && (
+						<>
+							<span>·</span>
+							<span className="shrink-0">{tokenLabel}</span>
+						</>
+					)}
+					{costLabel && (
+						<>
+							<span>·</span>
+							<span className="shrink-0">{costLabel}</span>
+						</>
+					)}
+				</div>
 			</div>
 		</Button>
 	);
