@@ -52,7 +52,7 @@ export const ToolPresets = {
 		enableWebFetch: true,
 		enableEditor: false,
 		enableSkills: true,
-		enableAskQuestion: true,
+		enableAskQuestion: false,
 	},
 
 	/**
