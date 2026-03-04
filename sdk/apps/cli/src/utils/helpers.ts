@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import type { HookEventPayload } from "@cline/agents";
+import { type HookEventPayload, parseHookEventPayload } from "@cline/agents";
 import { nanoid } from "nanoid";
 import type { ParsedArgs } from "./types";
 
@@ -334,16 +334,13 @@ export function appendHookAudit(event: HookEventPayload): void {
 }
 
 export function isCliHookPayload(value: unknown): value is HookEventPayload {
-	if (!value || typeof value !== "object") {
-		return false;
-	}
-	const obj = value as Record<string, unknown>;
-	return (
-		typeof obj.hook_event_name === "string" &&
-		typeof obj.agent_id === "string" &&
-		typeof obj.conversation_id === "string" &&
-		(obj.parent_agent_id === null || typeof obj.parent_agent_id === "string")
-	);
+	return parseHookEventPayload(value) !== undefined;
+}
+
+export function parseCliHookPayload(
+	value: unknown,
+): HookEventPayload | undefined {
+	return parseHookEventPayload(value);
 }
 
 export function parseArgs(args: string[]): ParsedArgs {

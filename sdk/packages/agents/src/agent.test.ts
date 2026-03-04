@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTool } from "./tools/create.js";
-import type { Tool } from "./types.js";
+import type { AgentExtension, Tool } from "./types.js";
 
 type FakeChunk = Record<string, unknown>;
 
@@ -209,6 +209,39 @@ describe("Agent", () => {
 
 		await agent.shutdown("test-end");
 		expect(onSessionShutdown).toHaveBeenCalledTimes(1);
+	});
+
+	it("dispatches onRuntimeEvent through HookEngine extension stage", async () => {
+		const { Agent } = await import("./agent.js");
+		const handler = makeHandler([
+			[
+				{ type: "text", id: "r1", text: "ok" },
+				{ type: "usage", id: "r1", inputTokens: 1, outputTokens: 1 },
+				{ type: "done", id: "r1", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const onRuntimeEvent = vi.fn().mockResolvedValue(undefined);
+		const extension: AgentExtension = {
+			name: "runtime-ext",
+			onRuntimeEvent,
+		};
+
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "runtime events",
+			tools: [],
+			extensions: [extension],
+		});
+
+		await agent.run("trigger");
+
+		expect(onRuntimeEvent).toHaveBeenCalled();
+		expect(
+			onRuntimeEvent.mock.calls.some((args) => args[0]?.event?.type === "done"),
+		).toBe(true);
 	});
 
 	it("adds image blocks to initial user content when provided", async () => {

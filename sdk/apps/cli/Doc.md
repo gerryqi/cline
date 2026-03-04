@@ -26,6 +26,8 @@
   - [Features In Depth](#features-in-depth)
     - [Streaming Output \& Event Handling](#streaming-output--event-handling)
     - [Tools System](#tools-system)
+      - [Tool Approval Policies](#tool-approval-policies)
+      - [How User Approval Works in CLI](#how-user-approval-works-in-cli)
     - [Sub-Agent Spawning (`--spawn`)](#sub-agent-spawning---spawn)
     - [Agent Teams (`--teams`)](#agent-teams---teams)
     - [Session Management](#session-management)
@@ -166,7 +168,7 @@ Single-shot mode is the default when a prompt is provided as a positional argume
 3. Calls `buildRuntimeEnvironment()` to assemble tools and optional team runtime
 4. Instantiates a new `Agent` with the resolved provider, model, system prompt, and tools
 5. Registers a SIGINT handler that calls `agent.abort()` and shuts down the team runtime
-6. Calls `agent.run("<user_input>prompt</user_input>")` — this streams events via `onEvent`
+6. Calls `agent.run("<user_input mode="mode">prompt</user_input>")` — this streams events via `onEvent`
 7. Persists the full message history to `<sessionId>/<sessionId>.messages.json`
 8. Optionally prints timing and token usage stats
 9. Updates the session status in SQLite (`completed`, `failed`, or `cancelled`)
@@ -265,11 +267,11 @@ CLINE_ENABLE_SUBPROCESS_HOOKS=1
 CLINE_HOOKS_LOG_PATH=~/.cline/data/sessions/<sessionId>/<sessionId>.hooks.jsonl
 ```
 
-The `@cline/agents` SDK is configured with `createSubprocessHooks({ command: [bun, argv[1], "hook"] })`. For every agent lifecycle event (tool calls, agent start/end, session shutdown), the SDK spawns a subprocess running `agent hook` and pipes a JSON payload to its stdin.
+The `@cline/agents` SDK is configured with `createSubprocessHooks({ command: [bun, argv[1], "hook"] })`. For every lifecycle event (`tool_call`, `tool_result`, `agent_start`, `agent_resume`, `agent_abort`, `prompt_submit`, `agent_end`, `session_shutdown`), the SDK spawns a subprocess running `agent hook` and pipes a JSON payload to its stdin.
 
 The `hook` handler in `main()`:
 1. Reads the full JSON payload from stdin (`readStdinUtf8()`)
-2. Validates it with `isCliHookPayload()`
+2. Parses and validates it with `parseCliHookPayload()`
 3. Appends the event to the session's `.hooks.jsonl` audit log (`appendHookAudit`)
 4. If the event is from a **sub-agent** (`parent_agent_id !== null`), upserts a sub-session record in SQLite (`upsertSubagentSessionFromHook`)
 5. If the event is a `spawn_agent` tool call, queues the spawn request (`queueSpawnRequest`)
@@ -278,10 +280,12 @@ The `hook` handler in `main()`:
 
 **Hook event types handled:**
 
-| `hook_event_name` | Action |
+| `hookName` | Action |
 |---|---|
 | `tool_call` | Audit log + queue spawn if `spawn_agent` tool |
-| `agent_start` | Upsert sub-session record |
+| `agent_start` / `agent_resume` | Upsert sub-session record |
+| `prompt_submit` | Audit only |
+| `agent_abort` | Audit + status transitions via shutdown handling |
 | `agent_end` | Upsert sub-session + mark `completed` |
 | `session_shutdown` | Mark sub-session `cancelled` or `failed` |
 
@@ -672,7 +676,7 @@ This file is updated **best-effort** — even if the agent crashes, the last kno
 
 ### Hook System
 
-**Source:** `src/utils/helpers.ts` → `appendHookAudit`, `createRuntimeHooks`, `isCliHookPayload`  
+**Source:** `src/utils/helpers.ts` → `appendHookAudit`, `createRuntimeHooks`, `parseCliHookPayload`  
 **Source:** `src/utils/session.ts` → `upsertSubagentSessionFromHook`, `applySubagentStatus`, `queueSpawnRequest`
 
 The hook system provides a **side-channel audit trail** for every agent lifecycle event. It works by spawning a subprocess (`agent hook`) for each event.
@@ -695,11 +699,16 @@ The hook subprocess receives a JSON payload on stdin and must respond with JSON 
 
 ```typescript
 {
-  hook_event_name: "tool_call" | "agent_start" | "agent_end" | "session_shutdown",
+  hookName: "tool_call" | "tool_result" | "agent_start" | "agent_resume" | "agent_abort" | "prompt_submit" | "agent_end" | "session_shutdown",
+  taskId: string,
+  clineVersion: string,
+  timestamp: string,
+  workspaceRoots: string[],
+  userId: string,
   agent_id: string,
-  conversation_id: string,
   parent_agent_id: string | null,
   tool_call?: {
+    id: string,
     name: string,
     input: unknown
   },
@@ -711,7 +720,7 @@ The hook subprocess receives a JSON payload on stdin and must respond with JSON 
 
 Every hook event is appended to `<sessionId>/<sessionId>.hooks.jsonl` as a newline-delimited JSON record:
 ```json
-{"ts":"2024-02-24T12:00:01.000Z","hook_event_name":"tool_call","agent_id":"main","conversation_id":"conv_abc","parent_agent_id":null,"tool_call":{"name":"read_files","input":{"file_paths":["src/index.ts"]}}}
+{"ts":"2024-02-24T12:00:01.000Z","hookName":"tool_call","taskId":"conv_abc","agent_id":"main","parent_agent_id":null,"tool_call":{"id":"call_1","name":"read_files","input":{"file_paths":["src/index.ts"]}}}
 ```
 
 If `CLINE_HOOKS_LOG_PATH` is not set and `CLINE_SESSION_ID` is available, hooks are written to `~/.cline/data/sessions/<sessionId>/<sessionId>.hooks.jsonl`.

@@ -14,8 +14,8 @@ import type {
 	SubAgentEndContext,
 	SubAgentStartContext,
 } from "@cline/agents";
-import { RpcSessionClient, type RpcSessionRow } from "@cline/rpc";
 import type { providers as LlmsProviders } from "@cline/llms";
+import { RpcSessionClient, type RpcSessionRow } from "@cline/rpc";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { SessionSource, type SessionStatus } from "../types/common";
@@ -399,10 +399,7 @@ export class RpcCoreSessionService {
 	}
 
 	async queueSpawnRequest(event: HookEventPayload): Promise<void> {
-		if (
-			event.hook_event_name !== "tool_call" ||
-			event.parent_agent_id !== null
-		) {
+		if (event.hookName !== "tool_call" || event.parent_agent_id !== null) {
 			return;
 		}
 		if (event.tool_call?.name !== "spawn_agent") {
@@ -524,7 +521,7 @@ export class RpcCoreSessionService {
 		return await this.upsertSubagentSession({
 			agentId: event.agent_id,
 			parentAgentId: event.parent_agent_id,
-			conversationId: event.conversation_id,
+			conversationId: event.taskId,
 		});
 	}
 

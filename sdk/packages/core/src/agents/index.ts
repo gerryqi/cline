@@ -19,6 +19,16 @@ export {
 	resolveAgentTools,
 	toPartialAgentConfig,
 } from "./agent-config-loader";
+export {
+	DOCUMENTS_HOOKS_DIRECTORY_PATH,
+	HOOK_CONFIG_FILE_EVENT_MAP,
+	HOOKS_CONFIG_DIRECTORY_NAME,
+	type HookConfigFileEntry,
+	HookConfigFileName,
+	listHookConfigFiles,
+	resolveHooksConfigSearchPaths,
+	toHookConfigFileName,
+} from "./hooks-config-loader";
 export type {
 	UnifiedConfigDefinition,
 	UnifiedConfigFileCandidate,

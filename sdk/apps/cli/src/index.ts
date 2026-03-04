@@ -34,6 +34,8 @@ import {
 	createSpawnAgentTool as createSdkSpawnAgentTool,
 	createSubprocessHooks,
 	getClineDefaultSystemPrompt,
+	type HookEventPayload,
+	type RunHookResult,
 	type TeamEvent,
 	type Tool,
 	type ToolApprovalRequest,
@@ -41,13 +43,13 @@ import {
 	type ToolPolicy,
 	ToolPresets,
 } from "@cline/agents";
-import { getRpcServerHealth, startRpcServer, stopRpcServer } from "@cline/rpc";
 import {
 	createTeamName,
 	createUserInstructionConfigWatcher,
 	DefaultRuntimeBuilder,
 	enrichPromptWithMentions,
 	generateWorkspaceInfo,
+	listHookConfigFiles,
 	loadRulesForSystemPromptFromWatcher,
 	ProviderSettingsManager,
 	prewarmFastFileList,
@@ -63,15 +65,16 @@ import {
 	type WorkflowConfig,
 } from "@cline/core/server";
 import { providers } from "@cline/llms";
+import { getRpcServerHealth, startRpcServer, stopRpcServer } from "@cline/rpc";
 import { version } from "../package.json";
 import {
 	appendHookAudit,
 	configureSandboxEnvironment,
 	formatToolInput,
 	formatToolOutput,
-	isCliHookPayload,
 	nowIso,
 	parseArgs,
+	parseCliHookPayload,
 	readStdinUtf8,
 	resolveWorkspaceRoot,
 	truncate,
@@ -547,6 +550,58 @@ function getHookCommand(): string[] | undefined {
 	return [process.execPath, process.argv[1], "hook"];
 }
 
+function formatHookDispatchOutput(result?: RunHookResult): string {
+	const value = result?.parsedJson;
+	if (value === undefined || value === null) {
+		return "";
+	}
+	if (
+		typeof value === "object" &&
+		!Array.isArray(value) &&
+		Object.keys(value as Record<string, unknown>).length === 0
+	) {
+		return "";
+	}
+	if (typeof value === "string") {
+		return truncate(value, 100);
+	}
+	return truncate(JSON.stringify(value), 100);
+}
+
+function writeHookInvocation(
+	payload: HookEventPayload,
+	result?: RunHookResult,
+): void {
+	if (currentOutputMode === "json") {
+		emitJsonLine("stdout", {
+			type: "hook_event",
+			hookEventName: payload.hookName,
+			hookOutput: result?.parsedJson,
+			agentId: payload.agent_id,
+			taskId: payload.taskId,
+			parentAgentId: payload.parent_agent_id,
+		});
+		return;
+	}
+	closeInlineStreamIfNeeded();
+	const hookName = payload.hookName;
+	const toolName =
+		payload.hookName === "tool_call"
+			? payload.tool_call.name
+			: payload.hookName === "tool_result"
+				? payload.tool_result.name
+				: undefined;
+	const details = toolName ? ` ${c.cyan}${toolName}${c.reset}` : "";
+	const output = formatHookDispatchOutput(result);
+	if (output) {
+		write(
+			`\n${c.dim}[hook:${hookName}]${c.reset}${details} ${c.dim}-> ${output}${c.reset}\n`,
+		);
+		return;
+	}
+	write(`\n${c.dim}[hook:${hookName}]${c.reset}${details}\n`);
+}
+
 function createRuntimeHooks(): AgentHooks | undefined {
 	const command = getHookCommand();
 	if (!command) {
@@ -560,6 +615,9 @@ function createRuntimeHooks(): AgentHooks | undefined {
 			if (isDev) {
 				writeErr(`hook dispatch failed: ${error.message}`);
 			}
+		},
+		onDispatch: ({ payload, result }) => {
+			writeHookInvocation(payload, result);
 		},
 	}).hooks;
 }
@@ -767,6 +825,7 @@ function hydrateAgentMessages(
 
 async function buildUserInputMessage(
 	rawPrompt: string,
+	mode: "act" | "plan",
 	cwd: string,
 	userInstructionWatcher?: UserInstructionConfigWatcher,
 ): Promise<string> {
@@ -774,7 +833,7 @@ async function buildUserInputMessage(
 		? resolveWorkflowSlashCommandFromWatcher(rawPrompt, userInstructionWatcher)
 		: rawPrompt;
 	const enriched = await enrichPromptWithMentions(resolvedPrompt, cwd);
-	return `<user_input>${enriched.prompt}</user_input>`;
+	return `<user_input mode="${mode}">${enriched.prompt}</user_input>`;
 }
 
 // =============================================================================
@@ -876,6 +935,7 @@ async function runAgent(
 		printModelProviderInfo(config);
 		const userInput = await buildUserInputMessage(
 			prompt,
+			config.mode,
 			config.cwd,
 			userInstructionWatcher,
 		);
@@ -1253,6 +1313,7 @@ async function runInteractive(
 				printModelProviderInfo(config);
 				const userInput = await buildUserInputMessage(
 					input,
+					config.mode,
 					config.cwd,
 					userInstructionWatcher,
 				);
@@ -1261,6 +1322,7 @@ async function runInteractive(
 			} else {
 				const userInput = await buildUserInputMessage(
 					input,
+					config.mode,
 					config.cwd,
 					userInstructionWatcher,
 				);
@@ -1327,48 +1389,54 @@ async function runHookCommand(): Promise<number> {
 		}
 
 		const parsed = JSON.parse(raw) as unknown;
-		if (!isCliHookPayload(parsed)) {
+		const payload = parseCliHookPayload(parsed);
+		if (!payload) {
 			writeErr("invalid hook payload");
 			return 1;
 		}
 
-		appendHookAudit(parsed);
-		await queueSpawnRequest(parsed);
-		const subSessionId = await upsertSubagentSessionFromHook(parsed);
+		appendHookAudit(payload);
+		await queueSpawnRequest(payload);
+		const subSessionId = await upsertSubagentSessionFromHook(payload);
 		if (subSessionId) {
-			await appendSubagentHookAudit(subSessionId, parsed);
-			if (parsed.hook_event_name === "tool_call") {
+			await appendSubagentHookAudit(subSessionId, payload);
+			if (payload.hookName === "tool_call") {
 				await appendSubagentTranscriptLine(
 					subSessionId,
-					`[tool] ${parsed.tool_call?.name ?? "unknown"}`,
+					`[tool] ${payload.tool_call?.name ?? "unknown"}`,
 				);
 			}
-			if (parsed.hook_event_name === "agent_end") {
+			if (payload.hookName === "agent_end") {
 				await appendSubagentTranscriptLine(subSessionId, "[done] completed");
 			}
-			if (parsed.hook_event_name === "session_shutdown") {
+			if (payload.hookName === "session_shutdown") {
 				await appendSubagentTranscriptLine(
 					subSessionId,
-					`[shutdown] ${parsed.reason ?? "session shutdown"}`,
+					`[shutdown] ${payload.reason ?? "session shutdown"}`,
 				);
 			}
-			await applySubagentStatus(subSessionId, parsed);
+			await applySubagentStatus(subSessionId, payload);
 		}
 
-		switch (parsed.hook_event_name) {
+		switch (payload.hookName) {
 			case "tool_call":
 				// Return control surface JSON for pre-execution tool interception.
 				writeHookJson({});
 				return 0;
 			case "tool_result":
 			case "agent_end":
+			case "agent_start":
+			case "agent_resume":
+			case "agent_abort":
+			case "prompt_submit":
+			case "pre_compact":
 			case "session_shutdown":
 				// Fire-and-forget events; no control response needed.
 				writeHookJson({});
 				return 0;
 			default:
 				writeErr(
-					`unsupported hook_event_name: ${(parsed as { hook_event_name: string }).hook_event_name}`,
+					`unsupported hookName: ${(payload as { hookName: string }).hookName}`,
 				);
 				return 1;
 		}
@@ -1385,10 +1453,11 @@ ${c.bold}USAGE${c.reset}
   clite [OPTIONS] [PROMPT]
   clite -i                    Interactive mode
   clite list history          List saved history items
+  clite list hooks            List hook file locations
   clite hook < payload.json   Handle hook payload from stdin
   clite rpc start             Start RPC server
-  clite list <workflows|rules|skills|agents|history>
-                              List configured workflow/rule/skill/agent configs
+  clite list <workflows|rules|skills|agents|history|hooks>
+                              List workflow/rule/skill/agent configs, history, or hook file paths
   echo "prompt" | clite       Pipe input
 
 ${c.bold}OPTIONS${c.reset}
@@ -1443,6 +1512,7 @@ ${c.bold}EXAMPLES${c.reset}
   clite list rules --json
   clite list skills
   clite list agents
+  clite list hooks
   clite rpc start
   clite rpc start --address 127.0.0.1:4317
   clite "What is 2+2?"
@@ -1744,6 +1814,28 @@ async function runAgentsListCommand(
 	return 0;
 }
 
+async function runHooksListCommand(
+	cwd: string,
+	outputMode: CliOutputMode,
+): Promise<number> {
+	const hooks = listHookConfigFiles(cwd);
+
+	if (outputMode === "json") {
+		process.stdout.write(JSON.stringify(hooks));
+		return 0;
+	}
+	if (hooks.length === 0) {
+		writeln("No hook files found.");
+		return 0;
+	}
+	writeln("Hook files:");
+	for (const item of hooks) {
+		const mapped = item.hookEventName ? ` -> ${item.hookEventName}` : "";
+		writeln(`  ${item.fileName}${mapped} (${item.path})`);
+	}
+	return 0;
+}
+
 // =============================================================================
 // Main
 // =============================================================================
@@ -1807,9 +1899,11 @@ async function main(): Promise<void> {
 				process.stdout.write(`${lines.join("\n")}\n`);
 			}
 			code = 0;
+		} else if (listTarget === "hooks") {
+			code = await runHooksListCommand(listCwd, args.outputMode);
 		} else {
 			writeErr(
-				`list requires one of: workflows, rules, skills, agents, history (got "${rawArgs[1] ?? ""}")`,
+				`list requires one of: workflows, rules, skills, agents, history, hooks (got "${rawArgs[1] ?? ""}")`,
 			);
 			process.exit(1);
 		}
@@ -1847,11 +1941,14 @@ async function main(): Promise<void> {
 			process.exit(1);
 		}
 		initialMessages = await loadSessionMessages(sessionId);
+		process.env.CLINE_HOOK_AGENT_RESUME = "1";
 		args = {
 			...args,
 			interactive: true,
 			prompt: undefined,
 		};
+	} else {
+		delete process.env.CLINE_HOOK_AGENT_RESUME;
 	}
 
 	if (args.invalidOutputMode) {

@@ -58,7 +58,7 @@ describe("cli e2e", () => {
 		expect(asText(result.stdout)).toContain("--sandbox");
 		expect(asText(result.stdout)).toContain("--thinking");
 		expect(asText(result.stdout)).toContain(
-			"clite list <workflows|rules|skills|agents|history>",
+			"clite list <workflows|rules|skills|agents|history|hooks>",
 		);
 	});
 
@@ -439,11 +439,16 @@ Break work into clear steps.`,
 				CLINE_HOOKS_LOG_PATH: hookPath,
 			},
 			stdin: JSON.stringify({
-				hook_event_name: "tool_call",
+				hookName: "tool_call",
+				taskId: "conversation_1",
+				clineVersion: "",
+				timestamp: new Date().toISOString(),
+				workspaceRoots: [],
+				userId: "agent_1",
 				agent_id: "agent_1",
-				conversation_id: "conversation_1",
 				parent_agent_id: null,
 				tool_call: {
+					id: "call_1",
 					name: "read_files",
 					input: { file_paths: ["README.md"] },
 				},
@@ -453,7 +458,7 @@ Break work into clear steps.`,
 		expect(result.status).toBe(0);
 		expect(asText(result.stdout).trim()).toBe("{}");
 		const log = readFileSync(hookPath, "utf8");
-		expect(log).toContain('"hook_event_name":"tool_call"');
+		expect(log).toContain('"hookName":"tool_call"');
 		expect(log).toContain('"agent_id":"agent_1"');
 	});
 });

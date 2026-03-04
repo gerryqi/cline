@@ -4,13 +4,14 @@
  * The main class for building and running agentic loops with LLMs.
  */
 
-import { readFile, stat } from "node:fs/promises";
 import { providers } from "@cline/llms";
+import { buildInitialUserContent } from "./agent-input.js";
+import { registerLifecycleHandlers } from "./agent-lifecycle.js";
 import {
 	type AgentExtensionRunner,
 	createExtensionRunner,
 } from "./extensions.js";
-import { formatFileContentBlock } from "./input-formatting.js";
+import { type HookDispatchInput, HookEngine } from "./hook-engine.js";
 import { MessageBuilder } from "./message-builder.js";
 import {
 	createToolRegistry,
@@ -25,7 +26,6 @@ import type {
 	AgentExtensionRegistry,
 	AgentFinishReason,
 	AgentHookControl,
-	AgentHooks,
 	AgentResult,
 	AgentUsage,
 	PendingToolCall,
@@ -60,7 +60,6 @@ import type {
  */
 const DEFAULT_REMINDER_TEXT =
 	"REMINDER: If you have gathered enough information to answer the user's question, please provide your final answer now without using any more tools.";
-const MAX_USER_FILE_BYTES = 20 * 1_000 * 1_024;
 
 export class Agent {
 	private config: Required<
@@ -86,9 +85,11 @@ export class Agent {
 	private parentAgentId: string | null;
 	private abortController: AbortController | null = null;
 	private extensionRunner: AgentExtensionRunner;
+	private readonly hookEngine: HookEngine;
 	private messageBuilder: MessageBuilder;
 	private extensionsInitialized = false;
 	private sessionStarted = false;
+	private activeRunId = "";
 
 	constructor(config: AgentConfig) {
 		// Set defaults
@@ -107,8 +108,22 @@ export class Agent {
 		this.extensionRunner = createExtensionRunner({
 			extensions: this.config.extensions,
 		});
+		const defaultFailureMode =
+			this.config.hookErrorMode === "throw" ? "fail_closed" : "fail_open";
+		this.hookEngine = new HookEngine({
+			policies: {
+				defaultPolicy: {
+					failureMode: defaultFailureMode,
+				},
+				...this.config.hookPolicies,
+			},
+			onDispatchError: (error) => {
+				this.reportRecoverableError(error);
+			},
+		});
 		this.messageBuilder = new MessageBuilder();
 		this.toolRegistry = createToolRegistry([]);
+		registerLifecycleHandlers(this.hookEngine, this.config);
 
 		// Create handler
 		this.handler = providers.createHandler({
@@ -223,27 +238,16 @@ export class Agent {
 	 * Use this when host applications terminate a session (for example Ctrl+D).
 	 */
 	async shutdown(reason?: string): Promise<void> {
-		const extensionControl = await this.invokeExtensionControlHook(
-			"onSessionShutdown",
-			{
+		await this.dispatchLifecycle("hook.session_shutdown", {
+			stage: "session_shutdown",
+			payload: {
 				agentId: this.agentId,
 				conversationId: this.conversationId,
 				parentAgentId: this.parentAgentId,
 				reason,
 			},
-		);
-		if (extensionControl?.context) {
-			this.appendHookContext(
-				"extension.onSessionShutdown",
-				extensionControl.context,
-			);
-		}
-		await this.invokeControlHook("onSessionShutdown", {
-			agentId: this.agentId,
-			conversationId: this.conversationId,
-			parentAgentId: this.parentAgentId,
-			reason,
 		});
+		await this.hookEngine.shutdown();
 	}
 
 	/**
@@ -271,11 +275,32 @@ export class Agent {
 	// Private Methods
 	// ===========================================================================
 
+	private async dispatchLifecycle(
+		source: string,
+		input: Pick<
+			HookDispatchInput,
+			"stage" | "payload" | "iteration" | "parentEventId"
+		>,
+	): Promise<AgentHookControl | undefined> {
+		const dispatchResult = await this.hookEngine.dispatch({
+			...input,
+			runId: this.activeRunId || this.conversationId,
+			agentId: this.agentId,
+			conversationId: this.conversationId,
+			parentAgentId: this.parentAgentId,
+		});
+		if (dispatchResult.control?.context) {
+			this.appendHookContext(source, dispatchResult.control.context);
+		}
+		return dispatchResult.control;
+	}
+
 	/**
 	 * Execute the agentic loop
 	 */
 	private async executeLoop(triggerMessage: string): Promise<AgentResult> {
 		const startedAt = new Date();
+		this.activeRunId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 		this.abortController = new AbortController();
 
 		// Merge abort signals
@@ -299,31 +324,31 @@ export class Agent {
 
 		try {
 			if (!this.sessionStarted) {
-				const sessionStartControl = await this.invokeExtensionControlHook(
-					"onSessionStart",
+				const sessionStartControl = await this.dispatchLifecycle(
+					"hook.session_start",
 					{
-						agentId: this.agentId,
-						conversationId: this.conversationId,
-						parentAgentId: this.parentAgentId,
+						stage: "session_start",
+						payload: {
+							agentId: this.agentId,
+							conversationId: this.conversationId,
+							parentAgentId: this.parentAgentId,
+						},
 					},
 				);
-				if (sessionStartControl?.context) {
-					this.appendHookContext(
-						"extension.onSessionStart",
-						sessionStartControl.context,
-					);
-				}
 				if (sessionStartControl?.cancel) {
 					finishReason = "aborted";
 				}
 				this.sessionStarted = true;
 			}
 
-			const runStartControl = await this.invokeControlHook("onRunStart", {
-				agentId: this.agentId,
-				conversationId: this.conversationId,
-				parentAgentId: this.parentAgentId,
-				userMessage: triggerMessage,
+			const runStartControl = await this.dispatchLifecycle("hook.run_start", {
+				stage: "run_start",
+				payload: {
+					agentId: this.agentId,
+					conversationId: this.conversationId,
+					parentAgentId: this.parentAgentId,
+					userMessage: triggerMessage,
+				},
 			});
 			if (runStartControl?.cancel) {
 				finishReason = "aborted";
@@ -346,13 +371,17 @@ export class Agent {
 				}
 
 				iteration++;
-				const iterationStartControl = await this.invokeControlHook(
-					"onIterationStart",
+				const iterationStartControl = await this.dispatchLifecycle(
+					"hook.iteration_start",
 					{
-						agentId: this.agentId,
-						conversationId: this.conversationId,
-						parentAgentId: this.parentAgentId,
+						stage: "iteration_start",
 						iteration,
+						payload: {
+							agentId: this.agentId,
+							conversationId: this.conversationId,
+							parentAgentId: this.parentAgentId,
+							iteration,
+						},
 					},
 				);
 				if (iterationStartControl?.cancel) {
@@ -362,74 +391,72 @@ export class Agent {
 
 				this.emit({ type: "iteration_start", iteration });
 
-				const turnStartControl = await this.invokeControlHook("onTurnStart", {
-					agentId: this.agentId,
-					conversationId: this.conversationId,
-					parentAgentId: this.parentAgentId,
-					iteration,
-					messages: [...this.messages],
-				});
+				const turnStartControl = await this.dispatchLifecycle(
+					"hook.turn_start",
+					{
+						stage: "turn_start",
+						iteration,
+						payload: {
+							agentId: this.agentId,
+							conversationId: this.conversationId,
+							parentAgentId: this.parentAgentId,
+							iteration,
+							messages: [...this.messages],
+						},
+					},
+				);
 				if (turnStartControl?.cancel) {
 					finishReason = "aborted";
 					break;
 				}
 
-				const beforeAgentStartResult =
-					await this.invokeExtensionBeforeAgentStart({
-						agentId: this.agentId,
-						conversationId: this.conversationId,
-						parentAgentId: this.parentAgentId,
+				const beforeAgentStartControl = await this.dispatchLifecycle(
+					"hook.before_agent_start",
+					{
+						stage: "before_agent_start",
 						iteration,
-						systemPrompt: this.config.systemPrompt,
-						messages: [...this.messages],
-					});
-				if (beforeAgentStartResult.control?.context) {
-					this.appendHookContext(
-						"extension.onBeforeAgentStart",
-						beforeAgentStartResult.control.context,
-					);
-				}
-				if (beforeAgentStartResult.control?.cancel) {
+						payload: {
+							agentId: this.agentId,
+							conversationId: this.conversationId,
+							parentAgentId: this.parentAgentId,
+							iteration,
+							systemPrompt: this.config.systemPrompt,
+							messages: [...this.messages],
+						},
+					},
+				);
+				const beforeAgentStartSystemPrompt =
+					typeof beforeAgentStartControl?.systemPrompt === "string"
+						? beforeAgentStartControl.systemPrompt
+						: this.config.systemPrompt;
+				if (beforeAgentStartControl?.cancel) {
 					finishReason = "aborted";
 					break;
 				}
-				if (beforeAgentStartResult.appendMessages.length > 0) {
-					this.messages.push(...beforeAgentStartResult.appendMessages);
+				if (
+					beforeAgentStartControl?.appendMessages &&
+					beforeAgentStartControl.appendMessages.length > 0
+				) {
+					this.messages.push(...beforeAgentStartControl.appendMessages);
 				}
 
 				// Process one turn
 				const turn = await this.processTurn(
 					abortSignal,
-					beforeAgentStartResult.systemPrompt,
+					beforeAgentStartSystemPrompt,
 				);
-				const turnEndControl = await this.invokeControlHook("onTurnEnd", {
-					agentId: this.agentId,
-					conversationId: this.conversationId,
-					parentAgentId: this.parentAgentId,
+				const turnEndControl = await this.dispatchLifecycle("hook.turn_end", {
+					stage: "turn_end",
 					iteration,
-					turn,
-				});
-				if (turnEndControl?.cancel) {
-					finishReason = "aborted";
-					break;
-				}
-				const extensionAgentEndControl = await this.invokeExtensionControlHook(
-					"onAgentEnd",
-					{
+					payload: {
 						agentId: this.agentId,
 						conversationId: this.conversationId,
 						parentAgentId: this.parentAgentId,
 						iteration,
 						turn,
 					},
-				);
-				if (extensionAgentEndControl?.context) {
-					this.appendHookContext(
-						"extension.onAgentEnd",
-						extensionAgentEndControl.context,
-					);
-				}
-				if (extensionAgentEndControl?.cancel) {
+				});
+				if (turnEndControl?.cancel) {
 					finishReason = "aborted";
 					break;
 				}
@@ -466,13 +493,17 @@ export class Agent {
 						hadToolCalls: false,
 						toolCallCount: 0,
 					});
-					await this.invokeHook("onIterationEnd", {
-						agentId: this.agentId,
-						conversationId: this.conversationId,
-						parentAgentId: this.parentAgentId,
+					await this.dispatchLifecycle("hook.iteration_end", {
+						stage: "iteration_end",
 						iteration,
-						hadToolCalls: false,
-						toolCallCount: 0,
+						payload: {
+							agentId: this.agentId,
+							conversationId: this.conversationId,
+							parentAgentId: this.parentAgentId,
+							iteration,
+							hadToolCalls: false,
+							toolCallCount: 0,
+						},
 					});
 					finishReason = "completed";
 					break;
@@ -501,38 +532,25 @@ export class Agent {
 								toolCallId: call.id,
 								input: call.input,
 							});
-							const control = await this.invokeControlHook("onToolCallStart", {
-								agentId: this.agentId,
-								conversationId: this.conversationId,
-								parentAgentId: this.parentAgentId,
-								iteration,
-								call,
-							});
-							const extensionControl = await this.invokeExtensionControlHook(
-								"onToolCall",
+							const mergedControl = await this.dispatchLifecycle(
+								"hook.tool_call_before",
 								{
-									agentId: this.agentId,
-									conversationId: this.conversationId,
-									parentAgentId: this.parentAgentId,
+									stage: "tool_call_before",
 									iteration,
-									call,
+									payload: {
+										agentId: this.agentId,
+										conversationId: this.conversationId,
+										parentAgentId: this.parentAgentId,
+										iteration,
+										call,
+									},
 								},
-							);
-							const mergedControl = this.mergeControls(
-								control,
-								extensionControl,
 							);
 							if (
 								mergedControl &&
 								Object.hasOwn(mergedControl, "overrideInput")
 							) {
 								call.input = mergedControl.overrideInput;
-							}
-							if (mergedControl?.context) {
-								this.appendHookContext(
-									"onToolCallStart",
-									mergedControl.context,
-								);
 							}
 							if (mergedControl?.cancel) {
 								toolCancelRequested = true;
@@ -549,30 +567,20 @@ export class Agent {
 								error: record.error,
 								durationMs: record.durationMs,
 							});
-							const control = await this.invokeControlHook("onToolCallEnd", {
-								agentId: this.agentId,
-								conversationId: this.conversationId,
-								parentAgentId: this.parentAgentId,
-								iteration,
-								record,
-							});
-							const extensionControl = await this.invokeExtensionControlHook(
-								"onToolResult",
+							const mergedControl = await this.dispatchLifecycle(
+								"hook.tool_call_after",
 								{
-									agentId: this.agentId,
-									conversationId: this.conversationId,
-									parentAgentId: this.parentAgentId,
+									stage: "tool_call_after",
 									iteration,
-									record,
+									payload: {
+										agentId: this.agentId,
+										conversationId: this.conversationId,
+										parentAgentId: this.parentAgentId,
+										iteration,
+										record,
+									},
 								},
 							);
-							const mergedControl = this.mergeControls(
-								control,
-								extensionControl,
-							);
-							if (mergedControl?.context) {
-								this.appendHookContext("onToolCallEnd", mergedControl.context);
-							}
 							if (mergedControl?.cancel) {
 								toolCancelRequested = true;
 							}
@@ -601,13 +609,17 @@ export class Agent {
 					hadToolCalls: true,
 					toolCallCount: turn.toolCalls.length,
 				});
-				await this.invokeHook("onIterationEnd", {
-					agentId: this.agentId,
-					conversationId: this.conversationId,
-					parentAgentId: this.parentAgentId,
+				await this.dispatchLifecycle("hook.iteration_end", {
+					stage: "iteration_end",
 					iteration,
-					hadToolCalls: true,
-					toolCallCount: turn.toolCalls.length,
+					payload: {
+						agentId: this.agentId,
+						conversationId: this.conversationId,
+						parentAgentId: this.parentAgentId,
+						iteration,
+						hadToolCalls: true,
+						toolCallCount: turn.toolCalls.length,
+					},
 				});
 				if (toolCancelRequested) {
 					finishReason = "aborted";
@@ -618,19 +630,16 @@ export class Agent {
 			finishReason = "error";
 			const errorObj =
 				error instanceof Error ? error : new Error(String(error));
-			await this.invokeHook("onError", {
-				agentId: this.agentId,
-				conversationId: this.conversationId,
-				parentAgentId: this.parentAgentId,
+			await this.dispatchLifecycle("hook.error", {
+				stage: "error",
 				iteration,
-				error: errorObj,
-			});
-			await this.invokeExtensionHook("onError", {
-				agentId: this.agentId,
-				conversationId: this.conversationId,
-				parentAgentId: this.parentAgentId,
-				iteration,
-				error: errorObj,
+				payload: {
+					agentId: this.agentId,
+					conversationId: this.conversationId,
+					parentAgentId: this.parentAgentId,
+					iteration,
+					error: errorObj,
+				},
 			});
 			this.emit({
 				type: "error",
@@ -641,6 +650,7 @@ export class Agent {
 			throw error;
 		} finally {
 			this.abortController = null;
+			this.activeRunId = "";
 		}
 
 		const endedAt = new Date();
@@ -673,12 +683,17 @@ export class Agent {
 			endedAt,
 			durationMs,
 		};
-		await this.invokeHook("onRunEnd", {
-			agentId: this.agentId,
-			conversationId: this.conversationId,
-			parentAgentId: this.parentAgentId,
-			result,
+		await this.dispatchLifecycle("hook.run_end", {
+			stage: "run_end",
+			iteration,
+			payload: {
+				agentId: this.agentId,
+				conversationId: this.conversationId,
+				parentAgentId: this.parentAgentId,
+				result,
+			},
 		});
+		await this.hookEngine.shutdown();
 		return result;
 	}
 
@@ -982,20 +997,25 @@ export class Agent {
 		userMessage: string,
 		mode: "run" | "continue",
 	): Promise<{ input: string; cancel: boolean }> {
-		const inputResult = await this.invokeExtensionInput({
-			agentId: this.agentId,
-			conversationId: this.conversationId,
-			parentAgentId: this.parentAgentId,
-			mode,
-			input: userMessage,
+		const control = await this.dispatchLifecycle("hook.input", {
+			stage: "input",
+			payload: {
+				agentId: this.agentId,
+				conversationId: this.conversationId,
+				parentAgentId: this.parentAgentId,
+				mode,
+				input: userMessage,
+			},
 		});
-		if (inputResult.control?.context) {
-			this.appendHookContext("extension.onInput", inputResult.control.context);
+		const input =
+			Object.hasOwn(control ?? {}, "overrideInput") &&
+			typeof control?.overrideInput === "string"
+				? control.overrideInput
+				: userMessage;
+		if (control?.cancel) {
+			return { input, cancel: true };
 		}
-		if (inputResult.control?.cancel) {
-			return { input: inputResult.input, cancel: true };
-		}
-		return { input: inputResult.input, cancel: false };
+		return { input, cancel: false };
 	}
 
 	private async buildInitialUserContent(
@@ -1003,112 +1023,7 @@ export class Agent {
 		userImages?: string[],
 		userFiles?: string[],
 	): Promise<string | providers.ContentBlock[]> {
-		const imageBlocks = this.buildImageBlocks(userImages);
-		const fileTextBlock = await this.buildUserFileTextBlock(userFiles);
-
-		if (imageBlocks.length === 0 && !fileTextBlock) {
-			return userMessage;
-		}
-
-		const content: providers.ContentBlock[] = [
-			{
-				type: "text",
-				text: userMessage,
-			},
-			...imageBlocks,
-		];
-		if (fileTextBlock) {
-			content.push({
-				type: "text",
-				text: fileTextBlock,
-			});
-		}
-		return content;
-	}
-
-	private buildImageBlocks(userImages?: string[]): providers.ImageContent[] {
-		if (!userImages || userImages.length === 0) {
-			return [];
-		}
-
-		const blocks: providers.ImageContent[] = [];
-		for (const image of userImages) {
-			const block = this.parseDataUrlImage(image);
-			if (block) {
-				blocks.push(block);
-			}
-		}
-		return blocks;
-	}
-
-	private parseDataUrlImage(image: string): providers.ImageContent | undefined {
-		const value = image.trim();
-		if (!value) {
-			return undefined;
-		}
-
-		const dataUrlMatch = value.match(/^data:([^;,]+);base64,(.+)$/);
-		if (dataUrlMatch) {
-			const mediaType = dataUrlMatch[1];
-			const data = dataUrlMatch[2];
-			if (!mediaType || !data) {
-				return undefined;
-			}
-			return {
-				type: "image",
-				mediaType,
-				data,
-			};
-		}
-
-		// Fallback: treat as plain base64 payload.
-		return {
-			type: "image",
-			mediaType: "image/png",
-			data: value,
-		};
-	}
-
-	private async buildUserFileTextBlock(
-		userFiles?: string[],
-	): Promise<string | undefined> {
-		if (!userFiles || userFiles.length === 0) {
-			return undefined;
-		}
-
-		const contents = await Promise.all(
-			userFiles.map(async (filePath) => {
-				const normalizedPath = filePath.replace(/\\/g, "/");
-				try {
-					const fileStat = await stat(filePath);
-					if (!fileStat.isFile()) {
-						throw new Error("Path is not a file");
-					}
-					if (fileStat.size > MAX_USER_FILE_BYTES) {
-						throw new Error("File is too large to read into context.");
-					}
-
-					const content = await readFile(filePath, "utf8");
-					if (content.includes("\u0000")) {
-						throw new Error("Cannot read binary file into context.");
-					}
-					return formatFileContentBlock(normalizedPath, content);
-				} catch (error) {
-					const message =
-						error instanceof Error ? error.message : String(error);
-					return formatFileContentBlock(
-						normalizedPath,
-						`Error fetching content: ${message}`,
-					);
-				}
-			}),
-		);
-
-		const combined = contents.filter((entry) => entry.length > 0).join("\n\n");
-		if (!combined) {
-			return undefined;
-		}
-		return `Files attached by the user:\n\n${combined}`;
+		return buildInitialUserContent(userMessage, userImages, userFiles);
 	}
 
 	private buildAbortedResult(startedAt: Date, text: string): AgentResult {
@@ -1138,25 +1053,6 @@ export class Agent {
 		};
 	}
 
-	private mergeControls(
-		first: AgentHookControl | undefined,
-		second: AgentHookControl | undefined,
-	): AgentHookControl | undefined {
-		if (!first && !second) {
-			return undefined;
-		}
-
-		return {
-			cancel: !!(first?.cancel || second?.cancel),
-			context: [first?.context, second?.context]
-				.filter((value): value is string => !!value)
-				.join("\n"),
-			overrideInput: Object.hasOwn(second ?? {}, "overrideInput")
-				? second?.overrideInput
-				: first?.overrideInput,
-		};
-	}
-
 	/**
 	 * Emit an event through the callback
 	 */
@@ -1167,144 +1063,35 @@ export class Agent {
 			// Ignore callback errors
 		}
 
-		void this.extensionRunner
-			.onRuntimeEvent({
+		void this.hookEngine
+			.dispatch({
+				stage: "runtime_event",
+				runId: this.activeRunId || this.conversationId,
 				agentId: this.agentId,
 				conversationId: this.conversationId,
 				parentAgentId: this.parentAgentId,
-				event,
+				payload: {
+					agentId: this.agentId,
+					conversationId: this.conversationId,
+					parentAgentId: this.parentAgentId,
+					event,
+				},
 			})
 			.catch((error) => {
-				try {
-					this.config.onEvent?.({
-						type: "error",
-						error: error instanceof Error ? error : new Error(String(error)),
-						recoverable: this.config.hookErrorMode !== "throw",
-						iteration: 0,
-					});
-				} catch {
-					// Ignore callback errors
-				}
+				this.reportRecoverableError(error);
 			});
 	}
 
-	private async invokeHook(
-		name: keyof AgentHooks,
-		payload: unknown,
-	): Promise<void> {
-		const hook = this.config.hooks?.[name];
-		if (!hook) {
-			return;
-		}
-
+	private reportRecoverableError(error: unknown): void {
 		try {
-			await hook(payload as never);
-		} catch (error) {
-			if (this.config.hookErrorMode === "throw") {
-				throw error;
-			}
-			this.emit({
+			this.config.onEvent?.({
 				type: "error",
 				error: error instanceof Error ? error : new Error(String(error)),
-				recoverable: true,
+				recoverable: this.config.hookErrorMode !== "throw",
 				iteration: 0,
 			});
-		}
-	}
-
-	private async invokeControlHook(
-		name: keyof AgentHooks,
-		payload: unknown,
-	): Promise<AgentHookControl | undefined> {
-		const hook = this.config.hooks?.[name];
-		if (!hook) {
-			return undefined;
-		}
-
-		try {
-			const result = await hook(payload as never);
-			const control =
-				result &&
-				typeof result === "object" &&
-				("cancel" in result || "context" in result || "overrideInput" in result)
-					? (result as AgentHookControl)
-					: undefined;
-			if (control?.context) {
-				this.appendHookContext(name, control.context);
-			}
-			return control;
-		} catch (error) {
-			if (this.config.hookErrorMode === "throw") {
-				throw error;
-			}
-			this.emit({
-				type: "error",
-				error: error instanceof Error ? error : new Error(String(error)),
-				recoverable: true,
-				iteration: 0,
-			});
-			return undefined;
-		}
-	}
-
-	private async invokeExtensionControlHook(
-		name:
-			| "onSessionStart"
-			| "onToolCall"
-			| "onToolResult"
-			| "onAgentEnd"
-			| "onSessionShutdown",
-		payload: unknown,
-	): Promise<AgentHookControl | undefined> {
-		try {
-			switch (name) {
-				case "onSessionStart":
-					return await this.extensionRunner.onSessionStart(payload as never);
-				case "onToolCall":
-					return await this.extensionRunner.onToolCall(payload as never);
-				case "onToolResult":
-					return await this.extensionRunner.onToolResult(payload as never);
-				case "onAgentEnd":
-					return await this.extensionRunner.onAgentEnd(payload as never);
-				case "onSessionShutdown":
-					return await this.extensionRunner.onSessionShutdown(payload as never);
-			}
-		} catch (error) {
-			if (this.config.hookErrorMode === "throw") {
-				throw error;
-			}
-			this.emit({
-				type: "error",
-				error: error instanceof Error ? error : new Error(String(error)),
-				recoverable: true,
-				iteration: 0,
-			});
-			return undefined;
-		}
-	}
-
-	private async invokeExtensionInput(
-		payload: unknown,
-	): Promise<{ input: string; control?: AgentHookControl }> {
-		try {
-			return await this.extensionRunner.onInput(payload as never);
-		} catch (error) {
-			if (this.config.hookErrorMode === "throw") {
-				throw error;
-			}
-			this.emit({
-				type: "error",
-				error: error instanceof Error ? error : new Error(String(error)),
-				recoverable: true,
-				iteration: 0,
-			});
-			return {
-				input:
-					typeof (payload as { input?: unknown }).input === "string"
-						? (payload as { input: string }).input
-						: "",
-				control: undefined,
-			};
+		} catch {
+			// Ignore callback errors
 		}
 	}
 
@@ -1383,53 +1170,6 @@ export class Agent {
 			};
 		}
 		return { allowed: true };
-	}
-
-	private async invokeExtensionBeforeAgentStart(payload: unknown): Promise<{
-		systemPrompt: string;
-		appendMessages: providers.Message[];
-		control?: AgentHookControl;
-	}> {
-		try {
-			return await this.extensionRunner.onBeforeAgentStart(payload as never);
-		} catch (error) {
-			if (this.config.hookErrorMode === "throw") {
-				throw error;
-			}
-			this.emit({
-				type: "error",
-				error: error instanceof Error ? error : new Error(String(error)),
-				recoverable: true,
-				iteration: 0,
-			});
-			const fallback = payload as { systemPrompt: string };
-			return {
-				systemPrompt: fallback.systemPrompt,
-				appendMessages: [],
-				control: undefined,
-			};
-		}
-	}
-
-	private async invokeExtensionHook(
-		name: "onError",
-		payload: unknown,
-	): Promise<void> {
-		try {
-			if (name === "onError") {
-				await this.extensionRunner.onError(payload as never);
-			}
-		} catch (error) {
-			if (this.config.hookErrorMode === "throw") {
-				throw error;
-			}
-			this.emit({
-				type: "error",
-				error: error instanceof Error ? error : new Error(String(error)),
-				recoverable: true,
-				iteration: 0,
-			});
-		}
 	}
 
 	private appendHookContext(source: string, context: string): void {

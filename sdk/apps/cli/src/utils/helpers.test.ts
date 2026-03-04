@@ -229,13 +229,23 @@ describe("hook payload validation and audit logging", () => {
 	it("validates hook payload structure", () => {
 		expect(
 			isCliHookPayload({
-				hook_event_name: "tool_call",
+				clineVersion: "",
+				hookName: "tool_call",
+				timestamp: new Date().toISOString(),
+				taskId: "conv_1",
+				workspaceRoots: [],
+				userId: "agent_1",
 				agent_id: "agent_1",
-				conversation_id: "conv_1",
 				parent_agent_id: null,
+				iteration: 1,
+				tool_call: {
+					id: "call_1",
+					name: "read_files",
+					input: { file_paths: ["README.md"] },
+				},
 			}),
 		).toBe(true);
-		expect(isCliHookPayload({ hook_event_name: "tool_call" })).toBe(false);
+		expect(isCliHookPayload({ hookName: "tool_call" })).toBe(false);
 		expect(isCliHookPayload(null)).toBe(false);
 	});
 
@@ -249,10 +259,14 @@ describe("hook payload validation and audit logging", () => {
 
 		try {
 			appendHookAudit({
-				hook_event_name: "tool_call",
+				clineVersion: "",
+				hookName: "tool_call",
+				timestamp: new Date().toISOString(),
+				taskId: "conv_1",
+				workspaceRoots: [],
+				userId: "agent_1",
 				iteration: 1,
 				agent_id: "agent_1",
-				conversation_id: "conv_1",
 				parent_agent_id: null,
 				tool_call: {
 					id: "call_1",
@@ -266,7 +280,7 @@ describe("hook payload validation and audit logging", () => {
 
 		expect(existsSync(hookPath)).toBe(true);
 		const content = readFileSync(hookPath, "utf8");
-		expect(content).toContain('"hook_event_name":"tool_call"');
+		expect(content).toContain('"hookName":"tool_call"');
 		expect(content).toContain('"agent_id":"agent_1"');
 	});
 
@@ -285,10 +299,14 @@ describe("hook payload validation and audit logging", () => {
 
 		try {
 			appendHookAudit({
-				hook_event_name: "tool_result",
+				clineVersion: "",
+				hookName: "tool_result",
+				timestamp: new Date().toISOString(),
+				taskId: "conv_2",
+				workspaceRoots: [],
+				userId: "agent_2",
 				iteration: 1,
 				agent_id: "agent_2",
-				conversation_id: "conv_2",
 				parent_agent_id: null,
 				tool_result: {
 					id: "call_2",
@@ -306,7 +324,7 @@ describe("hook payload validation and audit logging", () => {
 
 		expect(existsSync(expectedPath)).toBe(true);
 		const content = readFileSync(expectedPath, "utf8");
-		expect(content).toContain('"hook_event_name":"tool_result"');
+		expect(content).toContain('"hookName":"tool_result"');
 	});
 });
 

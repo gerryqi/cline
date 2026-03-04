@@ -60,6 +60,12 @@
 // =============================================================================
 
 export { Agent, createAgent } from "./agent.js";
+export {
+	type HookDispatchInput,
+	HookEngine,
+	type HookEngineOptions,
+	type HookHandler,
+} from "./hook-engine.js";
 
 // =============================================================================
 // Extensions
@@ -82,24 +88,39 @@ export {
 	type AgentEndHookPayload,
 	createSubprocessHooks,
 	type HookEventName,
+	HookEventNameSchema,
 	type HookEventPayload,
 	type HookEventPayloadBase,
+	HookEventPayloadSchema,
+	type HookOutput,
+	HookOutputSchema,
+	type PostToolUseData,
+	type PreCompactData,
+	type PreCompactHookPayload,
+	type PreToolUseData,
+	type PromptSubmitHookPayload,
+	parseHookEventPayload,
 	type RunHookOptions,
 	type RunHookResult,
 	runHook,
 	type SessionShutdownHookPayload,
 	type SubprocessHookControl,
 	type SubprocessHooksOptions,
+	type TaskCancelData,
+	type TaskCompleteData,
+	type TaskResumeData,
+	type TaskStartData,
 	type ToolCallHookPayload,
 	type ToolResultHookPayload,
+	type UserPromptSubmitData,
 } from "./hooks.js";
 
 // =============================================================================
 // Prompts
 // =============================================================================
 
-export { getClineDefaultSystemPrompt } from "./prompts/index.js";
 export { formatFileContentBlock } from "./input-formatting.js";
+export { getClineDefaultSystemPrompt } from "./prompts/index.js";
 
 // =============================================================================
 // Teams

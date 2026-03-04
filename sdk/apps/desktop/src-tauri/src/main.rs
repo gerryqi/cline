@@ -158,9 +158,9 @@ struct ProcessContext {
 #[serde(rename_all = "camelCase")]
 struct SessionHookEvent {
     ts: String,
-    hook_event_name: String,
+    hook_name: String,
     agent_id: Option<String>,
-    conversation_id: Option<String>,
+    task_id: Option<String>,
     parent_agent_id: Option<String>,
     iteration: Option<u64>,
     tool_name: Option<String>,
@@ -1317,13 +1317,14 @@ fn read_session_hooks(session_id: String, limit: Option<usize>) -> Result<Vec<Se
         let Ok(value) = serde_json::from_str::<Value>(line) else {
             continue;
         };
-        let hook_event_name = value
-            .get("hook_event_name")
+        let hook_name = value
+            .get("hookName")
+            .or_else(|| value.get("hook_event_name"))
             .or_else(|| value.get("event"))
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_string();
-        if hook_event_name.is_empty() {
+        if hook_name.is_empty() {
             continue;
         }
 
@@ -1372,13 +1373,14 @@ fn read_session_hooks(session_id: String, limit: Option<usize>) -> Result<Vec<Se
 
         out.push(SessionHookEvent {
             ts,
-            hook_event_name,
+            hook_name,
             agent_id: value
                 .get("agent_id")
                 .and_then(|v| v.as_str())
                 .map(|v| v.to_string()),
-            conversation_id: value
-                .get("conversation_id")
+            task_id: value
+                .get("taskId")
+                .or_else(|| value.get("conversation_id"))
                 .and_then(|v| v.as_str())
                 .map(|v| v.to_string()),
             parent_agent_id: value

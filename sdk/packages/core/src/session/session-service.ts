@@ -472,10 +472,7 @@ export class CoreSessionService {
 	}
 
 	queueSpawnRequest(event: HookEventPayload): void {
-		if (
-			event.hook_event_name !== "tool_call" ||
-			event.parent_agent_id !== null
-		) {
+		if (event.hookName !== "tool_call" || event.parent_agent_id !== null) {
 			return;
 		}
 		if (event.tool_call?.name !== "spawn_agent") {
@@ -640,7 +637,7 @@ export class CoreSessionService {
 		return this.upsertSubagentSession({
 			agentId: event.agent_id,
 			parentAgentId: event.parent_agent_id,
-			conversationId: event.conversation_id,
+			conversationId: event.taskId,
 		});
 	}
 

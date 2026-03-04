@@ -67,7 +67,7 @@ export function parseSubSessionId(
 }
 
 export function deriveSubsessionStatus(event: HookEventPayload): SessionStatus {
-	switch (event.hook_event_name) {
+	switch (event.hookName) {
 		case "agent_end":
 			return "completed";
 		case "session_shutdown": {

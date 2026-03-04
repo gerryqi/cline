@@ -347,6 +347,16 @@ export interface AgentHookControl {
 	 * Only applied for `onToolCallStart`.
 	 */
 	overrideInput?: unknown;
+	/**
+	 * Optional replacement system prompt.
+	 * Primarily used by before-agent-start hook stages.
+	 */
+	systemPrompt?: string;
+	/**
+	 * Optional messages to append before model turn execution.
+	 * Primarily used by before-agent-start hook stages.
+	 */
+	appendMessages?: LlmsProviders.Message[];
 }
 
 export interface AgentHookRunStartContext {
@@ -430,10 +440,13 @@ export interface AgentHookSessionShutdownContext {
 }
 
 export type HookStage =
+	| "input"
+	| "runtime_event"
 	| "session_start"
 	| "run_start"
 	| "iteration_start"
 	| "turn_start"
+	| "before_agent_start"
 	| "tool_call_before"
 	| "tool_call_after"
 	| "turn_end"

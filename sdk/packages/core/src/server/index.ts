@@ -9,6 +9,7 @@ export type {
 	CreateSkillsConfigDefinitionOptions,
 	CreateUserInstructionConfigWatcherOptions,
 	CreateWorkflowsConfigDefinitionOptions,
+	HookConfigFileEntry,
 	ParseMarkdownFrontmatterResult,
 	ParseYamlFrontmatterResult,
 	RuleConfig,
@@ -32,8 +33,13 @@ export {
 	createSkillsConfigDefinition,
 	createUserInstructionConfigWatcher,
 	createWorkflowsConfigDefinition,
+	DOCUMENTS_HOOKS_DIRECTORY_PATH,
 	DOCUMENTS_RULES_DIRECTORY_PATH,
 	DOCUMENTS_WORKFLOWS_DIRECTORY_PATH,
+	HOOK_CONFIG_FILE_EVENT_MAP,
+	HOOKS_CONFIG_DIRECTORY_NAME,
+	HookConfigFileName,
+	listHookConfigFiles,
 	parseAgentConfigFromYaml,
 	parsePartialAgentConfigFromYaml,
 	parseRuleConfigFromMarkdown,
@@ -41,10 +47,12 @@ export {
 	parseWorkflowConfigFromMarkdown,
 	RULES_CONFIG_DIRECTORY_NAME,
 	resolveAgentTools,
+	resolveHooksConfigSearchPaths,
 	resolveRulesConfigSearchPaths,
 	resolveSkillsConfigSearchPaths,
 	resolveWorkflowsConfigSearchPaths,
 	SKILLS_CONFIG_DIRECTORY_NAME,
+	toHookConfigFileName,
 	toPartialAgentConfig,
 	UnifiedConfigFileWatcher,
 	WORKFLOWS_CONFIG_DIRECTORY_NAME,
@@ -81,6 +89,7 @@ export {
 	listAvailableWorkflowsFromWatcher,
 	resolveWorkflowSlashCommandFromWatcher,
 } from "../runtime/workflows";
+export { RpcCoreSessionService } from "../session/rpc-session-service";
 export {
 	deriveSubsessionStatus,
 	makeSubSessionId,
@@ -94,7 +103,6 @@ export type {
 	RootSessionArtifacts,
 } from "../session/session-service";
 export { CoreSessionService } from "../session/session-service";
-export { RpcCoreSessionService } from "../session/rpc-session-service";
 export type {
 	WorkspaceManager,
 	WorkspaceManagerEvent,

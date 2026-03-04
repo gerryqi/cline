@@ -17,9 +17,13 @@ describe("hooks", () => {
 	it("runHook pipes payload to command and parses JSON stdout", async () => {
 		const result = await runHook(
 			{
-				hook_event_name: "tool_call",
+				clineVersion: "",
+				hookName: "tool_call",
+				timestamp: new Date().toISOString(),
+				taskId: "conv-1",
+				workspaceRoots: [],
+				userId: "agent-1",
 				agent_id: "agent-1",
-				conversation_id: "conv-1",
 				parent_agent_id: null,
 				iteration: 1,
 				tool_call: {
@@ -32,7 +36,7 @@ describe("hooks", () => {
 				command: [
 					process.execPath,
 					"-e",
-					"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const p=JSON.parse(d);process.stdout.write(JSON.stringify({cancel:p.hook_event_name==='tool_call',context:'ok'}));});",
+					"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const p=JSON.parse(d);process.stdout.write(JSON.stringify({cancel:p.hookName==='tool_call',context:'ok'}));});",
 				],
 			},
 		);
@@ -47,7 +51,7 @@ describe("hooks", () => {
 		const output = join(dir, "events.log");
 
 		const script =
-			"const fs=require('node:fs');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const p=JSON.parse(d);fs.appendFileSync(process.argv[1],JSON.stringify(p)+'\\n');if(p.hook_event_name==='tool_call'){process.stdout.write(JSON.stringify({cancel:true,context:'stop-now',overrideInput:{safe:true}}));}});";
+			"const fs=require('node:fs');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const p=JSON.parse(d);fs.appendFileSync(process.argv[1],JSON.stringify(p)+'\\n');if(p.hookName==='tool_call'){process.stdout.write(JSON.stringify({cancel:true,context:'stop-now',overrideInput:{safe:true}}));}});";
 
 		const hookControl = createSubprocessHooks({
 			command: [process.execPath, "-e", script, output],
@@ -116,7 +120,7 @@ describe("hooks", () => {
 			.split("\n")
 			.map((line) => JSON.parse(line));
 
-		expect(lines.some((e) => e.hook_event_name === "tool_call")).toBe(true);
+		expect(lines.some((e) => e.hookName === "tool_call")).toBe(true);
 	});
 
 	it("reports dispatch errors without throwing", async () => {
@@ -149,5 +153,28 @@ describe("hooks", () => {
 
 		await new Promise((resolve) => setTimeout(resolve, 30));
 		expect(onDispatchError).toHaveBeenCalled();
+	});
+
+	it("treats invalid tool_call stdout as dispatch error", async () => {
+		const onDispatchError = vi.fn<(error: Error) => void>();
+		const hookControl = createSubprocessHooks({
+			command: [process.execPath, "-e", "process.stdout.write('not-json')"],
+			onDispatchError: (error) => onDispatchError(error),
+		});
+
+		const result = await hookControl.hooks.onToolCallStart?.({
+			agentId: "agent-main",
+			conversationId: "conv-main",
+			parentAgentId: null,
+			iteration: 1,
+			call: {
+				id: "c-1",
+				name: "bash",
+				input: { command: "ls" },
+			},
+		});
+
+		expect(result).toBeUndefined();
+		expect(onDispatchError).toHaveBeenCalledTimes(1);
 	});
 });
