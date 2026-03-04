@@ -49,7 +49,7 @@ async function listFilesWithRg(cwd: string): Promise<Set<string>> {
 			stderr += chunk.toString();
 		});
 		child.on("error", reject);
-		child.on("close", (code) => {
+		child.on("close", (code: number | null) => {
 			if (code === 0) {
 				resolve(stdout);
 				return;
@@ -102,7 +102,7 @@ async function buildIndex(cwd: string): Promise<Set<string>> {
 	}
 }
 
-export async function getFastFileList(
+export async function getFileIndex(
 	cwd: string,
 	options: FastFileIndexOptions = {},
 ): Promise<Set<string>> {
@@ -140,9 +140,9 @@ export async function getFastFileList(
 	return pending;
 }
 
-export async function prewarmFastFileList(
+export async function prewarmFileIndex(
 	cwd: string,
 	options: FastFileIndexOptions = {},
 ): Promise<void> {
-	await getFastFileList(cwd, { ...options, ttlMs: 0 });
+	await getFileIndex(cwd, { ...options, ttlMs: 0 });
 }

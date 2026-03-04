@@ -6,6 +6,7 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { getFileIndex } from "@cline/shared";
 import type { ToolContext } from "../../types.js";
 import type { SearchExecutor } from "../types.js";
 
@@ -117,50 +118,28 @@ interface SearchMatch {
 	context: string[];
 }
 
-/**
- * Recursively get all files in a directory
- */
-async function* walkDir(
-	dir: string,
-	excludeDirs: string[],
-	includeExtensions: string[],
+function shouldIncludeFile(
+	relativePath: string,
+	excludeDirs: Set<string>,
+	includeExtensions: Set<string>,
 	maxDepth: number,
-	currentDepth: number = 0,
-): AsyncGenerator<string> {
-	if (currentDepth > maxDepth) return;
+): boolean {
+	const segments = relativePath.split("/");
+	const fileName = segments[segments.length - 1] ?? "";
+	const directoryDepth = segments.length - 1;
 
-	let entries: import("fs").Dirent[];
-	try {
-		entries = await fs.readdir(dir, { withFileTypes: true });
-	} catch {
-		return; // Skip directories we can't read
+	if (directoryDepth > maxDepth) {
+		return false;
 	}
 
-	for (const entry of entries) {
-		const entryName = entry.name as string;
-		const fullPath = path.join(dir, entryName);
-
-		if (entry.isDirectory()) {
-			if (!excludeDirs.includes(entryName)) {
-				yield* walkDir(
-					fullPath,
-					excludeDirs,
-					includeExtensions,
-					maxDepth,
-					currentDepth + 1,
-				);
-			}
-		} else if (entry.isFile()) {
-			const ext = path.extname(entryName).slice(1).toLowerCase();
-			// Include files with matching extensions or no extension (like Makefile, Dockerfile)
-			if (
-				includeExtensions.includes(ext) ||
-				(!ext && !entryName.startsWith("."))
-			) {
-				yield fullPath;
-			}
+	for (let i = 0; i < segments.length - 1; i++) {
+		if (excludeDirs.has(segments[i] ?? "")) {
+			return false;
 		}
 	}
+
+	const ext = path.posix.extname(fileName).slice(1).toLowerCase();
+	return includeExtensions.has(ext) || (!ext && !fileName.startsWith("."));
 }
 
 /**
@@ -186,6 +165,10 @@ export function createSearchExecutor(
 		contextLines = 2,
 		maxDepth = 20,
 	} = options;
+	const excludeDirsSet = new Set(excludeDirs);
+	const includeExtensionsSet = new Set(
+		includeExtensions.map((extension) => extension.toLowerCase()),
+	);
 
 	return async (
 		query: string,
@@ -205,16 +188,25 @@ export function createSearchExecutor(
 		const matches: SearchMatch[] = [];
 		let totalFilesSearched = 0;
 
-		// Walk directory and search files
-		for await (const filePath of walkDir(
-			cwd,
-			excludeDirs,
-			includeExtensions,
-			maxDepth,
-		)) {
+		const fileList = await getFileIndex(cwd);
+
+		// Search files from the fast index.
+		for (const relativePath of fileList) {
+			if (
+				!shouldIncludeFile(
+					relativePath,
+					excludeDirsSet,
+					includeExtensionsSet,
+					maxDepth,
+				)
+			) {
+				continue;
+			}
+
 			if (matches.length >= maxResults) break;
 
 			totalFilesSearched++;
+			const filePath = path.join(cwd, relativePath);
 
 			try {
 				const content = await fs.readFile(filePath, "utf-8");
@@ -242,7 +234,7 @@ export function createSearchExecutor(
 						}
 
 						matches.push({
-							file: path.relative(cwd, filePath),
+							file: relativePath,
 							line: lineIdx + 1,
 							column: match.index + 1,
 							match: match[0],
@@ -270,7 +262,7 @@ export function createSearchExecutor(
 		];
 
 		for (const match of matches) {
-			resultLines.push(`📄 ${match.file}:${match.line}:${match.column}`);
+			resultLines.push(`${match.file}:${match.line}:${match.column}`);
 			resultLines.push(...match.context);
 			resultLines.push("");
 		}

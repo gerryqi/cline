@@ -130,7 +130,14 @@ Subcommands:
 
 - `clite auth <provider>` - Run OAuth login for `cline`, `openai-codex`, or `oca`
 - `clite rpc start` - Start the RPC gateway
-- `clite list ...` - List workflows/rules/skills/agents/history/hooks
+- `clite list ...` - List workflows/rules/skills/agents/history/hooks/mcp
+
+MCP list examples:
+
+```bash
+clite list mcp
+clite list mcp --json
+```
 
 ## Tool Approval
 
@@ -173,6 +180,7 @@ In desktop mode, CLI writes a request JSON file and waits for a matching decisio
 - Override with `--address <host:port>` or `CLINE_RPC_ADDRESS`
 - Startup behavior: checks health first; if already running at that address, it prints the running server id and exits without starting a duplicate
 - Shutdown: Ctrl+C / `SIGTERM` cleanly stops the in-process server
+- Regular `clite "<prompt>"` runs auto-start RPC in a detached background process when needed, then reuse it for session storage across subsequent CLI runs.
 
 ## Development
 

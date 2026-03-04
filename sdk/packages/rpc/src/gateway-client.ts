@@ -3,11 +3,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
-import type { RpcGatewayClient } from "./proto/generated/cline/rpc/v1/RpcGateway.js";
+import type { ClineGatewayClient } from "./proto/generated/cline/rpc/v1/ClineGateway.js";
 import type { ProtoGrpcType } from "./proto/generated/rpc.js";
 
 const PACKAGE_NAME = "cline.rpc.v1";
-const SERVICE_NAME = "RpcGateway";
+const SERVICE_NAME = "ClineGateway";
 
 function resolveProtoPath(): string {
 	const runtimeDir = dirname(fileURLToPath(import.meta.url));
@@ -35,7 +35,7 @@ function loadGatewayService(): grpc.ServiceDefinition {
 	const loaded = grpc.loadPackageDefinition(
 		packageDef,
 	) as unknown as ProtoGrpcType;
-	const service = loaded.cline?.rpc?.v1?.RpcGateway?.service;
+	const service = loaded.cline?.rpc?.v1?.ClineGateway?.service;
 	if (!service) {
 		throw new Error(
 			`Unable to load ${PACKAGE_NAME}.${SERVICE_NAME} from proto`,
@@ -44,13 +44,15 @@ function loadGatewayService(): grpc.ServiceDefinition {
 	return service;
 }
 
-export function createGatewayGenericClient(address: string): RpcGatewayClient {
+export function createGatewayGenericClient(
+	address: string,
+): ClineGatewayClient {
 	const ctor = grpc.makeGenericClientConstructor(
 		loadGatewayService(),
 		SERVICE_NAME,
 	) as unknown as new (
 		endpoint: string,
 		credentials: grpc.ChannelCredentials,
-	) => RpcGatewayClient;
+	) => ClineGatewayClient;
 	return new ctor(address, grpc.credentials.createInsecure());
 }

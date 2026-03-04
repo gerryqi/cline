@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import type {
 	HookEventPayload,
 	SubAgentEndContext,
@@ -12,7 +13,7 @@ import {
 	SqliteSessionStore,
 } from "@cline/core/server";
 import type { providers as LlmsProviders } from "@cline/llms";
-import { getRpcServerHealth, startRpcServer } from "@cline/rpc";
+import { getRpcServerHealth } from "@cline/rpc";
 
 const DEFAULT_RPC_ADDRESS =
 	process.env.CLINE_RPC_ADDRESS?.trim() || "127.0.0.1:4317";
@@ -22,6 +23,46 @@ let localSessions: CoreSessionService | undefined;
 let initPromise:
 	| Promise<RpcCoreSessionService | CoreSessionService>
 	| undefined;
+
+function isLikelyScriptEntryPath(pathValue: string | undefined): boolean {
+	if (!pathValue) {
+		return false;
+	}
+	return /\.(?:[cm]?[jt]s|tsx?)$/i.test(pathValue);
+}
+
+function startRpcServerInBackground(address: string): void {
+	const launcher = process.argv[0];
+	const entry = process.argv[1];
+	const startArgs = ["rpc", "start", "--address", address];
+	const args =
+		entry && isLikelyScriptEntryPath(entry) ? [entry, ...startArgs] : startArgs;
+
+	const child = spawn(launcher, args, {
+		detached: true,
+		stdio: "ignore",
+		env: process.env,
+		cwd: process.cwd(),
+	});
+	child.unref();
+}
+
+async function tryConnectRpcSessions(
+	address: string,
+): Promise<RpcCoreSessionService | undefined> {
+	try {
+		const health = await getRpcServerHealth(address);
+		if (!health) {
+			return undefined;
+		}
+		return new RpcCoreSessionService({
+			address,
+			sessionsDir: resolveSessionDataDir(),
+		});
+	} catch {
+		return undefined;
+	}
+}
 
 async function getCoreSessions(): Promise<
 	RpcCoreSessionService | CoreSessionService
@@ -34,21 +75,33 @@ async function getCoreSessions(): Promise<
 	}
 	if (!initPromise) {
 		initPromise = (async () => {
-			try {
-				const health = await getRpcServerHealth(DEFAULT_RPC_ADDRESS);
-				if (!health) {
-					await startRpcServer({ address: DEFAULT_RPC_ADDRESS });
-				}
-				coreSessions = new RpcCoreSessionService({
-					address: DEFAULT_RPC_ADDRESS,
-					sessionsDir: resolveSessionDataDir(),
-				});
+			const existingRpcSessions =
+				await tryConnectRpcSessions(DEFAULT_RPC_ADDRESS);
+			if (existingRpcSessions) {
+				coreSessions = existingRpcSessions;
 				return coreSessions;
-			} catch {
-				// Fallback for server environments where RPC cannot be bound/started.
-				localSessions = new CoreSessionService(new SqliteSessionStore());
-				return localSessions;
 			}
+
+			// No healthy RPC server was detected; spawn one in the background.
+			try {
+				startRpcServerInBackground(DEFAULT_RPC_ADDRESS);
+			} catch {
+				// Ignore launch failures and fall back to local storage.
+			}
+
+			// Give the detached RPC process a brief chance to bind.
+			for (let attempt = 0; attempt < 5; attempt += 1) {
+				const rpcSessions = await tryConnectRpcSessions(DEFAULT_RPC_ADDRESS);
+				if (rpcSessions) {
+					coreSessions = rpcSessions;
+					return coreSessions;
+				}
+				await new Promise((resolve) => setTimeout(resolve, 100));
+			}
+
+			// Fallback when background RPC launch is unavailable.
+			localSessions = new CoreSessionService(new SqliteSessionStore());
+			return localSessions;
 		})();
 	}
 	return await initPromise;

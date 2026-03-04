@@ -1,24 +1,24 @@
 # @cline/cli Architecture
 
-This document explains how `@cline/cli` consumes `@cline/core`, `@cline/agents`, `@cline/llms`, and `@cline/rpc`, with a focus on streaming output and tool-approval flow.
+This document explains how `@cline/cli` consumes `@cline/core/node`, `@cline/core/server/node`, `@cline/agents/node`, `@cline/llms/node`, and `@cline/rpc/node`, with a focus on streaming output and tool-approval flow.
 
 Workspace boundary rule:
-- use `@cline/llms` and `@cline/agents` root imports only
-- `@cline/core/server` is the one allowed deep import for Node runtime services
+- use explicit Node runtime imports: `@cline/llms/node`, `@cline/agents/node`, `@cline/rpc/node`
+- import core runtime services from `@cline/core/server/node` and shared core contracts from `@cline/core/node`
 
 ## Package Role
 
 `@cline/cli` is the executable shell around the agent runtime. It does four main jobs:
 
 - Parse CLI input and environment into runtime config.
-- Compose runtime capabilities (tools, teams, spawn support) via `@cline/core`.
-- Execute agent loops via `@cline/agents`.
-- Fetch model metadata and provider handlers via `@cline/llms` (indirectly through agents, directly for model catalog lookup).
-- Expose an optional gRPC gateway lifecycle command via `@cline/rpc` (`clite rpc start`).
+- Compose runtime capabilities (tools, teams, spawn support) via `@cline/core/node`.
+- Execute agent loops via `@cline/agents/node`.
+- Fetch model metadata and provider handlers via `@cline/llms/node` (indirectly through agents, directly for model catalog lookup).
+- Expose an optional gRPC gateway lifecycle command via `@cline/rpc/node` (`clite rpc start`).
 
 ## Dependency Boundaries
 
-### `@cline/core` consumption
+### `@cline/core/node` + `@cline/core/server/node` consumption
 
 Primary usage in `cli/src/index.ts`:
 
@@ -27,7 +27,7 @@ Primary usage in `cli/src/index.ts`:
   - Handles team persistence bootstrap via core-owned runtime wiring.
 - `createTeamName`
   - Generates team names when team mode is enabled.
-- `enrichPromptWithMentions` and `prewarmFastFileList`
+- `enrichPromptWithMentions` and `prewarmFileIndex`
   - Enriches `@mentions`/file context in user prompts.
 - `generateWorkspaceInfo`
   - Builds workspace metadata used to construct the default system prompt.
@@ -38,7 +38,7 @@ Primary usage in `cli/src/index.ts`:
 - Session and manifest types/services (through CLI utilities)
   - CLI writes and updates session artifacts for local auditability.
 
-### `@cline/agents` consumption
+### `@cline/agents/node` consumption
 
 Primary usage in `cli/src/index.ts`:
 
@@ -53,14 +53,14 @@ Primary usage in `cli/src/index.ts`:
 - Agent/team event and policy types
   - `AgentEvent`, `TeamEvent`, `ToolPolicy`, tool approval contracts.
 
-### `@cline/llms` consumption
+### `@cline/llms/node` consumption
 
 Two paths:
 
 - Direct in CLI:
   - `resolveProviderConfig()` to resolve/refresh provider model lists at startup.
 - Indirect through agents:
-  - `Agent` constructs a provider handler with `createHandler(...)` from `@cline/llms`.
+  - `Agent` constructs a provider handler with `createHandler(...)` from `@cline/llms/node`.
   - Streaming chunks from handlers are normalized as `ApiStreamChunk` values.
 
 ### OAuth auth flow
@@ -69,14 +69,14 @@ Two paths:
 - Two entrypoints:
   - explicit: `clite auth <provider>`
   - implicit: when selected provider is OAuth-capable and no API key is configured
-- CLI resolves runtime OAuth helpers from `@cline/core/server` and runs login callbacks in terminal I/O mode.
+- CLI resolves runtime OAuth helpers from `@cline/core/server/node` and runs login callbacks in terminal I/O mode.
 - On success, CLI persists:
   - `settings.apiKey` (provider-ready API key)
   - `settings.auth.accessToken`
   - `settings.auth.refreshToken`
   - `settings.auth.accountId`
 
-### `@cline/rpc` consumption
+### `@cline/rpc/node` consumption
 
 Primary usage in `cli/src/index.ts`:
 

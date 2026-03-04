@@ -8,12 +8,17 @@
 	"types": "./dist/index.d.ts",
 	"exports": {
 		".": {
+			"browser": "./dist/index.browser.js",
 			"import": "./dist/index.js",
 			"types": "./dist/index.d.ts"
 		},
-		"./catalog": {
-			"import": "./dist/catalog.js",
-			"types": "./dist/catalog.d.ts"
+		"./node": {
+			"import": "./dist/index.js",
+			"types": "./dist/index.d.ts"
+		},
+		"./browser": {
+			"import": "./dist/index.browser.js",
+			"types": "./dist/index.browser.d.ts"
 		}
 	},
 	"files": [
@@ -21,7 +26,7 @@
 		"src"
 	],
 	"scripts": {
-		"build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --target node --format esm --packages external && bun build ./src/catalog.ts --outdir ./dist --target node --format esm --packages external && bun tsc --emitDeclarationOnly --declarationMap false --incremental false",
+		"build": "bun run bun.mts && bun tsc --emitDeclarationOnly --declarationMap false --incremental false",
 		"typecheck": "bun tsc --noEmit",
 		"test": "vitest run",
 		"test:watch": "vitest",

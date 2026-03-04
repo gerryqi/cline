@@ -45,7 +45,12 @@ function resolveApiKey(
 		return undefined;
 	}
 
-	return process.env[apiKeyEnv];
+	const runtimeProcess = globalThis.process;
+	if (!runtimeProcess?.env) {
+		return undefined;
+	}
+
+	return runtimeProcess.env[apiKeyEnv];
 }
 
 function assertNonEmptyModels(providerId: string, models: string[]): void {

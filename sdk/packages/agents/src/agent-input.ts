@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import type { providers } from "@cline/llms";
-import { formatFileContentBlock } from "./input-formatting.js";
+import { formatFileContentBlock } from "@cline/shared";
 
 const MAX_USER_FILE_BYTES = 20 * 1_000 * 1_024;
 

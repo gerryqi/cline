@@ -54,7 +54,7 @@ import type {
 
 const DEFAULT_ADDRESS = "127.0.0.1:4317";
 const PACKAGE_NAME = "cline.rpc.v1";
-const SERVICE_NAME = "RpcGateway";
+const SERVICE_NAME = "ClineGateway";
 const DEFAULT_APPROVAL_TIMEOUT_MS = 5 * 60_000;
 
 interface SessionState {
@@ -168,7 +168,7 @@ function loadGatewayService(): grpc.ServiceDefinition {
 	const loaded = grpc.loadPackageDefinition(
 		packageDef,
 	) as unknown as ProtoGrpcType;
-	const service = loaded.cline?.rpc?.v1?.RpcGateway?.service;
+	const service = loaded.cline?.rpc?.v1?.ClineGateway?.service;
 	if (!service) {
 		throw new Error(
 			`Unable to load ${PACKAGE_NAME}.${SERVICE_NAME} from proto`,
@@ -281,7 +281,7 @@ function messageToRow(message: SessionRecordMessage): RpcSessionRow {
 	};
 }
 
-class RpcGatewayRuntime {
+class ClineGatewayRuntime {
 	private readonly serverId = randomUUID();
 	private readonly sessions = new Map<string, SessionState>();
 	private readonly tasks = new Map<string, TaskState>();
@@ -715,7 +715,7 @@ class RpcGatewayRuntime {
 let singletonHandle: RpcServerHandle | undefined;
 let singletonStartPromise: Promise<RpcServerHandle> | undefined;
 
-type RpcGatewayHealthClient = grpc.Client & {
+type ClineGatewayHealthClient = grpc.Client & {
 	Health: (
 		request: HealthRequest,
 		callback: (
@@ -725,14 +725,14 @@ type RpcGatewayHealthClient = grpc.Client & {
 	) => void;
 };
 
-function createGatewayClient(address: string): RpcGatewayHealthClient {
+function createGatewayClient(address: string): ClineGatewayHealthClient {
 	const ctor = grpc.makeGenericClientConstructor(
 		loadGatewayService(),
 		SERVICE_NAME,
 	) as unknown as new (
 		address: string,
 		credentials: grpc.ChannelCredentials,
-	) => RpcGatewayHealthClient;
+	) => ClineGatewayHealthClient;
 	return new ctor(address, grpc.credentials.createInsecure());
 }
 
@@ -740,7 +740,7 @@ export async function getRpcServerHealth(
 	address: string,
 ): Promise<HealthResponse | undefined> {
 	return await new Promise<HealthResponse | undefined>((resolve) => {
-		let client: RpcGatewayHealthClient | undefined;
+		let client: ClineGatewayHealthClient | undefined;
 		try {
 			client = createGatewayClient(address);
 		} catch {
@@ -778,7 +778,7 @@ export async function startRpcServer(
 			return;
 		}
 
-		const runtime = new RpcGatewayRuntime(address);
+		const runtime = new ClineGatewayRuntime(address);
 		const server = new grpc.Server();
 		server.addService(loadGatewayService(), {
 			Health: (

@@ -6,12 +6,15 @@
 
 import { providers } from "@cline/llms";
 import { buildInitialUserContent } from "./agent-input.js";
-import { registerLifecycleHandlers } from "./agent-lifecycle.js";
 import {
 	type AgentExtensionRunner,
 	createExtensionRunner,
 } from "./extensions.js";
-import { type HookDispatchInput, HookEngine } from "./hook-engine.js";
+import {
+	type HookDispatchInput,
+	HookEngine,
+	registerLifecycleHandlers,
+} from "./hooks/index.js";
 import { MessageBuilder } from "./message-builder.js";
 import {
 	createToolRegistry,

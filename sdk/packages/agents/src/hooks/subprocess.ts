@@ -9,7 +9,7 @@ import type {
 	AgentHookToolCallStartContext,
 	AgentHookTurnEndContext,
 	ToolCallRecord,
-} from "./types.js";
+} from "../types.js";
 
 export const HookEventNameSchema = z.enum([
 	"agent_start",

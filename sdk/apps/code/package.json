@@ -5,7 +5,7 @@
 	"scripts": {
 		"dev:web": "next dev -p 3125 --turbo",
 		"dev": "tauri dev",
-		"build": "next build",
+		"build": "bun run bun.mts",
 		"build:binary": "tauri build",
 		"start": "next start",
 		"lint": "eslint .",

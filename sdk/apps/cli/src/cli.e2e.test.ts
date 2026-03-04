@@ -58,7 +58,7 @@ describe("cli e2e", () => {
 		expect(asText(result.stdout)).toContain("--sandbox");
 		expect(asText(result.stdout)).toContain("--thinking");
 		expect(asText(result.stdout)).toContain(
-			"clite list <workflows|rules|skills|agents|history|hooks>",
+			"clite list <workflows|rules|skills|agents|history|hooks|mcp>",
 		);
 	});
 
@@ -412,6 +412,75 @@ Break work into clear steps.`,
 		expect(
 			parsed.some(
 				(agent) => agent.path === path.join(docsAgentsDir, "reviewer.yaml"),
+			),
+		).toBe(true);
+	});
+
+	it("lists configured mcp servers", () => {
+		const tempRoot = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-mcp-"));
+		tempDirs.push(tempRoot);
+		const settingsPath = path.join(tempRoot, "cline_mcp_settings.json");
+		writeFileSync(
+			settingsPath,
+			JSON.stringify(
+				{
+					mcpServers: {
+						docs: {
+							transport: {
+								type: "stdio",
+								command: "node",
+							},
+						},
+						remote: {
+							transport: {
+								type: "streamableHttp",
+								url: "https://mcp.example.com",
+							},
+							disabled: true,
+						},
+					},
+				},
+				null,
+				2,
+			),
+			"utf8",
+		);
+
+		const textResult = runCli(["list", "mcp"], {
+			env: {
+				...process.env,
+				CLINE_MCP_SETTINGS_PATH: settingsPath,
+			},
+		});
+		expect(textResult.status).toBe(0);
+		expect(asText(textResult.stdout)).toContain("Configured MCP servers");
+		expect(asText(textResult.stdout)).toContain("docs [stdio]");
+		expect(asText(textResult.stdout)).toContain(
+			"remote [streamableHttp] (disabled)",
+		);
+
+		const jsonResult = runCli(["list", "mcp", "--json"], {
+			env: {
+				...process.env,
+				CLINE_MCP_SETTINGS_PATH: settingsPath,
+			},
+		});
+		expect(jsonResult.status).toBe(0);
+		const parsed = JSON.parse(asText(jsonResult.stdout)) as Array<{
+			name: string;
+			transportType: string;
+			disabled: boolean;
+			path: string;
+		}>;
+		expect(parsed.some((server) => server.name === "docs")).toBe(true);
+		expect(parsed.some((server) => server.name === "remote")).toBe(true);
+		expect(
+			parsed.some(
+				(server) =>
+					server.name === "remote" &&
+					server.transportType === "streamableHttp" &&
+					server.disabled === true &&
+					server.path === settingsPath,
 			),
 		).toBe(true);
 	});

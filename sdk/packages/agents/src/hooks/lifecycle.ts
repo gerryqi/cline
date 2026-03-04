@@ -1,5 +1,5 @@
-import type { HookEngine, HookHandler } from "./hook-engine.js";
-import type { AgentConfig } from "./types.js";
+import type { AgentConfig } from "../types.js";
+import type { HookEngine, HookHandler } from "./engine.js";
 
 type LifecycleConfig = Pick<AgentConfig, "hooks" | "extensions">;
 

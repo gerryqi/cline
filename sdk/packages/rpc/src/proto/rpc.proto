@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package cline.rpc.v1;
 
-service RpcGateway {
+service ClineGateway {
   rpc Health(HealthRequest) returns (HealthResponse);
   rpc RegisterClient(RegisterClientRequest) returns (RegisterClientResponse);
   rpc EnsureSession(EnsureSessionRequest) returns (EnsureSessionResponse);

@@ -1,8 +1,16 @@
 import { readdir, stat } from "node:fs/promises";
-import { homedir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
+import {
+	DOCUMENTS_RULES_DIRECTORY_PATH,
+	DOCUMENTS_WORKFLOWS_DIRECTORY_PATH,
+	RULES_CONFIG_DIRECTORY_NAME,
+	resolveRulesConfigSearchPaths as resolveRulesConfigSearchPathsFromShared,
+	resolveSkillsConfigSearchPaths as resolveSkillsConfigSearchPathsFromShared,
+	resolveWorkflowsConfigSearchPaths as resolveWorkflowsConfigSearchPathsFromShared,
+	SKILLS_CONFIG_DIRECTORY_NAME,
+	WORKFLOWS_CONFIG_DIRECTORY_NAME,
+} from "@cline/shared";
 import YAML from "yaml";
-import { resolveClineDataDir } from "../storage/paths";
 import {
 	type UnifiedConfigDefinition,
 	type UnifiedConfigFileCandidate,
@@ -14,22 +22,13 @@ const SKILL_FILE_NAME = "SKILL.md";
 
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown", ".txt"]);
 
-export const SKILLS_CONFIG_DIRECTORY_NAME = "skills";
-export const RULES_CONFIG_DIRECTORY_NAME = "rules";
-export const WORKFLOWS_CONFIG_DIRECTORY_NAME = "workflows";
-
-export const DOCUMENTS_RULES_DIRECTORY_PATH = join(
-	homedir(),
-	"Documents",
-	"Cline",
-	"Rules",
-);
-export const DOCUMENTS_WORKFLOWS_DIRECTORY_PATH = join(
-	homedir(),
-	"Documents",
-	"Cline",
-	"Workflows",
-);
+export {
+	DOCUMENTS_RULES_DIRECTORY_PATH,
+	DOCUMENTS_WORKFLOWS_DIRECTORY_PATH,
+	RULES_CONFIG_DIRECTORY_NAME,
+	SKILLS_CONFIG_DIRECTORY_NAME,
+	WORKFLOWS_CONFIG_DIRECTORY_NAME,
+};
 
 export interface ParseMarkdownFrontmatterResult {
 	data: Record<string, unknown>;
@@ -247,60 +246,22 @@ export function parseWorkflowConfigFromMarkdown(
 	};
 }
 
-function getWorkspaceSkillDirectories(workspacePath?: string): string[] {
-	if (!workspacePath) {
-		return [];
-	}
-	return [
-		join(workspacePath, ".clinerules", "skills"),
-		join(workspacePath, ".cline", "skills"),
-		join(workspacePath, ".claude", "skills"),
-		join(workspacePath, ".agents", "skills"),
-	];
-}
-
-function dedupePaths(paths: ReadonlyArray<string>): string[] {
-	const seen = new Set<string>();
-	const deduped: string[] = [];
-	for (const candidate of paths) {
-		if (!candidate || seen.has(candidate)) {
-			continue;
-		}
-		seen.add(candidate);
-		deduped.push(candidate);
-	}
-	return deduped;
-}
-
 export function resolveSkillsConfigSearchPaths(
 	workspacePath?: string,
 ): string[] {
-	return dedupePaths([
-		...getWorkspaceSkillDirectories(workspacePath),
-		join(resolveClineDataDir(), "settings", SKILLS_CONFIG_DIRECTORY_NAME),
-		join(homedir(), ".cline", "skills"),
-		join(homedir(), ".agents", "skills"),
-	]);
+	return resolveSkillsConfigSearchPathsFromShared(workspacePath);
 }
 
 export function resolveRulesConfigSearchPaths(
 	workspacePath?: string,
 ): string[] {
-	return dedupePaths([
-		workspacePath ? join(workspacePath, ".clinerules") : "",
-		join(resolveClineDataDir(), "settings", RULES_CONFIG_DIRECTORY_NAME),
-		DOCUMENTS_RULES_DIRECTORY_PATH,
-	]);
+	return resolveRulesConfigSearchPathsFromShared(workspacePath);
 }
 
 export function resolveWorkflowsConfigSearchPaths(
 	workspacePath?: string,
 ): string[] {
-	return dedupePaths([
-		workspacePath ? join(workspacePath, ".clinerules", "workflows") : "",
-		join(resolveClineDataDir(), "settings", WORKFLOWS_CONFIG_DIRECTORY_NAME),
-		DOCUMENTS_WORKFLOWS_DIRECTORY_PATH,
-	]);
+	return resolveWorkflowsConfigSearchPathsFromShared(workspacePath);
 }
 
 async function discoverSkillFiles(

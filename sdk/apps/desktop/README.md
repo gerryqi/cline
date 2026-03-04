@@ -14,13 +14,10 @@
 
 ## SDK Import Boundary
 
-Desktop consumes SDK packages through root imports:
+Desktop should use explicit runtime imports:
 
-- `@cline/llms`
-- `@cline/agents`
-- `@cline/core`
-
-Node-specific runtime services remain behind `@cline/core/server` and are consumed by CLI/runtime hosts, not frontend UI modules.
+- Frontend/browser modules: `@cline/llms/browser`
+- Node runtime modules (CLI/Tauri/scripts): `@cline/llms/node`, `@cline/agents/node`, `@cline/core/node`, `@cline/core/server/node`, `@cline/rpc/node`
 
 ## Scripts
 

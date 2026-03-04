@@ -9,6 +9,7 @@ Environment you are running in:
 1. Platform: {{PLATFORM_NAME}}
 2. Date: {{CURRENT_DATE}}
 3. IDE: {{IDE_NAME}}
+4. Working Directory: {{CWD}}
 </env>
 
 Remember:
@@ -30,6 +31,7 @@ If user asked a simple question without any coding context, answer it directly w
 
 export function getClineDefaultSystemPrompt(
 	ide: string,
+	cwd = "",
 	metadata = "",
 	rules = "",
 ) {
@@ -37,6 +39,7 @@ export function getClineDefaultSystemPrompt(
 		"{{PLATFORM_NAME}}",
 		process.platform,
 	)
+		.replace("{{CWD}}", cwd || process.cwd())
 		.replace("{{CURRENT_DATE}}", new Date().toLocaleDateString())
 		.replace("{{IDE_NAME}}", ide)
 		.replace("{{CLINE_METADATA}}", metadata)

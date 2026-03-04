@@ -9,8 +9,9 @@ The desktop app is split into three layers:
 3. **Execution Engine (CLI + Agents)**: actual agent/task execution with hooks.
 
 Boundary note:
-- SDK imports are root-only (`@cline/llms`, `@cline/agents`, `@cline/core`)
-- Node-only core services remain scoped to `@cline/core/server` in runtime hosts
+- Use explicit runtime entrypoints:
+- frontend/browser modules: `@cline/llms/browser`
+- Node runtime hosts (CLI/Tauri scripts): `@cline/llms/node`, `@cline/agents/node`, `@cline/core/node`, `@cline/core/server/node`, `@cline/rpc/node`
 
 ## Layer Details
 

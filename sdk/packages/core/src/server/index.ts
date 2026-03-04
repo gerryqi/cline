@@ -1,3 +1,9 @@
+/**
+ * @cline/core/server
+ *
+ * Node/runtime services for host applications (CLI, desktop runtime, servers).
+ */
+
 export type {
 	AgentConfigWatcher,
 	AgentConfigWatcherEvent,
@@ -57,7 +63,52 @@ export {
 	UnifiedConfigFileWatcher,
 	WORKFLOWS_CONFIG_DIRECTORY_NAME,
 } from "../agents";
-export * from "../index";
+
+export {
+	createClineOAuthProvider,
+	getValidClineCredentials,
+	loginClineOAuth,
+	refreshClineToken,
+} from "../auth/cline";
+export {
+	getValidOpenAICodexCredentials,
+	isOpenAICodexTokenExpired,
+	loginOpenAICodex,
+	normalizeOpenAICodexCredentials,
+	openaiCodexOAuthProvider,
+	refreshOpenAICodexToken,
+} from "../auth/codex";
+export {
+	createOcaOAuthProvider,
+	createOcaRequestHeaders,
+	DEFAULT_EXTERNAL_IDCS_CLIENT_ID,
+	DEFAULT_EXTERNAL_IDCS_SCOPES,
+	DEFAULT_EXTERNAL_IDCS_URL,
+	DEFAULT_EXTERNAL_OCA_BASE_URL,
+	DEFAULT_INTERNAL_IDCS_CLIENT_ID,
+	DEFAULT_INTERNAL_IDCS_SCOPES,
+	DEFAULT_INTERNAL_IDCS_URL,
+	DEFAULT_INTERNAL_OCA_BASE_URL,
+	generateOcaOpcRequestId,
+	getValidOcaCredentials,
+	loginOcaOAuth,
+	OCI_HEADER_OPC_REQUEST_ID,
+	refreshOcaToken,
+} from "../auth/oca";
+export { startLocalOAuthServer } from "../auth/server";
+export type {
+	OAuthCredentials,
+	OAuthLoginCallbacks,
+	OAuthPrompt,
+	OAuthProviderInterface,
+	OcaClientMetadata,
+	OcaMode,
+	OcaOAuthConfig,
+	OcaOAuthEnvironmentConfig,
+	OcaOAuthProviderOptions,
+	OcaTokenResolution,
+} from "../auth/types";
+
 export type {
 	FastFileIndexOptions,
 	MentionEnricherOptions,
@@ -65,9 +116,35 @@ export type {
 } from "../input";
 export {
 	enrichPromptWithMentions,
-	getFastFileList,
-	prewarmFastFileList,
+	getFileIndex,
+	prewarmFileIndex,
 } from "../input";
+
+export type {
+	LoadMcpSettingsOptions,
+	McpConnectionStatus,
+	McpManager,
+	McpManagerOptions,
+	McpServerClient,
+	McpServerClientFactory,
+	McpServerRegistration,
+	McpServerSnapshot,
+	McpServerTransportConfig,
+	McpSettingsFile,
+	McpSseTransportConfig,
+	McpStdioTransportConfig,
+	McpStreamableHttpTransportConfig,
+	RegisterMcpServersFromSettingsOptions,
+} from "../mcp";
+export {
+	hasMcpSettingsFile,
+	InMemoryMcpManager,
+	loadMcpSettingsFile,
+	registerMcpServersFromSettingsFile,
+	resolveDefaultMcpSettingsPath,
+	resolveMcpServerRegistrations,
+} from "../mcp";
+
 export {
 	formatRulesForSystemPrompt,
 	isRuleEnabled,
@@ -89,6 +166,7 @@ export {
 	listAvailableWorkflowsFromWatcher,
 	resolveWorkflowSlashCommandFromWatcher,
 } from "../runtime/workflows";
+
 export { RpcCoreSessionService } from "../session/rpc-session-service";
 export {
 	deriveSubsessionStatus,
@@ -117,6 +195,7 @@ export {
 	WorkspaceInfoSchema,
 	WorkspaceManifestSchema,
 } from "../session/workspace-manifest";
+
 export {
 	resolveClineDataDir,
 	resolveProviderSettingsPath,
@@ -124,4 +203,13 @@ export {
 } from "../storage/paths";
 export { ProviderSettingsManager } from "../storage/provider-settings-manager";
 export { SqliteSessionStore } from "../storage/sqlite-session-store";
+
+export type { SessionStatus } from "../types/common";
+export { SessionSource } from "../types/common";
+export type {
+	CoreAgentMode,
+	CoreModelConfig,
+	CoreRuntimeFeatures,
+	CoreSessionConfig,
+} from "../types/config";
 export type { WorkspaceInfo } from "../types/workspace";

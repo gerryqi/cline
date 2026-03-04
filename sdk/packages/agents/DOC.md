@@ -15,8 +15,8 @@ API reference and package boundary notes for `@cline/agents`.
 `@cline/agents` does not own stateful app orchestration. Use `@cline/core` for persistent sessions, runtime assembly, and storage.
 
 Workspace boundary note:
-- import llms contracts from `@cline/llms` (root only)
-- do not use `@cline/llms/*` deep imports
+- import llms contracts from `@cline/llms/node` (or `@cline/llms/browser` for browser hosts)
+- do not use other `@cline/llms/*` deep imports
 
 ## Primary Exports
 
@@ -125,7 +125,7 @@ When splitting responsibilities:
 ## Minimal Runtime Example
 
 ```ts
-import { Agent, createBuiltinTools } from "@cline/agents"
+import { Agent, createBuiltinTools } from "@cline/agents/node"
 
 const agent = new Agent({
 	providerId: "anthropic",

@@ -1,6 +1,9 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { resolveClineDataDir } from "../storage/paths";
+import {
+	AGENT_CONFIG_DIRECTORY_NAME,
+	DOCUMENTS_AGENT_CONFIG_DIRECTORY_PATH,
+	resolveAgentConfigSearchPaths as resolveAgentConfigSearchPathsFromShared,
+	resolveAgentsConfigDirPath as resolveAgentsConfigDirPathFromShared,
+} from "@cline/shared";
 import {
 	type AgentYamlConfig,
 	isAgentConfigYamlFile,
@@ -34,21 +37,15 @@ export type AgentConfigWatcherEvent = UnifiedConfigWatcherEvent<
 	AgentYamlConfig
 >;
 
-export const AGENT_CONFIG_DIRECTORY_NAME = "agents";
-export const DOCUMENTS_AGENT_CONFIG_DIRECTORY_PATH = join(
-	homedir(),
-	"Documents",
-	"Cline",
-	"Agents",
-);
+export { AGENT_CONFIG_DIRECTORY_NAME, DOCUMENTS_AGENT_CONFIG_DIRECTORY_PATH };
 
 export function resolveAgentsConfigDirPath(): string {
-	return join(resolveClineDataDir(), "settings", AGENT_CONFIG_DIRECTORY_NAME);
+	return resolveAgentsConfigDirPathFromShared();
 }
 
 export function resolveAgentConfigSearchPaths(): string[] {
 	// Documents path first, then settings path so settings location takes precedence.
-	return [DOCUMENTS_AGENT_CONFIG_DIRECTORY_PATH, resolveAgentsConfigDirPath()];
+	return resolveAgentConfigSearchPathsFromShared();
 }
 
 export interface CreateAgentConfigWatcherOptions {

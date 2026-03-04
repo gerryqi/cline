@@ -2,11 +2,11 @@ import type * as grpc from "@grpc/grpc-js";
 import { createGatewayGenericClient } from "./gateway-client.js";
 import type { ClaimSpawnRequestRequest } from "./proto/generated/cline/rpc/v1/ClaimSpawnRequestRequest.js";
 import type { ClaimSpawnRequestResponse__Output } from "./proto/generated/cline/rpc/v1/ClaimSpawnRequestResponse.js";
+import type { ClineGatewayClient } from "./proto/generated/cline/rpc/v1/ClineGateway.js";
 import type { DeleteSessionResponse__Output } from "./proto/generated/cline/rpc/v1/DeleteSessionResponse.js";
 import type { EnqueueSpawnRequestResponse__Output } from "./proto/generated/cline/rpc/v1/EnqueueSpawnRequestResponse.js";
 import type { GetSessionResponse__Output } from "./proto/generated/cline/rpc/v1/GetSessionResponse.js";
 import type { ListSessionsResponse__Output } from "./proto/generated/cline/rpc/v1/ListSessionsResponse.js";
-import type { RpcGatewayClient } from "./proto/generated/cline/rpc/v1/RpcGateway.js";
 import type {
 	SessionRecord,
 	SessionRecord__Output,
@@ -99,7 +99,7 @@ export interface RpcSessionUpdateInput {
 }
 
 export class RpcSessionClient {
-	private readonly client: RpcGatewayClient;
+	private readonly client: ClineGatewayClient;
 
 	constructor(options: RpcSessionClientOptions) {
 		this.client = createGatewayGenericClient(options.address);

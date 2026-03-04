@@ -274,6 +274,7 @@ async function resolveSystemPrompt(
 	const workspaceInfo = await generateWorkspaceInfo(cwd);
 	return getClineDefaultSystemPrompt(
 		"Terminal Shell",
+		cwd,
 		JSON.stringify(workspaceInfo, null, 2),
 	);
 }

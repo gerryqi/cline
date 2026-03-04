@@ -49,11 +49,14 @@ import {
 	DefaultRuntimeBuilder,
 	enrichPromptWithMentions,
 	generateWorkspaceInfo,
+	hasMcpSettingsFile,
 	listHookConfigFiles,
 	loadRulesForSystemPromptFromWatcher,
 	ProviderSettingsManager,
-	prewarmFastFileList,
+	prewarmFileIndex,
 	type RuleConfig,
+	resolveDefaultMcpSettingsPath,
+	resolveMcpServerRegistrations,
 	resolveRulesConfigSearchPaths,
 	resolveSkillsConfigSearchPaths,
 	resolveWorkflowSlashCommandFromWatcher,
@@ -283,7 +286,12 @@ async function buildDefaultSystemPrompt(
 	rules = "",
 ): Promise<string> {
 	const WORKSPACE_INFO = await buildWorkspaceInfo(cwd);
-	return getClineDefaultSystemPrompt("Terminal Shell", WORKSPACE_INFO, rules);
+	return getClineDefaultSystemPrompt(
+		"Terminal Shell",
+		cwd,
+		WORKSPACE_INFO,
+		rules,
+	);
 }
 
 function normalizeProviderId(providerId: string): string {
@@ -1079,7 +1087,7 @@ async function runAgent(
 	userInstructionWatcher?: UserInstructionConfigWatcher,
 ): Promise<void> {
 	const startTime = performance.now();
-	void prewarmFastFileList(config.cwd);
+	void prewarmFileIndex(config.cwd);
 	const hooks = createRuntimeHooks();
 	const runtime = new DefaultRuntimeBuilder().build({
 		config,
@@ -1421,7 +1429,7 @@ async function runInteractive(
 	);
 	writeln(`${c.dim}Type your message. Press Ctrl+C to exit.${c.reset}`);
 	writeln();
-	void prewarmFastFileList(config.cwd);
+	void prewarmFileIndex(config.cwd);
 
 	const rl = createInterface({
 		input: process.stdin,
@@ -1687,10 +1695,11 @@ ${c.bold}USAGE${c.reset}
   clite -i                    Interactive mode
   clite list history          List saved history items
   clite list hooks            List hook file locations
+  clite list mcp              List configured MCP servers
   clite auth <provider>       Run OAuth login (cline|openai-codex|oca)
   clite hook < payload.json   Handle hook payload from stdin
   clite rpc start             Start RPC server
-  clite list <workflows|rules|skills|agents|history|hooks>
+  clite list <workflows|rules|skills|agents|history|hooks|mcp>
                               List workflow/rule/skill/agent configs, history, or hook file paths
   echo "prompt" | clite       Pipe input
 
@@ -1747,6 +1756,7 @@ ${c.bold}EXAMPLES${c.reset}
   clite list skills
   clite list agents
   clite list hooks
+  clite list mcp
   clite auth openai-codex
   clite auth oca
   clite rpc start
@@ -2072,6 +2082,47 @@ async function runHooksListCommand(
 	return 0;
 }
 
+async function runMcpListCommand(outputMode: CliOutputMode): Promise<number> {
+	const settingsPath = resolveDefaultMcpSettingsPath();
+	if (!hasMcpSettingsFile({ filePath: settingsPath })) {
+		if (outputMode === "json") {
+			process.stdout.write(JSON.stringify([]));
+			return 0;
+		}
+		writeln(`No MCP settings file found at ${settingsPath}`);
+		return 0;
+	}
+
+	try {
+		const servers = resolveMcpServerRegistrations({ filePath: settingsPath })
+			.map((registration) => ({
+				name: registration.name,
+				transportType: registration.transport.type,
+				disabled: registration.disabled === true,
+				path: settingsPath,
+			}))
+			.sort((a, b) => a.name.localeCompare(b.name));
+
+		if (outputMode === "json") {
+			process.stdout.write(JSON.stringify(servers));
+			return 0;
+		}
+		if (servers.length === 0) {
+			writeln(`No MCP servers configured in ${settingsPath}`);
+			return 0;
+		}
+		writeln(`Configured MCP servers (${settingsPath}):`);
+		for (const server of servers) {
+			const disabledSuffix = server.disabled ? " (disabled)" : "";
+			writeln(`  ${server.name} [${server.transportType}]${disabledSuffix}`);
+		}
+		return 0;
+	} catch (error) {
+		writeErr(error instanceof Error ? error.message : String(error));
+		return 1;
+	}
+}
+
 // =============================================================================
 // Main
 // =============================================================================
@@ -2156,9 +2207,11 @@ async function main(): Promise<void> {
 			code = 0;
 		} else if (listTarget === "hooks") {
 			code = await runHooksListCommand(listCwd, args.outputMode);
+		} else if (listTarget === "mcp") {
+			code = await runMcpListCommand(args.outputMode);
 		} else {
 			writeErr(
-				`list requires one of: workflows, rules, skills, agents, history, hooks (got "${rawArgs[1] ?? ""}")`,
+				`list requires one of: workflows, rules, skills, agents, history, hooks, mcp (got "${rawArgs[1] ?? ""}")`,
 			);
 			process.exit(1);
 		}

@@ -10,9 +10,25 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
+		"./node": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./browser": {
+			"types": "./dist/index.browser.d.ts",
+			"import": "./dist/index.browser.js"
+		},
 		"./server": {
 			"types": "./dist/server/index.d.ts",
 			"import": "./dist/server/index.js"
+		},
+		"./server/node": {
+			"types": "./dist/server/index.d.ts",
+			"import": "./dist/server/index.js"
+		},
+		"./server/browser": {
+			"types": "./dist/server.browser.d.ts",
+			"import": "./dist/server.browser.js"
 		}
 	},
 	"files": [
@@ -20,7 +36,7 @@
 		"src"
 	],
 	"scripts": {
-		"build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --target node --format esm --external @cline/agents --external @cline/llms --external @cline/rpc && bun build ./src/server/index.ts --outdir ./dist/server --target node --format esm --external @cline/agents --external @cline/llms --external @cline/rpc && bun tsc --emitDeclarationOnly",
+		"build": "bun run ./build.ts && bun tsc --emitDeclarationOnly",
 		"clean": "rm -rf dist node_modules",
 		"typecheck": "bun tsc --noEmit",
 		"test": "vitest run",
@@ -28,6 +44,7 @@
 	},
 	"dependencies": {
 		"@cline/agents": "workspace:*",
+		"@cline/shared": "workspace:*",
 		"@cline/llms": "workspace:*",
 		"@cline/rpc": "workspace:*",
 		"better-sqlite3": "^11.10.0",

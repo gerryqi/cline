@@ -6,37 +6,26 @@
 		"apps/*"
 	],
 	"scripts": {
-		"build": "bun run build:packages",
-		"build:packages": "bun run build:llms && bun run build:agents && bun run build:rpc && bun run build:core",
-		"build:apps": "bun run build:cli && bun run build:desktop && bun run build:code",
-		"build:llms": "cd packages/llms && bun run build",
-		"build:models": "cd packages/llms && bun run generate:models",
-		"build:agents": "cd packages/agents && bun run build",
-		"build:core": "cd packages/core && bun run build",
-		"build:rpc": "cd packages/rpc && bun run build",
-		"build:cli": "cd apps/cli && bun run build",
-		"build:code": "cd apps/code && bun run build",
-		"build:desktop": "cd apps/desktop && bun run build",
-		"dev": "bun run build && bun run build:cli && bun run dev:code",
-		"dev:cli": "cd apps/cli && bun run dev",
-		"dev:code": "cd apps/code && bun run dev",
-		"dev:desktop": "cd apps/desktop && bun run dev",
-		"clean": "cd packages/llms && bun run clean && cd ../agents && bun run clean && cd ../core && bun run clean && cd ../rpc && bun run clean && cd ../../apps/cli && bun run clean && cd ../desktop && bun run clean && cd ../code && bun run clean",
-		"typecheck": "cd packages/llms && bun run typecheck && cd ../agents && bun run typecheck && cd ../rpc && bun run typecheck && cd ../core && bun run typecheck && cd ../../apps/cli && bun run typecheck && cd ../desktop && bun run typecheck && cd ../code && bun run typecheck",
-		"test": "bun run test:llms & bun run test:agents & bun run test:core & bun run test:cli & wait",
-		"test:llms": "cd packages/llms && bun run test",
-		"test:agents": "cd packages/agents && bun run test",
-		"test:core": "cd packages/core && bun run test",
-		"test:cli": "cd apps/cli && bun run test",
-		"check": "bunx --bun @biomejs/biome check",
-		"format": "bunx --bun @biomejs/biome format",
-		"lint": "bunx --bun @biomejs/biome lint",
-		"fix": "bun run check --write --unsafe",
+		"build": "bun install && bun run build:sdk && bun -F @cline/cli build",
+		"build:sdk": "bun -F @cline/shared build && bun -F @cline/llms build && bun -F @cline/agents build && bun -F @cline/core build",
+		"build:apps": "bun -F './apps/**' build",
+		"build:models": "bun -F @cline/llms generate:models",
+		"dev": "bun build && bun build:cli && bun dev:code",
+		"dev:cli": "bun -F @cline/cli dev",
+		"dev:code": "bun -F @cline/code dev",
+		"dev:desktop": "bun -F @cline/desktop dev",
+		"clean": "bun --parallel -F '*' clean",
+		"types": "bun --parallel -F '*' typecheck",
+		"test": "bun --parallel -F './packages/**' test & bun -F './apps/cli' test & wait",
+		"biome": "bunx --bun @biomejs/biome",
+		"format": "bun biome format",
+		"lint": "bun biome lint",
+		"fix": "bun biome check --write --unsafe",
 		"prepare": "husky"
 	},
 	"lint-staged": {
 		"*": [
-			"bunx --bun @biomejs/biome check --write --staged --no-errors-on-unmatched --files-ignore-unknown=true"
+			"bun biome check --write --staged --no-errors-on-unmatched --files-ignore-unknown=true"
 		]
 	},
 	"module": "index.ts",
@@ -46,7 +35,7 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.4.5",
-		"@types/bun": "latest",
+		"@types/bun": "^1.3.10",
 		"husky": "^9.1.7",
 		"lint-staged": "^16.3.2"
 	},

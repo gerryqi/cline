@@ -1,12 +1,8 @@
+import { SESSION_STATUSES } from "@cline/shared";
 import { z } from "zod";
 import { SessionSource } from "../types/common";
 
-const SessionStatusSchema = z.enum([
-	"running",
-	"completed",
-	"failed",
-	"cancelled",
-]);
+const SessionStatusSchema = z.enum(SESSION_STATUSES);
 
 export const SessionManifestSchema = z.object({
 	version: z.literal(1),

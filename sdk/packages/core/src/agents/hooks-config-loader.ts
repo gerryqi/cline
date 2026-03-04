@@ -1,38 +1,18 @@
 import { existsSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { basename, extname, join } from "node:path";
 import type { HookEventName } from "@cline/agents";
+import {
+	DOCUMENTS_HOOKS_DIRECTORY_PATH,
+	HOOKS_CONFIG_DIRECTORY_NAME,
+	resolveHooksConfigSearchPaths as resolveHooksConfigSearchPathsFromShared,
+} from "@cline/shared";
 
-export const HOOKS_CONFIG_DIRECTORY_NAME = "hooks";
-export const DOCUMENTS_HOOKS_DIRECTORY_PATH = join(
-	homedir(),
-	"Documents",
-	"Cline",
-	"Hooks",
-);
-
-function dedupePaths(paths: ReadonlyArray<string>): string[] {
-	const seen = new Set<string>();
-	const deduped: string[] = [];
-	for (const candidate of paths) {
-		if (!candidate || seen.has(candidate)) {
-			continue;
-		}
-		seen.add(candidate);
-		deduped.push(candidate);
-	}
-	return deduped;
-}
+export { DOCUMENTS_HOOKS_DIRECTORY_PATH, HOOKS_CONFIG_DIRECTORY_NAME };
 
 export function resolveHooksConfigSearchPaths(
 	workspacePath?: string,
 ): string[] {
-	return dedupePaths([
-		workspacePath
-			? join(workspacePath, ".clinerules", HOOKS_CONFIG_DIRECTORY_NAME)
-			: "",
-		DOCUMENTS_HOOKS_DIRECTORY_PATH,
-	]);
+	return resolveHooksConfigSearchPathsFromShared(workspacePath);
 }
 
 export enum HookConfigFileName {

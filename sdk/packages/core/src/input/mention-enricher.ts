@@ -1,7 +1,10 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { formatFileContentBlock } from "@cline/agents";
-import { type FastFileIndexOptions, getFastFileList } from "./fast-file-index";
+import {
+	type FastFileIndexOptions,
+	formatFileContentBlock,
+	getFileIndex,
+} from "@cline/shared";
 
 const DEFAULT_MAX_FILES = 6;
 const DEFAULT_MAX_FILE_BYTES = 60_000;
@@ -99,7 +102,7 @@ export async function enrichPromptWithMentions(
 	const maxFiles = options.maxFiles ?? DEFAULT_MAX_FILES;
 	const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
 	const maxTotalBytes = options.maxTotalBytes ?? DEFAULT_MAX_TOTAL_BYTES;
-	const fileList = await getFastFileList(cwd, { ttlMs: options.ttlMs });
+	const fileList = await getFileIndex(cwd, { ttlMs: options.ttlMs });
 	const matched: string[] = [];
 	const ignored: string[] = [];
 	const attachments: Array<{ path: string; content: string }> = [];

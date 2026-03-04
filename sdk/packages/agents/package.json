@@ -10,9 +10,13 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
-		"./extensions": {
+		"./node": {
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
+		},
+		"./browser": {
+			"types": "./dist/index.browser.d.ts",
+			"import": "./dist/index.browser.js"
 		}
 	},
 	"files": [
@@ -20,7 +24,7 @@
 		"src"
 	],
 	"scripts": {
-		"build": "bun build ./src/index.ts --outdir ./dist --target node --format esm --external @cline/llms && bun tsc --emitDeclarationOnly",
+		"build": "bun run bun.mts && bun tsc --emitDeclarationOnly",
 		"dev": "bun build ./src/index.ts --outdir ./dist --target node --format esm --watch",
 		"clean": "rm -rf dist node_modules",
 		"typecheck": "bun tsc --noEmit",
@@ -28,6 +32,7 @@
 		"test:watch": "vitest"
 	},
 	"dependencies": {
+		"@cline/shared": "workspace:*",
 		"@cline/llms": "workspace:*",
 		"zod": "^3.24.1"
 	},
@@ -40,9 +45,6 @@
 		"llm",
 		"agents",
 		"ai",
-		"anthropic",
-		"openai",
-		"gemini",
 		"tool-calling"
 	],
 	"license": "Apache-2.0",

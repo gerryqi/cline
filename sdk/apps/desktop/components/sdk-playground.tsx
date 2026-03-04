@@ -100,8 +100,17 @@ const PLAYGROUND_CAPABILITY_FROM_PROVIDER: Partial<
 	Record<CatalogProviderCapability, string>
 > = {
 	reasoning: "reasoning",
+	tools: "tools",
 	"prompt-cache": "prompt_caching",
 };
+
+function mapProviderCapabilityToPlayground(
+	capability: string,
+): string | undefined {
+	return PLAYGROUND_CAPABILITY_FROM_PROVIDER[
+		capability as CatalogProviderCapability
+	];
+}
 
 interface BuiltInProviderPreset {
 	id: string;
@@ -180,7 +189,7 @@ function presetFromCollection(
 		defaultModel: provider.defaultModelId,
 		baseUrl: provider.baseUrl ?? "",
 		capabilities: (provider.capabilities ?? [])
-			.map((capability) => PLAYGROUND_CAPABILITY_FROM_PROVIDER[capability])
+			.map(mapProviderCapabilityToPlayground)
 			.filter((capability): capability is string => Boolean(capability)),
 	};
 }
@@ -215,7 +224,7 @@ const BUILT_IN_PROVIDERS: BuiltInProviderPreset[] = [
 			defaultModel: defaults.modelId,
 			baseUrl: defaults.baseUrl ?? "",
 			capabilities: (defaults.capabilities ?? [])
-				.map((capability) => PLAYGROUND_CAPABILITY_FROM_PROVIDER[capability])
+				.map(mapProviderCapabilityToPlayground)
 				.filter((capability): capability is string => Boolean(capability)),
 		}),
 	),

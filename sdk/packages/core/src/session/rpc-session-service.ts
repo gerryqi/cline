@@ -2,13 +2,9 @@ import {
 	appendFileSync,
 	existsSync,
 	mkdirSync,
-	readdirSync,
 	readFileSync,
-	rmdirSync,
-	unlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
 import type {
 	HookEventPayload,
 	SubAgentEndContext,
@@ -20,12 +16,15 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { SessionSource, type SessionStatus } from "../types/common";
 import {
+	getRootSessionIdFromEnv,
+	nowIso,
+	SessionArtifacts,
+	unlinkIfExists,
+} from "./session-artifacts";
+import {
 	deriveSubsessionStatus,
 	makeSubSessionId,
 	makeTeamTaskSubSessionId,
-	parseSubSessionId,
-	parseTeamTaskSubSessionId,
-	sanitizeSessionToken,
 } from "./session-graph";
 import {
 	type SessionManifest,
@@ -45,26 +44,6 @@ const SpawnAgentInputSchema = z
 		systemPrompt: z.string().optional(),
 	})
 	.passthrough();
-
-function nowIso(): string {
-	return new Date().toISOString();
-}
-
-function getRootSessionIdFromEnv(): string | undefined {
-	const value = process.env.CLINE_SESSION_ID?.trim();
-	return value || undefined;
-}
-
-function unlinkIfExists(path: string | null | undefined): void {
-	if (!path || !existsSync(path)) {
-		return;
-	}
-	try {
-		unlinkSync(path);
-	} catch {
-		// Best effort cleanup.
-	}
-}
 
 function toShape(row: RpcSessionRow): SessionRowShape {
 	return {
@@ -143,10 +122,12 @@ export interface RpcCoreSessionServiceOptions {
 export class RpcCoreSessionService {
 	private readonly teamTaskSessionsByAgent = new Map<string, string[]>();
 	private readonly sessionsDirPath: string;
+	private readonly artifacts: SessionArtifacts;
 	private readonly client: RpcSessionClient;
 
 	constructor(options: RpcCoreSessionServiceOptions) {
 		this.sessionsDirPath = options.sessionsDir;
+		this.artifacts = new SessionArtifacts(() => this.ensureSessionsDir());
 		this.client = new RpcSessionClient({
 			address: options.address?.trim() || "127.0.0.1:4317",
 		});
@@ -159,78 +140,20 @@ export class RpcCoreSessionService {
 		return this.sessionsDirPath;
 	}
 
-	private ensureSessionArtifactsDir(sessionId: string): string {
-		const dir = this.sessionArtifactsDir(sessionId);
-		if (!existsSync(dir)) {
-			mkdirSync(dir, { recursive: true });
-		}
-		return dir;
-	}
-
-	private sessionArtifactsDir(sessionId: string): string {
-		const teamTask = parseTeamTaskSubSessionId(sessionId);
-		if (teamTask) {
-			return join(
-				this.ensureSessionsDir(),
-				teamTask.rootSessionId,
-				`teamtask-${sanitizeSessionToken(teamTask.teamTaskId)}`,
-				sanitizeSessionToken(teamTask.agentId),
-			);
-		}
-		const subSession = parseSubSessionId(sessionId);
-		if (subSession) {
-			return join(
-				this.ensureSessionsDir(),
-				subSession.rootSessionId,
-				sanitizeSessionToken(subSession.agentId),
-			);
-		}
-		return join(this.ensureSessionsDir(), sessionId);
-	}
-
 	private sessionTranscriptPath(sessionId: string): string {
-		return join(this.ensureSessionArtifactsDir(sessionId), `${sessionId}.log`);
+		return this.artifacts.sessionTranscriptPath(sessionId);
 	}
 
 	private sessionHookPath(sessionId: string): string {
-		return join(
-			this.ensureSessionArtifactsDir(sessionId),
-			`${sessionId}.hooks.jsonl`,
-		);
+		return this.artifacts.sessionHookPath(sessionId);
 	}
 
 	private sessionMessagesPath(sessionId: string): string {
-		return join(
-			this.ensureSessionArtifactsDir(sessionId),
-			`${sessionId}.messages.json`,
-		);
+		return this.artifacts.sessionMessagesPath(sessionId);
 	}
 
 	private sessionManifestPath(sessionId: string, ensureDir = true): string {
-		const base = ensureDir
-			? this.ensureSessionArtifactsDir(sessionId)
-			: this.sessionArtifactsDir(sessionId);
-		return join(base, `${sessionId}.json`);
-	}
-
-	private removeSessionDirIfEmpty(sessionId: string): void {
-		let dir = this.sessionArtifactsDir(sessionId);
-		const sessionsDir = this.ensureSessionsDir();
-		while (dir.startsWith(sessionsDir) && dir !== sessionsDir) {
-			if (!existsSync(dir)) {
-				dir = dirname(dir);
-				continue;
-			}
-			try {
-				if (readdirSync(dir).length > 0) {
-					break;
-				}
-				rmdirSync(dir);
-			} catch {
-				break;
-			}
-			dir = dirname(dir);
-		}
+		return this.artifacts.sessionManifestPath(sessionId, ensureDir);
 	}
 
 	private activeTeamTaskSessionId(parentAgentId: string): string | undefined {
@@ -239,22 +162,6 @@ export class RpcCoreSessionService {
 			return undefined;
 		}
 		return queue[queue.length - 1];
-	}
-
-	private teamTaskSubagentArtifactsDir(
-		teamTaskSessionId: string,
-		subAgentId: string,
-	): string {
-		const teamTask = parseTeamTaskSubSessionId(teamTaskSessionId);
-		if (!teamTask) {
-			return this.sessionArtifactsDir(teamTaskSessionId);
-		}
-		return join(
-			this.ensureSessionsDir(),
-			teamTask.rootSessionId,
-			`teamtask-${sanitizeSessionToken(teamTask.teamTaskId)}`,
-			sanitizeSessionToken(subAgentId),
-		);
 	}
 
 	private subagentArtifactPaths(
@@ -266,23 +173,11 @@ export class RpcCoreSessionService {
 		hookPath: string;
 		messagesPath: string;
 	} {
-		const activeTeamTaskId = this.activeTeamTaskSessionId(parentAgentId);
-		if (!activeTeamTaskId) {
-			return {
-				transcriptPath: this.sessionTranscriptPath(sessionId),
-				hookPath: this.sessionHookPath(sessionId),
-				messagesPath: this.sessionMessagesPath(sessionId),
-			};
-		}
-		const dir = this.teamTaskSubagentArtifactsDir(activeTeamTaskId, subAgentId);
-		if (!existsSync(dir)) {
-			mkdirSync(dir, { recursive: true });
-		}
-		return {
-			transcriptPath: join(dir, `${sessionId}.log`),
-			hookPath: join(dir, `${sessionId}.hooks.jsonl`),
-			messagesPath: join(dir, `${sessionId}.messages.json`),
-		};
+		return this.artifacts.subagentArtifactPaths(
+			sessionId,
+			subAgentId,
+			this.activeTeamTaskSessionId(parentAgentId),
+		);
 	}
 
 	private writeSessionManifestFile(
@@ -805,14 +700,14 @@ export class RpcCoreSessionService {
 				unlinkIfExists(child.hookPath);
 				unlinkIfExists(child.messagesPath);
 				unlinkIfExists(this.sessionManifestPath(child.sessionId, false));
-				this.removeSessionDirIfEmpty(child.sessionId);
+				this.artifacts.removeSessionDirIfEmpty(child.sessionId);
 			}
 		}
 		unlinkIfExists(row.transcriptPath);
 		unlinkIfExists(row.hookPath);
 		unlinkIfExists(row.messagesPath);
 		unlinkIfExists(this.sessionManifestPath(id, false));
-		this.removeSessionDirIfEmpty(id);
+		this.artifacts.removeSessionDirIfEmpty(id);
 		return { deleted: true };
 	}
 }

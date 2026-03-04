@@ -1,5 +1,5 @@
+import { formatFileContentBlock } from "@cline/shared";
 import { describe, expect, it } from "vitest";
-import { formatFileContentBlock } from "./input-formatting";
 
 describe("formatFileContentBlock", () => {
 	it("renders a file_content block", () => {

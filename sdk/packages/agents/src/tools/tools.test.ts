@@ -1,6 +1,7 @@
 import { getEventListeners } from "node:events";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import type { PendingToolCall, Tool, ToolContext } from "../types.js";
 import {
 	createTool,
 	createToolRegistry,
@@ -15,8 +16,7 @@ import {
 	validateToolDefinition,
 	validateToolInput,
 	validateTools,
-} from "./tools/index.js";
-import type { PendingToolCall, Tool, ToolContext } from "./types.js";
+} from "./index.js";
 
 const baseContext: ToolContext = {
 	agentId: "agent-1",
