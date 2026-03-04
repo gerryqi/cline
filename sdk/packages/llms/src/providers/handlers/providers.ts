@@ -19,7 +19,7 @@ import type {
 	ModelCatalogConfig,
 	ModelInfo,
 	ProviderCapability,
-} from "../types";
+} from "../types/index.js";
 
 /**
  * Provider defaults for OpenAI-compatible providers

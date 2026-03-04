@@ -12,20 +12,7 @@
         "typescript": "^5",
       },
     },
-    "agents": {
-      "name": "@cline/agents",
-      "version": "0.0.0",
-      "dependencies": {
-        "@cline/llms": "workspace:*",
-        "zod": "^3.24.1",
-      },
-      "devDependencies": {
-        "@types/node": "^20.0.0",
-        "typescript": "^5.7.2",
-        "vitest": "^3.2.4",
-      },
-    },
-    "app": {
+    "apps/app": {
       "name": "@cline/app",
       "version": "0.1.0",
       "dependencies": {
@@ -100,7 +87,7 @@
         "typescript": "5.7.3",
       },
     },
-    "cli": {
+    "apps/cli": {
       "name": "@cline/cli",
       "version": "0.0.0",
       "bin": {
@@ -121,25 +108,7 @@
         "vitest": "^3.2.4",
       },
     },
-    "core": {
-      "name": "@cline/core",
-      "version": "0.0.0",
-      "dependencies": {
-        "@cline/agents": "workspace:*",
-        "@cline/llms": "workspace:*",
-        "better-sqlite3": "^11.10.0",
-        "nanoid": "^5.1.6",
-        "simple-git": "^3.32.3",
-        "yaml": "^2.8.2",
-        "zod": "^3.24.1",
-      },
-      "devDependencies": {
-        "@types/node": "^20.0.0",
-        "typescript": "^5.7.2",
-        "vitest": "^3.2.4",
-      },
-    },
-    "desktop": {
+    "apps/desktop": {
       "name": "@cline/desktop",
       "version": "0.0.0",
       "dependencies": {
@@ -209,7 +178,38 @@
         "typescript": "5.7.3",
       },
     },
-    "llms": {
+    "packages/agents": {
+      "name": "@cline/agents",
+      "version": "0.0.0",
+      "dependencies": {
+        "@cline/llms": "workspace:*",
+        "zod": "^3.24.1",
+      },
+      "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.7.2",
+        "vitest": "^3.2.4",
+      },
+    },
+    "packages/core": {
+      "name": "@cline/core",
+      "version": "0.0.0",
+      "dependencies": {
+        "@cline/agents": "workspace:*",
+        "@cline/llms": "workspace:*",
+        "better-sqlite3": "^11.10.0",
+        "nanoid": "^5.1.6",
+        "simple-git": "^3.32.3",
+        "yaml": "^2.8.2",
+        "zod": "^3.24.1",
+      },
+      "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.7.2",
+        "vitest": "^3.2.4",
+      },
+    },
+    "packages/llms": {
       "name": "@cline/llms",
       "version": "0.0.0",
       "dependencies": {
@@ -340,17 +340,17 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.4.5", "", { "os": "win32", "cpu": "x64" }, "sha512-Pmhv9zT95YzECfjEHNl3mN9Vhusw9VA5KHY0ZvlGsxsjwS5cb7vpRnHzJIv0vG7jB0JI7xEaMH9ddfZm/RozBw=="],
 
-    "@cline/agents": ["@cline/agents@workspace:agents"],
+    "@cline/agents": ["@cline/agents@workspace:packages/agents"],
 
-    "@cline/app": ["@cline/app@workspace:app"],
+    "@cline/app": ["@cline/app@workspace:apps/app"],
 
-    "@cline/cli": ["@cline/cli@workspace:cli"],
+    "@cline/cli": ["@cline/cli@workspace:apps/cli"],
 
-    "@cline/core": ["@cline/core@workspace:core"],
+    "@cline/core": ["@cline/core@workspace:packages/core"],
 
-    "@cline/desktop": ["@cline/desktop@workspace:desktop"],
+    "@cline/desktop": ["@cline/desktop@workspace:apps/desktop"],
 
-    "@cline/llms": ["@cline/llms@workspace:llms"],
+    "@cline/llms": ["@cline/llms@workspace:packages/llms"],
 
     "@date-fns/tz": ["@date-fns/tz@1.4.1", "", {}, "sha512-P5LUNhtbj6YfI3iJjw5EL9eUAG6OitD0W3fWQcpQjDRc/QIsL0tRNuO1PcDvPccWL1fSTXXdE1ds+l95DV/OFA=="],
 

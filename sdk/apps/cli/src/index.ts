@@ -680,7 +680,7 @@ function printModelProviderInfo(config: Config): void {
 		return;
 	}
 	writeln(
-		`${c.dim}[model] provider=${config.providerId} model=${config.modelId} catalog=${modelSource} thinking=${thinkingStatus}${c.reset}`,
+		`${c.dim}[model] provider=${config.providerId} model=${config.modelId} catalog=${modelSource} thinking=${thinkingStatus}${c.reset}\n`,
 	);
 }
 
