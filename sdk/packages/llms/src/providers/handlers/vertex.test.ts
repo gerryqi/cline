@@ -39,18 +39,6 @@ vi.mock("./gemini-base", () => {
 	};
 });
 
-vi.mock("@anthropic-ai/vertex-sdk", () => {
-	return {
-		AnthropicVertex: class {
-			beta = {
-				messages: {
-					create: vi.fn(async () => ({})),
-				},
-			};
-		},
-	};
-});
-
 import { VertexHandler } from "./vertex";
 
 describe("VertexHandler", () => {

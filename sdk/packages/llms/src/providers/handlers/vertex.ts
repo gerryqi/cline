@@ -3,10 +3,9 @@
  *
  * Routes Vertex models by family:
  * - Gemini models -> Google GenAI Vertex path via GeminiHandler
- * - Claude models -> Anthropic Vertex SDK
+ * - Claude models -> AI SDK Google Vertex Anthropic provider
  */
 
-import type { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
 import {
 	convertToAnthropicMessages,
 	convertToolsToAnthropic,
@@ -17,7 +16,12 @@ import {
 	hasModelCapability,
 	type ProviderConfig,
 } from "../types";
-import type { Message, ToolDefinition } from "../types/messages";
+import type {
+	ImageContent,
+	Message,
+	TextContent,
+	ToolDefinition,
+} from "../types/messages";
 import { withRetry } from "../utils/retry";
 import { BaseHandler } from "./base";
 import { GeminiHandler } from "./gemini-base";
@@ -28,13 +32,197 @@ function isClaudeModel(modelId: string): boolean {
 	return modelId.toLowerCase().includes("claude");
 }
 
+type AiModule = {
+	streamText: (input: Record<string, unknown>) => {
+		fullStream?: AsyncIterable<{ type?: string; [key: string]: unknown }>;
+		usage?: Promise<{
+			inputTokens?: number;
+			outputTokens?: number;
+			reasoningTokens?: number;
+			thoughtsTokenCount?: number;
+			cachedInputTokens?: number;
+			[key: string]: unknown;
+		}>;
+	};
+};
+
+type VertexAnthropicModule = {
+	createVertexAnthropic: (options?: {
+		project?: string;
+		location?: string;
+		headers?: Record<string, string | undefined>;
+		baseURL?: string;
+	}) => (modelId: string) => unknown;
+};
+
+type ModelMessagePart = Record<string, unknown>;
+type ModelMessage = {
+	role: "system" | "user" | "assistant" | "tool";
+	content: string | ModelMessagePart[];
+};
+
+let cachedAiModule: AiModule | undefined;
+
+async function loadAiModule(): Promise<AiModule> {
+	if (cachedAiModule) {
+		return cachedAiModule;
+	}
+	const moduleName = "ai";
+	cachedAiModule = (await import(moduleName)) as AiModule;
+	return cachedAiModule;
+}
+
+function numberOrZero(value: unknown): number {
+	return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function toAiSdkTools(
+	tools: ToolDefinition[] | undefined,
+): Record<string, unknown> | undefined {
+	if (!tools || tools.length === 0) {
+		return undefined;
+	}
+
+	const anthropicTools = convertToolsToAnthropic(tools);
+	return Object.fromEntries(
+		anthropicTools.map((tool) => [
+			tool.name,
+			{
+				description: tool.description,
+				inputSchema: tool.input_schema,
+			},
+		]),
+	);
+}
+
+function serializeToolResult(
+	content: string | Array<TextContent | ImageContent>,
+): string {
+	if (typeof content === "string") {
+		return content;
+	}
+
+	const textParts: string[] = [];
+	for (const part of content) {
+		if (part.type === "text" && typeof part.text === "string") {
+			textParts.push(part.text);
+			continue;
+		}
+		textParts.push(JSON.stringify(part));
+	}
+
+	return textParts.join("\n");
+}
+
+function toModelMessages(
+	systemPrompt: string,
+	messages: Message[],
+	options?: { promptCacheOn?: boolean },
+): ModelMessage[] {
+	const systemContent = options?.promptCacheOn
+		? [
+				{
+					type: "text",
+					text: systemPrompt,
+					providerOptions: {
+						anthropic: { cacheControl: { type: "ephemeral" } },
+					},
+				},
+			]
+		: systemPrompt;
+
+	const result: ModelMessage[] = [{ role: "system", content: systemContent }];
+	const toolNamesById = new Map<string, string>();
+
+	for (const message of messages) {
+		if (typeof message.content === "string") {
+			result.push({ role: message.role, content: message.content });
+			continue;
+		}
+
+		if (message.role === "assistant") {
+			const parts: ModelMessagePart[] = [];
+			for (const block of message.content) {
+				if (block.type === "text") {
+					parts.push({ type: "text", text: block.text });
+					continue;
+				}
+
+				if (block.type === "tool_use") {
+					toolNamesById.set(block.id, block.name);
+					parts.push({
+						type: "tool-call",
+						toolCallId: block.id,
+						toolName: block.name,
+						input: block.input,
+					});
+				}
+			}
+
+			if (parts.length > 0) {
+				result.push({ role: "assistant", content: parts });
+			}
+			continue;
+		}
+
+		const userParts: ModelMessagePart[] = [];
+		for (const block of message.content) {
+			if (block.type === "text") {
+				userParts.push({ type: "text", text: block.text });
+				continue;
+			}
+
+			if (block.type === "image") {
+				userParts.push({
+					type: "image",
+					image: Buffer.from(block.data, "base64"),
+					mediaType: block.mediaType,
+				});
+				continue;
+			}
+
+			if (block.type === "tool_result") {
+				if (userParts.length > 0) {
+					result.push({
+						role: "user",
+						content: userParts.splice(0, userParts.length),
+					});
+				}
+
+				result.push({
+					role: "tool",
+					content: [
+						{
+							type: "tool-result",
+							toolCallId: block.tool_use_id,
+							toolName: toolNamesById.get(block.tool_use_id) ?? "tool",
+							output: serializeToolResult(block.content),
+							isError: block.is_error ?? false,
+						},
+					],
+				});
+			}
+		}
+
+		if (userParts.length > 0) {
+			result.push({ role: "user", content: userParts });
+		}
+	}
+
+	return result;
+}
+
 /**
  * Handler for Vertex AI that supports both Gemini and Claude models.
  */
 export class VertexHandler extends BaseHandler {
 	private geminiHandler: GeminiHandler | undefined;
-	private anthropicClient: AnthropicVertex | undefined;
-	private anthropicClientPromise: Promise<AnthropicVertex> | undefined;
+	private vertexAnthropicModelFactory:
+		| ((modelId: string) => unknown)
+		| undefined;
+	private vertexAnthropicModelFactoryPromise:
+		| Promise<(modelId: string) => unknown>
+		| undefined;
 
 	private getProjectId(): string {
 		const projectId = this.config.gcp?.projectId?.trim();
@@ -81,33 +269,39 @@ export class VertexHandler extends BaseHandler {
 		return this.geminiHandler;
 	}
 
-	private async ensureAnthropicClient(): Promise<AnthropicVertex> {
-		if (this.anthropicClient) {
-			return this.anthropicClient;
+	private async ensureVertexAnthropicModelFactory(): Promise<
+		(modelId: string) => unknown
+	> {
+		if (this.vertexAnthropicModelFactory) {
+			return this.vertexAnthropicModelFactory;
 		}
-		if (!this.anthropicClientPromise) {
-			this.anthropicClientPromise = import("@anthropic-ai/vertex-sdk").then(
-				({ AnthropicVertex }) => {
-					const client = new AnthropicVertex({
-						projectId: this.getProjectId(),
-						region: this.getRequiredClaudeRegion(),
-						defaultHeaders: this.getRequestHeaders(),
-					});
-					this.anthropicClient = client;
-					return client;
-				},
-			);
+		if (!this.vertexAnthropicModelFactoryPromise) {
+			this.vertexAnthropicModelFactoryPromise = import(
+				"@ai-sdk/google-vertex/anthropic"
+			).then((module) => {
+				const provider = (
+					module as VertexAnthropicModule
+				).createVertexAnthropic({
+					project: this.getProjectId(),
+					location: this.getRequiredClaudeRegion(),
+					headers: this.getRequestHeaders(),
+					baseURL: this.config.baseUrl,
+				});
+				const modelFactory = (modelId: string) => provider(modelId);
+				this.vertexAnthropicModelFactory = modelFactory;
+				return modelFactory;
+			});
 		}
 		try {
-			return await this.anthropicClientPromise;
+			return await this.vertexAnthropicModelFactoryPromise;
 		} catch (error) {
-			this.anthropicClientPromise = undefined;
+			this.vertexAnthropicModelFactoryPromise = undefined;
 			if (
 				error instanceof Error &&
-				error.message.includes("@anthropic-ai/vertex-sdk")
+				error.message.includes("@ai-sdk/google-vertex")
 			) {
 				throw new Error(
-					'Vertex Claude models require @anthropic-ai/vertex-sdk at runtime. Install workspace dependencies before using provider "vertex".',
+					'Vertex Claude models require @ai-sdk/google-vertex at runtime. Install workspace dependencies before using provider "vertex".',
 					{ cause: error },
 				);
 			}
@@ -153,186 +347,164 @@ export class VertexHandler extends BaseHandler {
 			return;
 		}
 
-		const client = await this.ensureAnthropicClient();
+		const ai = await loadAiModule();
+		const modelFactory = await this.ensureVertexAnthropicModelFactory();
 		const responseId = this.createResponseId();
 
 		const budgetTokens = this.config.thinkingBudgetTokens ?? 0;
-		const nativeToolsOn = !!tools?.length;
-		const supportsPromptCache = hasModelCapability(model.info, "prompt-cache");
 		const reasoningOn =
 			hasModelCapability(model.info, "reasoning") && budgetTokens > 0;
-		const anthropicMessages = convertToAnthropicMessages(
-			messages,
-			supportsPromptCache,
-		);
-		const anthropicTools = nativeToolsOn
-			? convertToolsToAnthropic(tools)
-			: undefined;
+		const promptCacheOn = hasModelCapability(model.info, "prompt-cache");
 
-		const stream = await client.beta.messages.create({
-			model: model.id,
-			max_tokens: model.info.maxTokens || 8192,
-			thinking: reasoningOn
-				? { type: "enabled", budget_tokens: budgetTokens }
-				: undefined,
+		const providerOptions: Record<string, unknown> = {};
+		if (reasoningOn) {
+			providerOptions.anthropic = {
+				thinking: { type: "enabled", budgetTokens },
+			};
+		}
+
+		const stream = ai.streamText({
+			model: modelFactory(model.id),
+			messages: toModelMessages(systemPrompt, messages, { promptCacheOn }),
+			tools: toAiSdkTools(tools),
+			maxTokens: model.info.maxTokens ?? 8192,
 			temperature: reasoningOn ? undefined : 0,
-			system: supportsPromptCache
-				? [
-						{
-							type: "text",
-							text: systemPrompt,
-							cache_control: { type: "ephemeral" },
-						},
-					]
-				: [{ type: "text", text: systemPrompt }],
-			messages: anthropicMessages as any,
-			stream: true,
-			tools: anthropicTools as any,
-			tool_choice: nativeToolsOn && !reasoningOn ? { type: "any" } : undefined,
+			providerOptions:
+				Object.keys(providerOptions).length > 0 ? providerOptions : undefined,
+			abortSignal: this.getAbortSignal(),
 		});
 
-		const currentToolCall = { id: "", name: "" };
-		const usageSnapshot = {
-			inputTokens: 0,
-			outputTokens: 0,
-			cacheReadTokens: 0,
-			cacheWriteTokens: 0,
-		};
+		let usageEmitted = false;
 
-		for await (const chunk of stream) {
-			yield* this.withResponseIdForAll(
-				this.processChunk(chunk, currentToolCall, usageSnapshot),
-				responseId,
+		if (stream.fullStream) {
+			for await (const part of stream.fullStream) {
+				const partType = part.type;
+
+				if (partType === "text-delta") {
+					const text =
+						(part.textDelta as string | undefined) ??
+						(part.text as string | undefined) ??
+						(part.delta as string | undefined);
+					if (text) {
+						yield { type: "text", text, id: responseId };
+					}
+					continue;
+				}
+
+				if (partType === "reasoning-delta") {
+					const reasoning =
+						(part.textDelta as string | undefined) ??
+						(part.text as string | undefined);
+					if (reasoning) {
+						yield { type: "reasoning", reasoning, id: responseId };
+					}
+					continue;
+				}
+
+				if (partType === "tool-call") {
+					const toolCallId =
+						(part.toolCallId as string | undefined) ??
+						(part.id as string | undefined);
+					const toolName =
+						(part.toolName as string | undefined) ??
+						(part.name as string | undefined);
+					const args =
+						(part.input as Record<string, unknown> | undefined) ??
+						(part.args as Record<string, unknown> | undefined) ??
+						{};
+
+					yield {
+						type: "tool_calls",
+						id: responseId,
+						tool_call: {
+							call_id: toolCallId,
+							function: {
+								id: toolCallId,
+								name: toolName,
+								arguments: args,
+							},
+						},
+					};
+					continue;
+				}
+
+				if (partType === "error") {
+					const message =
+						(part.error as Error | undefined)?.message ??
+						"Vertex Anthropic stream failed";
+					throw new Error(message);
+				}
+
+				if (partType === "finish") {
+					const usage =
+						(part.totalUsage as Record<string, unknown> | undefined) ??
+						(part.usage as Record<string, unknown> | undefined) ??
+						{};
+					const providerMetadata = (part.providerMetadata ?? {}) as Record<
+						string,
+						unknown
+					>;
+					const anthropicMetadata =
+						(providerMetadata.anthropic as
+							| Record<string, unknown>
+							| undefined) ?? {};
+
+					const inputTokens = numberOrZero(usage.inputTokens);
+					const outputTokens = numberOrZero(usage.outputTokens);
+					const thoughtsTokenCount = numberOrZero(
+						usage.reasoningTokens ?? usage.thoughtsTokenCount,
+					);
+					const cacheReadTokens = numberOrZero(
+						usage.cachedInputTokens ?? anthropicMetadata.cacheReadInputTokens,
+					);
+					const cacheWriteTokens = numberOrZero(
+						anthropicMetadata.cacheCreationInputTokens,
+					);
+
+					yield {
+						type: "usage",
+						inputTokens: Math.max(0, inputTokens - cacheReadTokens),
+						outputTokens,
+						thoughtsTokenCount,
+						cacheReadTokens,
+						cacheWriteTokens,
+						totalCost: this.calculateCost(
+							inputTokens,
+							outputTokens,
+							cacheReadTokens,
+						),
+						id: responseId,
+					};
+					usageEmitted = true;
+				}
+			}
+		}
+
+		if (!usageEmitted && stream.usage) {
+			const usage = await stream.usage;
+			const inputTokens = numberOrZero(usage.inputTokens);
+			const outputTokens = numberOrZero(usage.outputTokens);
+			const thoughtsTokenCount = numberOrZero(
+				usage.reasoningTokens ?? usage.thoughtsTokenCount,
 			);
+			const cacheReadTokens = numberOrZero(usage.cachedInputTokens);
+
+			yield {
+				type: "usage",
+				inputTokens: Math.max(0, inputTokens - cacheReadTokens),
+				outputTokens,
+				thoughtsTokenCount,
+				cacheReadTokens,
+				totalCost: this.calculateCost(
+					inputTokens,
+					outputTokens,
+					cacheReadTokens,
+				),
+				id: responseId,
+			};
 		}
 
 		yield { type: "done", success: true, id: responseId };
-	}
-
-	private *processChunk(
-		chunk: any,
-		currentToolCall: { id: string; name: string },
-		usageSnapshot: {
-			inputTokens: number;
-			outputTokens: number;
-			cacheReadTokens: number;
-			cacheWriteTokens: number;
-		},
-	): Generator<import("../types").ApiStreamChunk> {
-		switch (chunk.type) {
-			case "message_start": {
-				const usage = chunk.message.usage;
-				usageSnapshot.inputTokens = usage.input_tokens || 0;
-				usageSnapshot.outputTokens = usage.output_tokens || 0;
-				usageSnapshot.cacheWriteTokens =
-					(usage as any).cache_creation_input_tokens || 0;
-				usageSnapshot.cacheReadTokens =
-					(usage as any).cache_read_input_tokens || 0;
-				yield {
-					type: "usage",
-					inputTokens: usageSnapshot.inputTokens,
-					outputTokens: usageSnapshot.outputTokens,
-					cacheWriteTokens: usageSnapshot.cacheWriteTokens,
-					cacheReadTokens: usageSnapshot.cacheReadTokens,
-					totalCost: this.calculateCost(
-						usageSnapshot.inputTokens,
-						usageSnapshot.outputTokens,
-						usageSnapshot.cacheReadTokens,
-					),
-					id: "",
-				};
-				break;
-			}
-			case "message_delta": {
-				usageSnapshot.outputTokens =
-					chunk.usage.output_tokens || usageSnapshot.outputTokens;
-				yield {
-					type: "usage",
-					inputTokens: usageSnapshot.inputTokens,
-					outputTokens: usageSnapshot.outputTokens,
-					cacheWriteTokens: usageSnapshot.cacheWriteTokens,
-					cacheReadTokens: usageSnapshot.cacheReadTokens,
-					totalCost: this.calculateCost(
-						usageSnapshot.inputTokens,
-						usageSnapshot.outputTokens,
-						usageSnapshot.cacheReadTokens,
-					),
-					id: "",
-				};
-				break;
-			}
-			case "content_block_start": {
-				const block = chunk.content_block;
-				switch (block.type) {
-					case "thinking":
-						yield {
-							type: "reasoning",
-							reasoning: block.thinking || "",
-							id: "",
-						};
-						break;
-					case "redacted_thinking":
-						yield {
-							type: "reasoning",
-							reasoning: "[Redacted thinking block]",
-							id: "",
-						};
-						break;
-					case "tool_use":
-						currentToolCall.id = block.id;
-						currentToolCall.name = block.name;
-						break;
-					case "text":
-						yield { type: "text", text: block.text, id: "" };
-						break;
-				}
-				break;
-			}
-			case "content_block_delta": {
-				const delta = chunk.delta;
-				switch (delta.type) {
-					case "signature_delta":
-						yield {
-							type: "reasoning",
-							reasoning: "",
-							signature: delta.signature,
-							id: "",
-						};
-						break;
-					case "thinking_delta":
-						yield { type: "reasoning", reasoning: delta.thinking, id: "" };
-						break;
-					case "input_json_delta":
-						if (
-							currentToolCall.id &&
-							currentToolCall.name &&
-							delta.partial_json
-						) {
-							yield {
-								type: "tool_calls",
-								tool_call: {
-									call_id: currentToolCall.id,
-									function: {
-										id: currentToolCall.id,
-										name: currentToolCall.name,
-										arguments: delta.partial_json,
-									},
-								},
-								id: "",
-							};
-						}
-						break;
-					case "text_delta":
-						yield { type: "text", text: delta.text, id: "" };
-						break;
-				}
-				break;
-			}
-			case "content_block_stop":
-				currentToolCall.id = "";
-				currentToolCall.name = "";
-				break;
-		}
 	}
 }
 

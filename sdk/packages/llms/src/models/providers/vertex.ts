@@ -14,7 +14,7 @@ const DEFAULT_GEMINI_VERTEX_MODEL = VERTEX_MODEL_IDS.find(
 );
 
 export const VERTEX_DEFAULT_MODEL =
-	DEFAULT_GEMINI_VERTEX_MODEL ?? VERTEX_MODEL_IDS[0] ?? "gemini-2.5-pro";
+	DEFAULT_GEMINI_VERTEX_MODEL ?? VERTEX_MODEL_IDS[0] ?? "gemini-3-pro";
 
 export const VERTEX_PROVIDER: ModelCollection = {
 	provider: {

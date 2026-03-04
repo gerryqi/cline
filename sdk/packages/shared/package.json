@@ -32,5 +32,8 @@
 		"@types/node": "^25.3.3",
 		"typescript": "^5.7.2"
 	},
-	"private": true
+	"private": true,
+	"dependencies": {
+		"jsonrepair": "^3.13.2"
+	}
 }

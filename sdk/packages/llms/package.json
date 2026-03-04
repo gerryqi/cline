@@ -9,6 +9,7 @@
 	"exports": {
 		".": {
 			"browser": "./dist/index.browser.js",
+			"react-server": "./dist/index.browser.js",
 			"import": "./dist/index.js",
 			"types": "./dist/index.d.ts"
 		},
@@ -35,14 +36,14 @@
 	},
 	"dependencies": {
 		"@ai-sdk/amazon-bedrock": "^4.0.67",
+		"@ai-sdk/google-vertex": "^4.0.74",
+		"@anthropic-ai/sdk": "^0.78.0",
 		"@aws-sdk/credential-providers": "^3.922.0",
-		"@anthropic-ai/sdk": "^0.52.0",
-		"@anthropic-ai/vertex-sdk": "^0.6.4",
-		"@google/genai": "^1.0.0",
+		"@google/genai": "^1.43.0",
 		"@streamparser/json": "^0.0.21",
-		"ai": "^5.0.0",
+		"ai": "^6.0.112",
 		"nanoid": "^5.1.6",
-		"openai": "^4.103.0",
+		"openai": "^6.25.0",
 		"zod": "^3.23.8"
 	},
 	"peerDependencies": {
