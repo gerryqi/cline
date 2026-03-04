@@ -42,9 +42,12 @@
 		"@google/genai": "^1.43.0",
 		"@streamparser/json": "^0.0.21",
 		"ai": "^6.0.112",
+		"ai-sdk-provider-claude-code": "^3.4.3",
+		"ai-sdk-provider-codex-cli": "^1.1.0",
+		"ai-sdk-provider-opencode-sdk": "^2.1.2",
 		"nanoid": "^5.1.6",
 		"openai": "^6.25.0",
-		"zod": "^3.23.8"
+		"zod": "^4.3.6"
 	},
 	"peerDependencies": {
 		"@aws-sdk/client-bedrock-runtime": "^3.0.0"

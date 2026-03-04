@@ -32,9 +32,9 @@
 		"test:watch": "vitest"
 	},
 	"dependencies": {
-		"@cline/shared": "workspace:*",
 		"@cline/llms": "workspace:*",
-		"zod": "^3.24.1"
+		"@cline/shared": "workspace:*",
+		"zod": "^4.3.6"
 	},
 	"devDependencies": {
 		"@types/node": "^20.0.0",

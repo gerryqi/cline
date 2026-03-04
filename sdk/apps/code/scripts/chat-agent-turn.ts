@@ -20,6 +20,7 @@ import {
 	generateWorkspaceInfo,
 } from "@cline/core/server";
 import type { providers as LlmsProviders } from "@cline/llms";
+import { providers } from "@cline/llms";
 
 type Message = LlmsProviders.Message;
 
@@ -120,11 +121,6 @@ type ToolApprovalResult = {
 
 function readStdin(): string {
 	return readFileSync(0, "utf8");
-}
-
-function normalizeProviderId(providerId: string): string {
-	const normalized = providerId.trim();
-	return normalized === "openai" ? "openai-native" : normalized;
 }
 
 function toPromptMessage(
@@ -285,7 +281,7 @@ async function main() {
 
 	const apiKey = parsed.config.apiKey?.trim() || undefined;
 	const cwd = (parsed.config.cwd?.trim() || parsed.config.workspaceRoot).trim();
-	const providerId = normalizeProviderId(parsed.config.provider);
+	const providerId = providers.normalizeProviderId(parsed.config.provider);
 	const systemPrompt = await resolveSystemPrompt(parsed.config, cwd);
 	const history = toMessageHistory(parsed.messages);
 	const mode = parsed.config.mode ?? "act";

@@ -57,6 +57,10 @@ function registerBuiltInProviderLoaders(): void {
 	PROVIDER_LOADERS.set("cline", {
 		load: async () => (await import("./providers/cline.js")).CLINE_PROVIDER,
 	});
+	PROVIDER_LOADERS.set("claude-code", {
+		load: async () =>
+			(await import("./providers/claude-code.js")).CLAUDE_CODE_PROVIDER,
+	});
 	PROVIDER_LOADERS.set("anthropic", {
 		load: async () =>
 			(await import("./providers/anthropic.js")).ANTHROPIC_PROVIDER,
@@ -76,6 +80,10 @@ function registerBuiltInProviderLoaders(): void {
 	PROVIDER_LOADERS.set("openai-codex", {
 		load: async () =>
 			(await import("./providers/openai-codex.js")).OPENAI_CODEX_PROVIDER,
+	});
+	PROVIDER_LOADERS.set("opencode", {
+		load: async () =>
+			(await import("./providers/opencode.js")).OPENCODE_PROVIDER,
 	});
 
 	// Major third-party providers (individual files)

@@ -201,6 +201,11 @@ export {
 	resolveProviderSettingsPath,
 	resolveSessionDataDir,
 } from "../storage/paths";
+export {
+	type MigrateLegacyProviderSettingsOptions,
+	type MigrateLegacyProviderSettingsResult,
+	migrateLegacyProviderSettings,
+} from "../storage/provider-settings-legacy-migration";
 export { ProviderSettingsManager } from "../storage/provider-settings-manager";
 export { SqliteSessionStore } from "../storage/sqlite-session-store";
 

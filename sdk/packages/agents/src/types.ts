@@ -60,7 +60,7 @@ export const JsonSchemaPropertySchema: z.ZodType<JsonSchemaProperty> = z.lazy(
 			description: z.string().optional(),
 			enum: z.array(z.unknown()).optional(),
 			items: JsonSchemaPropertySchema.optional(),
-			properties: z.record(JsonSchemaPropertySchema).optional(),
+			properties: z.record(z.string(), JsonSchemaPropertySchema).optional(),
 			required: z.array(z.string()).optional(),
 			default: z.unknown().optional(),
 			minimum: z.number().optional(),
@@ -73,7 +73,7 @@ export const JsonSchemaPropertySchema: z.ZodType<JsonSchemaProperty> = z.lazy(
 
 export const JsonSchemaSchema = z.object({
 	type: z.literal("object"),
-	properties: z.record(JsonSchemaPropertySchema),
+	properties: z.record(z.string(), JsonSchemaPropertySchema),
 	required: z.array(z.string()).optional(),
 	additionalProperties: z.boolean().optional(),
 	description: z.string().optional(),
@@ -117,7 +117,7 @@ export const ToolContextSchema = z.object({
 	conversationId: z.string(),
 	iteration: z.number(),
 	abortSignal: z.custom<AbortSignal>().optional(),
-	metadata: z.record(z.unknown()).optional(),
+	metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 // =============================================================================
@@ -907,8 +907,10 @@ export const AgentConfigSchema = z.object({
 	modelId: z.string(),
 	apiKey: z.string().optional(),
 	baseUrl: z.string().url().optional(),
-	headers: z.record(z.string()).optional(),
-	knownModels: z.record(z.custom<LlmsProviders.ModelInfo>()).optional(),
+	headers: z.record(z.string(), z.string()).optional(),
+	knownModels: z
+		.record(z.string(), z.custom<LlmsProviders.ModelInfo>())
+		.optional(),
 
 	// Agent Behavior
 	systemPrompt: z.string(),
@@ -927,8 +929,8 @@ export const AgentConfigSchema = z.object({
 	// Callbacks
 	onEvent: z
 		.function()
-		.args(z.custom<AgentEvent>())
-		.returns(z.void())
+		.input([z.custom<AgentEvent>()])
+		.output(z.void())
 		.optional(),
 	hooks: z.custom<AgentHooks>().optional(),
 	parentAgentId: z.string().optional(),
@@ -937,6 +939,7 @@ export const AgentConfigSchema = z.object({
 	hookPolicies: z.custom<HookPolicies>().optional(),
 	toolPolicies: z
 		.record(
+			z.string(),
 			z.object({
 				enabled: z.boolean().optional(),
 				autoApprove: z.boolean().optional(),
@@ -945,7 +948,7 @@ export const AgentConfigSchema = z.object({
 		.optional(),
 	requestToolApproval: z
 		.function()
-		.args(
+		.input([
 			z.object({
 				agentId: z.string(),
 				conversationId: z.string(),
@@ -960,8 +963,8 @@ export const AgentConfigSchema = z.object({
 					})
 					.default({}),
 			}),
-		)
-		.returns(
+		])
+		.output(
 			z.union([
 				z.object({
 					approved: z.boolean(),

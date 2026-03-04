@@ -15,6 +15,8 @@ export enum BUILT_IN_PROVIDER {
 	OPENAI = "openai",
 	OPENAI_NATIVE = "openai-native",
 	OPENAI_CODEX = "openai-codex",
+	// CLI / Subscription-based providers
+	OPENCODE = "opencode",
 	// Cloud providers
 	BEDROCK = "bedrock",
 	VERTEX = "vertex",
@@ -56,6 +58,16 @@ export enum BUILT_IN_PROVIDER {
 	OPENROUTER = "openrouter",
 }
 
+/**
+ * Provider ID aliases normalized to canonical built-in IDs.
+ *
+ * Keep this map as the single source of truth for alias handling.
+ */
+export const PROVIDER_ID_ALIASES: Record<string, BUILT_IN_PROVIDER> = {
+	openai: BUILT_IN_PROVIDER.OPENAI_NATIVE,
+	togetherai: BUILT_IN_PROVIDER.TOGETHER,
+};
+
 export const BUILT_IN_PROVIDER_IDS = Object.values(BUILT_IN_PROVIDER) as [
 	BUILT_IN_PROVIDER,
 	...BUILT_IN_PROVIDER[],
@@ -67,4 +79,10 @@ export type BuiltInProviderId = (typeof BUILT_IN_PROVIDER_IDS)[number];
 /** Check if a string is a valid built-in provider ID */
 export function isBuiltInProviderId(id: string): id is BuiltInProviderId {
 	return BUILT_IN_PROVIDER_IDS.includes(id as BuiltInProviderId);
+}
+
+/** Normalize provider aliases to canonical IDs */
+export function normalizeProviderId(providerId: string): string {
+	const normalized = providerId.trim();
+	return PROVIDER_ID_ALIASES[normalized] ?? normalized;
 }

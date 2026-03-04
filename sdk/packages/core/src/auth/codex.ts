@@ -207,6 +207,36 @@ async function createAuthorizationFlow(
 	return { verifier, state, url: url.toString() };
 }
 
+function resolveCallbackServerConfig(): {
+	host: string;
+	port: number;
+	callbackPath: string;
+	redirectUri: string;
+} {
+	try {
+		const redirect = new URL(OPENAI_CODEX_OAUTH_CONFIG.redirectUri);
+		const parsedPort =
+			redirect.port.length > 0
+				? Number.parseInt(redirect.port, 10)
+				: OPENAI_CODEX_OAUTH_CONFIG.callbackPort;
+		return {
+			host: redirect.hostname || "localhost",
+			port: Number.isFinite(parsedPort)
+				? parsedPort
+				: OPENAI_CODEX_OAUTH_CONFIG.callbackPort,
+			callbackPath: redirect.pathname || "/auth/callback",
+			redirectUri: redirect.toString(),
+		};
+	} catch {
+		return {
+			host: "localhost",
+			port: OPENAI_CODEX_OAUTH_CONFIG.callbackPort,
+			callbackPath: "/auth/callback",
+			redirectUri: OPENAI_CODEX_OAUTH_CONFIG.redirectUri,
+		};
+	}
+}
+
 function getAccountId(accessToken: string, idToken?: string): string | null {
 	const payload = (
 		idToken ? decodeJwtPayload(idToken) : decodeJwtPayload(accessToken)
@@ -266,12 +296,14 @@ export async function loginOpenAICodex(options: {
 	onManualCodeInput?: () => Promise<string>;
 	originator?: string;
 }): Promise<OAuthCredentials> {
+	const callbackConfig = resolveCallbackServerConfig();
 	const { verifier, state, url } = await createAuthorizationFlow(
 		options.originator,
 	);
 	const server = await startLocalOAuthServer({
-		ports: [OPENAI_CODEX_OAUTH_CONFIG.callbackPort],
-		callbackPath: "/auth/callback",
+		host: callbackConfig.host,
+		ports: [callbackConfig.port],
+		callbackPath: callbackConfig.callbackPath,
 		expectedState: state,
 	});
 
@@ -311,7 +343,11 @@ export async function loginOpenAICodex(options: {
 			throw new Error("Missing authorization code");
 		}
 
-		const tokenResult = await exchangeAuthorizationCode(code, verifier);
+		const tokenResult = await exchangeAuthorizationCode(
+			code,
+			verifier,
+			callbackConfig.redirectUri,
+		);
 		if (tokenResult.type !== "success") {
 			throw new Error("Token exchange failed");
 		}

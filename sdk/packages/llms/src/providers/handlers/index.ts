@@ -14,6 +14,14 @@ export {
 // Base classes
 export { BaseHandler } from "./base";
 export { BedrockHandler, createBedrockHandler } from "./bedrock-base";
+export {
+	ClaudeCodeHandler,
+	CodexHandler,
+	createClaudeCodeHandler,
+	createCodexHandler,
+	createOpenCodeHandler,
+	OpenCodeHandler,
+} from "./community-sdk";
 export { createGeminiHandler, GeminiHandler } from "./gemini-base";
 // OpenAI Chat Completions API handler
 export { createOpenAIHandler, OpenAIBaseHandler } from "./openai-base";

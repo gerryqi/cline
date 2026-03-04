@@ -1,16 +1,13 @@
 import * as modelProviderExports from "../../models/providers/index.js";
 import type { ModelCollection } from "../../models/schemas/index.js";
-
-const PROVIDER_ID_ALIASES: Record<string, string> = {
-	openai: "openai-native",
-	togetherai: "together",
-};
+import { BUILT_IN_PROVIDER, normalizeProviderId } from "../types/provider-ids";
 
 const DEFAULT_FALLBACK_PROVIDER_IDS = [
-	"cline",
-	"anthropic",
-	"openai-native",
-	"gemini",
+	BUILT_IN_PROVIDER.CLINE,
+	BUILT_IN_PROVIDER.ANTHROPIC,
+	BUILT_IN_PROVIDER.OPENAI_NATIVE,
+	BUILT_IN_PROVIDER.GEMINI,
+	BUILT_IN_PROVIDER.OPENROUTER,
 ] as const;
 
 function isModelCollection(value: unknown): value is ModelCollection {
@@ -76,10 +73,7 @@ function resolveFromKeys(
 	return undefined;
 }
 
-export function normalizeProviderId(providerId: string): string {
-	const normalized = providerId.trim();
-	return PROVIDER_ID_ALIASES[normalized] ?? normalized;
-}
+export { normalizeProviderId };
 
 export function getProviderEnvKeys(providerId: string): readonly string[] {
 	return ENV_KEYS_BY_PROVIDER[normalizeProviderId(providerId)] ?? [];

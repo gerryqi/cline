@@ -234,6 +234,12 @@ bun install -g @cline/cli
 
 For OAuth providers (`cline`, `openai-codex`, `oca`), you can either use `clite auth <provider>` or let `clite` prompt for OAuth automatically when no API key is configured.
 
+On startup, `clite` also performs a one-time legacy settings import when `settings/providers.json` is empty:
+
+- Source files: `<CLINE_DATA_DIR>/globalState.json` and `<CLINE_DATA_DIR>/secrets.json`
+- Target file: `<CLINE_DATA_DIR>/settings/providers.json` (or `CLINE_PROVIDER_SETTINGS_PATH`)
+- Existing `providers.json` data is never overwritten
+
 ## Features
 
 - **Streaming output** - Responses stream in real-time

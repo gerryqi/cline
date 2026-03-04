@@ -52,6 +52,7 @@ import {
 	hasMcpSettingsFile,
 	listHookConfigFiles,
 	loadRulesForSystemPromptFromWatcher,
+	migrateLegacyProviderSettings,
 	ProviderSettingsManager,
 	prewarmFileIndex,
 	type RuleConfig,
@@ -2141,6 +2142,7 @@ async function main(): Promise<void> {
 		explicitDir: args.sandboxDir,
 	});
 	const providerSettingsManager = new ProviderSettingsManager();
+	migrateLegacyProviderSettings({ providerSettingsManager });
 
 	if (rawArgs[0] === "hook") {
 		const code = await runHookCommand();

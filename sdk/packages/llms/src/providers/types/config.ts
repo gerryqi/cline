@@ -7,13 +7,21 @@
 
 import type { ModelInfo } from "./model-info";
 import {
+	BUILT_IN_PROVIDER,
 	BUILT_IN_PROVIDER_IDS,
 	type BuiltInProviderId,
 	isBuiltInProviderId,
+	normalizeProviderId,
 } from "./provider-ids";
 
 // Re-export for convenience
-export { BUILT_IN_PROVIDER_IDS, type BuiltInProviderId, isBuiltInProviderId };
+export {
+	BUILT_IN_PROVIDER,
+	BUILT_IN_PROVIDER_IDS,
+	type BuiltInProviderId,
+	isBuiltInProviderId,
+	normalizeProviderId,
+};
 
 /**
  * All supported provider IDs (built-in + custom)
@@ -181,6 +189,33 @@ export interface OcaConfig {
 }
 
 /**
+ * Codex CLI provider options
+ */
+export interface CodexConfig {
+	defaultSettings?: Record<string, unknown>;
+	modelSettings?: Record<string, unknown>;
+}
+
+/**
+ * Claude Code provider options
+ */
+export interface ClaudeCodeConfig {
+	[key: string]: unknown;
+}
+
+/**
+ * OpenCode provider options
+ */
+export interface OpenCodeConfig {
+	hostname?: string;
+	port?: number;
+	autoStartServer?: boolean;
+	serverTimeout?: number;
+	defaultSettings?: Record<string, unknown>;
+	modelSettings?: Record<string, unknown>;
+}
+
+/**
  * Cloud provider configurations (grouped)
  */
 export interface CloudConfig {
@@ -260,6 +295,15 @@ export interface ProviderConfig
 
 	/** AbortSignal for cancelling requests */
 	abortSignal?: AbortSignal;
+
+	/** Codex CLI-specific options */
+	codex?: CodexConfig;
+
+	/** Claude Code-specific options */
+	claudeCode?: ClaudeCodeConfig;
+
+	/** OpenCode-specific options */
+	opencode?: OpenCodeConfig;
 }
 
 /**

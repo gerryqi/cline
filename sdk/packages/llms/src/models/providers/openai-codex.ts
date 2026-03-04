@@ -19,8 +19,10 @@ export const OPENAI_CODEX_PROVIDER: ModelCollection = {
 	provider: {
 		id: "openai-codex",
 		name: "OpenAI Codex",
-		description: "OpenAI Codex via ChatGPT account OAuth",
-		protocol: "openai-responses",
+		description: "OpenAI Codex via the local Codex CLI provider",
+		protocol: "openai-chat",
+		// Retained so this provider is included in OPENAI_COMPATIBLE_PROVIDERS
+		// registry selection; CodexHandler itself does not use this base URL.
 		baseUrl: "https://chatgpt.com/backend-api/codex",
 		defaultModelId: OPENAI_CODEX_DEFAULT_MODEL,
 		capabilities: ["reasoning"],

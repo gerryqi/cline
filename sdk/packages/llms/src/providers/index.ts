@@ -30,6 +30,7 @@
  * ## Supported Providers
  *
  * - **anthropic**: Anthropic's Claude models
+ * - **claude-code**: Claude Code local subscription provider
  * - **gemini**: Google's Gemini models (including Vertex AI)
  * - **openai**: OpenAI's GPT models
  * - **openai-compat**: Any OpenAI-compatible API (DeepSeek, xAI, Together, etc.)
@@ -141,14 +142,19 @@ export {
 	AnthropicHandler,
 	// Base classes (for extension)
 	BaseHandler,
+	ClaudeCodeHandler,
+	CodexHandler,
 	clearLiveModelsCatalogCache,
 	clearPrivateModelsCatalogCache,
 	// Custom handler registry
 	clearRegistry,
 	createAnthropicHandler,
+	createClaudeCodeHandler,
+	createCodexHandler,
 	createGeminiHandler,
 	createOpenAIHandler,
 	createOpenAIResponsesHandler,
+	createOpenCodeHandler,
 	createR1Handler,
 	createVertexHandler,
 	DEFAULT_MODELS_CATALOG_URL,
@@ -169,6 +175,7 @@ export {
 	OpenAIBaseHandler,
 	// OpenAI Responses API handler
 	OpenAIResponsesHandler,
+	OpenCodeHandler,
 	// R1-based handlers (DeepSeek Reasoner, etc.)
 	R1BaseHandler,
 	registerAsyncHandler,
@@ -231,8 +238,12 @@ import {
 // =============================================================================
 
 import { AnthropicHandler } from "./handlers/anthropic-base";
-import { normalizeProviderId } from "./handlers/auth";
 import { BedrockHandler } from "./handlers/bedrock-base";
+import {
+	ClaudeCodeHandler,
+	CodexHandler,
+	OpenCodeHandler,
+} from "./handlers/community-sdk";
 import { GeminiHandler } from "./handlers/gemini-base";
 import { OpenAIBaseHandler } from "./handlers/openai-base";
 import { OpenAIResponsesHandler } from "./handlers/openai-responses";
@@ -251,16 +262,11 @@ import { VertexHandler } from "./handlers/vertex";
 import {
 	ApiFormat,
 	type ApiHandler,
+	BUILT_IN_PROVIDER,
+	normalizeProviderId,
 	type ProviderConfig,
 	type ProviderId,
 } from "./types";
-
-const ANTHROPIC_PROVIDER_ID = "anthropic";
-const BEDROCK_PROVIDER_ID = "bedrock";
-const GEMINI_PROVIDER_ID = "gemini";
-const OPENAI_PROVIDER_ID = "openai-native";
-const OCA_PROVIDER_ID = "oca";
-const VERTEX_PROVIDER_ID = "vertex";
 
 function withNormalizedProviderId(config: ProviderConfig): ProviderConfig {
 	const normalizedProviderId = normalizeProviderId(config.providerId);
@@ -342,19 +348,25 @@ export function createHandler(config: ProviderConfig): ApiHandler {
 	}
 
 	switch (providerId) {
-		case ANTHROPIC_PROVIDER_ID:
+		case BUILT_IN_PROVIDER.ANTHROPIC:
 			return new AnthropicHandler(normalizedConfig);
 
-		case BEDROCK_PROVIDER_ID:
+		case BUILT_IN_PROVIDER.BEDROCK:
 			return new BedrockHandler(normalizedConfig);
 
-		case GEMINI_PROVIDER_ID:
+		case BUILT_IN_PROVIDER.CLAUDE_CODE:
+			return new ClaudeCodeHandler(normalizedConfig);
+
+		case BUILT_IN_PROVIDER.GEMINI:
 			return new GeminiHandler(normalizedConfig);
 
-		case VERTEX_PROVIDER_ID:
+		case BUILT_IN_PROVIDER.VERTEX:
 			return new VertexHandler(normalizedConfig);
 
-		case OPENAI_PROVIDER_ID:
+		case BUILT_IN_PROVIDER.OPENCODE:
+			return new OpenCodeHandler(normalizedConfig);
+
+		case BUILT_IN_PROVIDER.OPENAI_NATIVE:
 			return new OpenAIResponsesHandler(normalizedConfig);
 
 		default:
@@ -372,7 +384,7 @@ export function createHandler(config: ProviderConfig): ApiHandler {
 				const mergedConfig: ProviderConfig = {
 					...normalizedConfig,
 					baseUrl:
-						providerId === OCA_PROVIDER_ID
+						providerId === BUILT_IN_PROVIDER.OCA
 							? resolveOcaBaseUrl(normalizedConfig, providerDefaults)
 							: (normalizedConfig.baseUrl ?? providerDefaults.baseUrl),
 					modelId: normalizedConfig.modelId ?? providerDefaults.modelId,
@@ -382,7 +394,10 @@ export function createHandler(config: ProviderConfig): ApiHandler {
 						normalizedConfig.capabilities ?? providerDefaults.capabilities,
 				};
 
-				if (providerId === OCA_PROVIDER_ID) {
+				if (providerId === BUILT_IN_PROVIDER.OPENAI_CODEX) {
+					return new CodexHandler(mergedConfig);
+				}
+				if (providerId === BUILT_IN_PROVIDER.OCA) {
 					return createOcaHandler(mergedConfig);
 				}
 				// Merge provider defaults into config
@@ -440,6 +455,14 @@ export async function createHandlerAsync(
 		}
 	}
 
+	if (providerId === BUILT_IN_PROVIDER.OPENCODE) {
+		return new OpenCodeHandler(normalizedConfig);
+	}
+
+	if (providerId === BUILT_IN_PROVIDER.CLAUDE_CODE) {
+		return new ClaudeCodeHandler(normalizedConfig);
+	}
+
 	if (isOpenAICompatibleProvider(providerId)) {
 		const providerDefaults = await resolveProviderConfig(
 			providerId,
@@ -450,7 +473,7 @@ export async function createHandlerAsync(
 			const mergedConfig: ProviderConfig = {
 				...normalizedConfig,
 				baseUrl:
-					providerId === OCA_PROVIDER_ID
+					providerId === BUILT_IN_PROVIDER.OCA
 						? resolveOcaBaseUrl(normalizedConfig, providerDefaults)
 						: (normalizedConfig.baseUrl ?? providerDefaults.baseUrl),
 				modelId: normalizedConfig.modelId ?? providerDefaults.modelId,
@@ -459,14 +482,17 @@ export async function createHandlerAsync(
 				capabilities:
 					normalizedConfig.capabilities ?? providerDefaults.capabilities,
 			};
-			if (providerId === OCA_PROVIDER_ID) {
+			if (providerId === BUILT_IN_PROVIDER.OPENAI_CODEX) {
+				return new CodexHandler(mergedConfig);
+			}
+			if (providerId === BUILT_IN_PROVIDER.OCA) {
 				return createOcaHandler(mergedConfig);
 			}
 			return new OpenAIBaseHandler(mergedConfig);
 		}
 	}
 
-	if (providerId === BEDROCK_PROVIDER_ID) {
+	if (providerId === BUILT_IN_PROVIDER.BEDROCK) {
 		return new BedrockHandler(normalizedConfig);
 	}
 
@@ -479,11 +505,12 @@ export async function createHandlerAsync(
  */
 export const BUILT_IN_PROVIDERS: ProviderId[] = [
 	CLINE_PROVIDER.provider.id,
-	ANTHROPIC_PROVIDER_ID,
-	BEDROCK_PROVIDER_ID,
-	OPENAI_PROVIDER_ID,
-	GEMINI_PROVIDER_ID,
-	VERTEX_PROVIDER_ID,
+	BUILT_IN_PROVIDER.ANTHROPIC,
+	BUILT_IN_PROVIDER.BEDROCK,
+	BUILT_IN_PROVIDER.CLAUDE_CODE,
+	BUILT_IN_PROVIDER.OPENAI_NATIVE,
+	BUILT_IN_PROVIDER.GEMINI,
+	BUILT_IN_PROVIDER.VERTEX,
 	...Object.keys(OPENAI_COMPATIBLE_PROVIDERS),
 ] as ProviderId[];
 
@@ -492,10 +519,12 @@ export const BUILT_IN_PROVIDERS: ProviderId[] = [
  */
 export function isProviderSupported(providerId: string): boolean {
 	return (
-		providerId === ANTHROPIC_PROVIDER_ID ||
-		providerId === BEDROCK_PROVIDER_ID ||
-		providerId === GEMINI_PROVIDER_ID ||
-		providerId === VERTEX_PROVIDER_ID ||
+		providerId === BUILT_IN_PROVIDER.ANTHROPIC ||
+		providerId === BUILT_IN_PROVIDER.BEDROCK ||
+		providerId === BUILT_IN_PROVIDER.CLAUDE_CODE ||
+		providerId === BUILT_IN_PROVIDER.OPENCODE ||
+		providerId === BUILT_IN_PROVIDER.GEMINI ||
+		providerId === BUILT_IN_PROVIDER.VERTEX ||
 		isOpenAICompatibleProvider(providerId) ||
 		hasRegisteredHandler(providerId)
 	);

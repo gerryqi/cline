@@ -25,17 +25,85 @@ import { BaseHandler } from "./base";
 
 const DEFAULT_REASONING_EFFORT = "medium" as const;
 
+function normalizeStrictToolSchema(
+	schema: unknown,
+	options?: { stripFormat?: boolean },
+): unknown {
+	if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+		return schema;
+	}
+
+	const normalized = { ...(schema as Record<string, unknown>) };
+	if (options?.stripFormat && "format" in normalized) {
+		delete normalized.format;
+	}
+	const type = normalized.type;
+
+	if (type === "object") {
+		if (!Object.hasOwn(normalized, "additionalProperties")) {
+			normalized.additionalProperties = false;
+		}
+		const properties = normalized.properties;
+		if (
+			properties &&
+			typeof properties === "object" &&
+			!Array.isArray(properties)
+		) {
+			const nextProperties: Record<string, unknown> = {};
+			for (const [key, value] of Object.entries(
+				properties as Record<string, unknown>,
+			)) {
+				nextProperties[key] = normalizeStrictToolSchema(value, options);
+			}
+			normalized.properties = nextProperties;
+		}
+	}
+
+	if (Array.isArray(normalized.anyOf)) {
+		normalized.anyOf = normalized.anyOf.map((item) =>
+			normalizeStrictToolSchema(item, options),
+		);
+	}
+	if (Array.isArray(normalized.oneOf)) {
+		normalized.oneOf = normalized.oneOf.map((item) =>
+			normalizeStrictToolSchema(item, options),
+		);
+	}
+	if (Array.isArray(normalized.allOf)) {
+		normalized.allOf = normalized.allOf.map((item) =>
+			normalizeStrictToolSchema(item, options),
+		);
+	}
+	if (normalized.not && typeof normalized.not === "object") {
+		normalized.not = normalizeStrictToolSchema(normalized.not, options);
+	}
+	if (normalized.items) {
+		if (Array.isArray(normalized.items)) {
+			normalized.items = normalized.items.map((item) =>
+				normalizeStrictToolSchema(item, options),
+			);
+		} else {
+			normalized.items = normalizeStrictToolSchema(normalized.items, options);
+		}
+	}
+
+	return normalized;
+}
+
 /**
  * Convert tool definitions to Responses API format
  */
-function convertToolsToResponsesFormat(tools?: ToolDefinition[]) {
+function convertToolsToResponsesFormat(
+	tools?: ToolDefinition[],
+	options?: { stripFormat?: boolean },
+) {
 	if (!tools?.length) return undefined;
 
 	return tools.map((tool) => ({
 		type: "function" as const,
 		name: tool.name,
 		description: tool.description,
-		parameters: tool.inputSchema,
+		parameters: normalizeStrictToolSchema(tool.inputSchema, options),
 		strict: true, // Responses API defaults to strict mode
 	}));
 }
@@ -181,7 +249,9 @@ export class OpenAIResponsesHandler extends BaseHandler {
 		const input = this.getMessages(systemPrompt, messages);
 
 		// Convert tools to Responses API format
-		const responseTools = convertToolsToResponsesFormat(tools);
+		const responseTools = convertToolsToResponsesFormat(tools, {
+			stripFormat: this.config.providerId === "openai-codex",
+		});
 
 		// Responses API requires tools for native tool calling
 		if (!responseTools?.length) {
@@ -214,19 +284,63 @@ export class OpenAIResponsesHandler extends BaseHandler {
 		if (!hasAuthorizationHeader && apiKey) {
 			requestHeaders.Authorization = `Bearer ${apiKey}`;
 		}
+		if (
+			this.config.providerId === "openai-codex" &&
+			typeof this.config.accountId === "string" &&
+			this.config.accountId.trim().length > 0
+		) {
+			const accountId = this.config.accountId.trim();
+			// ChatGPT Codex endpoints may require an explicit account identifier.
+			requestHeaders["chatgpt-account-id"] = accountId;
+			requestHeaders["openai-account-id"] = accountId;
+		}
 
 		// Create the response using Responses API
-		const stream = await (client as any).responses.create(
-			{
-				model: modelId,
-				instructions: systemPrompt,
-				input,
-				stream: true,
-				tools: responseTools,
-				reasoning: reasoningConfig,
-			},
-			{ signal: abortSignal, headers: requestHeaders },
-		);
+		let stream: AsyncIterable<any>;
+		try {
+			stream = await (client as any).responses.create(
+				{
+					model: modelId,
+					instructions: systemPrompt,
+					input,
+					// ChatGPT account Codex rejects requests unless explicit non-storage is set.
+					store: this.config.providerId === "openai-codex" ? false : undefined,
+					stream: true,
+					tools: responseTools,
+					reasoning: reasoningConfig,
+				},
+				{ signal: abortSignal, headers: requestHeaders },
+			);
+		} catch (error) {
+			if (this.config.providerId === "openai-codex") {
+				const rawError = error as
+					| (Error & {
+							status?: number;
+							message?: string;
+							error?: { message?: string; detail?: string };
+							response?: { status?: number };
+					  })
+					| undefined;
+				const status =
+					rawError?.status ??
+					rawError?.response?.status ??
+					(typeof rawError?.message === "string" &&
+					rawError.message.includes("400")
+						? 400
+						: undefined);
+				if (status === 400) {
+					const detail =
+						rawError?.error?.detail ??
+						rawError?.error?.message ??
+						(typeof rawError?.message === "string" ? rawError.message : "");
+					throw new Error(
+						`OpenAI Codex request was rejected (HTTP 400). ${detail ? `Detail: ${detail}` : "Re-run 'clite auth openai-codex', verify model access, and ensure accountId is present in provider settings."}`,
+						{ cause: error },
+					);
+				}
+			}
+			throw error;
+		}
 
 		// Process the response stream
 		for await (const chunk of stream) {

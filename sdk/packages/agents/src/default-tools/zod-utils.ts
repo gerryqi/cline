@@ -64,7 +64,9 @@ function convertZodType(schema: z.ZodTypeAny): Record<string, unknown> {
 
 	// Handle ZodString
 	if (typeName === "ZodString") {
-		const stringDef = schema._def as z.ZodStringDef;
+		const stringDef = schema._def as {
+			checks?: Array<{ kind?: string; value?: number }>;
+		};
 		const result: Record<string, unknown> = { type: "string" };
 
 		// Check for URL validation and other constraints
@@ -91,7 +93,7 @@ function convertZodType(schema: z.ZodTypeAny): Record<string, unknown> {
 
 	// Handle ZodEnum
 	if (typeName === "ZodEnum") {
-		const enumSchema = schema as z.ZodEnum<[string, ...string[]]>;
+		const enumSchema = schema as z.ZodEnum;
 		const result: Record<string, unknown> = {
 			type: "string",
 			enum: enumSchema.options,
@@ -132,14 +134,20 @@ function convertZodType(schema: z.ZodTypeAny): Record<string, unknown> {
 		const inner = convertZodType(defaultSchema.removeDefault());
 		return {
 			...inner,
-			default: (schema._def as { defaultValue: () => unknown }).defaultValue(),
+			default: (
+				schema._def as unknown as { defaultValue: () => unknown }
+			).defaultValue(),
 		};
 	}
 
 	// Handle ZodEffects (refine, superRefine, transform wrappers)
 	if (typeName === "ZodEffects") {
-		const effectsSchema = schema as z.ZodEffects<z.ZodTypeAny>;
-		return convertZodType(effectsSchema.innerType());
+		const effectsSchema = schema as z.ZodTypeAny & {
+			innerType?: () => z.ZodTypeAny;
+		};
+		if (effectsSchema.innerType) {
+			return convertZodType(effectsSchema.innerType());
+		}
 	}
 
 	// Default fallback
@@ -153,7 +161,7 @@ function convertZodType(schema: z.ZodTypeAny): Record<string, unknown> {
 export function validateWithZod<T>(schema: z.ZodType<T>, input: unknown): T {
 	const result = schema.safeParse(input);
 	if (!result.success) {
-		const errors = result.error.errors
+		const errors = result.error.issues
 			.map((e) => `${e.path.join(".")}: ${e.message}`)
 			.join("; ");
 		throw new Error(`Invalid input: ${errors}`);

@@ -221,7 +221,7 @@ export const ProviderSettingsSchema = z.object({
 	baseUrl: z.string().url().optional(),
 
 	/** Custom headers to include in requests */
-	headers: z.record(z.string()).optional(),
+	headers: z.record(z.string(), z.string()).optional(),
 
 	/** Request timeout in milliseconds */
 	timeout: z.number().int().positive().optional(),
@@ -328,7 +328,7 @@ export function parseSettings(input: unknown): ProviderSettings {
  */
 export function safeParseSettings(
 	input: unknown,
-): z.SafeParseReturnType<unknown, ProviderSettings> {
+): ReturnType<typeof ProviderSettingsSchema.safeParse> {
 	return ProviderSettingsSchema.safeParse(input);
 }
 

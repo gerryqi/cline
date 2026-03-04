@@ -28,7 +28,7 @@ export const StoredProviderSettingsSchema: z.ZodType<StoredProviderSettings> =
 	z.object({
 		version: z.literal(1),
 		lastUsedProvider: z.string().min(1).optional(),
-		providers: z.record(StoredProviderSettingsEntrySchema),
+		providers: z.record(z.string(), StoredProviderSettingsEntrySchema),
 	});
 
 export function emptyStoredProviderSettings(): StoredProviderSettings {

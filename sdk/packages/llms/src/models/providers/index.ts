@@ -24,6 +24,11 @@ export {
 	CEREBRAS_MODELS,
 	CEREBRAS_PROVIDER,
 } from "./cerebras.js";
+export {
+	CLAUDE_CODE_DEFAULT_MODEL,
+	CLAUDE_CODE_MODELS,
+	CLAUDE_CODE_PROVIDER,
+} from "./claude-code.js";
 export { CLINE_DEFAULT_MODEL, CLINE_MODELS, CLINE_PROVIDER } from "./cline.js";
 // === DeepSeek ===
 export {
@@ -89,6 +94,11 @@ export {
 	OPENAI_CODEX_DEFAULT_MODEL,
 	OPENAI_CODEX_PROVIDER,
 } from "./openai-codex.js";
+export {
+	OPENCODE_DEFAULT_MODEL,
+	OPENCODE_MODELS,
+	OPENCODE_PROVIDER,
+} from "./opencode.js";
 export {
 	OPENROUTER_DEFAULT_MODEL,
 	OPENROUTER_MODELS,

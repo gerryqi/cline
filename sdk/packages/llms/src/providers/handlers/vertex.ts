@@ -16,13 +16,15 @@ import {
 	hasModelCapability,
 	type ProviderConfig,
 } from "../types";
-import type {
-	ImageContent,
-	Message,
-	TextContent,
-	ToolDefinition,
-} from "../types/messages";
+import type { Message, ToolDefinition } from "../types/messages";
 import { withRetry } from "../utils/retry";
+import {
+	emitAiSdkStream,
+	loadAiSdkModule,
+	numberOrZero,
+	toAiSdkMessages,
+} from "./ai-sdk-community";
+import { resolveHandlerModel } from "./ai-sdk-provider-base";
 import { BaseHandler } from "./base";
 import { GeminiHandler } from "./gemini-base";
 
@@ -32,20 +34,6 @@ function isClaudeModel(modelId: string): boolean {
 	return modelId.toLowerCase().includes("claude");
 }
 
-type AiModule = {
-	streamText: (input: Record<string, unknown>) => {
-		fullStream?: AsyncIterable<{ type?: string; [key: string]: unknown }>;
-		usage?: Promise<{
-			inputTokens?: number;
-			outputTokens?: number;
-			reasoningTokens?: number;
-			thoughtsTokenCount?: number;
-			cachedInputTokens?: number;
-			[key: string]: unknown;
-		}>;
-	};
-};
-
 type VertexAnthropicModule = {
 	createVertexAnthropic: (options?: {
 		project?: string;
@@ -54,27 +42,6 @@ type VertexAnthropicModule = {
 		baseURL?: string;
 	}) => (modelId: string) => unknown;
 };
-
-type ModelMessagePart = Record<string, unknown>;
-type ModelMessage = {
-	role: "system" | "user" | "assistant" | "tool";
-	content: string | ModelMessagePart[];
-};
-
-let cachedAiModule: AiModule | undefined;
-
-async function loadAiModule(): Promise<AiModule> {
-	if (cachedAiModule) {
-		return cachedAiModule;
-	}
-	const moduleName = "ai";
-	cachedAiModule = (await import(moduleName)) as AiModule;
-	return cachedAiModule;
-}
-
-function numberOrZero(value: unknown): number {
-	return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
 
 function toAiSdkTools(
 	tools: ToolDefinition[] | undefined,
@@ -95,30 +62,11 @@ function toAiSdkTools(
 	);
 }
 
-function serializeToolResult(
-	content: string | Array<TextContent | ImageContent>,
-): string {
-	if (typeof content === "string") {
-		return content;
-	}
-
-	const textParts: string[] = [];
-	for (const part of content) {
-		if (part.type === "text" && typeof part.text === "string") {
-			textParts.push(part.text);
-			continue;
-		}
-		textParts.push(JSON.stringify(part));
-	}
-
-	return textParts.join("\n");
-}
-
-function toModelMessages(
+function toVertexClaudeMessages(
 	systemPrompt: string,
 	messages: Message[],
 	options?: { promptCacheOn?: boolean },
-): ModelMessage[] {
+) {
 	const systemContent = options?.promptCacheOn
 		? [
 				{
@@ -130,86 +78,9 @@ function toModelMessages(
 				},
 			]
 		: systemPrompt;
-
-	const result: ModelMessage[] = [{ role: "system", content: systemContent }];
-	const toolNamesById = new Map<string, string>();
-
-	for (const message of messages) {
-		if (typeof message.content === "string") {
-			result.push({ role: message.role, content: message.content });
-			continue;
-		}
-
-		if (message.role === "assistant") {
-			const parts: ModelMessagePart[] = [];
-			for (const block of message.content) {
-				if (block.type === "text") {
-					parts.push({ type: "text", text: block.text });
-					continue;
-				}
-
-				if (block.type === "tool_use") {
-					toolNamesById.set(block.id, block.name);
-					parts.push({
-						type: "tool-call",
-						toolCallId: block.id,
-						toolName: block.name,
-						input: block.input,
-					});
-				}
-			}
-
-			if (parts.length > 0) {
-				result.push({ role: "assistant", content: parts });
-			}
-			continue;
-		}
-
-		const userParts: ModelMessagePart[] = [];
-		for (const block of message.content) {
-			if (block.type === "text") {
-				userParts.push({ type: "text", text: block.text });
-				continue;
-			}
-
-			if (block.type === "image") {
-				userParts.push({
-					type: "image",
-					image: Buffer.from(block.data, "base64"),
-					mediaType: block.mediaType,
-				});
-				continue;
-			}
-
-			if (block.type === "tool_result") {
-				if (userParts.length > 0) {
-					result.push({
-						role: "user",
-						content: userParts.splice(0, userParts.length),
-					});
-				}
-
-				result.push({
-					role: "tool",
-					content: [
-						{
-							type: "tool-result",
-							toolCallId: block.tool_use_id,
-							toolName: toolNamesById.get(block.tool_use_id) ?? "tool",
-							output: serializeToolResult(block.content),
-							isError: block.is_error ?? false,
-						},
-					],
-				});
-			}
-		}
-
-		if (userParts.length > 0) {
-			result.push({ role: "user", content: userParts });
-		}
-	}
-
-	return result;
+	return toAiSdkMessages(systemContent, messages, {
+		assistantToolCallArgKey: "input",
+	});
 }
 
 /**
@@ -309,20 +180,12 @@ export class VertexHandler extends BaseHandler {
 		}
 	}
 
-	private resolveModel(): HandlerModelInfo {
-		const modelId = this.config.modelId;
-		const knownModels = this.config.knownModels ?? {};
-		const fallbackModel = knownModels[modelId] ?? {};
-		const modelInfo = this.config.modelInfo ?? fallbackModel;
-		return { id: modelId, info: { ...modelInfo, id: modelId } };
-	}
-
 	getModel(): HandlerModelInfo {
-		return this.resolveModel();
+		return resolveHandlerModel(this.config);
 	}
 
 	getMessages(systemPrompt: string, messages: Message[]): unknown {
-		const model = this.resolveModel();
+		const model = this.getModel();
 		if (!isClaudeModel(model.id)) {
 			return this.ensureGeminiHandler().getMessages(systemPrompt, messages);
 		}
@@ -336,7 +199,7 @@ export class VertexHandler extends BaseHandler {
 		messages: Message[],
 		tools?: ToolDefinition[],
 	): ApiStream {
-		const model = this.resolveModel();
+		const model = this.getModel();
 
 		if (!isClaudeModel(model.id)) {
 			yield* this.ensureGeminiHandler().createMessage(
@@ -347,7 +210,7 @@ export class VertexHandler extends BaseHandler {
 			return;
 		}
 
-		const ai = await loadAiModule();
+		const ai = await loadAiSdkModule();
 		const modelFactory = await this.ensureVertexAnthropicModelFactory();
 		const responseId = this.createResponseId();
 
@@ -365,7 +228,9 @@ export class VertexHandler extends BaseHandler {
 
 		const stream = ai.streamText({
 			model: modelFactory(model.id),
-			messages: toModelMessages(systemPrompt, messages, { promptCacheOn }),
+			messages: toVertexClaudeMessages(systemPrompt, messages, {
+				promptCacheOn,
+			}),
 			tools: toAiSdkTools(tools),
 			maxTokens: model.info.maxTokens ?? 8192,
 			temperature: reasoningOn ? undefined : 0,
@@ -374,137 +239,39 @@ export class VertexHandler extends BaseHandler {
 			abortSignal: this.getAbortSignal(),
 		});
 
-		let usageEmitted = false;
+		yield* emitAiSdkStream(stream, {
+			responseId,
+			errorMessage: "Vertex Anthropic stream failed",
+			calculateCost: (inputTokens, outputTokens, cacheReadTokens) =>
+				this.calculateCost(inputTokens, outputTokens, cacheReadTokens),
+			reasoningTypes: ["reasoning-delta"],
+			enableToolCalls: true,
+			toolCallArgsOrder: ["input", "args"],
+			toolCallFunctionIncludeId: true,
+			resolveUsageMetrics: (usage, part) => {
+				const providerMetadata = (part?.providerMetadata ?? {}) as Record<
+					string,
+					unknown
+				>;
+				const anthropicMetadata =
+					(providerMetadata.anthropic as Record<string, unknown> | undefined) ??
+					{};
 
-		if (stream.fullStream) {
-			for await (const part of stream.fullStream) {
-				const partType = part.type;
-
-				if (partType === "text-delta") {
-					const text =
-						(part.textDelta as string | undefined) ??
-						(part.text as string | undefined) ??
-						(part.delta as string | undefined);
-					if (text) {
-						yield { type: "text", text, id: responseId };
-					}
-					continue;
-				}
-
-				if (partType === "reasoning-delta") {
-					const reasoning =
-						(part.textDelta as string | undefined) ??
-						(part.text as string | undefined);
-					if (reasoning) {
-						yield { type: "reasoning", reasoning, id: responseId };
-					}
-					continue;
-				}
-
-				if (partType === "tool-call") {
-					const toolCallId =
-						(part.toolCallId as string | undefined) ??
-						(part.id as string | undefined);
-					const toolName =
-						(part.toolName as string | undefined) ??
-						(part.name as string | undefined);
-					const args =
-						(part.input as Record<string, unknown> | undefined) ??
-						(part.args as Record<string, unknown> | undefined) ??
-						{};
-
-					yield {
-						type: "tool_calls",
-						id: responseId,
-						tool_call: {
-							call_id: toolCallId,
-							function: {
-								id: toolCallId,
-								name: toolName,
-								arguments: args,
-							},
-						},
-					};
-					continue;
-				}
-
-				if (partType === "error") {
-					const message =
-						(part.error as Error | undefined)?.message ??
-						"Vertex Anthropic stream failed";
-					throw new Error(message);
-				}
-
-				if (partType === "finish") {
-					const usage =
-						(part.totalUsage as Record<string, unknown> | undefined) ??
-						(part.usage as Record<string, unknown> | undefined) ??
-						{};
-					const providerMetadata = (part.providerMetadata ?? {}) as Record<
-						string,
-						unknown
-					>;
-					const anthropicMetadata =
-						(providerMetadata.anthropic as
-							| Record<string, unknown>
-							| undefined) ?? {};
-
-					const inputTokens = numberOrZero(usage.inputTokens);
-					const outputTokens = numberOrZero(usage.outputTokens);
-					const thoughtsTokenCount = numberOrZero(
+				return {
+					inputTokens: numberOrZero(usage.inputTokens),
+					outputTokens: numberOrZero(usage.outputTokens),
+					thoughtsTokenCount: numberOrZero(
 						usage.reasoningTokens ?? usage.thoughtsTokenCount,
-					);
-					const cacheReadTokens = numberOrZero(
+					),
+					cacheReadTokens: numberOrZero(
 						usage.cachedInputTokens ?? anthropicMetadata.cacheReadInputTokens,
-					);
-					const cacheWriteTokens = numberOrZero(
+					),
+					cacheWriteTokens: numberOrZero(
 						anthropicMetadata.cacheCreationInputTokens,
-					);
-
-					yield {
-						type: "usage",
-						inputTokens: Math.max(0, inputTokens - cacheReadTokens),
-						outputTokens,
-						thoughtsTokenCount,
-						cacheReadTokens,
-						cacheWriteTokens,
-						totalCost: this.calculateCost(
-							inputTokens,
-							outputTokens,
-							cacheReadTokens,
-						),
-						id: responseId,
-					};
-					usageEmitted = true;
-				}
-			}
-		}
-
-		if (!usageEmitted && stream.usage) {
-			const usage = await stream.usage;
-			const inputTokens = numberOrZero(usage.inputTokens);
-			const outputTokens = numberOrZero(usage.outputTokens);
-			const thoughtsTokenCount = numberOrZero(
-				usage.reasoningTokens ?? usage.thoughtsTokenCount,
-			);
-			const cacheReadTokens = numberOrZero(usage.cachedInputTokens);
-
-			yield {
-				type: "usage",
-				inputTokens: Math.max(0, inputTokens - cacheReadTokens),
-				outputTokens,
-				thoughtsTokenCount,
-				cacheReadTokens,
-				totalCost: this.calculateCost(
-					inputTokens,
-					outputTokens,
-					cacheReadTokens,
-				),
-				id: responseId,
-			};
-		}
-
-		yield { type: "done", success: true, id: responseId };
+					),
+				};
+			},
+		});
 	}
 }
 
