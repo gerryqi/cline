@@ -2,15 +2,18 @@
 
 This repository contains the SDK packages that power Cline agent runtimes.
 
-It is organized as a Bun workspace with three main packages:
+It is organized as a Bun workspace with four SDK packages and three app targets:
+
+SDK packages (`packages/`):
 
 - `@cline/llms`: model/provider selection and handler creation
 - `@cline/agents`: agent loop + tools + hooks + teams runtime primitives
+- `@cline/rpc`: gRPC routing server for clients, sessions, tasks, and tool approvals
 - `@cline/core`: stateful orchestration, sessions, storage, runtime assembly
-  
-Apps built with the Cline SDK:
 
-- `@cline/cli`: Lightweight CLI that composes the three SDK packages
+Apps built with the Cline SDK (`apps/`):
+
+- `@cline/cli`: Lightweight CLI that composes the SDK packages
 - `@cline/code`: Tauri desktop app that embeds a Next.js UI and composes the SDK packages
 - `@cline/desktop`: Tauri desktop app that embeds a Next.js UI and composes the SDK packages
 
@@ -44,13 +47,13 @@ bun run build:apps
 
 Useful workspace scripts (root `package.json`):
 
-- `bun run build` - build SDK packages (`llms -> agents -> core`)
-- `bun run build:apps` - build SDK packages plus app targets (`cli` + `code` + `desktop`)
-- `bun run build:llms|build:agents|build:core|build:cli|build:desktop` - build one workspace package
-- `bun run build:desktop` - build desktop web assets (`next build`)
+- `bun run build` - build SDK packages (`llms -> agents -> rpc -> core`)
+- `bun run build:apps` - build app targets (`cli` + `desktop` + `code`)
+- `bun run build:llms|build:agents|build:rpc|build:core|build:cli|build:code|build:desktop` - build one workspace package
 - `bun run build:models` - regenerate model metadata in `llms`
 - `bun run dev:cli -- "your prompt"` - run CLI from source
-- `bun run dev` - build SDK packages, then launch desktop app (`tauri dev`)
+- `bun run dev` - build SDK packages + CLI, then launch code app (`tauri dev`)
+- `bun run dev:code` - launch code app directly
 - `bun run dev:desktop` - launch desktop app directly
 - `bun run typecheck` - typecheck all packages
 - `bun run clean` - remove build outputs across packages
@@ -71,7 +74,7 @@ Tip: run `bun run fix` before opening a PR, then `bun run check` to verify every
 SDK/CLI packages in this workspace use Vitest for testing (`llms`, `agents`, `core`, and `cli`).
 
 - `bun run test` - run all package test suites from the repo root
-- `bun run test:llms|test:agents|test:core|test:cli|test:desktop` - run tests for one package
+- `bun run test:llms|test:agents|test:core|test:cli` - run tests for one package
 
 Package-level scripts also expose Vitest directly (for example `test:watch`, and in `cli`, `test:unit` and `test:e2e`).
 
@@ -81,6 +84,7 @@ Allowed cross-workspace imports:
 
 - `@cline/llms`
 - `@cline/agents`
+- `@cline/rpc`
 - `@cline/core`
 - `@cline/core/server` (intentional Node-runtime-only exception)
 
@@ -95,51 +99,89 @@ The boundary check is enforced by `bun run check:boundaries`.
 ```text
 .
 ├── README.md
+├── AGENTS.md
 ├── package.json
-├── llms/
-│   ├── README.md
-│   ├── ARCHITECTURE.md
-│   ├── src/
-│   │   ├── config.ts
-│   │   ├── sdk.ts
-│   │   ├── models/
-│   │   └── providers/
-│   └── scripts/
-├── agents/
-│   ├── README.md
-│   ├── ARCHITECTURE.md
-│   ├── DOC.md
-│   └── src/
-│       ├── agent.ts
-│       ├── hooks.ts
-│       ├── extensions.ts
-│       ├── tools/
-│       ├── teams/
-│       └── default-tools/
-├── core/
-│   ├── README.md
-│   └── src/
-│       ├── auth/
-│       ├── runtime/
-│       ├── session/
-│       ├── storage/
-│       └── server/
-├── cli/
-    ├── README.md
-    ├── Doc.md
-    └── src/
-        ├── index.ts
-        └── utils/
-└── desktop/
-    ├── README.md
-    ├── app/
-    ├── src/
-    └── src-tauri/
+├── biome.json
+├── packages/
+│   ├── llms/
+│   │   ├── README.md
+│   │   ├── ARCHITECTURE.md
+│   │   └── src/
+│   │       ├── index.ts
+│   │       ├── catalog.ts
+│   │       ├── config.ts
+│   │       ├── sdk.ts
+│   │       ├── types.ts
+│   │       ├── models/
+│   │       └── providers/
+│   ├── agents/
+│   │   ├── README.md
+│   │   ├── ARCHITECTURE.md
+│   │   ├── DOC.md
+│   │   └── src/
+│   │       ├── index.ts
+│   │       ├── agent.ts
+│   │       ├── hooks.ts
+│   │       ├── extensions.ts
+│   │       ├── streaming.ts
+│   │       ├── message-builder.ts
+│   │       ├── tools/
+│   │       ├── default-tools/
+│   │       ├── teams/
+│   │       └── prompts/
+│   ├── rpc/
+│   │   ├── README.md
+│   │   └── src/
+│   │       ├── index.ts
+│   │       ├── client.ts
+│   │       ├── gateway-client.ts
+│   │       ├── server.ts
+│   │       ├── session-store.ts
+│   │       └── proto/
+│   └── core/
+│       ├── README.md
+│       └── src/
+│           ├── index.ts
+│           ├── types/
+│           ├── runtime/
+│           ├── session/
+│           ├── storage/
+│           ├── agents/
+│           ├── adapters/
+│           ├── auth/
+│           ├── input/
+│           ├── chat/
+│           └── server/
+└── apps/
+    ├── cli/
+    │   ├── README.md
+    │   ├── ARCHITECTURE.md
+    │   └── src/
+    │       ├── index.ts
+    │       └── utils/
+    ├── code/
+    │   ├── app/
+    │   ├── components/
+    │   ├── hooks/
+    │   ├── lib/
+    │   ├── styles/
+    │   ├── public/
+    │   └── src-tauri/
+    └── desktop/
+        ├── README.md
+        ├── ARCHITECTURE.md
+        ├── app/
+        ├── components/
+        ├── hooks/
+        ├── lib/
+        ├── styles/
+        ├── public/
+        └── src-tauri/
 ```
 
 ## Package Guide
 
-### `llms/` (`@cline/llms`)
+### `packages/llms` (`@cline/llms`)
 
 Purpose: config-driven LLM SDK.
 
@@ -152,13 +194,12 @@ Use this package to:
 
 Start with:
 
-- `llms/README.md`
-- `llms/ARCHITECTURE.md`
-- `llms/src/sdk.ts`
-- `llms/src/providers/index.ts`
-- `llms/src/models/registry.ts`
+- `packages/llms/README.md`
+- `packages/llms/ARCHITECTURE.md`
+- `packages/llms/src/sdk.ts`
+- `packages/llms/src/providers/index.ts`
 
-### `agents/` (`@cline/agents`)
+### `packages/agents` (`@cline/agents`)
 
 Purpose: runtime agent loop and tool/hook/team primitives.
 
@@ -171,14 +212,32 @@ Use this package to:
 
 Start with:
 
-- `agents/README.md`
-- `agents/DOC.md` (API/export overview)
-- `agents/ARCHITECTURE.md`
-- `agents/src/agent.ts`
-- `agents/src/tools/`
-- `agents/src/teams/`
+- `packages/agents/README.md`
+- `packages/agents/DOC.md` (API/export overview)
+- `packages/agents/ARCHITECTURE.md`
+- `packages/agents/src/agent.ts`
+- `packages/agents/src/tools/`
+- `packages/agents/src/teams/`
 
-### `core/` (`@cline/core`)
+### `packages/rpc` (`@cline/rpc`)
+
+Purpose: gRPC gateway for routing clients, sessions, tasks, and tool approvals.
+
+Use this package to:
+
+- start and connect to a local gRPC server (default `127.0.0.1:4317`)
+- register clients and manage session lifecycle
+- enqueue and claim spawn requests for sub-agents
+- stream events and handle tool approval flows
+
+Start with:
+
+- `packages/rpc/README.md`
+- `packages/rpc/src/server.ts`
+- `packages/rpc/src/client.ts`
+- `packages/rpc/src/proto/rpc.proto`
+
+### `packages/core` (`@cline/core`)
 
 Purpose: stateful orchestration layer over agents.
 
@@ -188,54 +247,74 @@ Use this package to:
 - resolve credentials/config
 - manage root + sub-session lifecycle
 - persist state/transcripts via storage adapters
+- load agent configs, rules, and workflows
 
 Start with:
 
-- `core/README.md`
-- `core/src/runtime/`
-- `core/src/session/`
-- `core/src/storage/`
-- `core/src/server/`
+- `packages/core/README.md`
+- `packages/core/src/runtime/`
+- `packages/core/src/session/`
+- `packages/core/src/storage/`
+- `packages/core/src/agents/`
+- `packages/core/src/server/`
 
-### `cli/` (`@cline/cli`)
+### `apps/cli` (`@cline/cli`)
 
 Purpose: executable reference implementation of the SDK stack.
 
 Use this package to see how the SDK packages are composed in a real app:
 
-- argument parsing + runtime config (`cli/src/index.ts`)
+- argument parsing + runtime config (`apps/cli/src/index.ts`)
 - provider/model refresh (`@cline/llms`)
 - runtime assembly/session management (`@cline/core/server`)
 - agent loop execution + tools + hooks (`@cline/agents`)
+- gRPC server mode (`clite rpc start`) (`@cline/rpc`)
 
 Docs:
 
-- `cli/README.md` (usage-oriented)
-- `cli/Doc.md` (deep command/features breakdown)
+- `apps/cli/README.md` (usage-oriented)
+- `apps/cli/ARCHITECTURE.md`
 
-### `desktop/` (`@cline/desktop`)
+### `apps/code` (`@cline/code`)
+
+Purpose: Tauri desktop app that wires the SDK packages into a local GUI.
+
+The code app combines:
+
+- Next.js frontend (`apps/code/app`, `apps/code/components`)
+- Tauri host/runtime (`apps/code/src-tauri`)
+- shared SDK packages (`@cline/llms`, `@cline/agents`, `@cline/core`)
+
+Common commands:
+
+- from repo root: `bun run dev` (recommended; builds SDK packages + CLI first, then starts code app dev)
+- from repo root: `bun run dev:code` (starts code app directly)
+- from `apps/code/`: `bun run dev:web` (frontend-only Next.js dev server on port `3125`)
+- from `apps/code/`: `bun run build` (build web assets)
+- from `apps/code/`: `bun run build:binary` (build desktop binary with Tauri)
+
+### `apps/desktop` (`@cline/desktop`)
 
 Purpose: desktop reference app that wires the SDK packages into a local GUI.
 
 The desktop package combines:
 
-- Next.js frontend (`desktop/app`, `desktop/src`)
-- Tauri host/runtime (`desktop/src-tauri`)
+- Next.js frontend (`apps/desktop/app`, `apps/desktop/components`)
+- Tauri host/runtime (`apps/desktop/src-tauri`)
 - shared SDK packages (`@cline/llms`, `@cline/agents`, `@cline/core`)
 
 Common commands:
 
-- from repo root: `bun run dev` (recommended; builds SDK packages first, then starts desktop dev)
 - from repo root: `bun run dev:desktop` (starts desktop app directly)
-- from `desktop/`: `bun run dev:web` (frontend-only Next.js dev server on port `3124`)
-- from `desktop/`: `bun run build` (build web assets)
-- from `desktop/`: `bun run build:binary` (build desktop binary with Tauri)
-- from `desktop/`: `bun run typecheck`
-- from `desktop/`: `bun run clean` (clears Next + Cargo artifacts)
+- from `apps/desktop/`: `bun run dev:web` (frontend-only Next.js dev server on port `3124`)
+- from `apps/desktop/`: `bun run build` (build web assets)
+- from `apps/desktop/`: `bun run build:binary` (build desktop binary with Tauri)
+- from `apps/desktop/`: `bun run typecheck`
+- from `apps/desktop/`: `bun run clean` (clears Next + Cargo artifacts)
 
-## How Apps Compose `llms`, `agents`, and `core`
+## How Apps Compose `llms`, `agents`, `rpc`, and `core`
 
-The CLI and desktop app are the clearest end-to-end examples in this repo.
+The CLI and desktop apps are the clearest end-to-end examples in this repo.
 
 Flow:
 
@@ -249,11 +328,14 @@ Flow:
    - constructs tools (`createBuiltinTools`, spawn tool helpers)
    - creates and runs the `Agent` loop (`agent.run`, `agent.continue`)
    - processes tool calls/hooks/streaming events
+4. `@cline/rpc` (optional):
+   - provides gRPC server for multi-client session routing
+   - manages tool approval flows and event streaming
 
-Desktop entry points to follow:
+Desktop/code entry points to follow:
 
-- frontend: `desktop/app/` and `desktop/src/`
-- tauri backend/runtime bridge: `desktop/src-tauri/src/main.rs`
+- frontend: `apps/code/app/` or `apps/desktop/app/`
+- tauri backend/runtime bridge: `apps/code/src-tauri/` or `apps/desktop/src-tauri/`
 
 Minimal composition sketch:
 
@@ -284,6 +366,6 @@ console.log(result.text)
 ## Navigation Tips
 
 - Read each package `README.md` first, then `ARCHITECTURE.md`/`DOC.md` files.
-- Follow imports from `cli/src/index.ts` and `desktop/src-tauri/src/main.rs` to understand package boundaries.
+- Follow imports from `apps/cli/src/index.ts` and `apps/desktop/src-tauri/src/main.rs` to understand package boundaries.
 - Prefer `src/` for implementation and `dist/` only for built output verification.
-- Start debugging integration behavior from `cli/src/index.ts`, then drill into `core/src/runtime`, `agents/src/agent.ts`, and `llms/src/sdk.ts`.
+- Start debugging integration behavior from `apps/cli/src/index.ts`, then drill into `packages/core/src/runtime`, `packages/agents/src/agent.ts`, and `packages/llms/src/sdk.ts`.

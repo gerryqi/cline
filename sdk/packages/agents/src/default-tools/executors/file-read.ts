@@ -5,6 +5,7 @@
  */
 
 import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import type { ToolContext } from "../../types.js";
 import type { FileReadExecutor } from "../types.js";
 
@@ -54,11 +55,15 @@ export function createFileReadExecutor(
 	} = options;
 
 	return async (filePath: string, _context: ToolContext): Promise<string> => {
+		const resolvedPath = path.isAbsolute(filePath)
+			? path.normalize(filePath)
+			: path.resolve(process.cwd(), filePath);
+
 		// Check if file exists
-		const stat = await fs.stat(filePath);
+		const stat = await fs.stat(resolvedPath);
 
 		if (!stat.isFile()) {
-			throw new Error(`Path is not a file: ${filePath}`);
+			throw new Error(`Path is not a file: ${resolvedPath}`);
 		}
 
 		// Check file size
@@ -70,7 +75,7 @@ export function createFileReadExecutor(
 		}
 
 		// Read file content
-		const content = await fs.readFile(filePath, encoding);
+		const content = await fs.readFile(resolvedPath, encoding);
 
 		// Optionally add line numbers
 		if (includeLineNumbers) {

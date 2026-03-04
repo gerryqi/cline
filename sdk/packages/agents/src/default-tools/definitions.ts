@@ -310,7 +310,7 @@ export function createEditorTool(
 	return createTool<EditFileInput, ToolOperationResult>({
 		name: "editor",
 		description:
-			"Edit files in the workspace with create, string replacement, and line insert operations. " +
+			"Edit file using absolute path with create, string replacement, and line insert operations. " +
 			"Supported commands: create, str_replace, insert, undo_edit.",
 		inputSchema: zodToJsonSchema(EditFileInputSchema),
 		timeoutMs,

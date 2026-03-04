@@ -20,7 +20,8 @@ export interface EditorExecutorOptions {
 	encoding?: BufferEncoding;
 
 	/**
-	 * Restrict file operations to paths inside cwd
+	 * Restrict relative-path file operations to paths inside cwd.
+	 * Absolute paths are always accepted as-is.
 	 * @default true
 	 */
 	restrictToCwd?: boolean;
@@ -37,8 +38,16 @@ function resolveFilePath(
 	inputPath: string,
 	restrictToCwd: boolean,
 ): string {
-	const resolved = path.resolve(cwd, inputPath);
+	const isAbsoluteInput = path.isAbsolute(inputPath);
+	const resolved = isAbsoluteInput
+		? path.normalize(inputPath)
+		: path.resolve(cwd, inputPath);
 	if (!restrictToCwd) {
+		return resolved;
+	}
+
+	// Absolute paths are accepted directly; cwd restriction applies to relative inputs.
+	if (isAbsoluteInput) {
 		return resolved;
 	}
 

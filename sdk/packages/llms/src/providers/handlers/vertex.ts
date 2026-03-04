@@ -102,6 +102,15 @@ export class VertexHandler extends BaseHandler {
 			return await this.anthropicClientPromise;
 		} catch (error) {
 			this.anthropicClientPromise = undefined;
+			if (
+				error instanceof Error &&
+				error.message.includes("@anthropic-ai/vertex-sdk")
+			) {
+				throw new Error(
+					'Vertex Claude models require @anthropic-ai/vertex-sdk at runtime. Install workspace dependencies before using provider "vertex".',
+					{ cause: error },
+				);
+			}
 			throw error;
 		}
 	}

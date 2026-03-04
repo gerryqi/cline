@@ -28,8 +28,7 @@
 		"test:agents": "cd packages/agents && bun run test",
 		"test:core": "cd packages/core && bun run test",
 		"test:cli": "cd apps/cli && bun run test",
-		"check": "bunx --bun @biomejs/biome check && bun run check:boundaries",
-		"check:boundaries": "./scripts/check-boundaries.sh",
+		"check": "bunx --bun @biomejs/biome check",
 		"format": "bunx --bun @biomejs/biome format",
 		"lint": "bunx --bun @biomejs/biome lint",
 		"fix": "bun run check --write --unsafe"

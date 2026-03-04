@@ -429,6 +429,74 @@ export interface AgentHookSessionShutdownContext {
 	reason?: string;
 }
 
+export type HookStage =
+	| "session_start"
+	| "run_start"
+	| "iteration_start"
+	| "turn_start"
+	| "tool_call_before"
+	| "tool_call_after"
+	| "turn_end"
+	| "iteration_end"
+	| "run_end"
+	| "session_shutdown"
+	| "error";
+
+export type HookMode = "blocking" | "async";
+export type HookFailureMode = "fail_open" | "fail_closed";
+
+export interface HookStagePolicy {
+	mode: HookMode;
+	timeoutMs: number;
+	retries: number;
+	retryDelayMs: number;
+	failureMode: HookFailureMode;
+	maxConcurrency: number;
+	queueLimit: number;
+}
+
+export type HookStagePolicyInput = Partial<HookStagePolicy>;
+
+export interface HookPolicies {
+	defaultPolicy?: HookStagePolicyInput;
+	stages?: Partial<Record<HookStage, HookStagePolicyInput>>;
+	handlers?: Record<string, HookStagePolicyInput>;
+}
+
+export interface HookEventEnvelope<TPayload = unknown> {
+	eventId: string;
+	stage: HookStage;
+	createdAt: Date;
+	sequence: number;
+	runId: string;
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+	iteration?: number;
+	parentEventId?: string;
+	payload: TPayload;
+}
+
+export type HookAttemptStatus = "ok" | "timeout" | "error" | "skipped";
+
+export interface HookHandlerResult {
+	handlerName: string;
+	stage: HookStage;
+	status: HookAttemptStatus;
+	attempts: number;
+	durationMs: number;
+	error?: Error;
+	control?: AgentHookControl;
+}
+
+export interface HookDispatchResult {
+	event: HookEventEnvelope;
+	queued: boolean;
+	dropped: boolean;
+	control?: AgentHookControl;
+	results: HookHandlerResult[];
+}
+
 // =============================================================================
 // Extensions
 // =============================================================================
@@ -796,6 +864,10 @@ export interface AgentConfig {
 	 */
 	hookErrorMode?: HookErrorMode;
 	/**
+	 * Optional deterministic hook execution policies.
+	 */
+	hookPolicies?: HookPolicies;
+	/**
 	 * Per-tool execution policy. Tool names not listed here default to enabled + autoApprove.
 	 */
 	toolPolicies?: Record<string, ToolPolicy>;
@@ -849,6 +921,7 @@ export const AgentConfigSchema = z.object({
 	parentAgentId: z.string().optional(),
 	extensions: z.array(z.custom<AgentExtension>()).optional(),
 	hookErrorMode: z.enum(["ignore", "throw"]).default("ignore"),
+	hookPolicies: z.custom<HookPolicies>().optional(),
 	toolPolicies: z
 		.record(
 			z.object({

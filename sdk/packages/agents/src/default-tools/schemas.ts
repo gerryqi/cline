@@ -59,7 +59,7 @@ export const EditFileInputSchema = z
 			.describe(
 				"Editor command to execute: create, str_replace, insert, or undo_edit",
 			),
-		path: z.string().min(1).describe("Workspace-relative file path"),
+		path: z.string().min(1).describe("Absolute file path"),
 		file_text: z
 			.string()
 			.optional()
