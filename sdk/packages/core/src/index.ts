@@ -57,6 +57,50 @@ export {
 	UnifiedConfigFileWatcher,
 	WORKFLOWS_CONFIG_DIRECTORY_NAME,
 } from "./agents";
+export {
+	createClineOAuthProvider,
+	getValidClineCredentials,
+	loginClineOAuth,
+	refreshClineToken,
+} from "./auth/cline";
+export {
+	getValidOpenAICodexCredentials,
+	isOpenAICodexTokenExpired,
+	loginOpenAICodex,
+	normalizeOpenAICodexCredentials,
+	openaiCodexOAuthProvider,
+	refreshOpenAICodexToken,
+} from "./auth/codex";
+export {
+	createOcaOAuthProvider,
+	createOcaRequestHeaders,
+	DEFAULT_EXTERNAL_IDCS_CLIENT_ID,
+	DEFAULT_EXTERNAL_IDCS_SCOPES,
+	DEFAULT_EXTERNAL_IDCS_URL,
+	DEFAULT_EXTERNAL_OCA_BASE_URL,
+	DEFAULT_INTERNAL_IDCS_CLIENT_ID,
+	DEFAULT_INTERNAL_IDCS_SCOPES,
+	DEFAULT_INTERNAL_IDCS_URL,
+	DEFAULT_INTERNAL_OCA_BASE_URL,
+	generateOcaOpcRequestId,
+	getValidOcaCredentials,
+	loginOcaOAuth,
+	OCI_HEADER_OPC_REQUEST_ID,
+	refreshOcaToken,
+} from "./auth/oca";
+export { startLocalOAuthServer } from "./auth/server";
+export type {
+	OAuthCredentials,
+	OAuthLoginCallbacks,
+	OAuthPrompt,
+	OAuthProviderInterface,
+	OcaClientMetadata,
+	OcaMode,
+	OcaOAuthConfig,
+	OcaOAuthEnvironmentConfig,
+	OcaOAuthProviderOptions,
+	OcaTokenResolution,
+} from "./auth/types";
 export type {
 	ChatMessage,
 	ChatSessionConfig,
@@ -72,6 +116,20 @@ export {
 	ChatSummarySchema,
 	ChatViewStateSchema,
 } from "./chat/chat-schema";
+export {
+	InMemoryMcpManager,
+	type McpConnectionStatus,
+	type McpManager,
+	type McpManagerOptions,
+	type McpServerClient,
+	type McpServerClientFactory,
+	type McpServerRegistration,
+	type McpServerSnapshot,
+	type McpServerTransportConfig,
+	type McpSseTransportConfig,
+	type McpStdioTransportConfig,
+	type McpStreamableHttpTransportConfig,
+} from "./mcp";
 export {
 	formatRulesForSystemPrompt,
 	isRuleEnabled,

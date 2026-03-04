@@ -34,6 +34,7 @@ Primary usage in `cli/src/index.ts`:
 - `ProviderSettingsManager`
   - Loads persisted provider settings (provider/model/auth) from core-managed storage.
   - Persists the effective provider/model selection so future CLI/desktop runs reuse the same defaults.
+  - Persists OAuth credentials after `clite auth <provider>` and auto-auth flows.
 - Session and manifest types/services (through CLI utilities)
   - CLI writes and updates session artifacts for local auditability.
 
@@ -57,10 +58,23 @@ Primary usage in `cli/src/index.ts`:
 Two paths:
 
 - Direct in CLI:
-  - `getLiveModelsCatalog()` to resolve/refresh provider model lists at startup.
+  - `resolveProviderConfig()` to resolve/refresh provider model lists at startup.
 - Indirect through agents:
   - `Agent` constructs a provider handler with `createHandler(...)` from `@cline/llms`.
   - Streaming chunks from handlers are normalized as `ApiStreamChunk` values.
+
+### OAuth auth flow
+
+- CLI supports OAuth providers: `cline`, `openai-codex`, `oca`.
+- Two entrypoints:
+  - explicit: `clite auth <provider>`
+  - implicit: when selected provider is OAuth-capable and no API key is configured
+- CLI resolves runtime OAuth helpers from `@cline/core/server` and runs login callbacks in terminal I/O mode.
+- On success, CLI persists:
+  - `settings.apiKey` (provider-ready API key)
+  - `settings.auth.accessToken`
+  - `settings.auth.refreshToken`
+  - `settings.auth.accountId`
 
 ### `@cline/rpc` consumption
 
@@ -79,9 +93,13 @@ Primary usage in `cli/src/index.ts`:
 flowchart TD
   A[CLI args/env/stdin] --> B[Build Config]
   B --> B1[core: ProviderSettingsManager load]
-  B1 --> B2[Resolve provider/model/apiKey defaults]
-  B2 --> B3[core: ProviderSettingsManager save]
-  B3 --> C[core: DefaultRuntimeBuilder.build]
+  B1 --> B2{OAuth provider + missing API key?}
+  B2 -->|yes| B2a[Run OAuth login]
+  B2a --> B2b[Persist OAuth credentials]
+  B2 -->|no| B3[Resolve provider/model/apiKey defaults]
+  B2b --> B3
+  B3 --> B4[core: ProviderSettingsManager save]
+  B4 --> C[core: DefaultRuntimeBuilder.build]
   C --> D[tools + optional team runtime]
   D --> E[agents: new Agent]
   E --> F[agent.run or agent.continue]

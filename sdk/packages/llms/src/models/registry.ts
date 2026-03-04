@@ -113,6 +113,9 @@ function registerBuiltInProviderLoaders(): void {
 		load: async () =>
 			(await import("./providers/nous-research.js")).NOUS_RESEARCH_PROVIDER,
 	});
+	PROVIDER_LOADERS.set("oca", {
+		load: async () => (await import("./providers/oca.js")).OCA_PROVIDER,
+	});
 
 	PROVIDER_LOADERS.set("requesty", {
 		load: async () =>

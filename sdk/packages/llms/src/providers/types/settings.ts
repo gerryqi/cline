@@ -6,6 +6,10 @@
  */
 
 import { z } from "zod";
+import {
+	DEFAULT_EXTERNAL_OCA_BASE_URL,
+	DEFAULT_INTERNAL_OCA_BASE_URL,
+} from "../../models/providers/oca";
 import { OPENAI_COMPATIBLE_PROVIDERS } from "../handlers/providers";
 import {
 	BUILT_IN_PROVIDER_IDS,
@@ -156,6 +160,8 @@ export type OcaSettings = z.infer<typeof OcaSettingsSchema>;
 export const ModelCatalogSettingsSchema = z.object({
 	/** Fetch latest catalog at handler initialization */
 	loadLatestOnInit: z.boolean().optional(),
+	/** Fetch provider-private models when auth is available */
+	loadPrivateOnAuth: z.boolean().optional(),
 	/** Catalog endpoint URL */
 	url: z.string().url().optional(),
 	/** Cache TTL for live catalog in milliseconds */
@@ -353,8 +359,16 @@ export function toProviderConfig(settings: ProviderSettings): ProviderConfig {
 	// Get provider defaults if available
 	const providerDefaults = OPENAI_COMPATIBLE_PROVIDERS[providerId];
 
-	// Resolve API key (shorthand takes precedence, then auth.apiKey)
-	const apiKey = settings.apiKey ?? settings.auth?.apiKey;
+	// Resolve API key (shorthand takes precedence, then auth.apiKey, then OAuth access token)
+	const apiKey =
+		settings.apiKey ?? settings.auth?.apiKey ?? settings.auth?.accessToken;
+	const resolvedBaseUrl =
+		settings.baseUrl ??
+		(providerId === "oca"
+			? settings.oca?.mode === "internal"
+				? DEFAULT_INTERNAL_OCA_BASE_URL
+				: DEFAULT_EXTERNAL_OCA_BASE_URL
+			: providerDefaults?.baseUrl);
 
 	// Build the config
 	const config: ProviderConfig = {
@@ -372,7 +386,7 @@ export function toProviderConfig(settings: ProviderSettings): ProviderConfig {
 		accountId: settings.auth?.accountId,
 
 		// Endpoint configuration
-		baseUrl: settings.baseUrl ?? providerDefaults?.baseUrl,
+		baseUrl: resolvedBaseUrl,
 		headers: settings.headers,
 		timeoutMs: settings.timeout,
 
@@ -431,6 +445,7 @@ export function toProviderConfig(settings: ProviderSettings): ProviderConfig {
 		modelCatalog: settings.modelCatalog
 			? {
 					loadLatestOnInit: settings.modelCatalog.loadLatestOnInit,
+					loadPrivateOnAuth: settings.modelCatalog.loadPrivateOnAuth,
 					url: settings.modelCatalog.url,
 					cacheTtlMs: settings.modelCatalog.cacheTtlMs,
 					failOnError: settings.modelCatalog.failOnError,

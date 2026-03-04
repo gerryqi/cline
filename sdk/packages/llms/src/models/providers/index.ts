@@ -69,6 +69,13 @@ export {
 	NOUS_RESEARCH_MODELS,
 	NOUS_RESEARCH_PROVIDER,
 } from "./nous-research.js";
+export {
+	DEFAULT_EXTERNAL_OCA_BASE_URL,
+	DEFAULT_INTERNAL_OCA_BASE_URL,
+	OCA_DEFAULT_MODEL,
+	OCA_MODELS,
+	OCA_PROVIDER,
+} from "./oca.js";
 export { OLLAMA_PROVIDER } from "./ollama.js";
 // === OpenAI ===
 export {

@@ -291,6 +291,114 @@ function normalizeProviderId(providerId: string): string {
 	return normalized === "openai" ? "openai-native" : normalized;
 }
 
+function normalizeAuthProviderId(providerId: string): string {
+	const normalized = providerId.trim().toLowerCase();
+	if (normalized === "codex" || normalized === "openai-codex") {
+		return "openai-codex";
+	}
+	return normalizeProviderId(normalized);
+}
+
+function isOAuthProvider(providerId: string): boolean {
+	return (
+		providerId === "cline" ||
+		providerId === "oca" ||
+		providerId === "openai-codex"
+	);
+}
+
+function toProviderApiKey(
+	providerId: string,
+	credentials: Pick<OAuthCredentials, "access">,
+): string {
+	if (providerId === "cline") {
+		return `workos:${credentials.access}`;
+	}
+	return credentials.access;
+}
+
+function getPersistedProviderApiKey(
+	providerId: string,
+	settings?: providers.ProviderSettings,
+): string | undefined {
+	const shorthandKey = settings?.apiKey?.trim();
+	if (shorthandKey) {
+		return shorthandKey;
+	}
+	const authKey = settings?.auth?.apiKey?.trim();
+	if (authKey) {
+		return authKey;
+	}
+	const accessToken = settings?.auth?.accessToken?.trim();
+	if (!accessToken) {
+		return undefined;
+	}
+	return toProviderApiKey(providerId, { access: accessToken });
+}
+
+type OAuthCredentials = {
+	access: string;
+	refresh: string;
+	expires: number;
+	accountId?: string;
+	email?: string;
+	metadata?: Record<string, unknown>;
+};
+
+type CoreOAuthApi = {
+	loginClineOAuth: (input: {
+		apiBaseUrl: string;
+		callbacks: {
+			onAuth: (info: { url: string; instructions?: string }) => void;
+			onPrompt: (prompt: {
+				message: string;
+				defaultValue?: string;
+			}) => Promise<string>;
+			onManualCodeInput?: () => Promise<string>;
+		};
+	}) => Promise<OAuthCredentials>;
+	loginOcaOAuth: (input: {
+		mode?: "internal" | "external";
+		callbacks: {
+			onAuth: (info: { url: string; instructions?: string }) => void;
+			onPrompt: (prompt: {
+				message: string;
+				defaultValue?: string;
+			}) => Promise<string>;
+			onManualCodeInput?: () => Promise<string>;
+		};
+	}) => Promise<OAuthCredentials>;
+	loginOpenAICodex: (input: {
+		onAuth: (info: { url: string; instructions?: string }) => void;
+		onPrompt: (prompt: {
+			message: string;
+			defaultValue?: string;
+		}) => Promise<string>;
+		onManualCodeInput?: () => Promise<string>;
+	}) => Promise<OAuthCredentials>;
+};
+
+let cachedCoreOAuthApi: Promise<CoreOAuthApi> | undefined;
+
+async function getCoreOAuthApi(): Promise<CoreOAuthApi> {
+	if (!cachedCoreOAuthApi) {
+		cachedCoreOAuthApi = import("@cline/core/server").then((module) => {
+			const runtimeApi = module as Partial<CoreOAuthApi>;
+			if (
+				typeof runtimeApi.loginClineOAuth !== "function" ||
+				typeof runtimeApi.loginOcaOAuth !== "function" ||
+				typeof runtimeApi.loginOpenAICodex !== "function"
+			) {
+				throw new Error(
+					"Installed @cline/core does not expose OAuth login helpers required by the CLI",
+				);
+			}
+			return runtimeApi as CoreOAuthApi;
+		});
+	}
+	return cachedCoreOAuthApi;
+}
+
 // =============================================================================
 // ANSI Colors (no dependencies for speed)
 // =============================================================================
@@ -541,6 +649,129 @@ async function askQuestionInTerminal(
 			},
 		);
 	});
+}
+
+async function askForInputInTerminal(question: string): Promise<string> {
+	if (!process.stdin.isTTY || !process.stdout.isTTY) {
+		throw new Error("OAuth login requires an interactive terminal session");
+	}
+
+	return new Promise<string>((resolve) => {
+		const rl = createInterface({
+			input: process.stdin,
+			output: process.stdout,
+		});
+		rl.question(`${question} `, (value) => {
+			rl.close();
+			resolve(value);
+		});
+	});
+}
+
+function createOAuthCallbacks(): {
+	onAuth: (info: { url: string; instructions?: string }) => void;
+	onPrompt: (prompt: {
+		message: string;
+		defaultValue?: string;
+	}) => Promise<string>;
+} {
+	return {
+		onAuth: ({ url, instructions }) => {
+			writeln(
+				`${c.dim}[auth] ${instructions ?? "Complete sign-in in your browser."}${c.reset}`,
+			);
+			writeln(`${c.dim}[auth] ${url}${c.reset}`);
+		},
+		onPrompt: ({ message, defaultValue }) =>
+			askForInputInTerminal(message).then((value) => {
+				const trimmed = value.trim();
+				return trimmed || defaultValue || "";
+			}),
+	};
+}
+
+async function loginWithOAuthProvider(
+	providerId: string,
+	existing?: providers.ProviderSettings,
+): Promise<OAuthCredentials> {
+	const oauthApi = await getCoreOAuthApi();
+	const callbacks = createOAuthCallbacks();
+
+	if (providerId === "cline") {
+		return oauthApi.loginClineOAuth({
+			apiBaseUrl: existing?.baseUrl?.trim() || "https://api.cline.bot",
+			callbacks,
+		});
+	}
+
+	if (providerId === "oca") {
+		const mode = existing?.oca?.mode;
+		return oauthApi.loginOcaOAuth({
+			mode,
+			callbacks,
+		});
+	}
+
+	if (providerId === "openai-codex") {
+		return oauthApi.loginOpenAICodex(callbacks);
+	}
+
+	throw new Error(
+		`Provider "${providerId}" does not support CLI OAuth flow (supported: cline, openai-codex, oca)`,
+	);
+}
+
+function saveOAuthProviderSettings(
+	providerSettingsManager: ProviderSettingsManager,
+	providerId: string,
+	existing: providers.ProviderSettings | undefined,
+	credentials: OAuthCredentials,
+): providers.ProviderSettings {
+	const apiKey = toProviderApiKey(providerId, credentials);
+	const merged: providers.ProviderSettings = {
+		...(existing ?? {
+			provider: providerId as providers.ProviderSettings["provider"],
+		}),
+		provider: providerId as providers.ProviderSettings["provider"],
+		apiKey,
+		auth: {
+			...(existing?.auth ?? {}),
+			accessToken: credentials.access,
+			refreshToken: credentials.refresh,
+			accountId: credentials.accountId,
+		},
+	};
+	providerSettingsManager.saveProviderSettings(merged);
+	return merged;
+}
+
+async function runAuthProviderCommand(
+	providerSettingsManager: ProviderSettingsManager,
+	providerId: string,
+): Promise<number> {
+	if (!isOAuthProvider(providerId)) {
+		writeErr(
+			`provider "${providerId}" does not support OAuth login (supported: cline, openai-codex, oca)`,
+		);
+		return 1;
+	}
+	try {
+		const existing = providerSettingsManager.getProviderSettings(providerId);
+		const credentials = await loginWithOAuthProvider(providerId, existing);
+		saveOAuthProviderSettings(
+			providerSettingsManager,
+			providerId,
+			existing,
+			credentials,
+		);
+		writeln(
+			`${c.green}You are now logged in to ${c.cyan}${providerId}${c.reset}`,
+		);
+		return 0;
+	} catch (error) {
+		writeErr(error instanceof Error ? error.message : String(error));
+		return 1;
+	}
 }
 
 function getHookCommand(): string[] | undefined {
@@ -1456,6 +1687,7 @@ ${c.bold}USAGE${c.reset}
   clite -i                    Interactive mode
   clite list history          List saved history items
   clite list hooks            List hook file locations
+  clite auth <provider>       Run OAuth login (cline|openai-codex|oca)
   clite hook < payload.json   Handle hook payload from stdin
   clite rpc start             Start RPC server
   clite list <workflows|rules|skills|agents|history|hooks>
@@ -1515,6 +1747,8 @@ ${c.bold}EXAMPLES${c.reset}
   clite list skills
   clite list agents
   clite list hooks
+  clite auth openai-codex
+  clite auth oca
   clite rpc start
   clite rpc start --address 127.0.0.1:4317
   clite "What is 2+2?"
@@ -1855,6 +2089,7 @@ async function main(): Promise<void> {
 		cwd,
 		explicitDir: args.sandboxDir,
 	});
+	const providerSettingsManager = new ProviderSettingsManager();
 
 	if (rawArgs[0] === "hook") {
 		const code = await runHookCommand();
@@ -1862,6 +2097,24 @@ async function main(): Promise<void> {
 	}
 	if (rawArgs[0] === "rpc" && rawArgs[1] === "start") {
 		const code = await runRpcStartCommand(rawArgs);
+		process.exit(code);
+	}
+	if (rawArgs[0] === "auth") {
+		const explicitProviderArg =
+			rawArgs[1] && !rawArgs[1].startsWith("-") ? rawArgs[1] : undefined;
+		const lastUsedProvider =
+			providerSettingsManager.getLastUsedProviderSettings()?.provider;
+		const providerId = normalizeAuthProviderId(
+			explicitProviderArg || args.provider?.trim() || lastUsedProvider || "",
+		);
+		if (!providerId) {
+			writeErr(`auth requires a provider (example: "clite auth openai-codex")`);
+			process.exit(1);
+		}
+		const code = await runAuthProviderCommand(
+			providerSettingsManager,
+			providerId,
+		);
 		process.exit(code);
 	}
 	if (rawArgs[0] === "list") {
@@ -1988,7 +2241,6 @@ async function main(): Promise<void> {
 		return;
 	}
 
-	const providerSettingsManager = new ProviderSettingsManager();
 	const userInstructionWatcher = createUserInstructionConfigWatcher({
 		skills: { workspacePath: cwd },
 		rules: { workspacePath: cwd },
@@ -2005,31 +2257,53 @@ async function main(): Promise<void> {
 	const provider = normalizeProviderId(
 		args.provider?.trim() || lastUsedProviderSettings?.provider || "anthropic",
 	);
-	const selectedProviderSettings =
+	let selectedProviderSettings =
 		providerSettingsManager.getProviderSettings(provider);
-	const persistedApiKey =
-		selectedProviderSettings?.apiKey?.trim() ||
-		selectedProviderSettings?.auth?.apiKey?.trim() ||
-		undefined;
-	const apiKey = args.key?.trim() || persistedApiKey || undefined;
+	const persistedApiKey = getPersistedProviderApiKey(
+		provider,
+		selectedProviderSettings,
+	);
+	let apiKey = args.key?.trim() || persistedApiKey || undefined;
+
+	if (!apiKey && isOAuthProvider(provider)) {
+		const credentials = await loginWithOAuthProvider(
+			provider,
+			selectedProviderSettings,
+		);
+		selectedProviderSettings = saveOAuthProviderSettings(
+			providerSettingsManager,
+			provider,
+			selectedProviderSettings,
+			credentials,
+		);
+		apiKey = toProviderApiKey(provider, credentials);
+	}
 
 	let knownModels: Config["knownModels"];
 	try {
-		const liveCatalog = await providers.getLiveModelsCatalog();
-		knownModels = liveCatalog[provider];
+		const resolvedProviderConfig = await providers.resolveProviderConfig(
+			provider,
+			{
+				loadLatestOnInit: true,
+				loadPrivateOnAuth: true,
+				failOnError: false,
+			},
+		);
+		knownModels = resolvedProviderConfig?.knownModels;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		writeln(
 			`${c.dim}[model-catalog] latest refresh failed, using bundled defaults (${message})${c.reset}`,
 		);
 	}
+	const knownModelIds = knownModels ? Object.keys(knownModels) : [];
 
 	const config: Config = {
 		providerId: provider,
 		modelId:
 			args.model ??
 			selectedProviderSettings?.model ??
-			knownModels?.[0]?.id ??
+			knownModelIds[0] ??
 			"claude-sonnet-4-6",
 		apiKey: apiKey ?? "",
 		knownModels,

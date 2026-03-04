@@ -25,6 +25,7 @@ export {
 // Provider configurations
 export {
 	clearLiveModelsCatalogCache,
+	clearPrivateModelsCatalogCache,
 	DEFAULT_MODELS_CATALOG_URL,
 	getLiveModelsCatalog,
 	getProviderConfig,

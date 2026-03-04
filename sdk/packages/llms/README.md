@@ -259,6 +259,9 @@ const llms = createLlmsSdk({
       settings: {
         modelCatalog: {
           loadLatestOnInit: true,
+          // for auth-gated providers (Baseten/HiCap/LiteLLM), refresh private models
+          // automatically when apiKey/accessToken is available:
+          // loadPrivateOnAuth: true,
           // optional:
           // url: "https://models.dev/api.json",
           // cacheTtlMs: 600_000,

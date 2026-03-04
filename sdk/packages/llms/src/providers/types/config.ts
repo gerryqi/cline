@@ -212,6 +212,8 @@ export interface ProviderOptions {
 export interface ModelCatalogConfig {
 	/** Fetch latest catalog at handler initialization */
 	loadLatestOnInit?: boolean;
+	/** Fetch provider-private models when auth is available */
+	loadPrivateOnAuth?: boolean;
 	/** Catalog endpoint URL */
 	url?: string;
 	/** Cache TTL for live catalog in milliseconds */

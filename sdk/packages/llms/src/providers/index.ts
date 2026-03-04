@@ -142,6 +142,7 @@ export {
 	// Base classes (for extension)
 	BaseHandler,
 	clearLiveModelsCatalogCache,
+	clearPrivateModelsCatalogCache,
 	// Custom handler registry
 	clearRegistry,
 	createAnthropicHandler,
@@ -221,6 +222,10 @@ export {
 } from "./utils";
 
 import { CLINE_PROVIDER } from "../models";
+import {
+	DEFAULT_EXTERNAL_OCA_BASE_URL,
+	DEFAULT_INTERNAL_OCA_BASE_URL,
+} from "../models/providers/oca";
 // =============================================================================
 // Main Factory Function
 // =============================================================================
@@ -243,12 +248,18 @@ import {
 	isRegisteredHandlerAsync,
 } from "./handlers/registry";
 import { VertexHandler } from "./handlers/vertex";
-import type { ApiHandler, ProviderConfig, ProviderId } from "./types";
+import {
+	ApiFormat,
+	type ApiHandler,
+	type ProviderConfig,
+	type ProviderId,
+} from "./types";
 
 const ANTHROPIC_PROVIDER_ID = "anthropic";
 const BEDROCK_PROVIDER_ID = "bedrock";
 const GEMINI_PROVIDER_ID = "gemini";
 const OPENAI_PROVIDER_ID = "openai-native";
+const OCA_PROVIDER_ID = "oca";
 const VERTEX_PROVIDER_ID = "vertex";
 
 function withNormalizedProviderId(config: ProviderConfig): ProviderConfig {
@@ -260,6 +271,35 @@ function withNormalizedProviderId(config: ProviderConfig): ProviderConfig {
 		...config,
 		providerId: normalizedProviderId,
 	};
+}
+
+function resolveOcaBaseUrl(
+	config: ProviderConfig,
+	providerDefaults?: { baseUrl: string },
+): string {
+	if (config.baseUrl) {
+		return config.baseUrl;
+	}
+	if (config.oca?.mode === "internal") {
+		return DEFAULT_INTERNAL_OCA_BASE_URL;
+	}
+	return providerDefaults?.baseUrl ?? DEFAULT_EXTERNAL_OCA_BASE_URL;
+}
+
+function resolveOcaApiFormat(config: ProviderConfig): string | undefined {
+	const modelId = config.modelId;
+	return (
+		config.modelInfo?.apiFormat ??
+		(modelId ? config.knownModels?.[modelId]?.apiFormat : undefined)
+	);
+}
+
+function createOcaHandler(config: ProviderConfig): ApiHandler {
+	const apiFormat = resolveOcaApiFormat(config);
+	if (apiFormat === ApiFormat.OpenAIResponses) {
+		return new OpenAIResponsesHandler(config);
+	}
+	return new OpenAIBaseHandler(config);
 }
 
 /**
@@ -320,22 +360,33 @@ export function createHandler(config: ProviderConfig): ApiHandler {
 		default:
 			// Check if it's an OpenAI-compatible provider
 			if (isOpenAICompatibleProvider(providerId)) {
-				if (normalizedConfig.modelCatalog?.loadLatestOnInit) {
+				if (
+					normalizedConfig.modelCatalog?.loadLatestOnInit ||
+					normalizedConfig.modelCatalog?.loadPrivateOnAuth
+				) {
 					throw new Error(
-						`Provider "${providerId}" has modelCatalog.loadLatestOnInit enabled. Use createHandlerAsync() to allow runtime model refresh.`,
+						`Provider "${providerId}" has runtime model refresh enabled. Use createHandlerAsync() to allow async model refresh.`,
 					);
 				}
 				const providerDefaults = OPENAI_COMPATIBLE_PROVIDERS[providerId];
-				// Merge provider defaults into config
-				return new OpenAIBaseHandler({
+				const mergedConfig: ProviderConfig = {
 					...normalizedConfig,
-					baseUrl: normalizedConfig.baseUrl ?? providerDefaults.baseUrl,
+					baseUrl:
+						providerId === OCA_PROVIDER_ID
+							? resolveOcaBaseUrl(normalizedConfig, providerDefaults)
+							: (normalizedConfig.baseUrl ?? providerDefaults.baseUrl),
 					modelId: normalizedConfig.modelId ?? providerDefaults.modelId,
 					knownModels:
 						normalizedConfig.knownModels ?? providerDefaults.knownModels,
 					capabilities:
 						normalizedConfig.capabilities ?? providerDefaults.capabilities,
-				});
+				};
+
+				if (providerId === OCA_PROVIDER_ID) {
+					return createOcaHandler(mergedConfig);
+				}
+				// Merge provider defaults into config
+				return new OpenAIBaseHandler(mergedConfig);
 			}
 
 			// Fall back to OpenAI-compatible with custom base URL
@@ -393,17 +444,25 @@ export async function createHandlerAsync(
 		const providerDefaults = await resolveProviderConfig(
 			providerId,
 			normalizedConfig.modelCatalog,
+			normalizedConfig,
 		);
 		if (providerDefaults) {
-			return new OpenAIBaseHandler({
+			const mergedConfig: ProviderConfig = {
 				...normalizedConfig,
-				baseUrl: normalizedConfig.baseUrl ?? providerDefaults.baseUrl,
+				baseUrl:
+					providerId === OCA_PROVIDER_ID
+						? resolveOcaBaseUrl(normalizedConfig, providerDefaults)
+						: (normalizedConfig.baseUrl ?? providerDefaults.baseUrl),
 				modelId: normalizedConfig.modelId ?? providerDefaults.modelId,
 				knownModels:
 					normalizedConfig.knownModels ?? providerDefaults.knownModels,
 				capabilities:
 					normalizedConfig.capabilities ?? providerDefaults.capabilities,
-			});
+			};
+			if (providerId === OCA_PROVIDER_ID) {
+				return createOcaHandler(mergedConfig);
+			}
+			return new OpenAIBaseHandler(mergedConfig);
 		}
 	}
 

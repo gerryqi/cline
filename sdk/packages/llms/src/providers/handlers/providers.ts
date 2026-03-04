@@ -19,6 +19,7 @@ import type {
 	ModelCatalogConfig,
 	ModelInfo,
 	ProviderCapability,
+	ProviderConfig,
 } from "../types/index.js";
 
 /**
@@ -37,6 +38,7 @@ export interface ProviderDefaults {
 
 export const DEFAULT_MODELS_CATALOG_URL = "https://models.dev/api.json";
 const DEFAULT_MODELS_CATALOG_CACHE_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_PRIVATE_MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
 
 // Cline's internal provider key: key used in models.dev
 const MODELS_DEV_PROVIDER_KEY_MAP: Record<string, string> = {
@@ -77,6 +79,14 @@ const MODELS_CATALOG_IN_FLIGHT = new Map<
 	string,
 	Promise<Record<string, Record<string, ModelInfo>>>
 >();
+const PRIVATE_MODELS_CACHE = new Map<
+	string,
+	{ expiresAt: number; data: Record<string, ModelInfo> }
+>();
+const PRIVATE_MODELS_IN_FLIGHT = new Map<
+	string,
+	Promise<Record<string, ModelInfo>>
+>();
 
 let generatedModelsLoader:
 	| Promise<Record<string, Record<string, ModelInfo>>>
@@ -93,8 +103,10 @@ async function loadGeneratedProviderModels(): Promise<
 
 async function mergeKnownModels(
 	providerId: string,
-	knownModels: Record<string, ModelInfo> = {},
+	defaultKnownModels: Record<string, ModelInfo> = {},
 	liveModels: Record<string, ModelInfo> = {},
+	privateModels: Record<string, ModelInfo> = {},
+	userKnownModels: Record<string, ModelInfo> = {},
 ): Promise<Record<string, ModelInfo>> {
 	const generatedProviderModels = await loadGeneratedProviderModels();
 	const generatedKeys = GENERATED_KEYS_BY_PROVIDER[providerId] ?? [providerId];
@@ -106,9 +118,333 @@ async function mergeKnownModels(
 	);
 	return sortModelsByReleaseDate({
 		...generated,
+		...defaultKnownModels,
 		...liveModels,
-		...knownModels,
+		...privateModels,
+		...userKnownModels,
 	});
+}
+
+function normalizeBaseUrl(baseUrl: string | undefined): string {
+	const value = baseUrl?.trim();
+	return value && value.length > 0 ? value : "";
+}
+
+function resolveAuthToken(
+	config: Pick<ProviderConfig, "apiKey" | "accessToken">,
+): string | undefined {
+	const token = config.apiKey?.trim() || config.accessToken?.trim();
+	return token && token.length > 0 ? token : undefined;
+}
+
+function fingerprint(value: string): string {
+	let hash = 2166136261;
+	for (let i = 0; i < value.length; i += 1) {
+		hash ^= value.charCodeAt(i);
+		hash +=
+			(hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+	}
+	return (hash >>> 0).toString(16);
+}
+
+function resolvePrivateCacheKey(
+	providerId: string,
+	config: ProviderConfig,
+): string {
+	return `${providerId}:${normalizeBaseUrl(config.baseUrl)}:${fingerprint(
+		resolveAuthToken(config) ?? "",
+	)}`;
+}
+
+function includeCapability(
+	capabilities: NonNullable<ModelInfo["capabilities"]>,
+	capability: NonNullable<ModelInfo["capabilities"]>[number],
+	when: boolean,
+): void {
+	if (when && !capabilities.includes(capability)) {
+		capabilities.push(capability);
+	}
+}
+
+function buildModelFromPrivateSource(
+	id: string,
+	input: {
+		name?: string;
+		contextWindow?: number;
+		maxTokens?: number;
+		supportsImages?: boolean;
+		supportsPromptCache?: boolean;
+		supportsReasoning?: boolean;
+		releaseDate?: string;
+	},
+): ModelInfo {
+	const capabilities: NonNullable<ModelInfo["capabilities"]> = [
+		"streaming",
+		"tools",
+	];
+	includeCapability(capabilities, "images", Boolean(input.supportsImages));
+	includeCapability(
+		capabilities,
+		"prompt-cache",
+		Boolean(input.supportsPromptCache),
+	);
+	includeCapability(
+		capabilities,
+		"reasoning",
+		Boolean(input.supportsReasoning),
+	);
+	return {
+		id,
+		name: input.name ?? id,
+		contextWindow: input.contextWindow,
+		maxTokens: input.maxTokens,
+		capabilities,
+		releaseDate: input.releaseDate,
+		status: "active",
+	};
+}
+
+interface BasetenModelResponse {
+	id?: string;
+	object?: string;
+	supported_features?: string[];
+	context_length?: number;
+	max_completion_tokens?: number;
+}
+
+async function fetchBasetenPrivateModels(
+	_config: ProviderConfig,
+	token: string,
+): Promise<Record<string, ModelInfo>> {
+	const response = await fetch("https://inference.baseten.co/v1/models", {
+		method: "GET",
+		headers: {
+			Authorization: `Bearer ${token}`,
+			"Content-Type": "application/json",
+		},
+	});
+	if (!response.ok) {
+		throw new Error(`Baseten model refresh failed: HTTP ${response.status}`);
+	}
+
+	const payload = (await response.json()) as { data?: BasetenModelResponse[] };
+	const entries = payload?.data ?? [];
+	const models: Record<string, ModelInfo> = {};
+	for (const model of entries) {
+		const id = model.id?.trim();
+		if (!id) {
+			continue;
+		}
+		if (
+			id.includes("whisper") ||
+			id.includes("tts") ||
+			id.includes("embedding")
+		) {
+			continue;
+		}
+		const features = model.supported_features ?? [];
+		models[id] = buildModelFromPrivateSource(id, {
+			name: id,
+			contextWindow: model.context_length,
+			maxTokens: model.max_completion_tokens,
+			supportsReasoning:
+				features.includes("reasoning") || features.includes("reasoning_effort"),
+			supportsImages: false,
+		});
+	}
+	return models;
+}
+
+interface HicapModelResponse {
+	id?: string;
+}
+
+async function fetchHicapPrivateModels(
+	_config: ProviderConfig,
+	token: string,
+): Promise<Record<string, ModelInfo>> {
+	const response = await fetch("https://api.hicap.ai/v2/openai/models", {
+		method: "GET",
+		headers: {
+			"api-key": token,
+		},
+	});
+	if (!response.ok) {
+		throw new Error(`Hicap model refresh failed: HTTP ${response.status}`);
+	}
+
+	const payload = (await response.json()) as { data?: HicapModelResponse[] };
+	const entries = payload?.data ?? [];
+	const models: Record<string, ModelInfo> = {};
+	for (const model of entries) {
+		const id = model.id?.trim();
+		if (!id) {
+			continue;
+		}
+		models[id] = buildModelFromPrivateSource(id, {
+			name: id,
+			contextWindow: 128_000,
+			supportsImages: true,
+			supportsPromptCache: true,
+		});
+	}
+	return models;
+}
+
+interface LiteLlmModelInfoResponse {
+	model_name?: string;
+	litellm_params?: {
+		model?: string;
+	};
+	model_info?: {
+		max_output_tokens?: number;
+		max_tokens?: number;
+		max_input_tokens?: number;
+		supports_vision?: boolean;
+		supports_prompt_caching?: boolean;
+		supports_reasoning?: boolean;
+	};
+}
+
+function normalizeLiteLlmBaseUrl(baseUrl: string | undefined): string {
+	const normalized = normalizeBaseUrl(baseUrl);
+	if (!normalized) {
+		return "http://localhost:4000";
+	}
+	return normalized.endsWith("/v1") ? normalized.slice(0, -3) : normalized;
+}
+
+async function fetchLiteLlmPrivateModels(
+	config: ProviderConfig,
+	token: string,
+): Promise<Record<string, ModelInfo>> {
+	const baseUrl = normalizeLiteLlmBaseUrl(config.baseUrl);
+	const endpoint = `${baseUrl}/v1/model/info`;
+
+	const fetchWithHeaders = async (
+		headers: Record<string, string>,
+	): Promise<Response> =>
+		fetch(endpoint, {
+			method: "GET",
+			headers: {
+				accept: "application/json",
+				...headers,
+			},
+		});
+
+	let response = await fetchWithHeaders({ "x-litellm-api-key": token });
+	if (!response.ok) {
+		response = await fetchWithHeaders({ Authorization: `Bearer ${token}` });
+	}
+	if (!response.ok) {
+		throw new Error(`LiteLLM model refresh failed: HTTP ${response.status}`);
+	}
+
+	const payload = (await response.json()) as {
+		data?: LiteLlmModelInfoResponse[];
+	};
+	const entries = payload?.data ?? [];
+	const models: Record<string, ModelInfo> = {};
+	for (const model of entries) {
+		const displayName = model.model_name?.trim();
+		const actualModelId = model.litellm_params?.model?.trim();
+		const modelId = actualModelId || displayName;
+		if (!modelId) {
+			continue;
+		}
+		const info = model.model_info;
+		const converted = buildModelFromPrivateSource(modelId, {
+			name: displayName ?? modelId,
+			maxTokens: info?.max_output_tokens ?? info?.max_tokens,
+			contextWindow: info?.max_input_tokens ?? info?.max_tokens,
+			supportsImages: info?.supports_vision,
+			supportsPromptCache: info?.supports_prompt_caching,
+			supportsReasoning: info?.supports_reasoning,
+		});
+		models[modelId] = converted;
+		if (displayName) {
+			models[displayName] = {
+				...converted,
+				id: displayName,
+				name: displayName,
+			};
+		}
+	}
+	return models;
+}
+
+async function fetchPrivateProviderModels(
+	providerId: string,
+	config: ProviderConfig,
+): Promise<Record<string, ModelInfo>> {
+	const token = resolveAuthToken(config);
+	if (!token) {
+		return {};
+	}
+
+	switch (providerId) {
+		case "baseten":
+			return fetchBasetenPrivateModels(config, token);
+		case "hicap":
+			return fetchHicapPrivateModels(config, token);
+		case "litellm":
+			return fetchLiteLlmPrivateModels(config, token);
+		default:
+			return {};
+	}
+}
+
+function shouldLoadPrivateModels(
+	providerId: string,
+	modelCatalog: ModelCatalogConfig | undefined,
+	config: ProviderConfig | undefined,
+): boolean {
+	if (!config) {
+		return false;
+	}
+	if (!["baseten", "hicap", "litellm"].includes(providerId)) {
+		return false;
+	}
+	if (modelCatalog?.loadPrivateOnAuth === false) {
+		return false;
+	}
+	return Boolean(resolveAuthToken(config));
+}
+
+async function getPrivateProviderModels(
+	providerId: string,
+	modelCatalog: ModelCatalogConfig | undefined,
+	config: ProviderConfig,
+): Promise<Record<string, ModelInfo>> {
+	const cacheTtlMs =
+		modelCatalog?.cacheTtlMs ?? DEFAULT_PRIVATE_MODELS_CACHE_TTL_MS;
+	const cacheKey = resolvePrivateCacheKey(providerId, config);
+	const now = Date.now();
+
+	const cached = PRIVATE_MODELS_CACHE.get(cacheKey);
+	if (cached && cached.expiresAt > now) {
+		return cached.data;
+	}
+
+	const inFlight = PRIVATE_MODELS_IN_FLIGHT.get(cacheKey);
+	if (inFlight) {
+		return inFlight;
+	}
+
+	const request = fetchPrivateProviderModels(providerId, config)
+		.then((data) => {
+			PRIVATE_MODELS_CACHE.set(cacheKey, {
+				data,
+				expiresAt: now + cacheTtlMs,
+			});
+			return data;
+		})
+		.finally(() => {
+			PRIVATE_MODELS_IN_FLIGHT.delete(cacheKey);
+		});
+
+	PRIVATE_MODELS_IN_FLIGHT.set(cacheKey, request);
+	return request;
 }
 
 async function fetchLiveModelsCatalog(
@@ -156,6 +492,11 @@ export function clearLiveModelsCatalogCache(url?: string): void {
 
 	MODELS_CATALOG_CACHE.clear();
 	MODELS_CATALOG_IN_FLIGHT.clear();
+}
+
+export function clearPrivateModelsCatalogCache(): void {
+	PRIVATE_MODELS_CACHE.clear();
+	PRIVATE_MODELS_IN_FLIGHT.clear();
 }
 
 function isModelCollection(value: unknown): value is ModelCollection {
@@ -229,6 +570,7 @@ export function getProviderConfig(
 export async function resolveProviderConfig(
 	providerId: string,
 	modelCatalog?: ModelCatalogConfig,
+	config?: ProviderConfig,
 ): Promise<ProviderDefaults | undefined> {
 	const defaults = getProviderConfig(providerId);
 	if (!defaults) {
@@ -240,10 +582,16 @@ export async function resolveProviderConfig(
 			? await getLiveModelsCatalog(modelCatalog)
 			: undefined;
 		const liveModels = liveCatalog?.[providerId] ?? {};
+		const privateModels =
+			config && shouldLoadPrivateModels(providerId, modelCatalog, config)
+				? await getPrivateProviderModels(providerId, modelCatalog, config)
+				: {};
 		const knownModels = await mergeKnownModels(
 			providerId,
 			defaults.knownModels,
 			liveModels,
+			privateModels,
+			config?.knownModels,
 		);
 
 		return {

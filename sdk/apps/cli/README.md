@@ -52,12 +52,41 @@ clite --json "Summarize this repository"
 clite rpc start
 clite rpc start --address 127.0.0.1:4317
 
+# Authenticate OAuth providers explicitly
+clite auth openai-codex
+clite auth oca
+clite auth cline
+
 # Use persistent team state name
 clite --team-name dev-team "Continue yesterday's team workflow"
 
-# Use a specific provider, model, and access tokey for a single prompt/task
+# Use a specific provider, model, and access token for a single prompt/task
 clite -p openrouter -m google/gemini-3-pro -k sk-your-google-gemini-api-key "Set up a storybook for the frontend react ui components"
 ```
+
+## OAuth Authentication
+
+`clite` supports OAuth login for:
+
+- `cline`
+- `openai-codex`
+- `oca`
+
+Use the explicit auth command:
+
+```bash
+clite auth <provider>
+```
+
+Examples:
+
+```bash
+clite auth cline
+clite auth openai-codex
+clite auth oca
+```
+
+When you run with one of these providers and no API key is available, `clite` will automatically start the OAuth login flow and persist credentials to provider settings.
 
 ## Options
 
@@ -96,6 +125,12 @@ clite -p openrouter -m google/gemini-3-pro -k sk-your-google-gemini-api-key "Set
 | `-v, --version` | Show version |
 
 `--output json` is non-interactive and requires either a prompt argument or piped stdin.
+
+Subcommands:
+
+- `clite auth <provider>` - Run OAuth login for `cline`, `openai-codex`, or `oca`
+- `clite rpc start` - Start the RPC gateway
+- `clite list ...` - List workflows/rules/skills/agents/history/hooks
 
 ## Tool Approval
 
@@ -189,6 +224,8 @@ bun install -g @cline/cli
 
 `--key` takes precedence over environment variables.
 
+For OAuth providers (`cline`, `openai-codex`, `oca`), you can either use `clite auth <provider>` or let `clite` prompt for OAuth automatically when no API key is configured.
+
 ## Features
 
 - **Streaming output** - Responses stream in real-time
@@ -220,6 +257,9 @@ clite -p openai -m gpt-5 "Explain this codebase"
 
 # Use a different provider and model with a specific access token for the provider
 clite -p openrouter -m google/gemini-3-pro -k sk-your-google-gemini-api-key "Set up a storybook for the frontend react ui components"
+
+# Explicit OAuth login for auth-capable providers
+clite auth openai-codex
 
 # Team workflow with persistent name
 clite --team-name release-team "Plan, implement, and verify release checklist"
