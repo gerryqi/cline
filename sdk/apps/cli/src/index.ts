@@ -16,14 +16,9 @@
 import {
 	appendFileSync,
 	existsSync,
-	mkdirSync,
-	readdirSync,
 	readFileSync,
-	unlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
-import { basename, extname, join } from "node:path";
 import { createInterface } from "node:readline";
 import {
 	Agent,
@@ -33,7 +28,6 @@ import {
 	createBuiltinTools,
 	createSpawnAgentTool as createSdkSpawnAgentTool,
 	createSubprocessHooks,
-	getClineDefaultSystemPrompt,
 	type HookEventPayload,
 	type RunHookResult,
 	type TeamEvent,
@@ -47,47 +41,45 @@ import {
 	createTeamName,
 	createUserInstructionConfigWatcher,
 	DefaultRuntimeBuilder,
-	enrichPromptWithMentions,
-	generateWorkspaceInfo,
-	hasMcpSettingsFile,
-	listHookConfigFiles,
 	loadRulesForSystemPromptFromWatcher,
 	migrateLegacyProviderSettings,
 	ProviderSettingsManager,
 	prewarmFileIndex,
-	type RuleConfig,
-	resolveDefaultMcpSettingsPath,
-	resolveMcpServerRegistrations,
-	resolveRulesConfigSearchPaths,
-	resolveSkillsConfigSearchPaths,
-	resolveWorkflowSlashCommandFromWatcher,
-	resolveWorkflowsConfigSearchPaths,
 	type SessionManifest,
 	SessionSource,
-	type SkillConfig,
 	type UserInstructionConfigWatcher,
-	type WorkflowConfig,
 } from "@cline/core/server";
 import { providers } from "@cline/llms";
-import { getRpcServerHealth, startRpcServer, stopRpcServer } from "@cline/rpc";
 import { version } from "../package.json";
 import {
-	appendHookAudit,
+	ensureOAuthProviderApiKey,
+	getPersistedProviderApiKey,
+	isOAuthProvider,
+	normalizeAuthProviderId,
+	normalizeProviderId,
+	runAuthProviderCommand,
+} from "./commands/auth";
+import { formatHookDispatchOutput, runHookCommand } from "./commands/hook";
+import {
+	type HistorySessionRow,
+	runHistoryListCommand,
+	runListCommand,
+} from "./commands/list";
+import { runRpcStartCommand } from "./commands/rpc";
+import {
+	buildDefaultSystemPrompt,
+	buildUserInputMessage,
+} from "./runtime/prompt";
+import {
 	configureSandboxEnvironment,
 	formatToolInput,
 	formatToolOutput,
 	nowIso,
 	parseArgs,
-	parseCliHookPayload,
-	readStdinUtf8,
 	resolveWorkspaceRoot,
 	truncate,
-	writeHookJson,
 } from "./utils/helpers";
 import {
-	appendSubagentHookAudit,
-	appendSubagentTranscriptLine,
-	applySubagentStatus,
 	createRootCliSessionWithArtifacts,
 	deleteCliSession,
 	handleSubAgentEnd,
@@ -95,9 +87,7 @@ import {
 	listCliSessions,
 	onTeamTaskEnd,
 	onTeamTaskStart,
-	queueSpawnRequest,
 	updateCliSessionStatusInStore,
-	upsertSubagentSessionFromHook,
 	writeCliSessionManifest,
 } from "./utils/session";
 import type { ActiveCliSession, CliOutputMode, Config } from "./utils/types";
@@ -267,147 +257,6 @@ function bindCliSessionExitHandlers(): void {
 	});
 }
 
-async function buildWorkspaceInfo(cwd: string): Promise<string> {
-	const workspaceInfo = await generateWorkspaceInfo(cwd);
-	const workspaceConfig = {
-		workspaces: {
-			[workspaceInfo.rootPath]: {
-				hint: workspaceInfo.hint,
-				associatedRemoteUrls: workspaceInfo.associatedRemoteUrls,
-				latestGitCommitHash: workspaceInfo.latestGitCommitHash,
-				latestGitBranchName: workspaceInfo.latestGitBranchName,
-			},
-		},
-	};
-	return `# Workspace Configuration\n${JSON.stringify(workspaceConfig, null, 2)}`;
-}
-
-async function buildDefaultSystemPrompt(
-	cwd: string,
-	rules = "",
-): Promise<string> {
-	const WORKSPACE_INFO = await buildWorkspaceInfo(cwd);
-	return getClineDefaultSystemPrompt(
-		"Terminal Shell",
-		cwd,
-		WORKSPACE_INFO,
-		rules,
-	);
-}
-
-function normalizeProviderId(providerId: string): string {
-	const normalized = providerId.trim();
-	return normalized === "openai" ? "openai-native" : normalized;
-}
-
-function normalizeAuthProviderId(providerId: string): string {
-	const normalized = providerId.trim().toLowerCase();
-	if (normalized === "codex" || normalized === "openai-codex") {
-		return "openai-codex";
-	}
-	return normalizeProviderId(normalized);
-}
-
-function isOAuthProvider(providerId: string): boolean {
-	return (
-		providerId === "cline" ||
-		providerId === "oca" ||
-		providerId === "openai-codex"
-	);
-}
-
-function toProviderApiKey(
-	providerId: string,
-	credentials: Pick<OAuthCredentials, "access">,
-): string {
-	if (providerId === "cline") {
-		return `workos:${credentials.access}`;
-	}
-	return credentials.access;
-}
-
-function getPersistedProviderApiKey(
-	providerId: string,
-	settings?: providers.ProviderSettings,
-): string | undefined {
-	const shorthandKey = settings?.apiKey?.trim();
-	if (shorthandKey) {
-		return shorthandKey;
-	}
-	const authKey = settings?.auth?.apiKey?.trim();
-	if (authKey) {
-		return authKey;
-	}
-	const accessToken = settings?.auth?.accessToken?.trim();
-	if (!accessToken) {
-		return undefined;
-	}
-	return toProviderApiKey(providerId, { access: accessToken });
-}
-
-type OAuthCredentials = {
-	access: string;
-	refresh: string;
-	expires: number;
-	accountId?: string;
-	email?: string;
-	metadata?: Record<string, unknown>;
-};
-
-type CoreOAuthApi = {
-	loginClineOAuth: (input: {
-		apiBaseUrl: string;
-		callbacks: {
-			onAuth: (info: { url: string; instructions?: string }) => void;
-			onPrompt: (prompt: {
-				message: string;
-				defaultValue?: string;
-			}) => Promise<string>;
-			onManualCodeInput?: () => Promise<string>;
-		};
-	}) => Promise<OAuthCredentials>;
-	loginOcaOAuth: (input: {
-		mode?: "internal" | "external";
-		callbacks: {
-			onAuth: (info: { url: string; instructions?: string }) => void;
-			onPrompt: (prompt: {
-				message: string;
-				defaultValue?: string;
-			}) => Promise<string>;
-			onManualCodeInput?: () => Promise<string>;
-		};
-	}) => Promise<OAuthCredentials>;
-	loginOpenAICodex: (input: {
-		onAuth: (info: { url: string; instructions?: string }) => void;
-		onPrompt: (prompt: {
-			message: string;
-			defaultValue?: string;
-		}) => Promise<string>;
-		onManualCodeInput?: () => Promise<string>;
-	}) => Promise<OAuthCredentials>;
-};
-
-let cachedCoreOAuthApi: Promise<CoreOAuthApi> | undefined;
-
-async function getCoreOAuthApi(): Promise<CoreOAuthApi> {
-	if (!cachedCoreOAuthApi) {
-		cachedCoreOAuthApi = import("@cline/core/server").then((module) => {
-			const runtimeApi = module as Partial<CoreOAuthApi>;
-			if (
-				typeof runtimeApi.loginClineOAuth !== "function" ||
-				typeof runtimeApi.loginOcaOAuth !== "function" ||
-				typeof runtimeApi.loginOpenAICodex !== "function"
-			) {
-				throw new Error(
-					"Installed @cline/core does not expose OAuth login helpers required by the CLI",
-				);
-			}
-			return runtimeApi as CoreOAuthApi;
-		});
-	}
-	return cachedCoreOAuthApi;
-}
-
 // =============================================================================
 // ANSI Colors (no dependencies for speed)
 // =============================================================================
@@ -481,97 +330,39 @@ function mergeToolPolicies(
 	return out;
 }
 
-function sanitizeApprovalToken(value: string): string {
-	return value.replace(/[^a-zA-Z0-9._-]+/g, "_");
-}
+let cachedDesktopApprovalRequester:
+	| Promise<(request: ToolApprovalRequest) => Promise<ToolApprovalResult>>
+	| undefined;
 
-function delay(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function requestDesktopToolApproval(
+async function requestDesktopToolApprovalFromCore(
 	request: ToolApprovalRequest,
 ): Promise<ToolApprovalResult> {
-	const approvalDir = process.env.CLINE_TOOL_APPROVAL_DIR?.trim();
-	const sessionId =
-		process.env.CLINE_TOOL_APPROVAL_SESSION_ID?.trim() ||
-		process.env.CLINE_SESSION_ID?.trim();
-	if (!approvalDir || !sessionId) {
-		return {
-			approved: false,
-			reason: "Desktop tool approval IPC is not configured",
-		};
-	}
-
-	mkdirSync(approvalDir, { recursive: true });
-	const requestId = sanitizeApprovalToken(`${request.toolCallId}`);
-	const requestPath = join(
-		approvalDir,
-		`${sessionId}.request.${requestId}.json`,
-	);
-	const decisionPath = join(
-		approvalDir,
-		`${sessionId}.decision.${requestId}.json`,
-	);
-
-	writeFileSync(
-		requestPath,
-		JSON.stringify(
-			{
-				requestId,
-				sessionId,
-				createdAt: nowIso(),
-				toolCallId: request.toolCallId,
-				toolName: request.toolName,
-				input: request.input,
-				iteration: request.iteration,
-				agentId: request.agentId,
-				conversationId: request.conversationId,
-			},
-			null,
-			2,
-		),
-		"utf8",
-	);
-
-	const timeoutMs = 5 * 60_000;
-	const startedAt = Date.now();
-	while (Date.now() - startedAt < timeoutMs) {
-		if (existsSync(decisionPath)) {
-			try {
-				const raw = readFileSync(decisionPath, "utf8");
-				const parsed = JSON.parse(raw) as {
-					approved?: boolean;
-					reason?: string;
-				};
-				return {
-					approved: parsed.approved === true,
-					reason: typeof parsed.reason === "string" ? parsed.reason : undefined,
-				};
-			} catch {
-				return { approved: false, reason: "Invalid desktop approval response" };
-			} finally {
-				try {
-					unlinkSync(decisionPath);
-				} catch {
-					// Best-effort cleanup.
+	if (!cachedDesktopApprovalRequester) {
+		cachedDesktopApprovalRequester = import("@cline/core/server")
+			.then((module) => {
+				const fn = (
+					module as {
+						requestDesktopToolApproval?: (
+							request: ToolApprovalRequest,
+						) => Promise<ToolApprovalResult>;
+					}
+				).requestDesktopToolApproval;
+				if (typeof fn !== "function") {
+					throw new Error(
+						"Installed @cline/core does not expose requestDesktopToolApproval",
+					);
 				}
-				try {
-					unlinkSync(requestPath);
-				} catch {
-					// Best-effort cleanup.
-				}
-			}
-		}
-		await delay(200);
+				return fn;
+			})
+			.catch(() => {
+				return async () => ({
+					approved: false,
+					reason: "Desktop tool approval IPC is not available",
+				});
+			});
 	}
-
-	try {
-		unlinkSync(requestPath);
-	} catch {
-		// Best-effort cleanup.
-	}
-	return { approved: false, reason: "Tool approval request timed out" };
+	const requester = await cachedDesktopApprovalRequester;
+	return requester(request);
 }
 
 async function requestTerminalToolApproval(
@@ -612,7 +403,7 @@ async function requestToolApproval(
 ): Promise<ToolApprovalResult> {
 	const mode = process.env.CLINE_TOOL_APPROVAL_MODE?.trim().toLowerCase();
 	if (mode === "desktop") {
-		return requestDesktopToolApproval(request);
+		return requestDesktopToolApprovalFromCore(request);
 	}
 	return requestTerminalToolApproval(request);
 }
@@ -660,152 +451,11 @@ async function askQuestionInTerminal(
 	});
 }
 
-async function askForInputInTerminal(question: string): Promise<string> {
-	if (!process.stdin.isTTY || !process.stdout.isTTY) {
-		throw new Error("OAuth login requires an interactive terminal session");
-	}
-
-	return new Promise<string>((resolve) => {
-		const rl = createInterface({
-			input: process.stdin,
-			output: process.stdout,
-		});
-		rl.question(`${question} `, (value) => {
-			rl.close();
-			resolve(value);
-		});
-	});
-}
-
-function createOAuthCallbacks(): {
-	onAuth: (info: { url: string; instructions?: string }) => void;
-	onPrompt: (prompt: {
-		message: string;
-		defaultValue?: string;
-	}) => Promise<string>;
-} {
-	return {
-		onAuth: ({ url, instructions }) => {
-			writeln(
-				`${c.dim}[auth] ${instructions ?? "Complete sign-in in your browser."}${c.reset}`,
-			);
-			writeln(`${c.dim}[auth] ${url}${c.reset}`);
-		},
-		onPrompt: ({ message, defaultValue }) =>
-			askForInputInTerminal(message).then((value) => {
-				const trimmed = value.trim();
-				return trimmed || defaultValue || "";
-			}),
-	};
-}
-
-async function loginWithOAuthProvider(
-	providerId: string,
-	existing?: providers.ProviderSettings,
-): Promise<OAuthCredentials> {
-	const oauthApi = await getCoreOAuthApi();
-	const callbacks = createOAuthCallbacks();
-
-	if (providerId === "cline") {
-		return oauthApi.loginClineOAuth({
-			apiBaseUrl: existing?.baseUrl?.trim() || "https://api.cline.bot",
-			callbacks,
-		});
-	}
-
-	if (providerId === "oca") {
-		const mode = existing?.oca?.mode;
-		return oauthApi.loginOcaOAuth({
-			mode,
-			callbacks,
-		});
-	}
-
-	if (providerId === "openai-codex") {
-		return oauthApi.loginOpenAICodex(callbacks);
-	}
-
-	throw new Error(
-		`Provider "${providerId}" does not support CLI OAuth flow (supported: cline, openai-codex, oca)`,
-	);
-}
-
-function saveOAuthProviderSettings(
-	providerSettingsManager: ProviderSettingsManager,
-	providerId: string,
-	existing: providers.ProviderSettings | undefined,
-	credentials: OAuthCredentials,
-): providers.ProviderSettings {
-	const apiKey = toProviderApiKey(providerId, credentials);
-	const merged: providers.ProviderSettings = {
-		...(existing ?? {
-			provider: providerId as providers.ProviderSettings["provider"],
-		}),
-		provider: providerId as providers.ProviderSettings["provider"],
-		apiKey,
-		auth: {
-			...(existing?.auth ?? {}),
-			accessToken: credentials.access,
-			refreshToken: credentials.refresh,
-			accountId: credentials.accountId,
-		},
-	};
-	providerSettingsManager.saveProviderSettings(merged);
-	return merged;
-}
-
-async function runAuthProviderCommand(
-	providerSettingsManager: ProviderSettingsManager,
-	providerId: string,
-): Promise<number> {
-	if (!isOAuthProvider(providerId)) {
-		writeErr(
-			`provider "${providerId}" does not support OAuth login (supported: cline, openai-codex, oca)`,
-		);
-		return 1;
-	}
-	try {
-		const existing = providerSettingsManager.getProviderSettings(providerId);
-		const credentials = await loginWithOAuthProvider(providerId, existing);
-		saveOAuthProviderSettings(
-			providerSettingsManager,
-			providerId,
-			existing,
-			credentials,
-		);
-		writeln(
-			`${c.green}You are now logged in to ${c.cyan}${providerId}${c.reset}`,
-		);
-		return 0;
-	} catch (error) {
-		writeErr(error instanceof Error ? error.message : String(error));
-		return 1;
-	}
-}
-
 function getHookCommand(): string[] | undefined {
 	if (process.env.CLINE_ENABLE_SUBPROCESS_HOOKS !== "1" || !process.argv[1]) {
 		return undefined;
 	}
 	return [process.execPath, process.argv[1], "hook"];
-}
-
-function formatHookDispatchOutput(result?: RunHookResult): string {
-	const value = result?.parsedJson;
-	if (value === undefined || value === null) {
-		return "";
-	}
-	if (
-		typeof value === "object" &&
-		!Array.isArray(value) &&
-		Object.keys(value as Record<string, unknown>).length === 0
-	) {
-		return "";
-	}
-	if (typeof value === "string") {
-		return truncate(value, 100);
-	}
-	return truncate(JSON.stringify(value), 100);
 }
 
 function writeHookInvocation(
@@ -996,26 +646,6 @@ function closeInlineStreamIfNeeded(): void {
 	inlineStreamHasOutput = false;
 }
 
-type HistorySessionRow = {
-	session_id?: string;
-	messages_path?: string | null;
-};
-
-type HistoryListRow = {
-	session_id?: string;
-	provider?: string;
-	model?: string;
-	started_at?: string;
-};
-
-function formatHistoryListLine(row: HistoryListRow): string {
-	const sessionId = row.session_id?.trim() || "(unknown-session)";
-	const provider = row.provider?.trim() || "(unknown-provider)";
-	const model = row.model?.trim() || "(unknown-model)";
-	const date = row.started_at?.trim() || "(unknown-date)";
-	return `${sessionId} - ${provider} - ${model} - ${date}`;
-}
-
 function parsePersistedMessages(raw: string): providers.Message[] {
 	if (!raw.trim()) {
 		return [];
@@ -1063,19 +693,6 @@ function hydrateAgentMessages(
 	(agent as unknown as { messages: providers.Message[] }).messages = [
 		...messages,
 	];
-}
-
-async function buildUserInputMessage(
-	rawPrompt: string,
-	mode: "act" | "plan",
-	cwd: string,
-	userInstructionWatcher?: UserInstructionConfigWatcher,
-): Promise<string> {
-	const resolvedPrompt = userInstructionWatcher
-		? resolveWorkflowSlashCommandFromWatcher(rawPrompt, userInstructionWatcher)
-		: rawPrompt;
-	const enriched = await enrichPromptWithMentions(resolvedPrompt, cwd);
-	return `<user_input mode="${mode}">${enriched.prompt}</user_input>`;
 }
 
 // =============================================================================
@@ -1622,72 +1239,6 @@ async function runInteractive(
 // Argument Parsing (minimal, no dependencies)
 // =============================================================================
 
-async function runHookCommand(): Promise<number> {
-	try {
-		const raw = (await readStdinUtf8()).trim();
-		if (!raw) {
-			writeErr("hook command expects JSON payload on stdin");
-			return 1;
-		}
-
-		const parsed = JSON.parse(raw) as unknown;
-		const payload = parseCliHookPayload(parsed);
-		if (!payload) {
-			writeErr("invalid hook payload");
-			return 1;
-		}
-
-		appendHookAudit(payload);
-		await queueSpawnRequest(payload);
-		const subSessionId = await upsertSubagentSessionFromHook(payload);
-		if (subSessionId) {
-			await appendSubagentHookAudit(subSessionId, payload);
-			if (payload.hookName === "tool_call") {
-				await appendSubagentTranscriptLine(
-					subSessionId,
-					`[tool] ${payload.tool_call?.name ?? "unknown"}`,
-				);
-			}
-			if (payload.hookName === "agent_end") {
-				await appendSubagentTranscriptLine(subSessionId, "[done] completed");
-			}
-			if (payload.hookName === "session_shutdown") {
-				await appendSubagentTranscriptLine(
-					subSessionId,
-					`[shutdown] ${payload.reason ?? "session shutdown"}`,
-				);
-			}
-			await applySubagentStatus(subSessionId, payload);
-		}
-
-		switch (payload.hookName) {
-			case "tool_call":
-				// Return control surface JSON for pre-execution tool interception.
-				writeHookJson({});
-				return 0;
-			case "tool_result":
-			case "agent_end":
-			case "agent_start":
-			case "agent_resume":
-			case "agent_abort":
-			case "prompt_submit":
-			case "pre_compact":
-			case "session_shutdown":
-				// Fire-and-forget events; no control response needed.
-				writeHookJson({});
-				return 0;
-			default:
-				writeErr(
-					`unsupported hookName: ${(payload as { hookName: string }).hookName}`,
-				);
-				return 1;
-		}
-	} catch (error) {
-		writeErr(error instanceof Error ? error.message : String(error));
-		return 1;
-	}
-}
-
 function showHelp(): void {
 	writeln(`${c.bold}clite${c.reset} - Lightweight CLI for Cline agentic capabilities
 
@@ -1773,355 +1324,8 @@ ${c.bold}EXAMPLES${c.reset}
 `);
 }
 
-async function runRpcStartCommand(rawArgs: string[]): Promise<number> {
-	const addressIndex = rawArgs.indexOf("--address");
-	const address =
-		(addressIndex >= 0 && addressIndex + 1 < rawArgs.length
-			? rawArgs[addressIndex + 1]
-			: process.env.CLINE_RPC_ADDRESS) || "127.0.0.1:4317";
-	const normalizedAddress = address.trim();
-	if (!normalizedAddress) {
-		writeErr("rpc start requires a non-empty address");
-		return 1;
-	}
-
-	const existing = await getRpcServerHealth(normalizedAddress);
-	if (existing?.running) {
-		writeln(
-			`${c.dim}[rpc] already running server_id=${existing.serverId} address=${existing.address}${c.reset}`,
-		);
-		return 0;
-	}
-
-	const handle = await startRpcServer({ address: normalizedAddress });
-	writeln(
-		`${c.dim}[rpc] started server_id=${handle.serverId} address=${handle.address}${c.reset}`,
-	);
-	writeln(`${c.dim}[rpc] press Ctrl+C to stop${c.reset}`);
-
-	await new Promise<void>((resolve) => {
-		const shutdown = () => {
-			process.off("SIGINT", shutdown);
-			process.off("SIGTERM", shutdown);
-			resolve();
-		};
-		process.on("SIGINT", shutdown);
-		process.on("SIGTERM", shutdown);
-	});
-
-	await stopRpcServer();
-	writeln(`${c.dim}[rpc] stopped${c.reset}`);
-	return 0;
-}
-
 function showVersion(): void {
 	writeln(version);
-}
-
-function resolveCliAgentConfigSearchPaths(): string[] {
-	const clineDataDir =
-		process.env.CLINE_DATA_DIR?.trim() || join(homedir(), ".cline", "data");
-	return [
-		join(homedir(), "Documents", "Cline", "Agents"),
-		join(clineDataDir, "settings", "agents"),
-	];
-}
-
-async function runWorkflowsListCommand(
-	cwd: string,
-	outputMode: CliOutputMode,
-): Promise<number> {
-	const workflowsById = new Map<
-		string,
-		{ id: string; name: string; instructions: string; path: string }
-	>();
-	const directories = resolveWorkflowsConfigSearchPaths(cwd).filter(
-		(directory) => existsSync(directory),
-	);
-	for (const directory of directories) {
-		const watcher = createUserInstructionConfigWatcher({
-			skills: { directories: [] },
-			rules: { directories: [] },
-			workflows: { directories: [directory] },
-		});
-		try {
-			await watcher.start();
-			const snapshot = watcher.getSnapshot("workflow");
-			for (const [id, record] of snapshot.entries()) {
-				const workflow = record.item as WorkflowConfig;
-				if (workflow.disabled === true || workflowsById.has(id)) {
-					continue;
-				}
-				workflowsById.set(id, {
-					id,
-					name: workflow.name,
-					instructions: workflow.instructions,
-					path: record.filePath,
-				});
-			}
-		} catch {
-			// Best-effort listing across config roots.
-		} finally {
-			watcher.stop();
-		}
-	}
-	const workflows = [...workflowsById.values()].sort((a, b) =>
-		a.name.localeCompare(b.name),
-	);
-	if (outputMode === "json") {
-		process.stdout.write(JSON.stringify(workflows));
-		return 0;
-	}
-	if (workflows.length === 0) {
-		writeln("No enabled workflows found.");
-		return 0;
-	}
-	writeln("Available workflows:");
-	for (const workflow of workflows) {
-		writeln(`  /${workflow.name} (${workflow.path})`);
-	}
-	return 0;
-}
-
-async function runRulesListCommand(
-	cwd: string,
-	outputMode: CliOutputMode,
-): Promise<number> {
-	const rulesByName = new Map<
-		string,
-		{ name: string; instructions: string; path: string }
-	>();
-	const directories = resolveRulesConfigSearchPaths(cwd).filter((directory) =>
-		existsSync(directory),
-	);
-	for (const directory of directories) {
-		const watcher = createUserInstructionConfigWatcher({
-			skills: { directories: [] },
-			rules: { directories: [directory] },
-			workflows: { directories: [] },
-		});
-		try {
-			await watcher.start();
-			const snapshot = watcher.getSnapshot("rule");
-			for (const record of snapshot.values()) {
-				const rule = record.item as RuleConfig;
-				if (rule.disabled === true || rulesByName.has(rule.name)) {
-					continue;
-				}
-				rulesByName.set(rule.name, {
-					name: rule.name,
-					instructions: rule.instructions,
-					path: record.filePath,
-				});
-			}
-		} catch {
-			// Best-effort listing across config roots.
-		} finally {
-			watcher.stop();
-		}
-	}
-	const rules = [...rulesByName.values()].sort((a, b) =>
-		a.name.localeCompare(b.name),
-	);
-	if (outputMode === "json") {
-		process.stdout.write(JSON.stringify(rules));
-		return 0;
-	}
-	if (rules.length === 0) {
-		writeln("No enabled rules found.");
-		return 0;
-	}
-	writeln("Enabled rules:");
-	for (const rule of rules) {
-		writeln(`  ${rule.name} (${rule.path})`);
-	}
-	return 0;
-}
-
-async function runSkillsListCommand(
-	cwd: string,
-	outputMode: CliOutputMode,
-): Promise<number> {
-	const skillDirectories = [
-		...resolveSkillsConfigSearchPaths(cwd),
-		join(homedir(), "Documents", "Cline", "Skills"),
-	];
-	const skillsByName = new Map<
-		string,
-		SkillConfig & {
-			path: string;
-		}
-	>();
-	const directories = [...new Set(skillDirectories)].filter((directory) =>
-		existsSync(directory),
-	);
-	for (const directory of directories) {
-		const watcher = createUserInstructionConfigWatcher({
-			skills: { directories: [directory] },
-			rules: { directories: [] },
-			workflows: { directories: [] },
-		});
-		try {
-			await watcher.start();
-			const snapshot = watcher.getSnapshot("skill");
-			for (const record of snapshot.values()) {
-				const skill = record.item as SkillConfig;
-				if (skill.disabled === true || skillsByName.has(skill.name)) {
-					continue;
-				}
-				skillsByName.set(skill.name, {
-					...skill,
-					path: record.filePath,
-				});
-			}
-		} catch {
-			// Best-effort listing across config roots.
-		} finally {
-			watcher.stop();
-		}
-	}
-	const skills = [...skillsByName.values()].sort((a, b) =>
-		a.name.localeCompare(b.name),
-	);
-	if (outputMode === "json") {
-		process.stdout.write(JSON.stringify(skills));
-		return 0;
-	}
-	if (skills.length === 0) {
-		writeln("No enabled skills found.");
-		return 0;
-	}
-	writeln("Enabled skills:");
-	for (const skill of skills) {
-		writeln(`  ${skill.name} (${skill.path})`);
-	}
-	return 0;
-}
-
-async function runAgentsListCommand(
-	outputMode: CliOutputMode,
-): Promise<number> {
-	const agentsById = new Map<
-		string,
-		{
-			name: string;
-			path: string;
-		}
-	>();
-	const directories = resolveCliAgentConfigSearchPaths().filter((directory) =>
-		existsSync(directory),
-	);
-	for (const directory of directories) {
-		try {
-			const entries = readdirSync(directory, { withFileTypes: true });
-			for (const entry of entries) {
-				if (!entry.isFile()) {
-					continue;
-				}
-				const extension = extname(entry.name).toLowerCase();
-				if (extension !== ".yml" && extension !== ".yaml") {
-					continue;
-				}
-				const filePath = join(directory, entry.name);
-				const raw = readFileSync(filePath, "utf8");
-				const frontmatterMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-				const frontmatter = frontmatterMatch?.[1] ?? "";
-				const nameMatch = frontmatter.match(/^\s*name:\s*(.+?)\s*$/m);
-				const parsedName = nameMatch?.[1]?.replace(/^["']|["']$/g, "").trim();
-				const name =
-					parsedName && parsedName.length > 0
-						? parsedName
-						: basename(entry.name, extension);
-				const id = name.toLowerCase();
-				if (agentsById.has(id)) {
-					continue;
-				}
-				agentsById.set(id, { name, path: filePath });
-			}
-		} catch {
-			// Best-effort listing across config roots.
-		}
-	}
-
-	const agents = [...agentsById.values()].sort((a, b) =>
-		a.name.localeCompare(b.name),
-	);
-	if (outputMode === "json") {
-		process.stdout.write(JSON.stringify(agents));
-		return 0;
-	}
-	if (agents.length === 0) {
-		writeln("No configured agents found.");
-		return 0;
-	}
-	writeln("Configured agents:");
-	for (const agent of agents) {
-		writeln(`  ${agent.name} (${agent.path})`);
-	}
-	return 0;
-}
-
-async function runHooksListCommand(
-	cwd: string,
-	outputMode: CliOutputMode,
-): Promise<number> {
-	const hooks = listHookConfigFiles(cwd);
-
-	if (outputMode === "json") {
-		process.stdout.write(JSON.stringify(hooks));
-		return 0;
-	}
-	if (hooks.length === 0) {
-		writeln("No hook files found.");
-		return 0;
-	}
-	writeln("Hook files:");
-	for (const item of hooks) {
-		const mapped = item.hookEventName ? ` -> ${item.hookEventName}` : "";
-		writeln(`  ${item.fileName}${mapped} (${item.path})`);
-	}
-	return 0;
-}
-
-async function runMcpListCommand(outputMode: CliOutputMode): Promise<number> {
-	const settingsPath = resolveDefaultMcpSettingsPath();
-	if (!hasMcpSettingsFile({ filePath: settingsPath })) {
-		if (outputMode === "json") {
-			process.stdout.write(JSON.stringify([]));
-			return 0;
-		}
-		writeln(`No MCP settings file found at ${settingsPath}`);
-		return 0;
-	}
-
-	try {
-		const servers = resolveMcpServerRegistrations({ filePath: settingsPath })
-			.map((registration) => ({
-				name: registration.name,
-				transportType: registration.transport.type,
-				disabled: registration.disabled === true,
-				path: settingsPath,
-			}))
-			.sort((a, b) => a.name.localeCompare(b.name));
-
-		if (outputMode === "json") {
-			process.stdout.write(JSON.stringify(servers));
-			return 0;
-		}
-		if (servers.length === 0) {
-			writeln(`No MCP servers configured in ${settingsPath}`);
-			return 0;
-		}
-		writeln(`Configured MCP servers (${settingsPath}):`);
-		for (const server of servers) {
-			const disabledSuffix = server.disabled ? " (disabled)" : "";
-			writeln(`  ${server.name} [${server.transportType}]${disabledSuffix}`);
-		}
-		return 0;
-	} catch (error) {
-		writeErr(error instanceof Error ? error.message : String(error));
-		return 1;
-	}
 }
 
 // =============================================================================
@@ -2145,11 +1349,11 @@ async function main(): Promise<void> {
 	migrateLegacyProviderSettings({ providerSettingsManager });
 
 	if (rawArgs[0] === "hook") {
-		const code = await runHookCommand();
+		const code = await runHookCommand(writeErr);
 		process.exit(code);
 	}
 	if (rawArgs[0] === "rpc" && rawArgs[1] === "start") {
-		const code = await runRpcStartCommand(rawArgs);
+		const code = await runRpcStartCommand(rawArgs, writeln, writeErr);
 		process.exit(code);
 	}
 	if (rawArgs[0] === "auth") {
@@ -2167,6 +1371,7 @@ async function main(): Promise<void> {
 		const code = await runAuthProviderCommand(
 			providerSettingsManager,
 			providerId,
+			{ writeln, writeErr },
 		);
 		process.exit(code);
 	}
@@ -2184,39 +1389,21 @@ async function main(): Promise<void> {
 		currentOutputMode = args.outputMode;
 		const listCwd = resolveWorkspaceRoot(cwd);
 		const listTarget = rawArgs[1]?.trim().toLowerCase();
-		let code = 1;
-		if (listTarget === "workflows") {
-			code = await runWorkflowsListCommand(listCwd, args.outputMode);
-		} else if (listTarget === "rules") {
-			code = await runRulesListCommand(listCwd, args.outputMode);
-		} else if (listTarget === "skills") {
-			code = await runSkillsListCommand(listCwd, args.outputMode);
-		} else if (listTarget === "agents") {
-			code = await runAgentsListCommand(args.outputMode);
-		} else if (listTarget === "history") {
+		if (listTarget === "history") {
 			const limitIndex = rawArgs.indexOf("--limit");
 			const limit =
 				limitIndex >= 0 && limitIndex + 1 < rawArgs.length
 					? Number.parseInt(rawArgs[limitIndex + 1] ?? "200", 10)
 					: 200;
-			const rows = (await listCliSessions(
-				Number.isFinite(limit) ? limit : 200,
-			)) as HistoryListRow[] | undefined;
-			const lines = (rows ?? []).map((row) => formatHistoryListLine(row));
-			if (lines.length > 0) {
-				process.stdout.write(`${lines.join("\n")}\n`);
-			}
-			code = 0;
-		} else if (listTarget === "hooks") {
-			code = await runHooksListCommand(listCwd, args.outputMode);
-		} else if (listTarget === "mcp") {
-			code = await runMcpListCommand(args.outputMode);
-		} else {
-			writeErr(
-				`list requires one of: workflows, rules, skills, agents, history, hooks, mcp (got "${rawArgs[1] ?? ""}")`,
-			);
-			process.exit(1);
+			await runHistoryListCommand(Number.isFinite(limit) ? limit : 200);
+			process.exit(0);
 		}
+		const code = await runListCommand({
+			rawArgs,
+			cwd: listCwd,
+			outputMode: args.outputMode,
+			io: { writeln, writeErr },
+		});
 		process.exit(code);
 	}
 	if (rawArgs[0] === "sessions" && rawArgs[1] === "list") {
@@ -2321,17 +1508,15 @@ async function main(): Promise<void> {
 	let apiKey = args.key?.trim() || persistedApiKey || undefined;
 
 	if (!apiKey && isOAuthProvider(provider)) {
-		const credentials = await loginWithOAuthProvider(
-			provider,
-			selectedProviderSettings,
-		);
-		selectedProviderSettings = saveOAuthProviderSettings(
+		const oauthResult = await ensureOAuthProviderApiKey({
+			providerId: provider,
+			currentApiKey: apiKey,
+			existingSettings: selectedProviderSettings,
 			providerSettingsManager,
-			provider,
-			selectedProviderSettings,
-			credentials,
-		);
-		apiKey = toProviderApiKey(provider, credentials);
+			io: { writeln, writeErr },
+		});
+		selectedProviderSettings = oauthResult.selectedProviderSettings;
+		apiKey = oauthResult.apiKey;
 	}
 
 	let knownModels: Config["knownModels"];

@@ -88,6 +88,8 @@ clite auth oca
 
 When you run with one of these providers and no API key is available, `clite` will automatically start the OAuth login flow and persist credentials to provider settings.
 
+During OAuth login, `clite` now tries to open the authorization URL in your default browser automatically and still prints the URL for manual fallback.
+
 ## Options
 
 | Flag | Description |
@@ -250,6 +252,17 @@ On startup, `clite` also performs a one-time legacy settings import when `settin
 - **JSON output mode** - NDJSON records for run lifecycle, agent/team events, and final result (`--output json` / `--json`)
 - **Minimal dependencies** - Fast startup time
 - **Multiple providers** - Works with Anthropic, OpenAI, and more
+
+## Source Layout
+
+The CLI entrypoint delegates to focused modules so `src/index.ts` acts as orchestration glue:
+
+- `src/commands/auth.ts` - OAuth provider normalization/login/persistence helpers
+- `src/commands/hook.ts` - hook payload stdin handler and hook output formatting
+- `src/commands/list.ts` - `clite list ...` command handlers
+- `src/commands/rpc.ts` - `clite rpc start` lifecycle command
+- `src/runtime/prompt.ts` - default system prompt and user-input enrichment builders
+- `src/index.ts` - process/session lifecycle, streaming output, run loop orchestration
 
 ## Examples
 

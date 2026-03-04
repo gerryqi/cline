@@ -36,7 +36,8 @@
 		"@cline/llms": "workspace:*",
 		"@cline/rpc": "workspace:*",
 		"better-sqlite3": "^11.10.0",
-		"nanoid": "^5.1.6"
+		"nanoid": "^5.1.6",
+		"open": "^10.2.0"
 	},
 	"devDependencies": {
 		"@types/node": "^20.0.0",

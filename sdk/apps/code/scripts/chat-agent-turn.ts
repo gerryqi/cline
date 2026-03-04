@@ -1,12 +1,5 @@
 import { readFileSync } from "node:fs";
-import {
-	mkdir,
-	mkdtemp,
-	readFile,
-	rm,
-	unlink,
-	writeFile,
-} from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import {
@@ -105,20 +98,6 @@ type ChatStreamLine =
 			result: ChatTurnResult;
 	  };
 
-type ToolApprovalRequest = {
-	toolCallId: string;
-	toolName: string;
-	input?: unknown;
-	iteration?: number;
-	agentId?: string;
-	conversationId?: string;
-};
-
-type ToolApprovalResult = {
-	approved: boolean;
-	reason?: string;
-};
-
 function readStdin(): string {
 	return readFileSync(0, "utf8");
 }
@@ -141,97 +120,58 @@ function writeStreamLine(line: ChatStreamLine): void {
 	process.stdout.write(`${JSON.stringify(line)}\n`);
 }
 
-function sanitizeApprovalToken(value: string): string {
-	return value.replace(/[^a-zA-Z0-9._-]+/g, "_");
-}
+let cachedDesktopApprovalRequester:
+	| Promise<
+			(request: {
+				toolCallId: string;
+				toolName: string;
+				input?: unknown;
+				iteration?: number;
+				agentId?: string;
+				conversationId?: string;
+			}) => Promise<{ approved: boolean; reason?: string }>
+	  >
+	| undefined;
 
-function delay(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function requestDesktopToolApproval(
-	request: ToolApprovalRequest,
-): Promise<ToolApprovalResult> {
-	const approvalDir = process.env.CLINE_TOOL_APPROVAL_DIR?.trim();
-	const sessionId =
-		process.env.CLINE_TOOL_APPROVAL_SESSION_ID?.trim() ||
-		process.env.CLINE_SESSION_ID?.trim();
-
-	if (!approvalDir || !sessionId) {
-		return {
-			approved: false,
-			reason: "Desktop tool approval IPC is not configured",
-		};
+async function requestDesktopToolApproval(request: {
+	toolCallId: string;
+	toolName: string;
+	input?: unknown;
+	iteration?: number;
+	agentId?: string;
+	conversationId?: string;
+}): Promise<{ approved: boolean; reason?: string }> {
+	if (!cachedDesktopApprovalRequester) {
+		cachedDesktopApprovalRequester = import("@cline/core/server")
+			.then((module) => {
+				const fn = (
+					module as {
+						requestDesktopToolApproval?: (request: {
+							toolCallId: string;
+							toolName: string;
+							input?: unknown;
+							iteration?: number;
+							agentId?: string;
+							conversationId?: string;
+						}) => Promise<{ approved: boolean; reason?: string }>;
+					}
+				).requestDesktopToolApproval;
+				if (typeof fn !== "function") {
+					throw new Error(
+						"Installed @cline/core does not expose requestDesktopToolApproval",
+					);
+				}
+				return fn;
+			})
+			.catch(() => {
+				return async () => ({
+					approved: false,
+					reason: "Desktop tool approval IPC is not available",
+				});
+			});
 	}
-
-	await mkdir(approvalDir, { recursive: true });
-	const requestId = sanitizeApprovalToken(`${request.toolCallId}`);
-	const requestPath = join(
-		approvalDir,
-		`${sessionId}.request.${requestId}.json`,
-	);
-	const decisionPath = join(
-		approvalDir,
-		`${sessionId}.decision.${requestId}.json`,
-	);
-
-	await writeFile(
-		requestPath,
-		`${JSON.stringify(
-			{
-				requestId,
-				sessionId,
-				createdAt: new Date().toISOString(),
-				toolCallId: request.toolCallId,
-				toolName: request.toolName,
-				input: request.input,
-				iteration: request.iteration,
-				agentId: request.agentId,
-				conversationId: request.conversationId,
-			},
-			null,
-			2,
-		)}\n`,
-		"utf8",
-	);
-
-	const timeoutMs = 5 * 60_000;
-	const startedAt = Date.now();
-	while (Date.now() - startedAt < timeoutMs) {
-		try {
-			const raw = await readFile(decisionPath, "utf8");
-			const parsed = JSON.parse(raw) as {
-				approved?: boolean;
-				reason?: string;
-			};
-			const result = {
-				approved: parsed.approved === true,
-				reason: typeof parsed.reason === "string" ? parsed.reason : undefined,
-			};
-			try {
-				await unlink(decisionPath);
-			} catch {
-				// Best effort cleanup.
-			}
-			try {
-				await unlink(requestPath);
-			} catch {
-				// Best effort cleanup.
-			}
-			return result;
-		} catch {
-			// Decision not available yet.
-		}
-		await delay(200);
-	}
-
-	try {
-		await unlink(requestPath);
-	} catch {
-		// Best effort cleanup.
-	}
-
-	return { approved: false, reason: "Tool approval request timed out" };
+	const requester = await cachedDesktopApprovalRequester;
+	return requester(request);
 }
 
 function sanitizeFilename(name: string, index: number): string {

@@ -39,7 +39,7 @@ export const OCI_HEADER_OPC_REQUEST_ID = "opc-request-id";
 const DEFAULT_CALLBACK_PATH = "/auth/oca";
 const DEFAULT_CALLBACK_PORTS = Array.from(
 	{ length: 11 },
-	(_, index) => 48821 + index,
+	(_, index) => 48801 + index,
 );
 const DEFAULT_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const DEFAULT_RETRYABLE_TOKEN_GRACE_MS = 30 * 1000;

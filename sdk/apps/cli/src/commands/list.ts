@@ -1,0 +1,395 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, extname, join } from "node:path";
+import {
+	createUserInstructionConfigWatcher,
+	hasMcpSettingsFile,
+	listHookConfigFiles,
+	type RuleConfig,
+	resolveDefaultMcpSettingsPath,
+	resolveMcpServerRegistrations,
+	resolveRulesConfigSearchPaths,
+	resolveSkillsConfigSearchPaths,
+	resolveWorkflowsConfigSearchPaths,
+	type SkillConfig,
+	type WorkflowConfig,
+} from "@cline/core/server";
+import { listCliSessions } from "../utils/session";
+import type { CliOutputMode } from "../utils/types";
+
+type ListIo = {
+	writeln: (text?: string) => void;
+	writeErr: (text: string) => void;
+};
+
+type HistoryListRow = {
+	session_id?: string;
+	provider?: string;
+	model?: string;
+	started_at?: string;
+};
+
+export type HistorySessionRow = {
+	session_id?: string;
+	messages_path?: string | null;
+};
+
+function resolveCliAgentConfigSearchPaths(): string[] {
+	const clineDataDir =
+		process.env.CLINE_DATA_DIR?.trim() || join(homedir(), ".cline", "data");
+	return [
+		join(homedir(), "Documents", "Cline", "Agents"),
+		join(clineDataDir, "settings", "agents"),
+	];
+}
+
+export function formatHistoryListLine(row: HistoryListRow): string {
+	const sessionId = row.session_id?.trim() || "(unknown-session)";
+	const provider = row.provider?.trim() || "(unknown-provider)";
+	const model = row.model?.trim() || "(unknown-model)";
+	const date = row.started_at?.trim() || "(unknown-date)";
+	return `${sessionId} - ${provider} - ${model} - ${date}`;
+}
+
+async function runWorkflowsListCommand(
+	cwd: string,
+	outputMode: CliOutputMode,
+	io: ListIo,
+): Promise<number> {
+	const workflowsById = new Map<
+		string,
+		{ id: string; name: string; instructions: string; path: string }
+	>();
+	const directories = resolveWorkflowsConfigSearchPaths(cwd).filter(
+		(directory) => existsSync(directory),
+	);
+	for (const directory of directories) {
+		const watcher = createUserInstructionConfigWatcher({
+			skills: { directories: [] },
+			rules: { directories: [] },
+			workflows: { directories: [directory] },
+		});
+		try {
+			await watcher.start();
+			const snapshot = watcher.getSnapshot("workflow");
+			for (const [id, record] of snapshot.entries()) {
+				const workflow = record.item as WorkflowConfig;
+				if (workflow.disabled === true || workflowsById.has(id)) {
+					continue;
+				}
+				workflowsById.set(id, {
+					id,
+					name: workflow.name,
+					instructions: workflow.instructions,
+					path: record.filePath,
+				});
+			}
+		} catch {
+			// Best-effort listing across config roots.
+		} finally {
+			watcher.stop();
+		}
+	}
+	const workflows = [...workflowsById.values()].sort((a, b) =>
+		a.name.localeCompare(b.name),
+	);
+	if (outputMode === "json") {
+		process.stdout.write(JSON.stringify(workflows));
+		return 0;
+	}
+	if (workflows.length === 0) {
+		io.writeln("No enabled workflows found.");
+		return 0;
+	}
+	io.writeln("Available workflows:");
+	for (const workflow of workflows) {
+		io.writeln(`  /${workflow.name} (${workflow.path})`);
+	}
+	return 0;
+}
+
+async function runRulesListCommand(
+	cwd: string,
+	outputMode: CliOutputMode,
+	io: ListIo,
+): Promise<number> {
+	const rulesByName = new Map<
+		string,
+		{ name: string; instructions: string; path: string }
+	>();
+	const directories = resolveRulesConfigSearchPaths(cwd).filter((directory) =>
+		existsSync(directory),
+	);
+	for (const directory of directories) {
+		const watcher = createUserInstructionConfigWatcher({
+			skills: { directories: [] },
+			rules: { directories: [directory] },
+			workflows: { directories: [] },
+		});
+		try {
+			await watcher.start();
+			const snapshot = watcher.getSnapshot("rule");
+			for (const record of snapshot.values()) {
+				const rule = record.item as RuleConfig;
+				if (rule.disabled === true || rulesByName.has(rule.name)) {
+					continue;
+				}
+				rulesByName.set(rule.name, {
+					name: rule.name,
+					instructions: rule.instructions,
+					path: record.filePath,
+				});
+			}
+		} catch {
+			// Best-effort listing across config roots.
+		} finally {
+			watcher.stop();
+		}
+	}
+	const rules = [...rulesByName.values()].sort((a, b) =>
+		a.name.localeCompare(b.name),
+	);
+	if (outputMode === "json") {
+		process.stdout.write(JSON.stringify(rules));
+		return 0;
+	}
+	if (rules.length === 0) {
+		io.writeln("No enabled rules found.");
+		return 0;
+	}
+	io.writeln("Enabled rules:");
+	for (const rule of rules) {
+		io.writeln(`  ${rule.name} (${rule.path})`);
+	}
+	return 0;
+}
+
+async function runSkillsListCommand(
+	cwd: string,
+	outputMode: CliOutputMode,
+	io: ListIo,
+): Promise<number> {
+	const skillDirectories = [
+		...resolveSkillsConfigSearchPaths(cwd),
+		join(homedir(), "Documents", "Cline", "Skills"),
+	];
+	const skillsByName = new Map<
+		string,
+		SkillConfig & {
+			path: string;
+		}
+	>();
+	const directories = [...new Set(skillDirectories)].filter((directory) =>
+		existsSync(directory),
+	);
+	for (const directory of directories) {
+		const watcher = createUserInstructionConfigWatcher({
+			skills: { directories: [directory] },
+			rules: { directories: [] },
+			workflows: { directories: [] },
+		});
+		try {
+			await watcher.start();
+			const snapshot = watcher.getSnapshot("skill");
+			for (const record of snapshot.values()) {
+				const skill = record.item as SkillConfig;
+				if (skill.disabled === true || skillsByName.has(skill.name)) {
+					continue;
+				}
+				skillsByName.set(skill.name, {
+					...skill,
+					path: record.filePath,
+				});
+			}
+		} catch {
+			// Best-effort listing across config roots.
+		} finally {
+			watcher.stop();
+		}
+	}
+	const skills = [...skillsByName.values()].sort((a, b) =>
+		a.name.localeCompare(b.name),
+	);
+	if (outputMode === "json") {
+		process.stdout.write(JSON.stringify(skills));
+		return 0;
+	}
+	if (skills.length === 0) {
+		io.writeln("No enabled skills found.");
+		return 0;
+	}
+	io.writeln("Enabled skills:");
+	for (const skill of skills) {
+		io.writeln(`  ${skill.name} (${skill.path})`);
+	}
+	return 0;
+}
+
+async function runAgentsListCommand(
+	outputMode: CliOutputMode,
+	io: ListIo,
+): Promise<number> {
+	const agentsById = new Map<
+		string,
+		{
+			name: string;
+			path: string;
+		}
+	>();
+	const directories = resolveCliAgentConfigSearchPaths().filter((directory) =>
+		existsSync(directory),
+	);
+	for (const directory of directories) {
+		try {
+			const entries = readdirSync(directory, { withFileTypes: true });
+			for (const entry of entries) {
+				if (!entry.isFile()) {
+					continue;
+				}
+				const extension = extname(entry.name).toLowerCase();
+				if (extension !== ".yml" && extension !== ".yaml") {
+					continue;
+				}
+				const filePath = join(directory, entry.name);
+				const raw = readFileSync(filePath, "utf8");
+				const frontmatterMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+				const frontmatter = frontmatterMatch?.[1] ?? "";
+				const nameMatch = frontmatter.match(/^\s*name:\s*(.+?)\s*$/m);
+				const parsedName = nameMatch?.[1]?.replace(/^["']|["']$/g, "").trim();
+				const name =
+					parsedName && parsedName.length > 0
+						? parsedName
+						: basename(entry.name, extension);
+				const id = name.toLowerCase();
+				if (agentsById.has(id)) {
+					continue;
+				}
+				agentsById.set(id, { name, path: filePath });
+			}
+		} catch {
+			// Best-effort listing across config roots.
+		}
+	}
+
+	const agents = [...agentsById.values()].sort((a, b) =>
+		a.name.localeCompare(b.name),
+	);
+	if (outputMode === "json") {
+		process.stdout.write(JSON.stringify(agents));
+		return 0;
+	}
+	if (agents.length === 0) {
+		io.writeln("No configured agents found.");
+		return 0;
+	}
+	io.writeln("Configured agents:");
+	for (const agent of agents) {
+		io.writeln(`  ${agent.name} (${agent.path})`);
+	}
+	return 0;
+}
+
+async function runHooksListCommand(
+	cwd: string,
+	outputMode: CliOutputMode,
+	io: ListIo,
+): Promise<number> {
+	const hooks = listHookConfigFiles(cwd);
+	if (outputMode === "json") {
+		process.stdout.write(JSON.stringify(hooks));
+		return 0;
+	}
+	if (hooks.length === 0) {
+		io.writeln("No hook files found.");
+		return 0;
+	}
+	io.writeln("Hook files:");
+	for (const item of hooks) {
+		const mapped = item.hookEventName ? ` -> ${item.hookEventName}` : "";
+		io.writeln(`  ${item.fileName}${mapped} (${item.path})`);
+	}
+	return 0;
+}
+
+async function runMcpListCommand(
+	outputMode: CliOutputMode,
+	io: ListIo,
+): Promise<number> {
+	const settingsPath = resolveDefaultMcpSettingsPath();
+	if (!hasMcpSettingsFile({ filePath: settingsPath })) {
+		if (outputMode === "json") {
+			process.stdout.write(JSON.stringify([]));
+			return 0;
+		}
+		io.writeln(`No MCP settings file found at ${settingsPath}`);
+		return 0;
+	}
+
+	try {
+		const servers = resolveMcpServerRegistrations({ filePath: settingsPath })
+			.map((registration) => ({
+				name: registration.name,
+				transportType: registration.transport.type,
+				disabled: registration.disabled === true,
+				path: settingsPath,
+			}))
+			.sort((a, b) => a.name.localeCompare(b.name));
+
+		if (outputMode === "json") {
+			process.stdout.write(JSON.stringify(servers));
+			return 0;
+		}
+		if (servers.length === 0) {
+			io.writeln(`No MCP servers configured in ${settingsPath}`);
+			return 0;
+		}
+		io.writeln(`Configured MCP servers (${settingsPath}):`);
+		for (const server of servers) {
+			const disabledSuffix = server.disabled ? " (disabled)" : "";
+			io.writeln(`  ${server.name} [${server.transportType}]${disabledSuffix}`);
+		}
+		return 0;
+	} catch (error) {
+		io.writeErr(error instanceof Error ? error.message : String(error));
+		return 1;
+	}
+}
+
+export async function runListCommand(input: {
+	rawArgs: string[];
+	cwd: string;
+	outputMode: CliOutputMode;
+	io: ListIo;
+}): Promise<number> {
+	const listTarget = input.rawArgs[1]?.trim().toLowerCase();
+	if (listTarget === "workflows") {
+		return runWorkflowsListCommand(input.cwd, input.outputMode, input.io);
+	}
+	if (listTarget === "rules") {
+		return runRulesListCommand(input.cwd, input.outputMode, input.io);
+	}
+	if (listTarget === "skills") {
+		return runSkillsListCommand(input.cwd, input.outputMode, input.io);
+	}
+	if (listTarget === "agents") {
+		return runAgentsListCommand(input.outputMode, input.io);
+	}
+	if (listTarget === "hooks") {
+		return runHooksListCommand(input.cwd, input.outputMode, input.io);
+	}
+	if (listTarget === "mcp") {
+		return runMcpListCommand(input.outputMode, input.io);
+	}
+	input.io.writeErr(
+		`list requires one of: workflows, rules, skills, agents, history, hooks, mcp (got "${input.rawArgs[1] ?? ""}")`,
+	);
+	return 1;
+}
+
+export async function runHistoryListCommand(limit: number): Promise<void> {
+	const rows = (await listCliSessions(limit)) as HistoryListRow[] | undefined;
+	const lines = (rows ?? []).map((row) => formatHistoryListLine(row));
+	if (lines.length > 0) {
+		process.stdout.write(`${lines.join("\n")}\n`);
+	}
+}

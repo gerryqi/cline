@@ -1,0 +1,40 @@
+import { describe, expect, it, vi } from "vitest";
+import { createOAuthClientCallbacks } from "./client.js";
+
+describe("auth/client createOAuthClientCallbacks", () => {
+	it("emits instructions and URL and forwards prompts", async () => {
+		const onOutput = vi.fn();
+		const onPrompt = vi.fn().mockResolvedValue("value");
+		const callbacks = createOAuthClientCallbacks({ onOutput, onPrompt });
+
+		callbacks.onAuth({
+			url: "https://example.com/auth",
+			instructions: "Open your browser",
+		});
+		const answer = await callbacks.onPrompt({ message: "Enter code" });
+
+		expect(answer).toBe("value");
+		expect(onPrompt).toHaveBeenCalledWith({ message: "Enter code" });
+		expect(onOutput).toHaveBeenNthCalledWith(1, "Open your browser");
+		expect(onOutput).toHaveBeenNthCalledWith(2, "https://example.com/auth");
+	});
+
+	it("tries opening URL and reports opener errors", async () => {
+		const openUrl = vi.fn().mockRejectedValue(new Error("failed"));
+		const onOpenUrlError = vi.fn();
+		const callbacks = createOAuthClientCallbacks({
+			onPrompt: vi.fn().mockResolvedValue(""),
+			openUrl,
+			onOpenUrlError,
+		});
+
+		callbacks.onAuth({ url: "https://example.com/auth" });
+		await Promise.resolve();
+
+		expect(openUrl).toHaveBeenCalledWith("https://example.com/auth");
+		expect(onOpenUrlError).toHaveBeenCalledTimes(1);
+		expect(onOpenUrlError.mock.calls[0]?.[0]).toMatchObject({
+			url: "https://example.com/auth",
+		});
+	});
+});

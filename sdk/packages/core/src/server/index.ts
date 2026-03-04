@@ -63,7 +63,10 @@ export {
 	UnifiedConfigFileWatcher,
 	WORKFLOWS_CONFIG_DIRECTORY_NAME,
 } from "../agents";
-
+export {
+	createOAuthClientCallbacks,
+	type OAuthClientCallbacksOptions,
+} from "../auth/client";
 export {
 	createClineOAuthProvider,
 	getValidClineCredentials,
@@ -161,6 +164,7 @@ export type {
 	RuntimeBuilderInput,
 	SessionRuntime,
 } from "../runtime/session-runtime";
+export { requestDesktopToolApproval } from "../runtime/tool-approval";
 export type { AvailableWorkflow } from "../runtime/workflows";
 export {
 	listAvailableWorkflowsFromWatcher,
