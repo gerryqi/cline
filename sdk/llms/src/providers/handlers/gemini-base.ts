@@ -24,7 +24,7 @@ import {
 } from "../types";
 import type { Message, ToolDefinition } from "../types/messages";
 import { RetriableError, withRetry } from "../utils/retry";
-import { BaseHandler, DEFAULT_MODEL_INFO } from "./base";
+import { BaseHandler } from "./base";
 
 const DEFAULT_THINKING_BUDGET_TOKENS = 1024;
 
@@ -68,7 +68,7 @@ export class GeminiHandler extends BaseHandler {
 	getModel(): HandlerModelInfo {
 		const modelId = this.config.modelId;
 		const knownModels = this.config.knownModels ?? {};
-		const fallbackModel = knownModels[modelId] ?? DEFAULT_MODEL_INFO;
+		const fallbackModel = knownModels[modelId] ?? {};
 		const modelInfo = this.config.modelInfo ?? fallbackModel;
 
 		return { id: modelId, info: { ...modelInfo, id: modelId } };

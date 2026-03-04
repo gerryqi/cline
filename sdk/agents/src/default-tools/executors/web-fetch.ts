@@ -130,10 +130,12 @@ export function createWebFetchExecutor(
 		// Create abort controller for timeout
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), timeoutMs);
+		let contextAbortHandler: (() => void) | undefined;
 
 		// Combine with context abort signal
 		if (context.abortSignal) {
-			context.abortSignal.addEventListener("abort", () => controller.abort());
+			contextAbortHandler = () => controller.abort();
+			context.abortSignal.addEventListener("abort", contextAbortHandler);
 		}
 
 		try {
@@ -248,6 +250,10 @@ export function createWebFetchExecutor(
 				throw error;
 			}
 			throw new Error(`Fetch failed: ${String(error)}`);
+		} finally {
+			if (context.abortSignal && contextAbortHandler) {
+				context.abortSignal.removeEventListener("abort", contextAbortHandler);
+			}
 		}
 	};
 }

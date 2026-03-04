@@ -21,7 +21,7 @@ import type {
 import type { Message, ToolDefinition } from "../types/messages";
 import { withRetry } from "../utils/retry";
 import { getMissingApiKeyError, resolveApiKeyForProvider } from "./auth";
-import { BaseHandler, DEFAULT_MODEL_INFO } from "./base";
+import { BaseHandler } from "./base";
 
 const DEFAULT_REASONING_EFFORT = "medium" as const;
 
@@ -148,11 +148,9 @@ export class OpenAIResponsesHandler extends BaseHandler {
 
 	protected getDefaultModelInfo(): ModelInfo {
 		// Responses API models don't support prompt caching
-		const capabilities = (DEFAULT_MODEL_INFO.capabilities ?? []).filter(
-			(c) => c !== "prompt-cache",
-		);
+		const capabilities = [].filter((c) => c !== "prompt-cache");
 		return {
-			...DEFAULT_MODEL_INFO,
+			id: this.config.modelId,
 			capabilities,
 		};
 	}

@@ -26,7 +26,7 @@ import type { Message, ToolDefinition } from "../types/messages";
 import { withRetry } from "../utils/retry";
 import { ToolCallProcessor } from "../utils/tool-processor";
 import { getMissingApiKeyError, resolveApiKeyForProvider } from "./auth";
-import { BaseHandler, DEFAULT_MODEL_INFO } from "./base";
+import { BaseHandler } from "./base";
 
 const DEFAULT_REASONING_EFFORT = "medium" as const;
 
@@ -94,10 +94,10 @@ export class OpenAIBaseHandler extends BaseHandler {
 		const capabilities: ModelCapability[] = this.config.capabilities?.includes(
 			"prompt-cache",
 		)
-			? [...(DEFAULT_MODEL_INFO.capabilities ?? []), "prompt-cache"]
-			: (DEFAULT_MODEL_INFO.capabilities ?? []);
+			? ["prompt-cache"]
+			: [];
 		return {
-			...DEFAULT_MODEL_INFO,
+			id: this.config.modelId,
 			capabilities,
 		};
 	}

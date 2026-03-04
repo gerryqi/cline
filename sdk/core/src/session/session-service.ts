@@ -15,6 +15,7 @@ import type {
 	SubAgentStartContext,
 } from "@cline/agents";
 import type { providers as LlmsProviders } from "@cline/llms";
+import { nanoid } from "nanoid";
 import { z } from "zod";
 import type { SqliteSessionStore } from "../storage/sqlite-session-store";
 import { SessionSource, type SessionStatus } from "../types/common";
@@ -313,17 +314,26 @@ export class CoreSessionService {
 		);
 	}
 
+	private createRootSessionId(_source: SessionSource): string {
+		return `${Date.now()}_${nanoid(5)}`;
+	}
+
 	createRootSessionWithArtifacts(
 		input: CreateRootSessionWithArtifactsInput,
 	): RootSessionArtifacts {
 		const startedAt = input.startedAt ?? nowIso();
-		const transcriptPath = this.sessionTranscriptPath(input.sessionId);
-		const hookPath = this.sessionHookPath(input.sessionId);
-		const messagesPath = this.sessionMessagesPath(input.sessionId);
-		const manifestPath = this.sessionManifestPath(input.sessionId);
+		const providedSessionId = input.sessionId.trim();
+		const sessionId =
+			providedSessionId.length > 0
+				? providedSessionId
+				: this.createRootSessionId(input.source);
+		const transcriptPath = this.sessionTranscriptPath(sessionId);
+		const hookPath = this.sessionHookPath(sessionId);
+		const messagesPath = this.sessionMessagesPath(sessionId);
+		const manifestPath = this.sessionManifestPath(sessionId);
 		const manifest = SessionManifestSchema.parse({
 			version: 1,
-			session_id: input.sessionId,
+			session_id: sessionId,
 			source: input.source,
 			pid: input.pid,
 			started_at: startedAt,
@@ -341,7 +351,7 @@ export class CoreSessionService {
 			messages_path: messagesPath,
 		});
 		this.createRootSession({
-			sessionId: input.sessionId,
+			sessionId,
 			source: input.source,
 			pid: input.pid,
 			startedAt,
@@ -372,7 +382,7 @@ export class CoreSessionService {
 			messagesPath,
 			manifest,
 			env: {
-				CLINE_SESSION_ID: input.sessionId,
+				CLINE_SESSION_ID: sessionId,
 				CLINE_HOOKS_LOG_PATH: hookPath,
 				CLINE_ENABLE_SUBPROCESS_HOOKS: "1",
 			},

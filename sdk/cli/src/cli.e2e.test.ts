@@ -58,7 +58,7 @@ describe("cli e2e", () => {
 		expect(asText(result.stdout)).toContain("--sandbox");
 		expect(asText(result.stdout)).toContain("--thinking");
 		expect(asText(result.stdout)).toContain(
-			"clite list <workflows|rules|skills>",
+			"clite list <workflows|rules|skills|agents|history>",
 		);
 	});
 
@@ -91,12 +91,40 @@ describe("cli e2e", () => {
 		expect(Array.isArray(parsed)).toBe(true);
 	});
 
+	it("lists history items from isolated storage", () => {
+		const homeDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-home-"));
+		const sessionDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-sessions-"));
+		tempDirs.push(homeDir, sessionDir);
+		const result = runCli(["list", "history", "--limit", "25"], {
+			env: {
+				...process.env,
+				HOME: homeDir,
+				CLINE_SESSION_DATA_DIR: sessionDir,
+			},
+		});
+
+		expect(result.status).toBe(0);
+		const lines = asText(result.stdout)
+			.split("\n")
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0);
+		for (const line of lines) {
+			expect(line).toMatch(/^.+ - .+ - .+ - .+$/);
+		}
+	});
+
 	it("returns an error when deleting a session without --session-id", () => {
 		const result = runCli(["sessions", "delete"], { env: process.env });
 		expect(result.status).toBe(1);
 		expect(asText(result.stderr)).toContain(
 			"sessions delete requires --session-id <id>",
 		);
+	});
+
+	it("returns an error when session flag is provided without an id", () => {
+		const result = runCli(["--session"], { env: process.env });
+		expect(result.status).toBe(1);
+		expect(asText(result.stderr)).toContain("--session requires <id>");
 	});
 
 	it("lists enabled workflows in text mode", () => {
@@ -317,6 +345,75 @@ Skill from docs path.`,
 		});
 		expect(skillsResult.status).toBe(0);
 		expect(asText(skillsResult.stdout)).toContain("docs-skill");
+	});
+
+	it("lists configured agents with source paths", () => {
+		const homeDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-home-"));
+		const dataDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-data-"));
+		const workspace = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-workspace-"));
+		tempDirs.push(homeDir, dataDir, workspace);
+		const docsAgentsDir = path.join(homeDir, "Documents", "Cline", "Agents");
+		const settingsAgentsDir = path.join(dataDir, "settings", "agents");
+		mkdirSync(docsAgentsDir, { recursive: true });
+		mkdirSync(settingsAgentsDir, { recursive: true });
+		writeFileSync(
+			path.join(docsAgentsDir, "reviewer.yaml"),
+			`---
+name: Reviewer
+description: Reviews code changes
+---
+Review diffs thoroughly.`,
+			"utf8",
+		);
+		writeFileSync(
+			path.join(settingsAgentsDir, "planner.yaml"),
+			`---
+name: Planner
+description: Plans implementation tasks
+---
+Break work into clear steps.`,
+			"utf8",
+		);
+
+		const textResult = runCli(["list", "agents"], {
+			cwd: workspace,
+			env: {
+				...process.env,
+				HOME: homeDir,
+				CLINE_DATA_DIR: dataDir,
+			},
+		});
+		expect(textResult.status).toBe(0);
+		expect(asText(textResult.stdout)).toContain("Configured agents:");
+		expect(asText(textResult.stdout)).toContain("Reviewer");
+		expect(asText(textResult.stdout)).toContain("Planner");
+		expect(asText(textResult.stdout)).toContain(
+			path.join(docsAgentsDir, "reviewer.yaml"),
+		);
+		expect(asText(textResult.stdout)).toContain(
+			path.join(settingsAgentsDir, "planner.yaml"),
+		);
+
+		const jsonResult = runCli(["list", "agents", "--json"], {
+			cwd: workspace,
+			env: {
+				...process.env,
+				HOME: homeDir,
+				CLINE_DATA_DIR: dataDir,
+			},
+		});
+		expect(jsonResult.status).toBe(0);
+		const parsed = JSON.parse(asText(jsonResult.stdout)) as Array<{
+			name: string;
+			path: string;
+		}>;
+		expect(parsed.some((agent) => agent.name === "Reviewer")).toBe(true);
+		expect(parsed.some((agent) => agent.name === "Planner")).toBe(true);
+		expect(
+			parsed.some(
+				(agent) => agent.path === path.join(docsAgentsDir, "reviewer.yaml"),
+			),
+		).toBe(true);
 	});
 
 	it("rejects invalid hook payloads", () => {

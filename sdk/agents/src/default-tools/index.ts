@@ -9,6 +9,7 @@ export { ALL_DEFAULT_TOOL_NAMES, DefaultToolNames } from "./constants.js";
 
 // Tool Definitions
 export {
+	createAskQuestionTool,
 	createBashTool,
 	createDefaultTools,
 	createEditorTool,
@@ -35,11 +36,15 @@ export {
 // Presets
 export {
 	createDefaultToolsWithPreset,
+	createToolPoliciesWithPreset,
+	type ToolPolicyPresetName,
 	type ToolPresetName,
 	ToolPresets,
 } from "./presets.js";
 // Schemas
 export {
+	type AskQuestionInput,
+	AskQuestionInputSchema,
 	type EditFileInput,
 	EditFileInputSchema,
 	type FetchWebContentInput,
@@ -57,6 +62,7 @@ export {
 } from "./schemas.js";
 // Types
 export type {
+	AskQuestionExecutor,
 	BashExecutor,
 	CreateDefaultToolsOptions,
 	DefaultToolName,

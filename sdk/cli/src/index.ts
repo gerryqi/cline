@@ -17,12 +17,13 @@ import {
 	appendFileSync,
 	existsSync,
 	mkdirSync,
+	readdirSync,
 	readFileSync,
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, extname, join } from "node:path";
 import { createInterface } from "node:readline";
 import {
 	Agent,
@@ -69,7 +70,6 @@ import {
 	isCliHookPayload,
 	nowIso,
 	parseArgs,
-	randomSessionId,
 	readStdinUtf8,
 	resolveWorkspaceRoot,
 	truncate,
@@ -177,7 +177,7 @@ function createCliSession(
 	prompt: string | undefined,
 	interactive: boolean,
 ): ActiveCliSession {
-	const sessionId = process.env.CLINE_SESSION_ID?.trim() || randomSessionId();
+	const sessionId = process.env.CLINE_SESSION_ID?.trim() || "";
 	const created = createRootCliSessionWithArtifacts({
 		sessionId,
 		source: SessionSource.CLI,
@@ -495,6 +495,49 @@ async function requestToolApproval(
 	return requestTerminalToolApproval(request);
 }
 
+async function askQuestionInTerminal(
+	question: string,
+	options: string[],
+): Promise<string> {
+	if (!process.stdin.isTTY || !process.stdout.isTTY) {
+		return options[0] ?? "";
+	}
+
+	return new Promise<string>((resolve) => {
+		const rl = createInterface({
+			input: process.stdin,
+			output: process.stdout,
+		});
+
+		write(`\n${c.dim}[follow-up]${c.reset} ${question}\n`);
+		for (const [index, option] of options.entries()) {
+			write(`${c.dim}  ${index + 1}.${c.reset} ${option}\n`);
+		}
+
+		rl.question(
+			`${c.dim}Choose 1-${options.length} or type a custom answer:${c.reset} `,
+			(value) => {
+				rl.close();
+				const trimmed = value.trim();
+				const numeric = Number.parseInt(trimmed, 10);
+				if (
+					Number.isInteger(numeric) &&
+					numeric >= 1 &&
+					numeric <= options.length
+				) {
+					resolve(options[numeric - 1] ?? "");
+					return;
+				}
+				if (trimmed.length > 0) {
+					resolve(trimmed);
+					return;
+				}
+				resolve(options[0] ?? "");
+			},
+		);
+	});
+}
+
 function getHookCommand(): string[] | undefined {
 	if (process.env.CLINE_ENABLE_SUBPROCESS_HOOKS !== "1" || !process.argv[1]) {
 		return undefined;
@@ -526,6 +569,9 @@ function createBuiltinToolsList(cwd: string): Tool[] {
 		enableSearch: true,
 		enableBash: true,
 		enableWebFetch: true,
+		executors: {
+			askQuestion: askQuestionInTerminal,
+		},
 	});
 }
 
@@ -647,6 +693,73 @@ function closeInlineStreamIfNeeded(): void {
 	inlineStreamHasOutput = false;
 }
 
+type HistorySessionRow = {
+	session_id?: string;
+	messages_path?: string | null;
+};
+
+type HistoryListRow = {
+	session_id?: string;
+	provider?: string;
+	model?: string;
+	started_at?: string;
+};
+
+function formatHistoryListLine(row: HistoryListRow): string {
+	const sessionId = row.session_id?.trim() || "(unknown-session)";
+	const provider = row.provider?.trim() || "(unknown-provider)";
+	const model = row.model?.trim() || "(unknown-model)";
+	const date = row.started_at?.trim() || "(unknown-date)";
+	return `${sessionId} - ${provider} - ${model} - ${date}`;
+}
+
+function parsePersistedMessages(raw: string): providers.Message[] {
+	if (!raw.trim()) {
+		return [];
+	}
+	const parsed = JSON.parse(raw) as { messages?: unknown } | unknown[];
+	const messages = Array.isArray(parsed)
+		? parsed
+		: Array.isArray((parsed as { messages?: unknown })?.messages)
+			? ((parsed as { messages: unknown[] }).messages ?? [])
+			: [];
+	return messages as providers.Message[];
+}
+
+function loadSessionMessages(sessionId: string): providers.Message[] {
+	const target = sessionId.trim();
+	if (!target) {
+		throw new Error("--session requires <id>");
+	}
+	const rows = listCliSessions(2000) as HistorySessionRow[];
+	const row = rows.find((item) => item.session_id === target);
+	if (!row) {
+		throw new Error(`could not find session "${target}"`);
+	}
+	const messagesPath = row.messages_path?.trim();
+	if (!messagesPath || !existsSync(messagesPath)) {
+		return [];
+	}
+	try {
+		return parsePersistedMessages(readFileSync(messagesPath, "utf8"));
+	} catch {
+		return [];
+	}
+}
+
+function hydrateAgentMessages(
+	agent: Agent,
+	messages: providers.Message[],
+): void {
+	if (messages.length === 0) {
+		return;
+	}
+	// Agent does not expose a public restore API yet; hydrate internal buffer to resume chat context.
+	(agent as unknown as { messages: providers.Message[] }).messages = [
+		...messages,
+	];
+}
+
 async function buildUserInputMessage(
 	rawPrompt: string,
 	cwd: string,
@@ -676,6 +789,9 @@ async function runAgent(
 		hooks,
 		onTeamEvent: handleTeamEvent,
 		createSpawnTool: () => createCliSpawnTool(config, hooks),
+		defaultToolExecutors: {
+			askQuestion: askQuestionInTerminal,
+		},
 		userInstructionWatcher,
 		onTeamRestored: () => {
 			if (config.outputMode === "json") {
@@ -900,7 +1016,7 @@ function handleEvent(event: AgentEvent, _config: Config): void {
 					} else {
 						const outputStr = formatToolOutput(event.output);
 						if (outputStr) {
-							write(`\n  ${c.dim}-> ${outputStr}${c.reset}\n`);
+							write(`  ${c.dim}-> ${outputStr}${c.reset}`);
 						} else {
 							write(` ${c.green}ok${c.reset}\n`);
 						}
@@ -934,27 +1050,27 @@ function handleTeamEvent(event: TeamEvent): void {
 	switch (event.type) {
 		case "teammate_spawned":
 			write(
-				`\n${c.dim}[team] teammate spawned:${c.reset} ${c.cyan}${event.agentId}${c.reset}\n`,
+				`\n${c.dim}[team] teammate spawned:${c.reset} ${c.cyan}${event.agentId}${c.reset}`,
 			);
 			break;
 		case "teammate_shutdown":
 			write(
-				`\n${c.dim}[team] teammate shutdown:${c.reset} ${c.cyan}${event.agentId}${c.reset}\n`,
+				`\n${c.dim}[team] teammate shutdown:${c.reset} ${c.cyan}${event.agentId}${c.reset}`,
 			);
 			break;
 		case "team_task_updated":
 			write(
-				`\n${c.dim}[team task]${c.reset} ${c.cyan}${event.task.id}${c.reset} -> ${event.task.status}\n`,
+				`\n${c.dim}[team task]${c.reset} ${c.cyan}${event.task.id}${c.reset} -> ${event.task.status}`,
 			);
 			break;
 		case "team_message":
 			write(
-				`\n${c.dim}[mailbox]${c.reset} ${event.message.fromAgentId} -> ${event.message.toAgentId}: ${event.message.subject}\n`,
+				`\n${c.dim}[mailbox]${c.reset} ${event.message.fromAgentId} -> ${event.message.toAgentId}: ${event.message.subject}`,
 			);
 			break;
 		case "team_mission_log":
 			write(
-				`\n${c.dim}[mission]${c.reset} ${event.entry.agentId}: ${truncate(event.entry.summary, 90)}\n`,
+				`\n${c.dim}[mission]${c.reset} ${event.entry.agentId}: ${truncate(event.entry.summary, 90)}`,
 			);
 			break;
 		case "task_start":
@@ -995,6 +1111,7 @@ function handleTeamEvent(event: TeamEvent): void {
 async function runInteractive(
 	config: Config,
 	userInstructionWatcher?: UserInstructionConfigWatcher,
+	initialMessages?: providers.Message[],
 ): Promise<void> {
 	if (config.outputMode === "json") {
 		writeErr("interactive mode is not supported with --output json");
@@ -1019,6 +1136,9 @@ async function runInteractive(
 		hooks,
 		onTeamEvent: handleTeamEvent,
 		createSpawnTool: () => createCliSpawnTool(config, hooks),
+		defaultToolExecutors: {
+			askQuestion: askQuestionInTerminal,
+		},
 		userInstructionWatcher,
 		onTeamRestored: () => {
 			if (config.outputMode === "json") {
@@ -1062,8 +1182,9 @@ async function runInteractive(
 		toolPolicies: config.toolPolicies,
 		requestToolApproval,
 	});
+	hydrateAgentMessages(agent, initialMessages ?? []);
 
-	let isFirstMessage = true;
+	let isFirstMessage = (initialMessages?.length ?? 0) === 0;
 	let isRunning = false;
 	let abortRequested = false;
 	const abortAll = (reason: string) => {
@@ -1258,9 +1379,10 @@ function showHelp(): void {
 ${c.bold}USAGE${c.reset}
   clite [OPTIONS] [PROMPT]
   clite -i                    Interactive mode
+  clite list history          List saved history items
   clite hook < payload.json   Handle hook payload from stdin
-  clite list <workflows|rules|skills>
-                              List enabled workflow/rule/skill configs
+  clite list <workflows|rules|skills|agents|history>
+                              List configured workflow/rule/skill/agent configs
   echo "prompt" | clite       Pipe input
 
 ${c.bold}OPTIONS${c.reset}
@@ -1292,6 +1414,7 @@ ${c.bold}OPTIONS${c.reset}
   --mission-time-interval-ms <ms>
                               Mission log update interval in milliseconds (default: 120000)
   --cwd <path>                Working directory for tools (default: current dir)
+  --session <id>              Resume interactive chat from a saved session id
   -h, --help                  Show this help
   -v, --version               Show version
 
@@ -1307,9 +1430,12 @@ ${c.bold}ENVIRONMENT${c.reset}
   AI_GATEWAY_API_KEY          API key for Vercel AI Gateway (when using -p vercel-ai-gateway)
 
 ${c.bold}EXAMPLES${c.reset}
+  clite list history
+  clite --session 1700000000000_abcde_cli
   clite list workflows
   clite list rules --json
   clite list skills
+  clite list agents
   clite "What is 2+2?"
   clite "Read package.json and summarize it"
   clite "Search for TODO comments in the codebase"
@@ -1323,6 +1449,15 @@ ${c.bold}EXAMPLES${c.reset}
 
 function showVersion(): void {
 	writeln(version);
+}
+
+function resolveCliAgentConfigSearchPaths(): string[] {
+	const clineDataDir =
+		process.env.CLINE_DATA_DIR?.trim() || join(homedir(), ".cline", "data");
+	return [
+		join(homedir(), "Documents", "Cline", "Agents"),
+		join(clineDataDir, "settings", "agents"),
+	];
 }
 
 async function runWorkflowsListCommand(
@@ -1496,6 +1631,69 @@ async function runSkillsListCommand(
 	return 0;
 }
 
+async function runAgentsListCommand(
+	outputMode: CliOutputMode,
+): Promise<number> {
+	const agentsById = new Map<
+		string,
+		{
+			name: string;
+			path: string;
+		}
+	>();
+	const directories = resolveCliAgentConfigSearchPaths().filter((directory) =>
+		existsSync(directory),
+	);
+	for (const directory of directories) {
+		try {
+			const entries = readdirSync(directory, { withFileTypes: true });
+			for (const entry of entries) {
+				if (!entry.isFile()) {
+					continue;
+				}
+				const extension = extname(entry.name).toLowerCase();
+				if (extension !== ".yml" && extension !== ".yaml") {
+					continue;
+				}
+				const filePath = join(directory, entry.name);
+				const raw = readFileSync(filePath, "utf8");
+				const frontmatterMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+				const frontmatter = frontmatterMatch?.[1] ?? "";
+				const nameMatch = frontmatter.match(/^\s*name:\s*(.+?)\s*$/m);
+				const parsedName = nameMatch?.[1]?.replace(/^["']|["']$/g, "").trim();
+				const name =
+					parsedName && parsedName.length > 0
+						? parsedName
+						: basename(entry.name, extension);
+				const id = name.toLowerCase();
+				if (agentsById.has(id)) {
+					continue;
+				}
+				agentsById.set(id, { name, path: filePath });
+			}
+		} catch {
+			// Best-effort listing across config roots.
+		}
+	}
+
+	const agents = [...agentsById.values()].sort((a, b) =>
+		a.name.localeCompare(b.name),
+	);
+	if (outputMode === "json") {
+		process.stdout.write(JSON.stringify(agents));
+		return 0;
+	}
+	if (agents.length === 0) {
+		writeln("No configured agents found.");
+		return 0;
+	}
+	writeln("Configured agents:");
+	for (const agent of agents) {
+		writeln(`  ${agent.name} (${agent.path})`);
+	}
+	return 0;
+}
+
 // =============================================================================
 // Main
 // =============================================================================
@@ -1504,7 +1702,7 @@ async function main(): Promise<void> {
 	installStreamErrorGuards();
 
 	const rawArgs = process.argv.slice(2);
-	const args = parseArgs(rawArgs);
+	let args = parseArgs(rawArgs);
 	const cwd = args.cwd ?? process.cwd();
 	const sandboxEnabled =
 		args.sandbox || process.env.CLINE_SANDBOX?.trim() === "1";
@@ -1535,9 +1733,25 @@ async function main(): Promise<void> {
 			code = await runRulesListCommand(listCwd, args.outputMode);
 		} else if (listTarget === "skills") {
 			code = await runSkillsListCommand(listCwd, args.outputMode);
+		} else if (listTarget === "agents") {
+			code = await runAgentsListCommand(args.outputMode);
+		} else if (listTarget === "history") {
+			const limitIndex = rawArgs.indexOf("--limit");
+			const limit =
+				limitIndex >= 0 && limitIndex + 1 < rawArgs.length
+					? Number.parseInt(rawArgs[limitIndex + 1] ?? "200", 10)
+					: 200;
+			const rows = listCliSessions(Number.isFinite(limit) ? limit : 200) as
+				| HistoryListRow[]
+				| undefined;
+			const lines = (rows ?? []).map((row) => formatHistoryListLine(row));
+			if (lines.length > 0) {
+				process.stdout.write(`${lines.join("\n")}\n`);
+			}
+			code = 0;
 		} else {
 			writeErr(
-				`list requires one of: workflows, rules, skills (got "${rawArgs[1] ?? ""}")`,
+				`list requires one of: workflows, rules, skills, agents, history (got "${rawArgs[1] ?? ""}")`,
 			);
 			process.exit(1);
 		}
@@ -1564,6 +1778,20 @@ async function main(): Promise<void> {
 		}
 		process.stdout.write(JSON.stringify(deleteCliSession(sessionId)));
 		process.exit(0);
+	}
+	let initialMessages: providers.Message[] | undefined;
+	if (args.sessionId !== undefined) {
+		const sessionId = args.sessionId.trim();
+		if (!sessionId) {
+			writeErr("--session requires <id>");
+			process.exit(1);
+		}
+		initialMessages = loadSessionMessages(sessionId);
+		args = {
+			...args,
+			interactive: true,
+			prompt: undefined,
+		};
 	}
 
 	if (args.invalidOutputMode) {
@@ -1725,7 +1953,7 @@ async function main(): Promise<void> {
 	// Interactive mode
 	if (args.interactive || !args.prompt) {
 		activeCliSession = createCliSession(config, undefined, true);
-		await runInteractive(config, userInstructionWatcher);
+		await runInteractive(config, userInstructionWatcher, initialMessages);
 		if (activeCliSession?.manifest.status === "running") {
 			updateCliSessionStatus("completed", 0);
 		}

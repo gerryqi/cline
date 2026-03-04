@@ -9,6 +9,11 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { providers as LlmsProviders } from "@cline/llms";
+import { z } from "zod";
+import {
+	validateWithZod,
+	zodToJsonSchema,
+} from "../default-tools/zod-utils.js";
 import { createTool } from "../tools/create.js";
 import type { AgentHooks, Tool } from "../types.js";
 import type {
@@ -178,84 +183,196 @@ export class FileTeamPersistenceStore implements TeamPersistenceStore {
 	}
 }
 
-interface TeamSpawnTeammateInput {
-	agentId: string;
-	rolePrompt: string;
-	modelId?: string;
-	maxIterations?: number;
-}
+const TeamMemberInputSchema = z.object({
+	action: z
+		.enum(["spawn", "shutdown"])
+		.describe("Teammate lifecycle operation"),
+	agentId: z.string().min(1).describe("Teammate identifier"),
+	rolePrompt: z
+		.string()
+		.optional()
+		.describe("System prompt describing teammate role (required for spawn)"),
+	modelId: z.string().optional().describe("Optional model override for spawn"),
+	maxIterations: z
+		.number()
+		.int()
+		.min(1)
+		.max(40)
+		.optional()
+		.describe("Max iterations per teammate run for spawn"),
+	reason: z.string().optional().describe("Optional shutdown reason"),
+});
 
-interface TeamCreateTaskInput {
-	title: string;
-	description: string;
-	dependsOn?: string[];
-	assignee?: string;
-}
+const TeamMemberSpawnInputSchema = TeamMemberInputSchema.extend({
+	action: z.literal("spawn"),
+	rolePrompt: z.string().min(1),
+});
 
-interface TeamClaimTaskInput {
-	taskId: string;
-}
+const TeamMemberShutdownInputSchema = TeamMemberInputSchema.extend({
+	action: z.literal("shutdown"),
+});
 
-interface TeamCompleteTaskInput {
-	taskId: string;
-	summary: string;
-}
+const TeamStatusInputSchema = z.object({});
 
-interface TeamBlockTaskInput {
-	taskId: string;
-	reason: string;
-}
+const TeamTaskInputSchema = z.object({
+	action: z
+		.enum(["create", "claim", "complete", "block"])
+		.describe("Task operation"),
+	taskId: z.string().optional().describe("Task ID"),
+	title: z.string().optional().describe("Task title for create action"),
+	description: z.string().optional().describe("Task details for create action"),
+	dependsOn: z
+		.array(z.string())
+		.optional()
+		.describe("Dependency task IDs for create action"),
+	assignee: z
+		.string()
+		.optional()
+		.describe("Optional assignee for create action"),
+	summary: z.string().optional().describe("Completion summary for complete"),
+	reason: z.string().optional().describe("Blocking reason for block"),
+});
 
-interface TeamMessageInput {
-	toAgentId: string;
-	subject: string;
-	body: string;
-	taskId?: string;
-}
+const TeamCreateTaskInputSchema = TeamTaskInputSchema.extend({
+	action: z.literal("create"),
+	title: z.string().min(1),
+	description: z.string().min(1),
+});
 
-interface TeamBroadcastInput {
-	subject: string;
-	body: string;
-	taskId?: string;
-	includeLead?: boolean;
-}
+const TeamClaimTaskInputSchema = TeamTaskInputSchema.extend({
+	action: z.literal("claim"),
+	taskId: z.string().min(1),
+});
 
-interface TeamReadMailboxInput {
-	unreadOnly?: boolean;
-	limit?: number;
-}
+const TeamCompleteTaskInputSchema = TeamTaskInputSchema.extend({
+	action: z.literal("complete"),
+	taskId: z.string().min(1),
+	summary: z.string().min(1),
+});
 
-interface TeamRunTaskInput {
-	agentId: string;
-	task: string;
-	taskId?: string;
-	continueConversation?: boolean;
-	runMode?: "sync" | "async";
-}
+const TeamBlockTaskInputSchema = TeamTaskInputSchema.extend({
+	action: z.literal("block"),
+	taskId: z.string().min(1),
+	reason: z.string().min(1),
+});
 
-interface TeamListRunsInput {
-	status?: "running" | "completed" | "failed";
-	agentId?: string;
-	includeCompleted?: boolean;
-}
+const TeamRunTaskInputSchema = z.object({
+	agentId: z.string().min(1).describe("Teammate agent ID"),
+	task: z.string().min(1).describe("Task instructions for the teammate"),
+	taskId: z.string().optional().describe("Optional shared task list ID"),
+	runMode: z
+		.enum(["sync", "async"])
+		.optional()
+		.describe(
+			"Execution mode: sync waits for result; async returns a runId immediately",
+		),
+	continueConversation: z
+		.boolean()
+		.optional()
+		.describe(
+			"If true, continue the teammate conversation; otherwise start fresh",
+		),
+});
 
-interface TeamAwaitRunInput {
-	runId?: string;
-	awaitAll?: boolean;
-}
+const TeamListRunsInputSchema = z.object({
+	status: z.enum(["running", "completed", "failed"]).optional(),
+	agentId: z.string().optional().describe("Filter by teammate ID"),
+	includeCompleted: z
+		.boolean()
+		.optional()
+		.describe("Include completed/failed runs (default true)"),
+});
 
-interface TeamLogUpdateInput {
-	kind: "progress" | "handoff" | "blocked" | "decision" | "done" | "error";
-	summary: string;
-	taskId?: string;
-	evidence?: string[];
-	nextAction?: string;
-}
+const TeamAwaitRunBaseInputSchema = z.object({
+	awaitAll: z
+		.boolean()
+		.optional()
+		.describe("Wait for all active runs (default false)"),
+	runId: z.string().optional().describe("Async run ID to await"),
+});
 
-interface TeamShutdownInput {
-	agentId: string;
-	reason?: string;
-}
+const TeamAwaitRunInputSchema = TeamAwaitRunBaseInputSchema.superRefine(
+	(value, ctx) => {
+		if (!value.awaitAll && !value.runId) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ["runId"],
+				message: "runId is required unless awaitAll=true",
+			});
+		}
+	},
+);
+
+const TeamAwaitSingleRunInputSchema = TeamAwaitRunBaseInputSchema.extend({
+	awaitAll: z.literal(false).optional(),
+	runId: z.string().min(1),
+});
+
+const TeamMessageInputSchema = z.object({
+	action: z.enum(["send", "broadcast", "read"]).describe("Mailbox operation"),
+	toAgentId: z
+		.string()
+		.optional()
+		.describe("Recipient agent ID for send action"),
+	subject: z.string().optional().describe("Subject for send/broadcast"),
+	body: z.string().optional().describe("Body for send/broadcast"),
+	taskId: z.string().optional().describe("Optional task ID context"),
+	includeLead: z
+		.boolean()
+		.optional()
+		.describe("Include the lead agent in broadcast recipients"),
+	unreadOnly: z
+		.boolean()
+		.optional()
+		.describe("Only unread messages for read action (default true)"),
+	limit: z
+		.number()
+		.int()
+		.min(1)
+		.max(100)
+		.optional()
+		.describe("Optional max number of messages for read action"),
+});
+
+const TeamSendMessageInputSchema = TeamMessageInputSchema.extend({
+	action: z.literal("send"),
+	toAgentId: z.string().min(1),
+	subject: z.string().min(1),
+	body: z.string().min(1),
+});
+
+const TeamBroadcastMessageInputSchema = TeamMessageInputSchema.extend({
+	action: z.literal("broadcast"),
+	subject: z.string().min(1),
+	body: z.string().min(1),
+});
+
+const TeamReadMailboxInputSchema = TeamMessageInputSchema.extend({
+	action: z.literal("read"),
+});
+
+const TeamLogUpdateInputSchema = z.object({
+	kind: z.enum(["progress", "handoff", "blocked", "decision", "done", "error"]),
+	summary: z.string().min(1).describe("Update summary"),
+	taskId: z.string().optional().describe("Optional task ID context"),
+	evidence: z
+		.array(z.string())
+		.optional()
+		.describe("Optional evidence links/snippets"),
+	nextAction: z.string().optional().describe("Planned next step"),
+});
+
+const TeamCleanupInputSchema = z.object({});
+
+type TeamMemberInput = z.infer<typeof TeamMemberInputSchema>;
+type TeamStatusInput = z.infer<typeof TeamStatusInputSchema>;
+type TeamTaskInput = z.infer<typeof TeamTaskInputSchema>;
+type TeamRunTaskInput = z.infer<typeof TeamRunTaskInputSchema>;
+type TeamListRunsInput = z.infer<typeof TeamListRunsInputSchema>;
+type TeamAwaitRunInput = z.infer<typeof TeamAwaitRunInputSchema>;
+type TeamMessageInput = z.infer<typeof TeamMessageInputSchema>;
+type TeamLogUpdateInput = z.infer<typeof TeamLogUpdateInputSchema>;
+type TeamCleanupInput = z.infer<typeof TeamCleanupInputSchema>;
 
 export interface TeamTeammateRuntimeConfig {
 	providerId: string;
@@ -384,180 +501,129 @@ export function createAgentTeamsTools(
 	const tools: Tool[] = [];
 
 	tools.push(
-		createTool<TeamSpawnTeammateInput, { agentId: string; status: string }>({
-			name: "team_spawn_teammate",
-			description: "Spawn a persistent teammate in the current agent team.",
-			inputSchema: {
-				type: "object",
-				properties: {
-					agentId: {
-						type: "string",
-						description: "Unique teammate identifier, e.g. reviewer",
-					},
-					rolePrompt: {
-						type: "string",
-						description: "System prompt describing the teammate role",
-					},
-					modelId: {
-						type: "string",
-						description: "Optional model override for this teammate",
-					},
-					maxIterations: {
-						type: "integer",
-						description: "Max iterations per teammate run",
-						minimum: 1,
-						maximum: 40,
-					},
-				},
-				required: ["agentId", "rolePrompt"],
-			},
+		createTool<TeamMemberInput, { agentId: string; status: string }>({
+			name: "team_member",
+			description:
+				"Manage persistent teammate lifecycle. Use action=spawn or action=shutdown.",
+			inputSchema: zodToJsonSchema(TeamMemberInputSchema),
 			execute: async (input) => {
-				if (
-					!allowSpawn ||
-					options.runtime.getMemberRole(options.requesterId) !== "lead"
-				) {
-					throw new Error("Only the lead agent can spawn teammates.");
+				const validatedInput = validateWithZod(TeamMemberInputSchema, input);
+				if (options.runtime.getMemberRole(options.requesterId) !== "lead") {
+					throw new Error("Only the lead agent can manage teammates.");
 				}
-
-				const spec: TeamTeammateSpec = {
-					agentId: input.agentId,
-					rolePrompt: input.rolePrompt,
-					modelId: input.modelId,
-					maxIterations: input.maxIterations,
-				};
-
-				spawnTeamTeammate({
-					runtime: options.runtime,
-					requesterId: options.requesterId,
-					teammateRuntime: options.teammateRuntime,
-					createBaseTools: options.createBaseTools,
-					persistence: options.persistence,
-					spec,
-				});
-
-				options.persistence?.upsertTeammateSpec(spec);
-				options.persistence?.persist(options.runtime);
-				return { agentId: input.agentId, status: "spawned" };
+				switch (validatedInput.action) {
+					case "spawn": {
+						const spawnInput = validateWithZod(
+							TeamMemberSpawnInputSchema,
+							input,
+						);
+						if (!allowSpawn) {
+							throw new Error(
+								"Spawning teammates is disabled in this context.",
+							);
+						}
+						const spec: TeamTeammateSpec = {
+							agentId: spawnInput.agentId,
+							rolePrompt: spawnInput.rolePrompt,
+							modelId: spawnInput.modelId,
+							maxIterations: spawnInput.maxIterations,
+						};
+						spawnTeamTeammate({
+							runtime: options.runtime,
+							requesterId: options.requesterId,
+							teammateRuntime: options.teammateRuntime,
+							createBaseTools: options.createBaseTools,
+							persistence: options.persistence,
+							spec,
+						});
+						options.persistence?.upsertTeammateSpec(spec);
+						options.persistence?.persist(options.runtime);
+						return { agentId: spawnInput.agentId, status: "spawned" };
+					}
+					case "shutdown": {
+						const shutdownInput = validateWithZod(
+							TeamMemberShutdownInputSchema,
+							input,
+						);
+						options.runtime.shutdownTeammate(
+							shutdownInput.agentId,
+							shutdownInput.reason,
+						);
+						options.persistence?.removeTeammateSpec(shutdownInput.agentId);
+						options.persistence?.persist(options.runtime);
+						return { agentId: shutdownInput.agentId, status: "stopped" };
+					}
+				}
 			},
 		}) as Tool,
 	);
 
 	tools.push(
-		createTool<
-			Record<string, never>,
-			ReturnType<AgentTeamsRuntime["getSnapshot"]>
-		>({
+		createTool<TeamStatusInput, ReturnType<AgentTeamsRuntime["getSnapshot"]>>({
 			name: "team_status",
 			description:
 				"Return a snapshot of team members, task counts, mailbox, and mission log stats.",
-			inputSchema: {
-				type: "object",
-				properties: {},
-			},
-			execute: async () => options.runtime.getSnapshot(),
-		}) as Tool,
-	);
-
-	tools.push(
-		createTool<TeamCreateTaskInput, { taskId: string; status: string }>({
-			name: "team_create_task",
-			description: "Create a task in the shared team task list.",
-			inputSchema: {
-				type: "object",
-				properties: {
-					title: { type: "string", description: "Task title" },
-					description: { type: "string", description: "Task details" },
-					dependsOn: {
-						type: "array",
-						items: { type: "string" },
-						description: "Dependency task IDs",
-					},
-					assignee: {
-						type: "string",
-						description: "Optional initial assignee",
-					},
-				},
-				required: ["title", "description"],
-			},
+			inputSchema: zodToJsonSchema(TeamStatusInputSchema),
 			execute: async (input) => {
-				const task = options.runtime.createTask({
-					title: input.title,
-					description: input.description,
-					dependsOn: input.dependsOn,
-					assignee: input.assignee,
-					createdBy: options.requesterId,
-				});
-				return { taskId: task.id, status: task.status };
+				validateWithZod(TeamStatusInputSchema, input);
+				return options.runtime.getSnapshot();
 			},
 		}) as Tool,
 	);
 
 	tools.push(
-		createTool<TeamClaimTaskInput, { taskId: string; status: string }>({
-			name: "team_claim_task",
-			description: "Claim an unblocked task and set it to in_progress.",
-			inputSchema: {
-				type: "object",
-				properties: {
-					taskId: { type: "string", description: "Task ID to claim" },
-				},
-				required: ["taskId"],
-			},
+		createTool<TeamTaskInput, { taskId: string; status: string }>({
+			name: "team_task",
+			description:
+				"Operate on shared team tasks. Use action=create|claim|complete|block.",
+			inputSchema: zodToJsonSchema(TeamTaskInputSchema),
 			execute: async (input) => {
-				const task = options.runtime.claimTask(
-					input.taskId,
-					options.requesterId,
-				);
-				return { taskId: task.id, status: task.status };
-			},
-		}) as Tool,
-	);
-
-	tools.push(
-		createTool<TeamCompleteTaskInput, { taskId: string; status: string }>({
-			name: "team_complete_task",
-			description: "Mark a task as completed with a short summary.",
-			inputSchema: {
-				type: "object",
-				properties: {
-					taskId: { type: "string", description: "Task ID to complete" },
-					summary: {
-						type: "string",
-						description: "Completion summary and deliverable notes",
-					},
-				},
-				required: ["taskId", "summary"],
-			},
-			execute: async (input) => {
-				const task = options.runtime.completeTask(
-					input.taskId,
-					options.requesterId,
-					input.summary,
-				);
-				return { taskId: task.id, status: task.status };
-			},
-		}) as Tool,
-	);
-
-	tools.push(
-		createTool<TeamBlockTaskInput, { taskId: string; status: string }>({
-			name: "team_block_task",
-			description: "Mark a task as blocked and capture the blocking reason.",
-			inputSchema: {
-				type: "object",
-				properties: {
-					taskId: { type: "string", description: "Task ID to block" },
-					reason: { type: "string", description: "Why the task is blocked" },
-				},
-				required: ["taskId", "reason"],
-			},
-			execute: async (input) => {
-				const task = options.runtime.blockTask(
-					input.taskId,
-					options.requesterId,
-					input.reason,
-				);
-				return { taskId: task.id, status: task.status };
+				const validatedInput = validateWithZod(TeamTaskInputSchema, input);
+				switch (validatedInput.action) {
+					case "create": {
+						const createInput = validateWithZod(
+							TeamCreateTaskInputSchema,
+							input,
+						);
+						const task = options.runtime.createTask({
+							title: createInput.title,
+							description: createInput.description,
+							dependsOn: createInput.dependsOn,
+							assignee: createInput.assignee,
+							createdBy: options.requesterId,
+						});
+						return { taskId: task.id, status: task.status };
+					}
+					case "claim": {
+						const claimInput = validateWithZod(TeamClaimTaskInputSchema, input);
+						const task = options.runtime.claimTask(
+							claimInput.taskId,
+							options.requesterId,
+						);
+						return { taskId: task.id, status: task.status };
+					}
+					case "complete": {
+						const completeInput = validateWithZod(
+							TeamCompleteTaskInputSchema,
+							input,
+						);
+						const task = options.runtime.completeTask(
+							completeInput.taskId,
+							options.requesterId,
+							completeInput.summary,
+						);
+						return { taskId: task.id, status: task.status };
+					}
+					case "block": {
+						const blockInput = validateWithZod(TeamBlockTaskInputSchema, input);
+						const task = options.runtime.blockTask(
+							blockInput.taskId,
+							options.requesterId,
+							blockInput.reason,
+						);
+						return { taskId: task.id, status: task.status };
+					}
+				}
 			},
 		}) as Tool,
 	);
@@ -576,56 +642,36 @@ export function createAgentTeamsTools(
 			name: "team_run_task",
 			description:
 				"Route a delegated task to a teammate. Choose sync (wait) or async (run in background).",
-			inputSchema: {
-				type: "object",
-				properties: {
-					agentId: { type: "string", description: "Teammate agent ID" },
-					task: {
-						type: "string",
-						description: "Task instructions for that teammate",
-					},
-					taskId: {
-						type: "string",
-						description: "Optional shared task list ID",
-					},
-					runMode: {
-						type: "string",
-						enum: ["sync", "async"],
-						description:
-							"Execution mode: sync waits for result; async returns a runId immediately",
-					},
-					continueConversation: {
-						type: "boolean",
-						description:
-							"If true, continue the teammate conversation; otherwise start fresh",
-					},
-				},
-				required: ["agentId", "task"],
-			},
+			inputSchema: zodToJsonSchema(TeamRunTaskInputSchema),
 			execute: async (input) => {
-				if (input.runMode === "async") {
+				const validatedInput = validateWithZod(TeamRunTaskInputSchema, input);
+				if (validatedInput.runMode === "async") {
 					const run = options.runtime.startTeammateRun(
-						input.agentId,
-						input.task,
+						validatedInput.agentId,
+						validatedInput.task,
 						{
-							taskId: input.taskId,
+							taskId: validatedInput.taskId,
 							fromAgentId: options.requesterId,
-							continueConversation: input.continueConversation,
+							continueConversation: validatedInput.continueConversation,
 						},
 					);
-					return { agentId: input.agentId, mode: "async", runId: run.id };
+					return {
+						agentId: validatedInput.agentId,
+						mode: "async",
+						runId: run.id,
+					};
 				}
 				const result = await options.runtime.routeToTeammate(
-					input.agentId,
-					input.task,
+					validatedInput.agentId,
+					validatedInput.task,
 					{
-						taskId: input.taskId,
+						taskId: validatedInput.taskId,
 						fromAgentId: options.requesterId,
-						continueConversation: input.continueConversation,
+						continueConversation: validatedInput.continueConversation,
 					},
 				);
 				return {
-					agentId: input.agentId,
+					agentId: validatedInput.agentId,
 					mode: "sync",
 					text: result.text,
 					iterations: result.iterations,
@@ -639,23 +685,11 @@ export function createAgentTeamsTools(
 			name: "team_list_runs",
 			description:
 				"List teammate runs started with team_run_task in async mode.",
-			inputSchema: {
-				type: "object",
-				properties: {
-					status: { type: "string", enum: ["running", "completed", "failed"] },
-					agentId: { type: "string", description: "Filter by teammate ID" },
-					includeCompleted: {
-						type: "boolean",
-						description: "Include completed/failed runs (default true)",
-					},
-				},
-			},
+			inputSchema: zodToJsonSchema(TeamListRunsInputSchema),
 			execute: async (input) =>
-				options.runtime.listRuns({
-					status: input.status,
-					agentId: input.agentId,
-					includeCompleted: input.includeCompleted,
-				}),
+				options.runtime.listRuns(
+					validateWithZod(TeamListRunsInputSchema, input),
+				),
 		}) as Tool,
 	);
 
@@ -670,119 +704,78 @@ export function createAgentTeamsTools(
 			name: "team_await_run",
 			description:
 				"Wait for one async run by runId, or wait for all active async runs.",
-			inputSchema: {
-				type: "object",
-				properties: {
-					runId: {
-						type: "string",
-						description: "Async run ID returned by team_run_task",
-					},
-					awaitAll: {
-						type: "boolean",
-						description: "Wait for all active runs (default false)",
-					},
-				},
-			},
+			inputSchema: zodToJsonSchema(TeamAwaitRunInputSchema),
 			execute: async (input) => {
-				if (input.awaitAll) {
+				const validatedInput = validateWithZod(TeamAwaitRunInputSchema, input);
+				if (validatedInput.awaitAll) {
 					return options.runtime.awaitAllRuns();
 				}
-				if (!input.runId) {
-					throw new Error("runId is required unless awaitAll=true");
-				}
-				return options.runtime.awaitRun(input.runId);
-			},
-		}) as Tool,
-	);
-
-	tools.push(
-		createTool<TeamMessageInput, { id: string; toAgentId: string }>({
-			name: "team_send_message",
-			description: "Send a direct message to another teammate or the lead.",
-			inputSchema: {
-				type: "object",
-				properties: {
-					toAgentId: { type: "string", description: "Recipient agent ID" },
-					subject: { type: "string", description: "Message subject" },
-					body: { type: "string", description: "Message body" },
-					taskId: { type: "string", description: "Optional task ID context" },
-				},
-				required: ["toAgentId", "subject", "body"],
-			},
-			execute: async (input) => {
-				const message = options.runtime.sendMessage(
-					options.requesterId,
-					input.toAgentId,
-					input.subject,
-					input.body,
-					input.taskId,
+				const singleRunInput = validateWithZod(
+					TeamAwaitSingleRunInputSchema,
+					input,
 				);
-				return { id: message.id, toAgentId: message.toAgentId };
-			},
-		}) as Tool,
-	);
-
-	tools.push(
-		createTool<TeamBroadcastInput, { delivered: number }>({
-			name: "team_broadcast",
-			description:
-				"Send the same message to all teammates (optionally include lead).",
-			inputSchema: {
-				type: "object",
-				properties: {
-					subject: { type: "string", description: "Broadcast subject" },
-					body: { type: "string", description: "Broadcast body" },
-					taskId: { type: "string", description: "Optional task ID context" },
-					includeLead: {
-						type: "boolean",
-						description: "Include the lead agent in recipients",
-					},
-				},
-				required: ["subject", "body"],
-			},
-			execute: async (input) => {
-				const messages = options.runtime.broadcast(
-					options.requesterId,
-					input.subject,
-					input.body,
-					{
-						taskId: input.taskId,
-						includeLead: input.includeLead,
-					},
-				);
-				return { delivered: messages.length };
+				return options.runtime.awaitRun(singleRunInput.runId);
 			},
 		}) as Tool,
 	);
 
 	tools.push(
 		createTool<
-			TeamReadMailboxInput,
-			ReturnType<AgentTeamsRuntime["listMailbox"]>
+			TeamMessageInput,
+			| { id: string; toAgentId: string }
+			| { delivered: number }
+			| ReturnType<AgentTeamsRuntime["listMailbox"]>
 		>({
-			name: "team_read_mailbox",
-			description: "Read mailbox messages addressed to this agent.",
-			inputSchema: {
-				type: "object",
-				properties: {
-					unreadOnly: {
-						type: "boolean",
-						description: "Only unread messages (default true)",
-					},
-					limit: {
-						type: "integer",
-						description: "Optional max number of messages",
-						minimum: 1,
-						maximum: 100,
-					},
-				},
+			name: "team_message",
+			description:
+				"Team mailbox operations. Use action=send|broadcast|read for direct messages, broadcasts, and inbox reads.",
+			inputSchema: zodToJsonSchema(TeamMessageInputSchema),
+			execute: async (input) => {
+				const validatedInput = validateWithZod(TeamMessageInputSchema, input);
+				switch (validatedInput.action) {
+					case "send": {
+						const sendInput = validateWithZod(
+							TeamSendMessageInputSchema,
+							input,
+						);
+						const message = options.runtime.sendMessage(
+							options.requesterId,
+							sendInput.toAgentId,
+							sendInput.subject,
+							sendInput.body,
+							sendInput.taskId,
+						);
+						return { id: message.id, toAgentId: message.toAgentId };
+					}
+					case "broadcast": {
+						const broadcastInput = validateWithZod(
+							TeamBroadcastMessageInputSchema,
+							input,
+						);
+						const messages = options.runtime.broadcast(
+							options.requesterId,
+							broadcastInput.subject,
+							broadcastInput.body,
+							{
+								taskId: broadcastInput.taskId,
+								includeLead: broadcastInput.includeLead,
+							},
+						);
+						return { delivered: messages.length };
+					}
+					case "read": {
+						const readInput = validateWithZod(
+							TeamReadMailboxInputSchema,
+							input,
+						);
+						return options.runtime.listMailbox(options.requesterId, {
+							unreadOnly: readInput.unreadOnly,
+							limit: readInput.limit,
+							markRead: true,
+						});
+					}
+				}
 			},
-			execute: async (input) =>
-				options.runtime.listMailbox(options.requesterId, {
-					unreadOnly: input.unreadOnly,
-					limit: input.limit,
-					markRead: true,
-				}),
 		}) as Tool,
 	);
 
@@ -790,39 +783,16 @@ export function createAgentTeamsTools(
 		createTool<TeamLogUpdateInput, { id: string }>({
 			name: "team_log_update",
 			description: "Append a mission log update for this agent.",
-			inputSchema: {
-				type: "object",
-				properties: {
-					kind: {
-						type: "string",
-						enum: [
-							"progress",
-							"handoff",
-							"blocked",
-							"decision",
-							"done",
-							"error",
-						],
-					},
-					summary: { type: "string", description: "Update summary" },
-					taskId: { type: "string", description: "Optional task ID context" },
-					evidence: {
-						type: "array",
-						items: { type: "string" },
-						description: "Optional evidence links/snippets",
-					},
-					nextAction: { type: "string", description: "Planned next step" },
-				},
-				required: ["kind", "summary"],
-			},
+			inputSchema: zodToJsonSchema(TeamLogUpdateInputSchema),
 			execute: async (input) => {
+				const validatedInput = validateWithZod(TeamLogUpdateInputSchema, input);
 				const entry = options.runtime.appendMissionLog({
 					agentId: options.requesterId,
-					taskId: input.taskId,
-					kind: input.kind,
-					summary: input.summary,
-					evidence: input.evidence,
-					nextAction: input.nextAction,
+					taskId: validatedInput.taskId,
+					kind: validatedInput.kind,
+					summary: validatedInput.summary,
+					evidence: validatedInput.evidence,
+					nextAction: validatedInput.nextAction,
 				});
 				return { id: entry.id };
 			},
@@ -830,40 +800,13 @@ export function createAgentTeamsTools(
 	);
 
 	tools.push(
-		createTool<TeamShutdownInput, { agentId: string; status: string }>({
-			name: "team_shutdown_teammate",
-			description:
-				"Request teammate shutdown and stop accepting new delegated work.",
-			inputSchema: {
-				type: "object",
-				properties: {
-					agentId: { type: "string", description: "Teammate ID to shutdown" },
-					reason: { type: "string", description: "Optional shutdown reason" },
-				},
-				required: ["agentId"],
-			},
-			execute: async (input) => {
-				if (options.runtime.getMemberRole(options.requesterId) !== "lead") {
-					throw new Error("Only the lead agent can shut down teammates.");
-				}
-				options.runtime.shutdownTeammate(input.agentId, input.reason);
-				options.persistence?.removeTeammateSpec(input.agentId);
-				options.persistence?.persist(options.runtime);
-				return { agentId: input.agentId, status: "stopped" };
-			},
-		}) as Tool,
-	);
-
-	tools.push(
-		createTool<Record<string, never>, { status: string }>({
+		createTool<TeamCleanupInput, { status: string }>({
 			name: "team_cleanup",
 			description:
 				"Clean up the team runtime. Fails if teammates are still running.",
-			inputSchema: {
-				type: "object",
-				properties: {},
-			},
-			execute: async () => {
+			inputSchema: zodToJsonSchema(TeamCleanupInputSchema),
+			execute: async (input) => {
+				validateWithZod(TeamCleanupInputSchema, input);
 				if (options.runtime.getMemberRole(options.requesterId) !== "lead") {
 					throw new Error("Only the lead agent can run cleanup.");
 				}

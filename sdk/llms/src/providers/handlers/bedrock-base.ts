@@ -7,7 +7,7 @@ import {
 } from "../types";
 import type { Message, ToolDefinition } from "../types/messages";
 import { withRetry } from "../utils/retry";
-import { BaseHandler, DEFAULT_MODEL_INFO } from "./base";
+import { BaseHandler } from "./base";
 import { createBedrockClient } from "./bedrock-client";
 
 const CLAUDE_SONNET_1M_SUFFIX = ":1m";
@@ -71,9 +71,7 @@ export class BedrockHandler extends BaseHandler {
 		}
 
 		const modelInfo =
-			this.config.modelInfo ??
-			this.config.knownModels?.[modelId] ??
-			DEFAULT_MODEL_INFO;
+			this.config.modelInfo ?? this.config.knownModels?.[modelId] ?? {};
 		return { id: modelId, info: { ...modelInfo, id: modelId } };
 	}
 

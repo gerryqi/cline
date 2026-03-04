@@ -7,6 +7,8 @@
 import { createTool } from "../tools/create.js";
 import type { Tool } from "../types.js";
 import {
+	type AskQuestionInput,
+	AskQuestionInputSchema,
 	type EditFileInput,
 	EditFileInputSchema,
 	type FetchWebContentInput,
@@ -21,6 +23,7 @@ import {
 	SkillsInputSchema,
 } from "./schemas.js";
 import type {
+	AskQuestionExecutor,
 	BashExecutor,
 	CreateDefaultToolsOptions,
 	DefaultToolsConfig,
@@ -377,6 +380,40 @@ export function createSkillsTool(
 	});
 }
 
+/**
+ * Create the ask_question tool
+ *
+ * Asks the user a single clarifying question with 2-5 selectable options.
+ */
+export function createAskQuestionTool(
+	executor: AskQuestionExecutor,
+	config: Pick<DefaultToolsConfig, "askQuestionTimeoutMs"> = {},
+): Tool<AskQuestionInput, string> {
+	const timeoutMs = config.askQuestionTimeoutMs ?? 15000;
+
+	return createTool<AskQuestionInput, string>({
+		name: "ask_question",
+		description:
+			"Ask user a question for clarifying or gathering information needed to complete the task. " +
+			"For example, ask the user clarifying questions about a key implementation decision. " +
+			"You should only ask one question. " +
+			"Provide an array of 2-5 options for the user to choose from. " +
+			"Never include an option to toggle to Act mode.",
+		inputSchema: zodToJsonSchema(AskQuestionInputSchema),
+		timeoutMs,
+		retryable: false,
+		maxRetries: 0,
+		execute: async (input, context) => {
+			const validatedInput = validateWithZod(AskQuestionInputSchema, input);
+			return withTimeout(
+				executor(validatedInput.question, validatedInput.options, context),
+				timeoutMs,
+				`ask_question timed out after ${timeoutMs}ms`,
+			);
+		},
+	});
+}
+
 // =============================================================================
 // Default Tools Factory
 // =============================================================================
@@ -428,6 +465,7 @@ export function createDefaultTools(options: CreateDefaultToolsOptions): Tool[] {
 		enableWebFetch = true,
 		enableEditor = true,
 		enableSkills = true,
+		enableAskQuestion = true,
 		...config
 	} = options;
 
@@ -462,6 +500,11 @@ export function createDefaultTools(options: CreateDefaultToolsOptions): Tool[] {
 	// Add skills tool if enabled and executor provided
 	if (enableSkills && executors.skills) {
 		tools.push(createSkillsTool(executors.skills, config));
+	}
+
+	// Add ask_question tool if enabled and executor provided
+	if (enableAskQuestion && executors.askQuestion) {
+		tools.push(createAskQuestionTool(executors.askQuestion, config));
 	}
 
 	return tools;

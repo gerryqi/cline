@@ -388,11 +388,10 @@ Each tool has a custom compact display format:
 | `search_codebase` | Queries joined with `, ` |
 | `fetch_web_content` | URLs joined with `, ` |
 | `spawn_agent` | Task description (50 chars) |
-| `team_spawn_teammate` | `agentId: rolePrompt` (70 chars) |
-| `team_create_task` | Task title (60 chars) |
+| `team_member` | `spawn <agentId>: <rolePrompt>` or `shutdown <agentId>` |
+| `team_task` | `create <title>`, `claim <taskId>`, `complete <taskId>: <summary>`, `block <taskId>: <reason>` |
 | `team_run_task` | `runMode agentId: task` (70 chars) |
-| `team_send_message` | `toAgentId: subject` (70 chars) |
-| `team_broadcast` | Subject (70 chars) |
+| `team_message` | `send <toAgentId>: <subject>`, `broadcast <subject>`, `read unreadOnly=<bool> limit=<n\|default>` |
 
 **ANSI color scheme** (no external dependencies):
 
@@ -500,19 +499,13 @@ Agent teams enable the lead agent to spawn, coordinate, and communicate with mul
 
 | Tool | Description |
 |---|---|
-| `team_spawn_teammate` | Spawn a new teammate with a role prompt and optional model override |
-| `team_shutdown_teammate` | Shut down a teammate |
+| `team_member` | Manage teammate lifecycle (`action: spawn` or `shutdown`) |
 | `team_status` | Get a snapshot of all teammates, tasks, mailbox, and mission log |
-| `team_create_task` | Create a task in the shared task list |
-| `team_claim_task` | Claim an unblocked task and set it to `in_progress` |
-| `team_complete_task` | Mark a task as completed with a summary |
-| `team_block_task` | Mark a task as blocked with a reason |
+| `team_task` | Manage shared tasks (`action: create`, `claim`, `complete`, `block`) |
 | `team_run_task` | Delegate a task to a teammate (sync or async) |
 | `team_list_runs` | List async teammate runs |
 | `team_await_run` | Wait for one or all async runs to complete |
-| `team_send_message` | Send a direct message to a teammate |
-| `team_broadcast` | Broadcast a message to all teammates |
-| `team_read_mailbox` | Read messages addressed to the lead |
+| `team_message` | Team mailbox operations (`action: send`, `broadcast`, `read`) |
 | `team_log_update` | Append a mission log entry |
 | `team_cleanup` | Clean up the team runtime |
 

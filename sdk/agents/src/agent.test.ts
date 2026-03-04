@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTool } from "./tools/create.js";
 import type { Tool } from "./types.js";
@@ -206,5 +209,80 @@ describe("Agent", () => {
 
 		await agent.shutdown("test-end");
 		expect(onSessionShutdown).toHaveBeenCalledTimes(1);
+	});
+
+	it("adds image blocks to initial user content when provided", async () => {
+		const { Agent } = await import("./agent.js");
+		const handler = makeHandler([
+			[
+				{ type: "text", id: "r1", text: "ok" },
+				{ type: "usage", id: "r1", inputTokens: 1, outputTokens: 1 },
+				{ type: "done", id: "r1", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "You are helpful.",
+			tools: [],
+		});
+
+		await agent.run("Analyze this image", ["data:image/png;base64,aGVsbG8="]);
+
+		expect(handler.createMessage).toHaveBeenCalledTimes(1);
+		const requestMessages = handler.createMessage.mock.calls[0]?.[1] as Array<{
+			role: string;
+			content: unknown;
+		}>;
+		expect(requestMessages[0]?.role).toBe("user");
+		expect(requestMessages[0]?.content).toEqual([
+			{ type: "text", text: "Analyze this image" },
+			{ type: "image", mediaType: "image/png", data: "aGVsbG8=" },
+		]);
+	});
+
+	it("adds attached file content text block to initial user content", async () => {
+		const { Agent } = await import("./agent.js");
+		const handler = makeHandler([
+			[
+				{ type: "text", id: "r1", text: "ok" },
+				{ type: "usage", id: "r1", inputTokens: 1, outputTokens: 1 },
+				{ type: "done", id: "r1", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const tempDir = await mkdtemp(join(tmpdir(), "agents-run-files-"));
+		const filePath = join(tempDir, "note.txt");
+		try {
+			await writeFile(filePath, "hello from file", "utf8");
+			const agent = new Agent({
+				providerId: "anthropic",
+				modelId: "mock-model",
+				systemPrompt: "You are helpful.",
+				tools: [],
+			});
+
+			await agent.run("Use this file", undefined, [filePath]);
+
+			expect(handler.createMessage).toHaveBeenCalledTimes(1);
+			const requestMessages = handler.createMessage.mock
+				.calls[0]?.[1] as Array<{
+				role: string;
+				content: unknown;
+			}>;
+			expect(requestMessages[0]?.role).toBe("user");
+			expect(requestMessages[0]?.content).toEqual([
+				{ type: "text", text: "Use this file" },
+				{
+					type: "text",
+					text: `Files attached by the user:\n\n<file_content path="${filePath.replace(/\\/g, "/")}">\nhello from file\n</file_content>`,
+				},
+			]);
+		} finally {
+			await rm(tempDir, { recursive: true, force: true });
+		}
 	});
 });

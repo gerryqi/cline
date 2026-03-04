@@ -4,7 +4,8 @@
  * Pre-configured tool combinations for common use cases.
  */
 
-import type { Tool } from "../types.js";
+import type { Tool, ToolPolicy } from "../types.js";
+import { ALL_DEFAULT_TOOL_NAMES } from "./constants.js";
 import { createDefaultTools } from "./definitions.js";
 import type { CreateDefaultToolsOptions, DefaultToolsConfig } from "./types.js";
 
@@ -22,6 +23,8 @@ export const ToolPresets = {
 		enableBash: false,
 		enableWebFetch: false,
 		enableEditor: false,
+		enableSkills: false,
+		enableAskQuestion: false,
 	},
 
 	/**
@@ -34,6 +37,8 @@ export const ToolPresets = {
 		enableBash: true,
 		enableWebFetch: true,
 		enableEditor: true,
+		enableSkills: true,
+		enableAskQuestion: true,
 	},
 
 	/**
@@ -46,6 +51,8 @@ export const ToolPresets = {
 		enableBash: false,
 		enableWebFetch: true,
 		enableEditor: false,
+		enableSkills: false,
+		enableAskQuestion: false,
 	},
 
 	/**
@@ -58,6 +65,22 @@ export const ToolPresets = {
 		enableBash: false,
 		enableWebFetch: false,
 		enableEditor: false,
+		enableSkills: false,
+		enableAskQuestion: false,
+	},
+
+	/**
+	 * YOLO mode (everything enabled + no approval required)
+	 * Good for trusted local automation workflows.
+	 */
+	yolo: {
+		enableReadFiles: true,
+		enableSearch: true,
+		enableBash: true,
+		enableWebFetch: true,
+		enableEditor: true,
+		enableSkills: true,
+		enableAskQuestion: true,
 	},
 } as const satisfies Record<string, DefaultToolsConfig>;
 
@@ -65,6 +88,38 @@ export const ToolPresets = {
  * Type for preset names
  */
 export type ToolPresetName = keyof typeof ToolPresets;
+
+/**
+ * Tool policy preset names
+ */
+export type ToolPolicyPresetName = "default" | "yolo";
+
+/**
+ * Build tool policies for a preset.
+ * `yolo` guarantees all tools are enabled and auto-approved.
+ */
+export function createToolPoliciesWithPreset(
+	presetName: ToolPolicyPresetName,
+): Record<string, ToolPolicy> {
+	if (presetName !== "yolo") {
+		return {};
+	}
+
+	const yoloPolicy: ToolPolicy = {
+		enabled: true,
+		autoApprove: true,
+	};
+
+	const policies: Record<string, ToolPolicy> = {
+		"*": yoloPolicy,
+	};
+
+	for (const toolName of ALL_DEFAULT_TOOL_NAMES) {
+		policies[toolName] = yoloPolicy;
+	}
+
+	return policies;
+}
 
 /**
  * Create default tools using a preset configuration

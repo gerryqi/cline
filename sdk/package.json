@@ -6,7 +6,8 @@
 		"agents",
 		"core",
 		"cli",
-		"desktop"
+		"desktop",
+		"app"
 	],
 	"scripts": {
 		"build": "bun run build:packages",

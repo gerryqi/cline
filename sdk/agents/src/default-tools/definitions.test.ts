@@ -60,3 +60,88 @@ describe("default skills tool", () => {
 		);
 	});
 });
+
+describe("default ask_question tool", () => {
+	it("is enabled by default when executor is provided", () => {
+		const tools = createDefaultTools({
+			executors: {
+				askQuestion: async () => "ok",
+			},
+		});
+		expect(tools.map((tool) => tool.name)).toContain("ask_question");
+	});
+
+	it("is excluded when explicitly disabled", () => {
+		const tools = createDefaultTools({
+			executors: {
+				askQuestion: async () => "ok",
+			},
+			enableAskQuestion: false,
+		});
+		expect(tools.map((tool) => tool.name)).not.toContain("ask_question");
+	});
+
+	it("is included only when enabled with an askQuestion executor", () => {
+		const toolsWithoutExecutor = createDefaultTools({
+			executors: {},
+			enableAskQuestion: true,
+		});
+		expect(toolsWithoutExecutor.map((tool) => tool.name)).not.toContain(
+			"ask_question",
+		);
+
+		const toolsWithExecutor = createDefaultTools({
+			executors: {
+				askQuestion: async () => "ok",
+			},
+			enableAskQuestion: true,
+		});
+		expect(toolsWithExecutor.map((tool) => tool.name)).toContain(
+			"ask_question",
+		);
+	});
+
+	it("validates and executes ask_question input", async () => {
+		const execute = vi.fn(async () => "asked");
+		const tools = createDefaultTools({
+			executors: {
+				askQuestion: execute,
+			},
+			enableReadFiles: false,
+			enableSearch: false,
+			enableBash: false,
+			enableWebFetch: false,
+			enableEditor: false,
+			enableSkills: false,
+			enableAskQuestion: true,
+		});
+		const askTool = tools.find((tool) => tool.name === "ask_question");
+		expect(askTool).toBeDefined();
+		if (!askTool) {
+			throw new Error("Expected ask_question tool to be defined.");
+		}
+
+		const result = await askTool.execute(
+			{
+				question: "Which approach should I take?",
+				options: ["Option 1", "Option 2"],
+			},
+			{
+				agentId: "agent-1",
+				conversationId: "conv-1",
+				iteration: 1,
+			},
+		);
+
+		expect(result).toBe("asked");
+		expect(execute).toHaveBeenCalledWith(
+			"Which approach should I take?",
+			["Option 1", "Option 2"],
+			expect.objectContaining({
+				agentId: "agent-1",
+				conversationId: "conv-1",
+				iteration: 1,
+			}),
+		);
+	});
+});

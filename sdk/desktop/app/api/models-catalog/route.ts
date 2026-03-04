@@ -66,7 +66,9 @@ function uniqueSorted(values: string[]): string[] {
 	return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
 }
 
-async function getLiveProviderModels(): Promise<Record<string, Record<string, unknown>>> {
+async function getLiveProviderModels(): Promise<
+	Record<string, Record<string, unknown>>
+> {
 	const response = await fetch(MODELS_DEV_URL, { next: { revalidate: 3600 } });
 	if (!response.ok) {
 		throw new Error(`Failed to fetch models catalog: ${response.status}`);
@@ -119,7 +121,10 @@ export async function GET() {
 			...toModelIds(models.OPENAI_MODELS),
 			...FALLBACK_PROVIDER_MODELS.openai,
 		]),
-		openrouter: uniqueSorted(FALLBACK_PROVIDER_MODELS.openrouter),
+		openrouter: uniqueSorted([
+			...toModelIds(models.OPENROUTER_MODELS),
+			...FALLBACK_PROVIDER_MODELS.openrouter,
+		]),
 		gemini: uniqueSorted([
 			...toModelIds(models.GEMINI_MODELS),
 			...FALLBACK_PROVIDER_MODELS.gemini,
@@ -138,7 +143,10 @@ export async function GET() {
 			...toReasoningModelIds(models.OPENAI_MODELS),
 			...FALLBACK_PROVIDER_REASONING_MODELS.openai,
 		]),
-		openrouter: uniqueSorted(FALLBACK_PROVIDER_REASONING_MODELS.openrouter),
+		openrouter: uniqueSorted([
+			...toReasoningModelIds(models.OPENROUTER_MODELS),
+			...FALLBACK_PROVIDER_REASONING_MODELS.openrouter,
+		]),
 		gemini: uniqueSorted([
 			...toReasoningModelIds(models.GEMINI_MODELS),
 			...FALLBACK_PROVIDER_REASONING_MODELS.gemini,

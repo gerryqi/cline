@@ -21,7 +21,7 @@
 		"src"
 	],
 	"scripts": {
-		"build": "bun tsc",
+		"build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --target node --format esm --packages external && bun build ./src/catalog.ts --outdir ./dist --target node --format esm --packages external && bun tsc --emitDeclarationOnly --declarationMap false --incremental false",
 		"typecheck": "bun tsc --noEmit",
 		"test": "vitest run",
 		"test:watch": "vitest",

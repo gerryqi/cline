@@ -123,6 +123,20 @@ export type SkillsExecutor = (
 ) => Promise<string>;
 
 /**
+ * Executor for asking a single follow-up question with selectable options
+ *
+ * @param question - Single clarifying question for the user
+ * @param options - 2-5 selectable answer options
+ * @param context - Tool execution context
+ * @returns Executor-specific result payload
+ */
+export type AskQuestionExecutor = (
+	question: string,
+	options: string[],
+	context: ToolContext,
+) => Promise<string>;
+
+/**
  * Skill metadata exposed by SkillsExecutor for clients/UI
  */
 export interface SkillsExecutorSkillMetadata {
@@ -164,6 +178,8 @@ export interface ToolExecutors {
 	editor?: EditorExecutor;
 	/** Skill invocation implementation */
 	skills?: SkillsExecutorWithMetadata;
+	/** Follow-up question implementation */
+	askQuestion?: AskQuestionExecutor;
 }
 
 // =============================================================================
@@ -179,7 +195,8 @@ export type DefaultToolName =
 	| "run_commands"
 	| "fetch_web_content"
 	| "editor"
-	| "skills";
+	| "skills"
+	| "ask_question";
 
 /**
  * Configuration for enabling/disabling default tools
@@ -222,6 +239,12 @@ export interface DefaultToolsConfig {
 	enableSkills?: boolean;
 
 	/**
+	 * Enable the ask_followup_question tool
+	 * @default true
+	 */
+	enableAskQuestion?: boolean;
+
+	/**
 	 * Current working directory for tools that need it
 	 */
 	cwd?: string;
@@ -261,6 +284,12 @@ export interface DefaultToolsConfig {
 	 * @default 15000
 	 */
 	skillsTimeoutMs?: number;
+
+	/**
+	 * Timeout for ask_followup_question operations in milliseconds
+	 * @default 15000
+	 */
+	askQuestionTimeoutMs?: number;
 }
 
 /**

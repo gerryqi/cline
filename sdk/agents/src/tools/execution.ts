@@ -40,11 +40,13 @@ export async function executeTool(
 	context: ToolContext,
 ): Promise<{ output: unknown; error?: string; durationMs: number }> {
 	const startTime = Date.now();
+	const timeoutMs = tool.timeoutMs ?? 30000;
+	let timeoutId: ReturnType<typeof setTimeout> | undefined;
+	let abortHandler: (() => void) | undefined;
 
 	// Create a timeout promise
-	const timeoutMs = tool.timeoutMs ?? 30000;
 	const timeoutPromise = new Promise<never>((_, reject) => {
-		setTimeout(() => {
+		timeoutId = setTimeout(() => {
 			reject(new Error(`Tool execution timed out after ${timeoutMs}ms`));
 		}, timeoutMs);
 	});
@@ -52,9 +54,14 @@ export async function executeTool(
 	// Create abort handling
 	const abortPromise = context.abortSignal
 		? new Promise<never>((_, reject) => {
-				context.abortSignal?.addEventListener("abort", () => {
+				if (context.abortSignal?.aborted) {
 					reject(new Error("Tool execution was aborted"));
-				});
+					return;
+				}
+				abortHandler = () => {
+					reject(new Error("Tool execution was aborted"));
+				};
+				context.abortSignal?.addEventListener("abort", abortHandler);
 			})
 		: null;
 
@@ -77,6 +84,13 @@ export async function executeTool(
 		const errorMessage = error instanceof Error ? error.message : String(error);
 
 		return { output: null, error: errorMessage, durationMs };
+	} finally {
+		if (timeoutId) {
+			clearTimeout(timeoutId);
+		}
+		if (context.abortSignal && abortHandler) {
+			context.abortSignal.removeEventListener("abort", abortHandler);
+		}
 	}
 }
 

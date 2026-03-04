@@ -127,6 +127,25 @@ export const SkillsInputSchema = z.object({
 	args: z.string().optional().describe("Optional arguments for the skill"),
 });
 
+/**
+ * Schema for ask_followup_question tool input
+ */
+export const AskQuestionInputSchema = z.object({
+	question: z
+		.string()
+		.min(1)
+		.describe(
+			'The single question to ask the user. E.g. "How can I help you?"',
+		),
+	options: z
+		.array(z.string().min(1))
+		.min(2)
+		.max(5)
+		.describe(
+			"Array of 2-5 user-selectable answer options for the single question",
+		),
+});
+
 // =============================================================================
 // Type Definitions (derived from Zod schemas)
 // =============================================================================
@@ -165,3 +184,8 @@ export type EditFileInput = z.infer<typeof EditFileInputSchema>;
  * Input for the skills tool
  */
 export type SkillsInput = z.infer<typeof SkillsInputSchema>;
+
+/**
+ * Input for the ask_followup_question tool
+ */
+export type AskQuestionInput = z.infer<typeof AskQuestionInputSchema>;

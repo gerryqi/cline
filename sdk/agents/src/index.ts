@@ -204,11 +204,15 @@ export {
 export {
 	// Constants
 	ALL_DEFAULT_TOOL_NAMES,
+	type AskQuestionExecutor,
+	type AskQuestionInput,
+	AskQuestionInputSchema,
 	// Types
 	type BashExecutor,
 	type CreateBuiltinToolsOptions,
 	type CreateDefaultToolsOptions,
 	// Tool Creation Functions
+	createAskQuestionTool,
 	createBashTool,
 	// Convenience: Tools with Built-in Executors
 	createBuiltinTools,
@@ -218,6 +222,7 @@ export {
 	createReadFilesTool,
 	createSearchTool,
 	createSkillsTool,
+	createToolPoliciesWithPreset,
 	createWebFetchTool,
 	type DefaultToolName,
 	DefaultToolNames,
@@ -244,6 +249,7 @@ export {
 	SkillsInputSchema,
 	type ToolExecutors,
 	type ToolOperationResult,
+	type ToolPolicyPresetName,
 	type ToolPresetName,
 	// Presets
 	ToolPresets,

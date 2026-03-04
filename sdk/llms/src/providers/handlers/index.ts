@@ -12,7 +12,7 @@ export {
 	resolveApiKeyForProvider,
 } from "./auth";
 // Base classes
-export { BaseHandler, DEFAULT_MODEL_INFO } from "./base";
+export { BaseHandler } from "./base";
 export { BedrockHandler, createBedrockHandler } from "./bedrock-base";
 export { createGeminiHandler, GeminiHandler } from "./gemini-base";
 // OpenAI Chat Completions API handler

@@ -143,6 +143,11 @@ describe("parseArgs", () => {
 		expect(parsedInvalid.outputMode).toBe("text");
 		expect(parsedInvalid.invalidOutputMode).toBe("xml");
 	});
+
+	it("parses session resume flag", () => {
+		const parsed = parseArgs(["--session", "session_123"]);
+		expect(parsed.sessionId).toBe("session_123");
+	});
 });
 
 describe("format helpers", () => {
@@ -162,6 +167,27 @@ describe("format helpers", () => {
 				task: "implement feature with extensive acceptance criteria and checks",
 			}),
 		).toContain("sync coder:");
+		expect(
+			formatToolInput("team_member", {
+				action: "spawn",
+				agentId: "reviewer",
+				rolePrompt: "Review changes and call out risks",
+			}),
+		).toContain("spawn reviewer:");
+		expect(
+			formatToolInput("team_task", {
+				action: "complete",
+				taskId: "task_0012",
+				summary: "Done and verified",
+			}),
+		).toContain("complete task_0012:");
+		expect(
+			formatToolInput("team_message", {
+				action: "send",
+				toAgentId: "lead",
+				subject: "Status update",
+			}),
+		).toContain("send lead:");
 	});
 
 	it("summarizes structured tool outputs", () => {

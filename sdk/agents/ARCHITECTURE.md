@@ -182,3 +182,15 @@ Authorization order for each tool call:
 - `/Users/beatrix/dev/cline-packages/agents/src/hooks.ts`
 - `/Users/beatrix/dev/cline-packages/agents/src/types.ts`
 - `/Users/beatrix/dev/cline-packages/agents/src/tools/execution.ts`
+
+## Team Tools Design
+
+`createAgentTeamsTools` (`/Users/beatrix/dev/cline-packages/agents/src/teams/team-tools.ts`) uses Zod-backed schemas for both validation and JSON schema emission.
+
+Team operations are grouped into action-based tools to reduce tool count while preserving behavior:
+
+- `team_member`: teammate lifecycle (`spawn`, `shutdown`)
+- `team_task`: shared task lifecycle (`create`, `claim`, `complete`, `block`)
+- `team_message`: mailbox operations (`send`, `broadcast`, `read`)
+
+Other team tools remain focused operations (`team_status`, `team_run_task`, `team_list_runs`, `team_await_run`, `team_log_update`, `team_cleanup`).

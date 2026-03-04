@@ -10,7 +10,6 @@ import type {
 	ApiStream,
 	ApiStreamUsageChunk,
 	HandlerModelInfo,
-	ModelInfo,
 	ProviderConfig,
 } from "../types";
 import type { Message, ToolDefinition } from "../types/messages";
@@ -21,23 +20,6 @@ export const DEFAULT_REQUEST_HEADERS: Record<string, string> = {
 	"X-Title": "Cline",
 	"X-IS-MULTIROOT": "false",
 	"X-CLIENT-TYPE": "cline-sdk",
-};
-
-/**
- * Default model info when none is provided
- */
-export const DEFAULT_MODEL_INFO: ModelInfo = {
-	id: "default",
-	name: "Default Model",
-	contextWindow: 128_000,
-	maxTokens: 4_096,
-	capabilities: ["tools"],
-	pricing: {
-		input: 0,
-		output: 0,
-		cacheRead: 0,
-		cacheWrite: 0,
-	},
 };
 
 /**
@@ -75,7 +57,7 @@ export abstract class BaseHandler implements ApiHandler {
 		const modelId = this.config.modelId;
 		return {
 			id: modelId,
-			info: { ...(this.config.modelInfo ?? DEFAULT_MODEL_INFO), id: modelId },
+			info: { ...(this.config.modelInfo ?? {}), id: modelId },
 		};
 	}
 

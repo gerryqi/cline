@@ -150,7 +150,6 @@ export {
 	createOpenAIResponsesHandler,
 	createR1Handler,
 	createVertexHandler,
-	DEFAULT_MODEL_INFO,
 	DEFAULT_MODELS_CATALOG_URL,
 	GeminiHandler,
 	getLiveModelsCatalog,

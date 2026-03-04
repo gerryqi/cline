@@ -3,6 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { HookEventPayload } from "@cline/agents";
+import { nanoid } from "nanoid";
 import type { ParsedArgs } from "./types";
 
 export function sanitizeSessionToken(value: string): string {
@@ -34,7 +35,7 @@ export function nowIso(): string {
 }
 
 export function randomSessionId(): string {
-	return `cli_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+	return `${Date.now()}_${nanoid(5)}_cli`;
 }
 
 export function resolveWorkspaceRoot(cwd: string): string {
@@ -95,13 +96,62 @@ export function formatToolInput(toolName: string, input: unknown): string {
 				`${String(obj.skill ?? "")}${obj.args ? ` ${String(obj.args)}` : ""}`,
 				70,
 			);
+		case "ask_followup_question":
+			return truncate(String(obj.question ?? ""), 70);
+		case "team_member": {
+			const action = String(obj.action ?? "");
+			if (action === "spawn") {
+				return truncate(
+					`spawn ${String(obj.agentId ?? "")}: ${String(obj.rolePrompt ?? "")}`,
+					70,
+				);
+			}
+			if (action === "shutdown") {
+				return truncate(`shutdown ${String(obj.agentId ?? "")}`, 70);
+			}
+			break;
+		}
 		case "team_spawn_teammate":
 			return truncate(
 				`${String(obj.agentId ?? "")}: ${String(obj.rolePrompt ?? "")}`,
 				70,
 			);
+		case "team_task": {
+			const action = String(obj.action ?? "");
+			if (action === "create") {
+				return truncate(`create ${String(obj.title ?? "")}`, 60);
+			}
+			if (action === "claim") {
+				return truncate(`claim ${String(obj.taskId ?? "")}`, 60);
+			}
+			if (action === "complete") {
+				return truncate(
+					`complete ${String(obj.taskId ?? "")}: ${String(obj.summary ?? "")}`,
+					70,
+				);
+			}
+			if (action === "block") {
+				return truncate(
+					`block ${String(obj.taskId ?? "")}: ${String(obj.reason ?? "")}`,
+					70,
+				);
+			}
+			break;
+		}
 		case "team_create_task":
-			return truncate(String(obj.title ?? ""), 60);
+			return truncate(`create ${String(obj.title ?? "")}`, 60);
+		case "team_claim_task":
+			return truncate(`claim ${String(obj.taskId ?? "")}`, 60);
+		case "team_complete_task":
+			return truncate(
+				`complete ${String(obj.taskId ?? "")}: ${String(obj.summary ?? "")}`,
+				70,
+			);
+		case "team_block_task":
+			return truncate(
+				`block ${String(obj.taskId ?? "")}: ${String(obj.reason ?? "")}`,
+				70,
+			);
 		case "team_run_task":
 			return truncate(
 				`${String(obj.runMode ?? "sync")} ${String(obj.agentId ?? "")}: ${String(obj.task ?? "")}`,
@@ -117,6 +167,25 @@ export function formatToolInput(toolName: string, input: unknown): string {
 				String(obj.awaitAll ? "all runs" : (obj.runId ?? "")),
 				60,
 			);
+		case "team_message": {
+			const action = String(obj.action ?? "");
+			if (action === "send") {
+				return truncate(
+					`send ${String(obj.toAgentId ?? "")}: ${String(obj.subject ?? "")}`,
+					70,
+				);
+			}
+			if (action === "broadcast") {
+				return truncate(`broadcast ${String(obj.subject ?? "")}`, 70);
+			}
+			if (action === "read") {
+				return truncate(
+					`read unreadOnly=${String(obj.unreadOnly ?? true)} limit=${String(obj.limit ?? "default")}`,
+					70,
+				);
+			}
+			break;
+		}
 		case "team_send_message":
 			return truncate(
 				`${String(obj.toAgentId ?? "")}: ${String(obj.subject ?? "")}`,
@@ -389,6 +458,8 @@ export function parseArgs(args: string[]): ParsedArgs {
 			result.provider = args[++i];
 		} else if (arg === "-k" || arg === "--key") {
 			result.key = args[++i];
+		} else if (arg === "--session") {
+			result.sessionId = args[++i] ?? "";
 		} else if (arg === "-n" || arg === "--max-iterations") {
 			result.maxIterations = Number.parseInt(args[++i], 10);
 		} else if (!arg.startsWith("-")) {

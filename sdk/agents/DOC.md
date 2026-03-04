@@ -67,6 +67,20 @@ Workspace boundary note:
 - `createWorkerReviewerTeam`
 - `FileTeamPersistenceStore`
 
+#### Team Tool Surface
+
+`createAgentTeamsTools` provides grouped team tools with action-based inputs:
+
+- `team_member` with `action: "spawn" | "shutdown"`
+- `team_task` with `action: "create" | "claim" | "complete" | "block"`
+- `team_message` with `action: "send" | "broadcast" | "read"`
+- `team_status`
+- `team_run_task`
+- `team_list_runs`
+- `team_await_run`
+- `team_log_update`
+- `team_cleanup`
+
 ### Streaming
 
 - `streamRun`

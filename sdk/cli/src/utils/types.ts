@@ -79,6 +79,7 @@ export interface ParsedArgs {
 	enableTools: boolean;
 	model?: string;
 	provider?: string;
+	sessionId?: string;
 	maxIterations?: number;
 	cwd?: string;
 	teamName?: string;

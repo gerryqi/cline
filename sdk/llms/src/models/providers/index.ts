@@ -82,7 +82,11 @@ export {
 	OPENAI_CODEX_DEFAULT_MODEL,
 	OPENAI_CODEX_PROVIDER,
 } from "./openai-codex.js";
-export { OPENROUTER_PROVIDER } from "./openrouter.js";
+export {
+	OPENROUTER_DEFAULT_MODEL,
+	OPENROUTER_MODELS,
+	OPENROUTER_PROVIDER,
+} from "./openrouter.js";
 export { REQUESTY_PROVIDER } from "./requesty.js";
 export {
 	SAMBANOVA_DEFAULT_MODEL,

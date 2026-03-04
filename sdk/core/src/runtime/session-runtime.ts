@@ -3,6 +3,7 @@ import type {
 	AgentResult,
 	AgentTeamsRuntime,
 	Tool,
+	ToolExecutors,
 } from "@cline/agents";
 import type { UserInstructionConfigWatcher } from "../agents";
 import type { CoreSessionConfig } from "../types/config";
@@ -21,6 +22,7 @@ export interface RuntimeBuilderInput {
 	createSpawnTool?: () => Tool;
 	onTeamRestored?: () => void;
 	userInstructionWatcher?: UserInstructionConfigWatcher;
+	defaultToolExecutors?: Partial<ToolExecutors>;
 }
 
 export interface RuntimeBuilder {

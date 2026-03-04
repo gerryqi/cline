@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { getEventListeners } from "node:events";
 import {
 	createTool,
 	createToolRegistry,
@@ -140,6 +141,27 @@ describe("tools utilities", () => {
 		await vi.advanceTimersByTimeAsync(10);
 		const timeoutResult = await timeoutPromise;
 		expect(timeoutResult.error).toContain("timed out");
+	});
+
+	it("does not leak abort listeners across tool executions", async () => {
+		const controller = new AbortController();
+		const context: ToolContext = {
+			...baseContext,
+			abortSignal: controller.signal,
+		};
+		const tool = createTool({
+			name: "noop",
+			description: "noop",
+			inputSchema: { type: "object", properties: {} },
+			execute: async () => "ok",
+		});
+
+		for (let i = 0; i < 25; i++) {
+			const result = await executeTool(tool, {}, context);
+			expect(result.error).toBeUndefined();
+		}
+
+		expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
 	});
 
 	it("executes parallel and sequential calls with observer + authorizer", async () => {

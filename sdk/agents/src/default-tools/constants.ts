@@ -16,6 +16,7 @@ export const DefaultToolNames = {
 	FETCH_WEB_CONTENT: "fetch_web_content",
 	EDITOR: "editor",
 	SKILLS: "skills",
+	ASK: "ask_question",
 } as const;
 
 /**
@@ -28,4 +29,5 @@ export const ALL_DEFAULT_TOOL_NAMES: DefaultToolName[] = [
 	DefaultToolNames.FETCH_WEB_CONTENT,
 	DefaultToolNames.EDITOR,
 	DefaultToolNames.SKILLS,
+	DefaultToolNames.ASK,
 ];

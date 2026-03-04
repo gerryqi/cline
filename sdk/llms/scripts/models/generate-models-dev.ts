@@ -28,6 +28,7 @@ const PROVIDER_KEY_MAP: Record<string, string> = {
 	lmstudio: "lmstudio",
 	"ollama-cloud": "ollama",
 	zai: "zai",
+	requesty: "requesty",
 	"amazon-bedrock": "bedrock",
 };
 

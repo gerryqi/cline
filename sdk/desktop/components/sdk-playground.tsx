@@ -1645,7 +1645,7 @@ export function SdkPlayground() {
 				setTesting(null);
 			}
 		},
-		[providers, registeredProviders],
+		[providers],
 	);
 
 	const handleResizeStart = useCallback(

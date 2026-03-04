@@ -8,6 +8,7 @@ import {
 	type SkillsExecutor,
 	type TeamEvent,
 	type Tool,
+	type ToolExecutors,
 } from "@cline/agents";
 import { nanoid } from "nanoid";
 import {
@@ -40,6 +41,7 @@ export function createTeamName(): string {
 function createBuiltinToolsList(
 	cwd: string,
 	skillsExecutor?: SkillsExecutorWithMetadata,
+	executorOverrides?: Partial<ToolExecutors>,
 ): Tool[] {
 	return createBuiltinTools({
 		cwd,
@@ -48,11 +50,14 @@ function createBuiltinToolsList(
 		enableBash: true,
 		enableWebFetch: true,
 		enableSkills: !!skillsExecutor,
-		executors: skillsExecutor
-			? {
-					skills: skillsExecutor,
-				}
-			: undefined,
+		executors: {
+			...(skillsExecutor
+				? {
+						skills: skillsExecutor,
+					}
+				: {}),
+			...(executorOverrides ?? {}),
+		},
 	});
 }
 
@@ -278,6 +283,7 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 			createSpawnTool,
 			onTeamRestored,
 			userInstructionWatcher: sharedUserInstructionWatcher,
+			defaultToolExecutors,
 		} = input;
 		const onTeamEvent = input.onTeamEvent ?? (() => {});
 		const normalized = normalizeConfig(config);
@@ -316,7 +322,13 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 		}
 
 		if (normalized.enableTools) {
-			tools.push(...createBuiltinToolsList(config.cwd, skillsExecutor));
+			tools.push(
+				...createBuiltinToolsList(
+					config.cwd,
+					skillsExecutor,
+					defaultToolExecutors,
+				),
+			);
 		}
 
 		let teamRuntime: AgentTeamsRuntime | undefined;
@@ -358,7 +370,12 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 					leadAgentId: "lead",
 					persistence: teamPersistence,
 					createBaseTools: normalized.enableTools
-						? () => createBuiltinToolsList(config.cwd, skillsExecutor)
+						? () =>
+								createBuiltinToolsList(
+									config.cwd,
+									skillsExecutor,
+									defaultToolExecutors,
+								)
 						: undefined,
 					teammateRuntime: {
 						providerId: config.providerId,

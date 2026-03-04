@@ -24,7 +24,7 @@ import type { Message, ToolDefinition } from "../types/messages";
 import { withRetry } from "../utils/retry";
 import { ToolCallProcessor } from "../utils/tool-processor";
 import { getMissingApiKeyError, resolveApiKeyForProvider } from "./auth";
-import { BaseHandler, DEFAULT_MODEL_INFO } from "./base";
+import { BaseHandler } from "./base";
 
 /**
  * Extended usage type for DeepSeek with cache tokens
@@ -98,7 +98,7 @@ export class R1BaseHandler extends BaseHandler {
 
 	protected getDefaultModelInfo(): ModelInfo {
 		return {
-			...DEFAULT_MODEL_INFO,
+			id: this.config.modelId,
 			capabilities: ["prompt-cache", "reasoning"],
 		};
 	}
