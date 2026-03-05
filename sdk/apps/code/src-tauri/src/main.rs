@@ -49,6 +49,12 @@ struct AppContext {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct SessionStorageOptions {
+    home_dir: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct StartSessionRequest {
     workspace_root: String,
     cwd: Option<String>,
@@ -67,6 +73,8 @@ struct StartSessionRequest {
     team_name: String,
     mission_step_interval: u32,
     mission_time_interval_ms: u64,
+    #[serde(default)]
+    sessions: Option<SessionStorageOptions>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,6 +90,44 @@ struct ChatRunTurnRequest {
 
 fn default_agent_mode() -> String {
     "act".to_string()
+}
+
+fn resolve_home_dir() -> Option<String> {
+    for key in ["HOME", "USERPROFILE"] {
+        if let Ok(value) = std::env::var(key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn ensure_start_session_home_dir(config: &mut StartSessionRequest) {
+    let already_set = config
+        .sessions
+        .as_ref()
+        .and_then(|sessions| sessions.home_dir.as_ref())
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false);
+    if already_set {
+        return;
+    }
+
+    let home_dir = resolve_home_dir();
+    if home_dir.is_none() {
+        return;
+    }
+
+    match config.sessions.as_mut() {
+        Some(sessions) => {
+            sessions.home_dir = home_dir;
+        }
+        None => {
+            config.sessions = Some(SessionStorageOptions { home_dir });
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2965,6 +3011,7 @@ async fn chat_session_command(
                 return Err("missing config for start action".to_string());
             };
             resolve_chat_config_api_key(&mut config)?;
+            ensure_start_session_home_dir(&mut config);
             let session_id = create_chat_session_via_core(&context, &config)?;
             let mut sessions = state
                 .sessions
@@ -3015,6 +3062,7 @@ async fn chat_session_command(
                     .clone()
                     .ok_or_else(|| "session not found. start a new session.".to_string())?;
                 resolve_chat_config_api_key(&mut config)?;
+                ensure_start_session_home_dir(&mut config);
                 let messages = read_persisted_chat_messages(&session_id)?
                     .ok_or_else(|| "session not found. start a new session.".to_string())?;
                 let mut sessions = state
@@ -3044,6 +3092,7 @@ async fn chat_session_command(
                     .ok_or_else(|| "session not found. start a new session.".to_string())?;
                 if let Some(mut next_config) = request.config.clone() {
                     resolve_chat_config_api_key(&mut next_config)?;
+                    ensure_start_session_home_dir(&mut next_config);
                     session.config = next_config;
                 }
                 if session.busy {

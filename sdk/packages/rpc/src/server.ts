@@ -32,6 +32,8 @@ import type { RespondToolApprovalRequest__Output } from "./proto/generated/cline
 import type { RespondToolApprovalResponse } from "./proto/generated/cline/rpc/v1/RespondToolApprovalResponse.js";
 import type { RoutedEvent as RoutedEventMessage } from "./proto/generated/cline/rpc/v1/RoutedEvent.js";
 import type { SessionRecord as SessionRecordMessage } from "./proto/generated/cline/rpc/v1/SessionRecord.js";
+import type { ShutdownRequest__Output } from "./proto/generated/cline/rpc/v1/ShutdownRequest.js";
+import type { ShutdownResponse } from "./proto/generated/cline/rpc/v1/ShutdownResponse.js";
 import type { StartTaskRequest__Output } from "./proto/generated/cline/rpc/v1/StartTaskRequest.js";
 import type { StreamEventsRequest__Output } from "./proto/generated/cline/rpc/v1/StreamEventsRequest.js";
 import type { TaskResponse } from "./proto/generated/cline/rpc/v1/TaskResponse.js";
@@ -40,16 +42,14 @@ import type { UpdateSessionResponse } from "./proto/generated/cline/rpc/v1/Updat
 import type { UpsertSessionRequest__Output } from "./proto/generated/cline/rpc/v1/UpsertSessionRequest.js";
 import type { UpsertSessionResponse } from "./proto/generated/cline/rpc/v1/UpsertSessionResponse.js";
 import type { ProtoGrpcType } from "./proto/generated/rpc.js";
-import {
-	type RpcSessionRow,
-	type RpcSessionStatus,
-	RpcSessionStore,
-} from "./session-store.js";
 import type {
 	PendingApproval,
 	RoutedEvent,
 	RpcServerHandle,
 	RpcServerOptions,
+	RpcSessionBackend,
+	RpcSessionRow,
+	RpcSessionStatus,
 } from "./types.js";
 
 const DEFAULT_ADDRESS = "127.0.0.1:4317";
@@ -100,6 +100,7 @@ type ClaimSpawnRequestRequest = ClaimSpawnRequestRequest__Output;
 type StartTaskRequest = StartTaskRequest__Output;
 type CompleteTaskRequest = CompleteTaskRequest__Output;
 type StreamEventsRequest = StreamEventsRequest__Output;
+type ShutdownRequest = ShutdownRequest__Output;
 type RequestToolApprovalRequest = RequestToolApprovalRequest__Output;
 type RespondToolApprovalRequest = RespondToolApprovalRequest__Output;
 type PendingApprovalMessage = ProtoPendingApproval;
@@ -283,15 +284,17 @@ function messageToRow(message: SessionRecordMessage): RpcSessionRow {
 
 class ClineGatewayRuntime {
 	private readonly serverId = randomUUID();
+	private readonly address: string;
 	private readonly sessions = new Map<string, SessionState>();
 	private readonly tasks = new Map<string, TaskState>();
 	private readonly approvals = new Map<string, ApprovalState>();
 	private readonly subscribers = new Map<number, StreamSubscriber>();
-	private readonly store: RpcSessionStore;
+	private readonly store: RpcSessionBackend;
 	private nextSubscriberId = 1;
 
-	constructor(private readonly address: string) {
-		this.store = new RpcSessionStore();
+	constructor(address: string, sessionBackend: RpcSessionBackend) {
+		this.address = address;
+		this.store = sessionBackend;
 		this.store.init();
 	}
 
@@ -723,6 +726,13 @@ type ClineGatewayHealthClient = grpc.Client & {
 			response: HealthResponse | undefined,
 		) => void,
 	) => void;
+	Shutdown: (
+		request: ShutdownRequest,
+		callback: (
+			error: grpc.ServiceError | null,
+			response: ShutdownResponse | undefined,
+		) => void,
+	) => void;
 };
 
 function createGatewayClient(address: string): ClineGatewayHealthClient {
@@ -758,8 +768,30 @@ export async function getRpcServerHealth(
 	});
 }
 
+export async function requestRpcServerShutdown(
+	address: string,
+): Promise<ShutdownResponse | undefined> {
+	return await new Promise<ShutdownResponse | undefined>((resolve) => {
+		let client: ClineGatewayHealthClient | undefined;
+		try {
+			client = createGatewayClient(address);
+		} catch {
+			resolve(undefined);
+			return;
+		}
+		client.Shutdown({}, (error, response) => {
+			client?.close();
+			if (error || !response) {
+				resolve(undefined);
+				return;
+			}
+			resolve(response);
+		});
+	});
+}
+
 export async function startRpcServer(
-	options: RpcServerOptions = {},
+	options: RpcServerOptions,
 ): Promise<RpcServerHandle> {
 	if (singletonHandle) {
 		return singletonHandle;
@@ -777,9 +809,28 @@ export async function startRpcServer(
 			reject(error instanceof Error ? error : new Error(String(error)));
 			return;
 		}
+		if (!options.sessionBackend) {
+			singletonStartPromise = undefined;
+			reject(new Error("startRpcServer requires options.sessionBackend"));
+			return;
+		}
 
-		const runtime = new ClineGatewayRuntime(address);
+		const runtime = new ClineGatewayRuntime(address, options.sessionBackend);
 		const server = new grpc.Server();
+		let stopRequested = false;
+		const stopBoundServer = async (): Promise<void> => {
+			if (stopRequested) {
+				return;
+			}
+			stopRequested = true;
+			await new Promise<void>((resolveShutdown) => {
+				server.tryShutdown(() => {
+					resolveShutdown();
+				});
+			});
+			singletonHandle = undefined;
+			singletonStartPromise = undefined;
+		};
 		server.addService(loadGatewayService(), {
 			Health: (
 				call: grpc.ServerUnaryCall<HealthRequest, HealthResponse>,
@@ -787,6 +838,16 @@ export async function startRpcServer(
 			) => {
 				void call;
 				callback(null, runtime.health());
+			},
+			Shutdown: (
+				call: grpc.ServerUnaryCall<ShutdownRequest, ShutdownResponse>,
+				callback: grpc.sendUnaryData<ShutdownResponse>,
+			) => {
+				void call;
+				callback(null, { accepted: true });
+				setImmediate(() => {
+					void stopBoundServer();
+				});
 			},
 			RegisterClient: (
 				call: grpc.ServerUnaryCall<
@@ -1034,15 +1095,7 @@ export async function startRpcServer(
 					address,
 					port: boundPort,
 					startedAt,
-					stop: async () => {
-						await new Promise<void>((resolveShutdown) => {
-							server.tryShutdown(() => {
-								resolveShutdown();
-							});
-						});
-						singletonHandle = undefined;
-						singletonStartPromise = undefined;
-					},
+					stop: stopBoundServer,
 				};
 				singletonHandle = handle;
 				resolve(handle);

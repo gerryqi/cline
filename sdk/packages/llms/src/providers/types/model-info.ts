@@ -11,15 +11,11 @@ import type {
 	ModelPricing,
 	ThinkingConfig,
 } from "../../models/schemas/model.js";
+import { ApiFormat } from "../../models/schemas/model.js";
 
 export type { ModelCapability, ModelInfo, ModelPricing, ThinkingConfig };
-
-export const ApiFormat = {
-	Default: "default",
-	OpenAIResponses: "openai-responses",
-	R1: "r1",
-} as const;
-export type ApiFormat = (typeof ApiFormat)[keyof typeof ApiFormat];
+export { ApiFormat };
+export type { ApiFormat as ApiFormatType } from "../../models/schemas/model.js";
 
 // =============================================================================
 // Helper Functions

@@ -1,19 +1,23 @@
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import {
 	Agent,
 	type AgentConfig,
 	type AgentEvent,
 	type AgentResult,
-	createBuiltinTools,
 	createSpawnAgentTool,
 	type TeamEvent,
 	type Tool,
 	type ToolApprovalRequest,
 	type ToolApprovalResult,
-	type ToolExecutors,
-	ToolPresets,
 } from "@cline/agents";
 import type { providers as LlmsProviders } from "@cline/llms";
+import { setHomeDirIfUnset } from "@cline/shared";
+import {
+	createBuiltinTools,
+	type ToolExecutors,
+	ToolPresets,
+} from "../default-tools";
 import { DefaultRuntimeBuilder } from "../runtime/runtime-builder";
 import type { BuiltRuntime, RuntimeBuilder } from "../runtime/session-runtime";
 import { SessionSource, type SessionStatus } from "../types/common";
@@ -117,6 +121,8 @@ export class DefaultSessionManager implements SessionManager {
 	private readonly sessions = new Map<string, ActiveSession>();
 
 	constructor(options: DefaultSessionManagerOptions) {
+		const homeDir = homedir();
+		if (homeDir) setHomeDirIfUnset(homeDir);
 		this.sessionService = options.sessionService;
 		this.runtimeBuilder = options.runtimeBuilder ?? new DefaultRuntimeBuilder();
 		this.createAgentInstance =
@@ -130,7 +136,7 @@ export class DefaultSessionManager implements SessionManager {
 		const sessionId = input.config.sessionId?.trim() ?? "";
 		const artifacts = (await this.invoke("createRootSessionWithArtifacts", {
 			sessionId,
-			source: SessionSource.CLI,
+			source: input.source ?? SessionSource.CLI,
 			pid: process.pid,
 			interactive: input.interactive === true,
 			provider: input.config.providerId,
@@ -144,19 +150,17 @@ export class DefaultSessionManager implements SessionManager {
 			prompt: input.prompt?.trim() || undefined,
 			startedAt: nowIso(),
 		})) as RootSessionArtifacts;
-		process.env.CLINE_SESSION_ID = artifacts.env.CLINE_SESSION_ID;
-		process.env.CLINE_HOOKS_LOG_PATH = artifacts.env.CLINE_HOOKS_LOG_PATH;
-		process.env.CLINE_ENABLE_SUBPROCESS_HOOKS =
-			artifacts.env.CLINE_ENABLE_SUBPROCESS_HOOKS;
 
 		const runtime = this.runtimeBuilder.build({
 			config: input.config,
 			hooks: input.config.hooks,
+			logger: input.config.logger,
 			onTeamEvent: (event: TeamEvent) => {
-				void this.handleTeamEvent(event);
+				void this.handleTeamEvent(artifacts.manifest.session_id, event);
 				input.config.onTeamEvent?.(event);
 			},
-			createSpawnTool: () => this.createSpawnTool(input.config),
+			createSpawnTool: () =>
+				this.createSpawnTool(input.config, artifacts.manifest.session_id),
 			onTeamRestored: input.onTeamRestored,
 			userInstructionWatcher: input.userInstructionWatcher,
 			defaultToolExecutors:
@@ -179,6 +183,7 @@ export class DefaultSessionManager implements SessionManager {
 			toolPolicies: input.toolPolicies ?? this.defaultToolPolicies,
 			requestToolApproval:
 				input.requestToolApproval ?? this.defaultRequestToolApproval,
+			logger: runtime.logger ?? input.config.logger,
 			onEvent: (event: AgentEvent) => {
 				this.emit({
 					type: "agent_event",
@@ -214,15 +219,20 @@ export class DefaultSessionManager implements SessionManager {
 		this.emitStatus(active.sessionId, "running");
 
 		let result: AgentResult | undefined;
-		if (input.prompt?.trim()) {
-			result = await this.runTurn(active, {
-				prompt: input.prompt,
-				userImages: input.userImages,
-				userFiles: input.userFiles,
-			});
-			if (!active.interactive) {
-				await this.finalizeSingleRun(active, result.finishReason);
+		try {
+			if (input.prompt?.trim()) {
+				result = await this.runTurn(active, {
+					prompt: input.prompt,
+					userImages: input.userImages,
+					userFiles: input.userFiles,
+				});
+				if (!active.interactive) {
+					await this.finalizeSingleRun(active, result.finishReason);
+				}
 			}
+		} catch (error) {
+			await this.failSession(active);
+			throw error;
 		}
 
 		return {
@@ -241,11 +251,16 @@ export class DefaultSessionManager implements SessionManager {
 		if (!session) {
 			throw new Error(`session not found: ${input.sessionId}`);
 		}
-		const result = await this.runTurn(session, input);
-		if (!session.interactive) {
-			await this.finalizeSingleRun(session, result.finishReason);
+		try {
+			const result = await this.runTurn(session, input);
+			if (!session.interactive) {
+				await this.finalizeSingleRun(session, result.finishReason);
+			}
+			return result;
+		} catch (error) {
+			await this.failSession(session);
+			throw error;
 		}
-		return result;
 	}
 
 	async abort(sessionId: string): Promise<void> {
@@ -291,7 +306,7 @@ export class DefaultSessionManager implements SessionManager {
 			await this.stop(sessionId);
 		}
 		const result = await this.invoke<{ deleted: boolean }>(
-			"deleteCliSession",
+			"deleteSession",
 			sessionId,
 		);
 		return result.deleted;
@@ -408,6 +423,21 @@ export class DefaultSessionManager implements SessionManager {
 		});
 	}
 
+	private async failSession(session: ActiveSession): Promise<void> {
+		await this.updateStatus(session, "failed", 1);
+		await session.agent.shutdown("session_error");
+		await Promise.resolve(session.runtime.shutdown("session_error"));
+		this.sessions.delete(session.sessionId);
+		this.emit({
+			type: "ended",
+			payload: {
+				sessionId: session.sessionId,
+				reason: "error",
+				ts: Date.now(),
+			},
+		});
+	}
+
 	private async updateStatus(
 		session: ActiveSession,
 		status: SessionStatus,
@@ -444,7 +474,7 @@ export class DefaultSessionManager implements SessionManager {
 	private async listRows(limit: number): Promise<SessionRowShape[]> {
 		const normalizedLimit = Math.max(1, Math.floor(limit));
 		return this.invoke<SessionRowShape[]>(
-			"listCliSessions",
+			"listSessions",
 			Math.min(normalizedLimit, MAX_SCAN_LIMIT),
 		);
 	}
@@ -460,7 +490,10 @@ export class DefaultSessionManager implements SessionManager {
 		return rows.find((row) => row.session_id === target);
 	}
 
-	private createSpawnTool(config: CoreSessionConfig): Tool {
+	private createSpawnTool(
+		config: CoreSessionConfig,
+		rootSessionId: string,
+	): Tool {
 		const createBaseTools = () => {
 			if (!config.enableTools) {
 				return [] as Tool[];
@@ -485,20 +518,25 @@ export class DefaultSessionManager implements SessionManager {
 			hooks: config.hooks,
 			toolPolicies: this.defaultToolPolicies,
 			requestToolApproval: this.defaultRequestToolApproval,
+			logger: config.logger,
 			onSubAgentStart: (context) => {
-				void this.invokeOptional("handleSubAgentStart", context);
+				void this.invokeOptional("handleSubAgentStart", rootSessionId, context);
 			},
 			onSubAgentEnd: (context) => {
-				void this.invokeOptional("handleSubAgentEnd", context);
+				void this.invokeOptional("handleSubAgentEnd", rootSessionId, context);
 			},
 		}) as Tool;
 	}
 
-	private async handleTeamEvent(event: TeamEvent): Promise<void> {
+	private async handleTeamEvent(
+		rootSessionId: string,
+		event: TeamEvent,
+	): Promise<void> {
 		switch (event.type) {
 			case "task_start":
 				await this.invokeOptional(
 					"onTeamTaskStart",
+					rootSessionId,
 					event.agentId,
 					event.message,
 				);
@@ -507,6 +545,7 @@ export class DefaultSessionManager implements SessionManager {
 				if (event.error) {
 					await this.invokeOptional(
 						"onTeamTaskEnd",
+						rootSessionId,
 						event.agentId,
 						"failed",
 						`[error] ${event.error.message}`,
@@ -516,6 +555,7 @@ export class DefaultSessionManager implements SessionManager {
 				if (event.result?.finishReason === "aborted") {
 					await this.invokeOptional(
 						"onTeamTaskEnd",
+						rootSessionId,
 						event.agentId,
 						"cancelled",
 						"[done] aborted",
@@ -525,6 +565,7 @@ export class DefaultSessionManager implements SessionManager {
 				}
 				await this.invokeOptional(
 					"onTeamTaskEnd",
+					rootSessionId,
 					event.agentId,
 					"completed",
 					`[done] ${event.result?.finishReason ?? "completed"}`,

@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import {
 	CoreSessionService,
 	SessionSource,
 	SqliteSessionStore,
 } from "@cline/core/server";
+import { setHomeDir, setHomeDirIfUnset } from "@cline/shared";
 
 type StartSessionRequest = {
 	workspaceRoot: string;
@@ -15,6 +17,9 @@ type StartSessionRequest = {
 	enableSpawn: boolean;
 	enableTeams: boolean;
 	teamName: string;
+	sessions?: {
+		homeDir?: string;
+	};
 };
 
 function readStdin(): string {
@@ -26,6 +31,12 @@ function main() {
 	const config = JSON.parse(raw) as StartSessionRequest;
 	const cwd = (config.cwd?.trim() || config.workspaceRoot).trim();
 	const workspaceRoot = config.workspaceRoot.trim() || cwd;
+	const homeDir = config.sessions?.homeDir?.trim();
+	if (homeDir) {
+		setHomeDir(homeDir);
+	} else {
+		setHomeDirIfUnset(homedir());
+	}
 
 	const sessions = new CoreSessionService(new SqliteSessionStore());
 	const created = sessions.createRootSessionWithArtifacts({

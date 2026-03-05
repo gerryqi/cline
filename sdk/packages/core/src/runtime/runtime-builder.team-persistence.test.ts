@@ -34,8 +34,11 @@ class MockAgentTeamsRuntime {
 vi.mock("@cline/agents", () => ({
 	AgentTeamsRuntime: MockAgentTeamsRuntime,
 	bootstrapAgentTeams: bootstrapAgentTeamsMock,
-	createBuiltinTools: createBuiltinToolsMock,
+}));
+
+vi.mock("../default-tools", () => ({
 	ALL_DEFAULT_TOOL_NAMES: [],
+	createBuiltinTools: createBuiltinToolsMock,
 	ToolPresets: {
 		development: {},
 		readonly: {},

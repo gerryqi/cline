@@ -1,5 +1,6 @@
 import type { AgentHooks, HookErrorMode, TeamEvent, Tool } from "@cline/agents";
 import type { providers as LlmsProviders } from "@cline/llms";
+import type { BasicLogger } from "@cline/shared";
 
 export type CoreAgentMode = "act" | "plan";
 
@@ -35,6 +36,7 @@ export interface CoreSessionConfig
 	missionLogIntervalMs?: number;
 	hooks?: AgentHooks;
 	hookErrorMode?: HookErrorMode;
+	logger?: BasicLogger;
 	extraTools?: Tool[];
 	onTeamEvent?: (event: TeamEvent) => void;
 }

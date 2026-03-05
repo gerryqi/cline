@@ -58,11 +58,17 @@ describe("createAgentTeamsTools schema surface", () => {
 		const teamMessage = tools.find((tool) => tool.name === "team_message");
 		const teamMember = tools.find((tool) => tool.name === "team_member");
 		const teamAwaitRun = tools.find((tool) => tool.name === "team_await_run");
+		const teamLogUpdate = tools.find((tool) => tool.name === "team_log_update");
 
 		expect(teamTask?.inputSchema.type).toBe("object");
 		expect(teamMessage?.inputSchema.type).toBe("object");
 		expect(teamMember?.inputSchema.type).toBe("object");
 		expect(teamAwaitRun?.inputSchema.type).toBe("object");
+		expect(teamLogUpdate?.inputSchema.properties.kind).toEqual({
+			type: "string",
+			enum: ["progress", "handoff", "blocked", "decision", "done", "error"],
+		});
+		expect(teamLogUpdate?.inputSchema.required).toEqual(["kind", "summary"]);
 	});
 
 	it("returns actionable spawn validation guidance when rolePrompt is missing", async () => {

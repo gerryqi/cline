@@ -1,21 +1,31 @@
-import { getRpcServerHealth, startRpcServer, stopRpcServer } from "@cline/rpc";
+import { createSqliteRpcSessionBackend } from "@cline/core/server";
+import {
+	getRpcServerHealth,
+	requestRpcServerShutdown,
+	startRpcServer,
+	stopRpcServer,
+} from "@cline/rpc";
 
 const c = {
 	dim: "\x1b[2m",
 	reset: "\x1b[0m",
 };
 
-export async function runRpcStartCommand(
-	rawArgs: string[],
-	writeln: (text?: string) => void,
-	writeErr: (text: string) => void,
-): Promise<number> {
+function resolveRpcAddress(rawArgs: string[]): string {
 	const addressIndex = rawArgs.indexOf("--address");
 	const address =
 		(addressIndex >= 0 && addressIndex + 1 < rawArgs.length
 			? rawArgs[addressIndex + 1]
 			: process.env.CLINE_RPC_ADDRESS) || "127.0.0.1:4317";
-	const normalizedAddress = address.trim();
+	return address.trim();
+}
+
+export async function runRpcStartCommand(
+	rawArgs: string[],
+	writeln: (text?: string) => void,
+	writeErr: (text: string) => void,
+): Promise<number> {
+	const normalizedAddress = resolveRpcAddress(rawArgs);
 	if (!normalizedAddress) {
 		writeErr("rpc start requires a non-empty address");
 		return 1;
@@ -29,7 +39,10 @@ export async function runRpcStartCommand(
 		return 0;
 	}
 
-	const handle = await startRpcServer({ address: normalizedAddress });
+	const handle = await startRpcServer({
+		address: normalizedAddress,
+		sessionBackend: createSqliteRpcSessionBackend(),
+	});
 	writeln(
 		`${c.dim}[rpc] started server_id=${handle.serverId} address=${handle.address}${c.reset}`,
 	);
@@ -48,4 +61,70 @@ export async function runRpcStartCommand(
 	await stopRpcServer();
 	writeln(`${c.dim}[rpc] stopped${c.reset}`);
 	return 0;
+}
+
+export async function runRpcStatusCommand(
+	rawArgs: string[],
+	writeln: (text?: string) => void,
+	writeErr: (text: string) => void,
+): Promise<number> {
+	const normalizedAddress = resolveRpcAddress(rawArgs);
+	if (!normalizedAddress) {
+		writeErr("rpc status requires a non-empty address");
+		return 1;
+	}
+
+	const health = await getRpcServerHealth(normalizedAddress);
+	if (!health?.running) {
+		writeln(`${c.dim}[rpc] not running address=${normalizedAddress}${c.reset}`);
+		return 1;
+	}
+
+	writeln(
+		`${c.dim}[rpc] running server_id=${health.serverId} address=${health.address}${c.reset}`,
+	);
+	return 0;
+}
+
+export async function runRpcStopCommand(
+	rawArgs: string[],
+	writeln: (text?: string) => void,
+	writeErr: (text: string) => void,
+): Promise<number> {
+	const normalizedAddress = resolveRpcAddress(rawArgs);
+	if (!normalizedAddress) {
+		writeErr("rpc stop requires a non-empty address");
+		return 1;
+	}
+
+	const health = await getRpcServerHealth(normalizedAddress);
+	if (!health?.running) {
+		writeln(`${c.dim}[rpc] not running address=${normalizedAddress}${c.reset}`);
+		return 0;
+	}
+
+	const shutdown = await requestRpcServerShutdown(normalizedAddress);
+	if (!shutdown?.accepted) {
+		writeErr(
+			`failed to request rpc shutdown at ${normalizedAddress} (server may have exited)`,
+		);
+		return 1;
+	}
+
+	// Wait briefly for the server to unbind so follow-up calls can trust the result.
+	for (let attempt = 0; attempt < 10; attempt += 1) {
+		const nextHealth = await getRpcServerHealth(normalizedAddress);
+		if (!nextHealth?.running) {
+			writeln(
+				`${c.dim}[rpc] stopped server_id=${health.serverId} address=${health.address}${c.reset}`,
+			);
+			return 0;
+		}
+		await new Promise((resolve) => setTimeout(resolve, 100));
+	}
+
+	writeErr(
+		`rpc shutdown requested but server still reports healthy at ${health.address}`,
+	);
+	return 1;
 }

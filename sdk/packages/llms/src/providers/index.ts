@@ -250,6 +250,7 @@ import { OpenAIResponsesHandler } from "./handlers/openai-responses";
 import {
 	isOpenAICompatibleProvider,
 	OPENAI_COMPATIBLE_PROVIDERS,
+	type ProviderDefaults,
 	resolveProviderConfig,
 } from "./handlers/providers";
 import {
@@ -302,8 +303,34 @@ function resolveOcaApiFormat(config: ProviderConfig): string | undefined {
 
 function createOcaHandler(config: ProviderConfig): ApiHandler {
 	const apiFormat = resolveOcaApiFormat(config);
-	if (apiFormat === ApiFormat.OpenAIResponses) {
+	if (apiFormat === ApiFormat.OPENAI_RESPONSES) {
 		return new OpenAIResponsesHandler(config);
+	}
+	return new OpenAIBaseHandler(config);
+}
+
+function mergeProviderDefaults(
+	config: ProviderConfig,
+	defaults: ProviderDefaults,
+): ProviderConfig {
+	return {
+		...config,
+		baseUrl:
+			config.providerId === BUILT_IN_PROVIDER.OCA
+				? resolveOcaBaseUrl(config, defaults)
+				: (config.baseUrl ?? defaults.baseUrl),
+		modelId: config.modelId ?? defaults.modelId,
+		knownModels: config.knownModels ?? defaults.knownModels,
+		capabilities: config.capabilities ?? defaults.capabilities,
+	};
+}
+
+function createOpenAICompatibleHandler(config: ProviderConfig): ApiHandler {
+	if (config.providerId === BUILT_IN_PROVIDER.OPENAI_CODEX) {
+		return new CodexHandler(config);
+	}
+	if (config.providerId === BUILT_IN_PROVIDER.OCA) {
+		return createOcaHandler(config);
 	}
 	return new OpenAIBaseHandler(config);
 }
@@ -381,27 +408,9 @@ export function createHandler(config: ProviderConfig): ApiHandler {
 					);
 				}
 				const providerDefaults = OPENAI_COMPATIBLE_PROVIDERS[providerId];
-				const mergedConfig: ProviderConfig = {
-					...normalizedConfig,
-					baseUrl:
-						providerId === BUILT_IN_PROVIDER.OCA
-							? resolveOcaBaseUrl(normalizedConfig, providerDefaults)
-							: (normalizedConfig.baseUrl ?? providerDefaults.baseUrl),
-					modelId: normalizedConfig.modelId ?? providerDefaults.modelId,
-					knownModels:
-						normalizedConfig.knownModels ?? providerDefaults.knownModels,
-					capabilities:
-						normalizedConfig.capabilities ?? providerDefaults.capabilities,
-				};
-
-				if (providerId === BUILT_IN_PROVIDER.OPENAI_CODEX) {
-					return new CodexHandler(mergedConfig);
-				}
-				if (providerId === BUILT_IN_PROVIDER.OCA) {
-					return createOcaHandler(mergedConfig);
-				}
-				// Merge provider defaults into config
-				return new OpenAIBaseHandler(mergedConfig);
+				return createOpenAICompatibleHandler(
+					mergeProviderDefaults(normalizedConfig, providerDefaults),
+				);
 			}
 
 			// Fall back to OpenAI-compatible with custom base URL
@@ -470,25 +479,9 @@ export async function createHandlerAsync(
 			normalizedConfig,
 		);
 		if (providerDefaults) {
-			const mergedConfig: ProviderConfig = {
-				...normalizedConfig,
-				baseUrl:
-					providerId === BUILT_IN_PROVIDER.OCA
-						? resolveOcaBaseUrl(normalizedConfig, providerDefaults)
-						: (normalizedConfig.baseUrl ?? providerDefaults.baseUrl),
-				modelId: normalizedConfig.modelId ?? providerDefaults.modelId,
-				knownModels:
-					normalizedConfig.knownModels ?? providerDefaults.knownModels,
-				capabilities:
-					normalizedConfig.capabilities ?? providerDefaults.capabilities,
-			};
-			if (providerId === BUILT_IN_PROVIDER.OPENAI_CODEX) {
-				return new CodexHandler(mergedConfig);
-			}
-			if (providerId === BUILT_IN_PROVIDER.OCA) {
-				return createOcaHandler(mergedConfig);
-			}
-			return new OpenAIBaseHandler(mergedConfig);
+			return createOpenAICompatibleHandler(
+				mergeProviderDefaults(normalizedConfig, providerDefaults),
+			);
 		}
 	}
 

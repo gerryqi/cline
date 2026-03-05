@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -158,9 +158,9 @@ struct ProcessContext {
 #[serde(rename_all = "camelCase")]
 struct SessionHookEvent {
     ts: String,
-    hook_name: String,
+    hook_event_name: String,
     agent_id: Option<String>,
-    task_id: Option<String>,
+    conversation_id: Option<String>,
     parent_agent_id: Option<String>,
     iteration: Option<u64>,
     tool_name: Option<String>,
@@ -544,6 +544,12 @@ fn shared_session_artifact_path(session_id: &str, suffix: &str) -> Option<PathBu
 fn resolve_cli_entrypoint_path(context: &AppContext) -> Option<PathBuf> {
     let candidates = [
         PathBuf::from(&context.workspace_root)
+            .join("sdk-wip")
+            .join("apps")
+            .join("cli")
+            .join("src")
+            .join("index.ts"),
+        PathBuf::from(&context.workspace_root)
             .join("apps")
             .join("cli")
             .join("src")
@@ -559,6 +565,29 @@ fn resolve_cli_entrypoint_path(context: &AppContext) -> Option<PathBuf> {
             .join("src")
             .join("index.ts"),
         PathBuf::from(&context.workspace_root)
+            .join("cli")
+            .join("src")
+            .join("index.ts"),
+        PathBuf::from(&context.launch_cwd)
+            .join("..")
+            .join("..")
+            .join("cli")
+            .join("src")
+            .join("index.ts"),
+        PathBuf::from(&context.launch_cwd)
+            .join("..")
+            .join("..")
+            .join("..")
+            .join("apps")
+            .join("cli")
+            .join("src")
+            .join("index.ts"),
+        PathBuf::from(&context.launch_cwd)
+            .join("..")
+            .join("..")
+            .join("..")
+            .join("sdk-wip")
+            .join("apps")
             .join("cli")
             .join("src")
             .join("index.ts"),
@@ -592,6 +621,93 @@ fn default_rpc_address() -> String {
         .unwrap_or_else(|| "127.0.0.1:4317".to_string())
 }
 
+fn bun_binary_candidates() -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+
+    if let Ok(value) = std::env::var("BUN_BIN") {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            out.push(trimmed.to_string());
+        }
+    }
+
+    out.push("bun".to_string());
+
+    if let Ok(home) = std::env::var("HOME") {
+        out.push(
+            PathBuf::from(&home)
+                .join(".bun")
+                .join("bin")
+                .join("bun")
+                .to_string_lossy()
+                .to_string(),
+        );
+    }
+
+    out.push("/opt/homebrew/bin/bun".to_string());
+    out.push("/usr/local/bin/bun".to_string());
+
+    let mut deduped: Vec<String> = Vec::new();
+    for candidate in out {
+        if !deduped.iter().any(|item| item == &candidate) {
+            deduped.push(candidate);
+        }
+    }
+    deduped
+}
+
+fn spawn_bun_with_builder<F>(mut builder: F) -> Result<Child, String>
+where
+    F: FnMut(&mut Command),
+{
+    let mut last_not_found: Vec<String> = Vec::new();
+
+    for bun in bun_binary_candidates() {
+        let mut command = Command::new(&bun);
+        builder(&mut command);
+        match command.spawn() {
+            Ok(child) => return Ok(child),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                last_not_found.push(format!("{bun} ({error})"));
+            }
+            Err(error) => {
+                return Err(format!("failed to start bun command via '{bun}': {error}"));
+            }
+        }
+    }
+
+    Err(format!(
+        "failed to find a runnable bun binary. Tried: {}",
+        last_not_found.join(", ")
+    ))
+}
+
+fn run_bun_output_with_builder<F>(mut builder: F) -> Result<Output, String>
+where
+    F: FnMut(&mut Command),
+{
+    let mut last_not_found: Vec<String> = Vec::new();
+
+    for bun in bun_binary_candidates() {
+        let mut command = Command::new(&bun);
+        builder(&mut command);
+        match command.output() {
+            Ok(output) => return Ok(output),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                last_not_found.push(format!("{bun} ({error})"));
+            }
+            Err(error) => {
+                return Err(format!("failed to execute bun command via '{bun}': {error}"));
+            }
+        }
+    }
+
+    Err(format!(
+        "failed to find a runnable bun binary. Tried: {}",
+        last_not_found.join(", ")
+    ))
+}
+
 fn ensure_rpc_server_running(
     context: &AppContext,
     rpc_state: &Arc<RpcServerStore>,
@@ -620,19 +736,20 @@ fn ensure_rpc_server_running(
         ));
     };
     let cli_workdir = resolve_cli_workdir(&cli_entrypoint, context);
-    let child = Command::new("bun")
-        .current_dir(cli_workdir)
-        .arg("run")
-        .arg(cli_entrypoint.to_string_lossy().to_string())
-        .arg("rpc")
-        .arg("start")
-        .arg("--address")
-        .arg(rpc_state.address.clone())
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| format!("failed to start rpc server process: {e}"))?;
+    let child = spawn_bun_with_builder(|command| {
+        command
+            .current_dir(&cli_workdir)
+            .arg("run")
+            .arg(cli_entrypoint.to_string_lossy().to_string())
+            .arg("rpc")
+            .arg("start")
+            .arg("--address")
+            .arg(rpc_state.address.clone())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+    })
+    .map_err(|e| format!("failed to start rpc server process: {e}"))?;
 
     let mut guard = rpc_state
         .child
@@ -678,15 +795,16 @@ fn run_chat_turn_script(
     let stdin_body =
         serde_json::to_string(request).map_err(|e| format!("failed serializing chat turn request: {e}"))?;
 
-    let mut child = Command::new("bun")
-        .arg("run")
-        .arg(script_path.to_string_lossy().to_string())
-        .current_dir(&request.config.workspace_root)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("failed to start chat runner script: {e}"))?;
+    let mut child = spawn_bun_with_builder(|command| {
+        command
+            .arg("run")
+            .arg(script_path.to_string_lossy().to_string())
+            .current_dir(&request.config.workspace_root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+    })
+    .map_err(|e| format!("failed to start chat runner script: {e}"))?;
 
     if let Some(stdin) = child.stdin.as_mut() {
         stdin
@@ -915,44 +1033,42 @@ fn start_session(
         tool_approval_dir().unwrap_or_else(|| PathBuf::from(".").join(".cline").join("tool-approvals"));
     let _ = fs::create_dir_all(&approval_dir);
 
-    let mut command = Command::new("bun");
-    command
-        .current_dir(&request.workspace_root)
-        .args(args)
-        .stdin(if interactive { Stdio::piped() } else { Stdio::null() })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .env("NO_COLOR", "1")
-        .env("FORCE_COLOR", "0")
-        .env("CLINE_ENABLE_SUBPROCESS_HOOKS", "1")
-        .env("CLINE_RPC_ADDRESS", rpc_address)
-        .env("CLINE_SESSION_ID", id.clone())
-        .env("CLINE_TOOL_APPROVAL_MODE", "desktop")
-        .env("CLINE_TOOL_APPROVAL_SESSION_ID", id.clone())
-        .env("CLINE_TOOL_APPROVAL_DIR", approval_dir.to_string_lossy().to_string())
-        .env("CLINE_HOOKS_LOG_PATH", hook_log_path.to_string_lossy().to_string())
-        .env(
-            "CLINE_SESSION_DATA_DIR",
-            shared_session_data_dir()
-                .unwrap_or_else(|| PathBuf::from(".").join(".cline").join("data").join("sessions"))
-                .to_string_lossy()
-                .to_string(),
-        )
-        .env(
-            "CLINE_TEAM_DATA_DIR",
-            std::env::var("CLINE_TEAM_DATA_DIR").unwrap_or_else(|_| {
-                team_base_dir()
-                    .unwrap_or_else(|| PathBuf::from(".").join(".cline").join("data").join("teams"))
+    let mut child = spawn_bun_with_builder(|command| {
+        command
+            .current_dir(&request.workspace_root)
+            .args(args.clone())
+            .stdin(if interactive { Stdio::piped() } else { Stdio::null() })
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .env("NO_COLOR", "1")
+            .env("FORCE_COLOR", "0")
+            .env("CLINE_ENABLE_SUBPROCESS_HOOKS", "1")
+            .env("CLINE_RPC_ADDRESS", rpc_address.clone())
+            .env("CLINE_SESSION_ID", id.clone())
+            .env("CLINE_TOOL_APPROVAL_MODE", "desktop")
+            .env("CLINE_TOOL_APPROVAL_SESSION_ID", id.clone())
+            .env("CLINE_TOOL_APPROVAL_DIR", approval_dir.to_string_lossy().to_string())
+            .env("CLINE_HOOKS_LOG_PATH", hook_log_path.to_string_lossy().to_string())
+            .env(
+                "CLINE_SESSION_DATA_DIR",
+                shared_session_data_dir()
+                    .unwrap_or_else(|| PathBuf::from(".").join(".cline").join("data").join("sessions"))
                     .to_string_lossy()
-                    .to_string()
-            }),
-        )
-        .env("ANTHROPIC_API_KEY", &effective_api_key)
-        .env("OPENAI_API_KEY", &effective_api_key);
-
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("failed to start session process: {e}"))?;
+                    .to_string(),
+            )
+            .env(
+                "CLINE_TEAM_DATA_DIR",
+                std::env::var("CLINE_TEAM_DATA_DIR").unwrap_or_else(|_| {
+                    team_base_dir()
+                        .unwrap_or_else(|| PathBuf::from(".").join(".cline").join("data").join("teams"))
+                        .to_string_lossy()
+                        .to_string()
+                }),
+            )
+            .env("ANTHROPIC_API_KEY", &effective_api_key)
+            .env("OPENAI_API_KEY", &effective_api_key);
+    })
+    .map_err(|e| format!("failed to start session process: {e}"))?;
 
     let stdin = child.stdin.take();
     let stdout = child.stdout.take().ok_or("failed to capture stdout")?;
@@ -1120,6 +1236,44 @@ fn poll_sessions(app: AppHandle, state: State<'_, Arc<SessionStore>>) -> Result<
     Ok(ended.into_iter().map(|(session_id, _)| session_id).collect())
 }
 
+fn extract_prompt_from_messages_path(path: &str) -> Option<String> {
+    let raw = fs::read_to_string(path).ok()?;
+    let parsed = serde_json::from_str::<Value>(&raw).ok()?;
+    let messages = parsed
+        .get("messages")
+        .and_then(|v| v.as_array())
+        .or_else(|| parsed.as_array())?;
+
+    for message in messages {
+        let role = message
+            .get("role")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        if role != "user" {
+            continue;
+        }
+        let content = message.get("content");
+        if let Some(text) = content.and_then(|v| v.as_str()) {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+        if let Some(parts) = content.and_then(|v| v.as_array()) {
+            for part in parts {
+                let Some(text) = part.get("text").and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    return Some(trimmed.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 #[tauri::command]
 fn list_cli_sessions(context: State<'_, AppContext>, limit: Option<usize>) -> Result<Vec<CliDiscoveredSession>, String> {
     let Some(cli_entrypoint) = resolve_cli_entrypoint_path(&context) else {
@@ -1128,16 +1282,17 @@ fn list_cli_sessions(context: State<'_, AppContext>, limit: Option<usize>) -> Re
     let cli_workdir = resolve_cli_workdir(&cli_entrypoint, &context);
 
     let limit_value = limit.unwrap_or(300).max(1).to_string();
-    let output = Command::new("bun")
-        .current_dir(cli_workdir)
-        .arg("run")
-        .arg(cli_entrypoint)
-        .arg("sessions")
-        .arg("list")
-        .arg("--limit")
-        .arg(limit_value)
-        .output()
-        .map_err(|e| format!("failed to list cli sessions: {e}"))?;
+    let output = run_bun_output_with_builder(|command| {
+        command
+            .current_dir(&cli_workdir)
+            .arg("run")
+            .arg(cli_entrypoint.to_string_lossy().to_string())
+            .arg("sessions")
+            .arg("list")
+            .arg("--limit")
+            .arg(limit_value.clone());
+    })
+    .map_err(|e| format!("failed to list cli sessions: {e}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -1160,30 +1315,24 @@ fn list_cli_sessions(context: State<'_, AppContext>, limit: Option<usize>) -> Re
         if session_id.is_empty() {
             continue;
         }
-        let source = item
-            .get("source")
+        let prompt = item
+            .get("prompt")
             .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        if source != "cli" && source != "cli-subagent" {
-            continue;
-        }
-        let ended_at = item
-            .get("ended_at")
-            .and_then(|v| v.as_str())
-            .map(|v| v.to_string());
-        let status_raw = item
-            .get("status")
-            .and_then(|v| v.as_str())
-            .unwrap_or("running")
-            .to_string();
-        let status = if status_raw == "running" && ended_at.is_some() {
-            "completed".to_string()
-        } else {
-            status_raw
-        };
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .or_else(|| {
+                item.get("messages_path")
+                    .and_then(|v| v.as_str())
+                    .and_then(|path| extract_prompt_from_messages_path(path))
+            });
+
         out.push(CliDiscoveredSession {
             session_id,
-            status,
+            status: item
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("running")
+                .to_string(),
             provider: item
                 .get("provider")
                 .and_then(|v| v.as_str())
@@ -1231,16 +1380,16 @@ fn list_cli_sessions(context: State<'_, AppContext>, limit: Option<usize>) -> Re
                 .map(|v| v != 0)
                 .or_else(|| item.get("is_subagent").and_then(|v| v.as_bool()))
                 .unwrap_or(false),
-            prompt: item
-                .get("prompt")
-                .and_then(|v| v.as_str())
-                .map(|v| v.to_string()),
+            prompt,
             started_at: item
                 .get("started_at")
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string(),
-            ended_at,
+            ended_at: item
+                .get("ended_at")
+                .and_then(|v| v.as_str())
+                .map(|v| v.to_string()),
             interactive: item
                 .get("interactive")
                 .and_then(|v| v.as_i64())
@@ -1260,16 +1409,17 @@ fn delete_cli_session(context: State<'_, AppContext>, session_id: String) -> Res
     };
     let cli_workdir = resolve_cli_workdir(&cli_entrypoint, &context);
 
-    let output = Command::new("bun")
-        .current_dir(cli_workdir)
-        .arg("run")
-        .arg(cli_entrypoint)
-        .arg("sessions")
-        .arg("delete")
-        .arg("--session-id")
-        .arg(&session_id)
-        .output()
-        .map_err(|e| format!("failed to delete cli session: {e}"))?;
+    let output = run_bun_output_with_builder(|command| {
+        command
+            .current_dir(&cli_workdir)
+            .arg("run")
+            .arg(cli_entrypoint.to_string_lossy().to_string())
+            .arg("sessions")
+            .arg("delete")
+            .arg("--session-id")
+            .arg(&session_id);
+    })
+    .map_err(|e| format!("failed to delete cli session: {e}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -1373,12 +1523,12 @@ fn read_session_hooks(session_id: String, limit: Option<usize>) -> Result<Vec<Se
 
         out.push(SessionHookEvent {
             ts,
-            hook_name,
+            hook_event_name: hook_name,
             agent_id: value
                 .get("agent_id")
                 .and_then(|v| v.as_str())
                 .map(|v| v.to_string()),
-            task_id: value
+            conversation_id: value
                 .get("taskId")
                 .or_else(|| value.get("conversation_id"))
                 .and_then(|v| v.as_str())

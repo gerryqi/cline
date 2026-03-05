@@ -1,4 +1,9 @@
 import { spawn } from "node:child_process";
+import type {
+	HookSessionContext,
+	HookSessionContextProvider,
+} from "@cline/shared";
+import { resolveHookSessionContext } from "@cline/shared";
 import { z } from "zod";
 import type {
 	AgentHookControl,
@@ -141,6 +146,7 @@ export interface HookEventPayloadBase {
 	hookName: HookEventName;
 	timestamp: string;
 	taskId: string;
+	sessionContext?: HookSessionContext;
 	workspaceRoots: string[];
 	userId: string;
 	agent_id: string;
@@ -221,6 +227,12 @@ export const HookEventPayloadSchema = z
 		hookName: HookEventNameSchema,
 		timestamp: z.string(),
 		taskId: z.string(),
+		sessionContext: z
+			.object({
+				rootSessionId: z.string().optional(),
+				hookLogPath: z.string().optional(),
+			})
+			.optional(),
 		workspaceRoots: z.array(z.string()),
 		userId: z.string(),
 		agent_id: z.string(),
@@ -403,6 +415,11 @@ export interface SubprocessHooksOptions {
 		result?: RunHookResult;
 		detached: boolean;
 	}) => void;
+	/**
+	 * Optional context attached to every hook payload.
+	 * Use this to scope hook events to a root runtime session without global env state.
+	 */
+	sessionContext?: HookSessionContextProvider;
 }
 
 export interface SubprocessHookControl {
@@ -487,6 +504,7 @@ function basePayload(
 		hookName,
 		timestamp: new Date().toISOString(),
 		taskId: ctx.conversationId,
+		sessionContext: resolveHookSessionContext(options.sessionContext),
 		workspaceRoots: workspaceRoot ? [workspaceRoot] : [],
 		userId,
 		agent_id: ctx.agentId,

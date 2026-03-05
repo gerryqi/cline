@@ -2,7 +2,7 @@ import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ToolApprovalRequest, ToolApprovalResult } from "@cline/agents";
 
-type DesktopToolApprovalOptions = {
+export type DesktopToolApprovalOptions = {
 	approvalDir?: string;
 	sessionId?: string;
 	timeoutMs?: number;
@@ -22,12 +22,8 @@ export async function requestDesktopToolApproval(
 	request: ToolApprovalRequest,
 	options: DesktopToolApprovalOptions = {},
 ): Promise<ToolApprovalResult> {
-	const approvalDir =
-		options.approvalDir ?? process.env.CLINE_TOOL_APPROVAL_DIR?.trim();
-	const sessionId =
-		options.sessionId ??
-		process.env.CLINE_TOOL_APPROVAL_SESSION_ID?.trim() ??
-		process.env.CLINE_SESSION_ID?.trim();
+	const approvalDir = options.approvalDir?.trim();
+	const sessionId = options.sessionId?.trim();
 	if (!approvalDir || !sessionId) {
 		return {
 			approved: false,

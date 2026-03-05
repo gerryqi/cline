@@ -8,6 +8,7 @@
 - Runs a Next.js frontend inside a Tauri webview.
 - Starts agent tasks by spawning the CLI (`packages/cli/src/index.ts`) per card.
 - Auto-discovers sessions started directly from CLI (outside Desktop).
+- Uses persisted prompt data (and falls back to the first user message) for discovered session card titles.
 - Tracks live output via streamed stdout/stderr events.
 - Tracks progress via lifecycle hook events (`tool_call`, `tool_result`, `agent_end`, `session_shutdown`).
 - Persists shared session registry in SQLite with optimistic status locking.

@@ -4,6 +4,7 @@ package cline.rpc.v1;
 
 service ClineGateway {
   rpc Health(HealthRequest) returns (HealthResponse);
+  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
   rpc RegisterClient(RegisterClientRequest) returns (RegisterClientResponse);
   rpc EnsureSession(EnsureSessionRequest) returns (EnsureSessionResponse);
   rpc UpsertSession(UpsertSessionRequest) returns (UpsertSessionResponse);
@@ -28,6 +29,12 @@ message HealthResponse {
   string server_id = 1;
   string address = 2;
   bool running = 3;
+}
+
+message ShutdownRequest {}
+
+message ShutdownResponse {
+  bool accepted = 1;
 }
 
 message RegisterClientRequest {

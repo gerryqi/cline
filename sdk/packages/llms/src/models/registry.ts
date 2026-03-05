@@ -77,6 +77,9 @@ function registerBuiltInProviderLoaders(): void {
 	PROVIDER_LOADERS.set("openai", {
 		load: async () => (await import("./providers/openai.js")).OPENAI_PROVIDER,
 	});
+	PROVIDER_LOADERS.set("openai-native", {
+		load: async () => (await import("./providers/openai.js")).OPENAI_PROVIDER,
+	});
 	PROVIDER_LOADERS.set("openai-codex", {
 		load: async () =>
 			(await import("./providers/openai-codex.js")).OPENAI_CODEX_PROVIDER,
@@ -90,6 +93,9 @@ function registerBuiltInProviderLoaders(): void {
 	PROVIDER_LOADERS.set("deepseek", {
 		load: async () =>
 			(await import("./providers/deepseek.js")).DEEPSEEK_PROVIDER,
+	});
+	PROVIDER_LOADERS.set("doubao", {
+		load: async () => (await import("./providers/doubao.js")).DOUBAO_PROVIDER,
 	});
 	PROVIDER_LOADERS.set("xai", {
 		load: async () => (await import("./providers/xai.js")).XAI_PROVIDER,
@@ -164,6 +170,31 @@ function registerBuiltInProviderLoaders(): void {
 		load: async () =>
 			(await import("./providers/huawei-cloud-maas.js"))
 				.HUAWEI_CLOUD_MAAS_PROVIDER,
+	});
+	PROVIDER_LOADERS.set("minimax", {
+		load: async () => (await import("./providers/minimax.js")).MINIMAX_PROVIDER,
+	});
+	PROVIDER_LOADERS.set("moonshot", {
+		load: async () =>
+			(await import("./providers/moonshot.js")).MOONSHOT_PROVIDER,
+	});
+	PROVIDER_LOADERS.set("openrouter", {
+		load: async () =>
+			(await import("./providers/openrouter.js")).OPENROUTER_PROVIDER,
+	});
+	PROVIDER_LOADERS.set("qwen", {
+		load: async () => (await import("./providers/qwen.js")).QWEN_PROVIDER,
+	});
+	PROVIDER_LOADERS.set("qwen-code", {
+		load: async () =>
+			(await import("./providers/qwen-code.js")).QWEN_CODE_PROVIDER,
+	});
+	PROVIDER_LOADERS.set("sapaicore", {
+		load: async () =>
+			(await import("./providers/sapaicore.js")).SAP_AI_CORE_PROVIDER,
+	});
+	PROVIDER_LOADERS.set("zai", {
+		load: async () => (await import("./providers/zai.js")).ZAI_PROVIDER,
 	});
 }
 

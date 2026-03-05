@@ -111,7 +111,25 @@ export type {
 	OcaOAuthProviderOptions,
 	OcaTokenResolution,
 } from "../auth/types";
-
+export {
+	ALL_DEFAULT_TOOL_NAMES,
+	type AskQuestionExecutor,
+	type CreateBuiltinToolsOptions,
+	type CreateDefaultToolsOptions,
+	createBuiltinTools,
+	createDefaultExecutors,
+	createDefaultTools,
+	createDefaultToolsWithPreset,
+	createToolPoliciesWithPreset,
+	type DefaultExecutorsOptions,
+	type DefaultToolName,
+	DefaultToolNames,
+	type DefaultToolsConfig,
+	type ToolExecutors,
+	type ToolPolicyPresetName,
+	type ToolPresetName,
+	ToolPresets,
+} from "../default-tools";
 export type {
 	FastFileIndexOptions,
 	MentionEnricherOptions,
@@ -147,7 +165,6 @@ export {
 	resolveDefaultMcpSettingsPath,
 	resolveMcpServerRegistrations,
 } from "../mcp";
-
 export {
 	formatRulesForSystemPrompt,
 	isRuleEnabled,
@@ -164,7 +181,10 @@ export type {
 	RuntimeBuilderInput,
 	SessionRuntime,
 } from "../runtime/session-runtime";
-export { requestDesktopToolApproval } from "../runtime/tool-approval";
+export {
+	type DesktopToolApprovalOptions,
+	requestDesktopToolApproval,
+} from "../runtime/tool-approval";
 export type { AvailableWorkflow } from "../runtime/workflows";
 export {
 	listAvailableWorkflowsFromWatcher,
@@ -179,6 +199,11 @@ export {
 	sanitizeSessionToken,
 } from "../session/session-graph";
 export type {
+	CreateSessionHostOptions,
+	SessionHost,
+} from "../session/session-host";
+export { createSessionHost } from "../session/session-host";
+export type {
 	SendSessionInput,
 	SessionManager,
 	StartSessionInput,
@@ -190,6 +215,11 @@ export type {
 	RootSessionArtifacts,
 } from "../session/session-service";
 export { CoreSessionService } from "../session/session-service";
+export {
+	createSqliteRpcSessionBackend,
+	SqliteRpcSessionBackend,
+	type SqliteRpcSessionBackendOptions,
+} from "../session/sqlite-rpc-session-backend";
 export type {
 	WorkspaceManager,
 	WorkspaceManagerEvent,
@@ -204,7 +234,6 @@ export {
 	WorkspaceInfoSchema,
 	WorkspaceManifestSchema,
 } from "../session/workspace-manifest";
-
 export {
 	resolveClineDataDir,
 	resolveProviderSettingsPath,
@@ -217,9 +246,8 @@ export {
 } from "../storage/provider-settings-legacy-migration";
 export { ProviderSettingsManager } from "../storage/provider-settings-manager";
 export { SqliteSessionStore } from "../storage/sqlite-session-store";
-
 export type { SessionStatus } from "../types/common";
-export { SessionSource } from "../types/common";
+export { SESSION_STATUSES, SessionSource } from "../types/common";
 export type {
 	CoreAgentMode,
 	CoreModelConfig,

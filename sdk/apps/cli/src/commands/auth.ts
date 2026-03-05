@@ -115,6 +115,11 @@ export function getPersistedProviderApiKey(
 	providerId: string,
 	settings?: providers.ProviderSettings,
 ): string | undefined {
+	// OAuth access token takes priority (most recent credential)
+	const accessToken = settings?.auth?.accessToken?.trim();
+	if (accessToken) {
+		return toProviderApiKey(providerId, { access: accessToken });
+	}
 	const shorthandKey = settings?.apiKey?.trim();
 	if (shorthandKey) {
 		return shorthandKey;
@@ -123,11 +128,7 @@ export function getPersistedProviderApiKey(
 	if (authKey) {
 		return authKey;
 	}
-	const accessToken = settings?.auth?.accessToken?.trim();
-	if (!accessToken) {
-		return undefined;
-	}
-	return toProviderApiKey(providerId, { access: accessToken });
+	return undefined;
 }
 
 async function askForInputInTerminal(question: string): Promise<string> {
@@ -211,21 +212,21 @@ export function saveOAuthProviderSettings(
 	existing: providers.ProviderSettings | undefined,
 	credentials: OAuthCredentials,
 ): providers.ProviderSettings {
-	const apiKey = toProviderApiKey(providerId, credentials);
 	const merged: providers.ProviderSettings = {
 		...(existing ?? {
 			provider: providerId as providers.ProviderSettings["provider"],
 		}),
 		provider: providerId as providers.ProviderSettings["provider"],
-		apiKey,
 		auth: {
 			...(existing?.auth ?? {}),
-			accessToken: credentials.access,
+			accessToken: toProviderApiKey(providerId, credentials),
 			refreshToken: credentials.refresh,
 			accountId: credentials.accountId,
 		},
 	};
-	providerSettingsManager.saveProviderSettings(merged);
+	providerSettingsManager.saveProviderSettings(merged, {
+		tokenSource: "oauth",
+	});
 	return merged;
 }
 

@@ -4,7 +4,7 @@ import type {
 	CustomProviderConfig,
 	ProviderSelectionConfig,
 } from "@cline/llms";
-import { providers as llmProviders, models } from "@cline/llms";
+import { models } from "@cline/llms";
 import {
 	AlertCircle,
 	Braces,
@@ -126,9 +126,17 @@ type RuntimeProviderCapability = NonNullable<
 >[number];
 
 const BUILT_IN_PROVIDER_LABELS: Record<string, string> = {
-	openai: "OpenAI",
-	openrouter: "OpenRouter",
+	anthropic: "Anthropic",
+	"claude-code": "Claude Code",
 	cline: "Cline",
+	openai: "OpenAI",
+	"openai-native": "OpenAI",
+	"openai-codex": "OpenAI Codex",
+	opencode: "OpenCode",
+	bedrock: "AWS Bedrock",
+	gemini: "Google Gemini",
+	vertex: "Google Vertex AI",
+	openrouter: "OpenRouter",
 	deepseek: "DeepSeek",
 	xai: "xAI",
 	together: "Together",
@@ -147,7 +155,13 @@ const BUILT_IN_PROVIDER_LABELS: Record<string, string> = {
 	nousResearch: "Nous Research",
 	"huawei-cloud-maas": "Huawei Cloud MaaS",
 	ollama: "Ollama",
-	bedrock: "AWS Bedrock",
+	doubao: "Doubao",
+	moonshot: "Moonshot",
+	qwen: "Qwen",
+	"qwen-code": "Qwen Code",
+	sapaicore: "SAP AI Core",
+	minimax: "MiniMax",
+	zai: "Z.AI",
 };
 
 function titleCaseProviderId(id: string): string {
@@ -194,40 +208,57 @@ function presetFromCollection(
 	};
 }
 
+const CORE_PROVIDER_IDS = [
+	"anthropic",
+	"bedrock",
+	"gemini",
+	"vertex",
+	"cline",
+	"claude-code",
+] as const;
+
 const BUILT_IN_PROVIDERS: BuiltInProviderPreset[] = [
-	presetFromCollection(
-		"anthropic",
-		"Anthropic",
-		models.ANTHROPIC_PROVIDER.provider,
-		models.ANTHROPIC_MODELS,
-	),
-	presetFromCollection(
-		"bedrock",
-		"AWS Bedrock",
-		models.BEDROCK_PROVIDER.provider,
-		models.BEDROCK_MODELS,
-	),
-	presetFromCollection(
-		"gemini",
-		"Google Gemini",
-		models.GEMINI_PROVIDER.provider,
-		models.GEMINI_MODELS,
-	),
-	...Object.entries(llmProviders.OPENAI_COMPATIBLE_PROVIDERS).map(
-		([id, defaults]) => ({
+	...CORE_PROVIDER_IDS.map((id) => {
+		const label = BUILT_IN_PROVIDER_LABELS[id] ?? titleCaseProviderId(id);
+
+		const collectionById: Record<
+			string,
+			{
+				provider: {
+					defaultModelId: string;
+					baseUrl?: string;
+					capabilities?: CatalogProviderCapability[];
+				};
+				models: Record<string, unknown>;
+			}
+		> = {
+			anthropic: models.ANTHROPIC_PROVIDER,
+			bedrock: models.BEDROCK_PROVIDER,
+			gemini: models.GEMINI_PROVIDER,
+			vertex: models.VERTEX_PROVIDER,
+			cline: models.CLINE_PROVIDER,
+			"claude-code": models.CLAUDE_CODE_PROVIDER,
+		};
+
+		const collection = collectionById[id];
+		if (collection) {
+			return presetFromCollection(
+				id,
+				label,
+				collection.provider,
+				collection.models,
+			);
+		}
+
+		return {
 			id,
-			label: BUILT_IN_PROVIDER_LABELS[id] ?? titleCaseProviderId(id),
-			models: sortModelList(
-				Object.keys(defaults.knownModels ?? {}),
-				defaults.modelId,
-			),
-			defaultModel: defaults.modelId,
-			baseUrl: defaults.baseUrl ?? "",
-			capabilities: (defaults.capabilities ?? [])
-				.map(mapProviderCapabilityToPlayground)
-				.filter((capability): capability is string => Boolean(capability)),
-		}),
-	),
+			label,
+			models: [],
+			defaultModel: "",
+			baseUrl: "",
+			capabilities: [],
+		};
+	}),
 	{
 		id: "openai-compat",
 		label: "OpenAI-Compatible (Custom)",

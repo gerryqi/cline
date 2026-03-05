@@ -14,7 +14,7 @@ import type {
 import type { UpdateSessionRequest } from "./proto/generated/cline/rpc/v1/UpdateSessionRequest.js";
 import type { UpdateSessionResponse__Output } from "./proto/generated/cline/rpc/v1/UpdateSessionResponse.js";
 import type { UpsertSessionRequest } from "./proto/generated/cline/rpc/v1/UpsertSessionRequest.js";
-import type { RpcSessionRow } from "./session-store.js";
+import type { RpcSessionRow, RpcSessionUpdateInput } from "./types.js";
 
 function toMessage(row: RpcSessionRow): SessionRecord {
 	return {
@@ -84,20 +84,6 @@ export interface RpcSessionClientOptions {
 	address: string;
 }
 
-export interface RpcSessionUpdateInput {
-	sessionId: string;
-	status?: string;
-	endedAt?: string;
-	exitCode?: number | null;
-	prompt?: string | null;
-	parentSessionId?: string | null;
-	parentAgentId?: string | null;
-	agentId?: string | null;
-	conversationId?: string | null;
-	expectedStatusLock?: number;
-	setRunning?: boolean;
-}
-
 export class RpcSessionClient {
 	private readonly client: ClineGatewayClient;
 
@@ -149,7 +135,7 @@ export class RpcSessionClient {
 		const request: UpdateSessionRequest = {
 			sessionId: input.sessionId,
 			status: input.status,
-			endedAt: input.endedAt,
+			endedAt: input.endedAt ?? undefined,
 			setRunning: input.setRunning,
 		};
 		if (input.exitCode !== undefined) {

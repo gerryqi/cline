@@ -16,9 +16,35 @@ The default export map resolves to a browser-safe bundle under browser/react-ser
 
 Vertex Claude routing in the Node runtime uses `@ai-sdk/google-vertex/anthropic`.
 
+## Public API Boundaries
+
+`@cline/llms` now exposes a curated `providers` namespace via:
+
+- Node/default: `src/providers/public.ts`
+- Browser: `src/providers/public.browser.ts`
+
+Use `providers` for runtime handler creation + shared contracts:
+
+- handler creation: `createHandler`, `createHandlerAsync`
+- provider resolution: `resolveProviderConfig`, `OPENAI_COMPATIBLE_PROVIDERS`
+- shared contracts/schemas: `ProviderConfig`, `ProviderSettings`, `ProviderSettingsSchema`, `Message`, `ApiStreamChunk`
+
+Internal provider implementation modules (`handlers/*`, `transform/*`, `utils/*`) remain internal and are not part of the top-level package contract.
+
+## Catalog and Provider Defaults
+
+OpenAI-compatible provider discovery is centralized in `src/providers/shared/openai-compatible.ts` and reused by:
+
+- `src/providers/handlers/providers.ts` (runtime defaults + live/private model merge)
+- `src/catalog.ts` (catalog view with known models)
+- `scripts/models/generate-models-dev.ts` and live-catalog loading via shared models.dev key maps from `@cline/shared`
+
+This keeps provider default derivation and protocol filtering in one place.
+
 ## Provider Runtime Notes
 
 - Provider IDs and alias normalization (for example, `openai` -> `openai-native`) are centralized in `src/providers/types/provider-ids.ts` and reused across provider auth, handler factory routing, and app call sites.
+- The model registry lazy-loader (`src/models/registry.ts`) includes `openai-native` (plus `openai` alias), `openrouter`, `zai`, `doubao`, `moonshot`, `qwen`, `qwen-code`, `sapaicore`, and `minimax` as built-in provider loaders.
 - `openai-codex`, `claude-code`, `opencode`, and Vertex Claude routes share a common AI SDK runtime bridge (`handlers/ai-sdk-community.ts`) for message mapping and stream normalization.
 - `openai-codex`, `claude-code`, and `opencode` are consolidated in `handlers/community-sdk.ts` and share a common SDK-backed handler base (`handlers/ai-sdk-provider-base.ts`) for provider loading, model resolution, and stream wiring.
 - Tests for Claude Code and OpenCode community handlers are consolidated in `handlers/community-sdk.test.ts`.

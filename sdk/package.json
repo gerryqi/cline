@@ -11,7 +11,7 @@
 		"build:apps": "bun build:models && bun -F './apps/**' build",
 		"build:models": "bun -F @cline/llms generate:models && bun format --write",
 		"dev": "bun run build && bun dev:code",
-		"dev:cli": "bun -F @cline/cli dev",
+		"dev:cli": "bun --cwd apps/cli ./src/index.ts",
 		"dev:code": "bun -F @cline/code dev",
 		"dev:desktop": "bun -F @cline/desktop dev",
 		"clean": "bun --parallel -F '*' clean",

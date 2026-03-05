@@ -1,5 +1,32 @@
-export type { FastFileIndexOptions } from "./fs/file-indexer";
-export { getFileIndex, prewarmFileIndex } from "./fs/file-indexer";
+export { MODELS_DEV_PROVIDER_KEY_MAP } from "./llms/model-id";
+export type {
+	JsonSchema,
+	Tool,
+	ToolApprovalRequest,
+	ToolApprovalResult,
+	ToolCallRecord,
+	ToolContext,
+	ToolPolicy,
+} from "./llms/tools";
+export { ToolCallRecordSchema, ToolContextSchema } from "./llms/tools";
+export type { BasicLogger } from "./logging/logger";
+export { parseJsonStream, safeJsonStringify } from "./parse/json";
+export { validateWithZod, zodToJsonSchema } from "./parse/zod";
+export {
+	formatFileContentBlock,
+	formatUserInputBlock,
+	normalizeUserInput,
+	xmlTagsRemoval,
+} from "./prompt/format";
+export type {
+	HookSessionContext,
+	HookSessionContextProvider,
+} from "./session/hook-context";
+export {
+	resolveHookLogPath,
+	resolveHookSessionContext,
+	resolveRootSessionId,
+} from "./session/hook-context";
 export {
 	AGENT_CONFIG_DIRECTORY_NAME,
 	CLINE_MCP_SETTINGS_FILE_NAME,
@@ -22,21 +49,7 @@ export {
 	resolveTeamDataDir,
 	resolveWorkflowsConfigSearchPaths,
 	SKILLS_CONFIG_DIRECTORY_NAME,
+	setHomeDir,
+	setHomeDirIfUnset,
 	WORKFLOWS_CONFIG_DIRECTORY_NAME,
-} from "./paths";
-export { formatFileContentBlock } from "./prompt/file-content";
-export {
-	SESSION_STATUSES,
-	SessionSource,
-	type SessionStatus,
-} from "./session/common";
-export type { SqliteDb, SqliteStatement } from "./session/sqlite-session-db";
-export {
-	asBool,
-	asOptionalString,
-	asString,
-	ensureSessionSchema,
-	loadSqliteDb,
-	nowIso,
-	toBoolInt,
-} from "./session/sqlite-session-db";
+} from "./storage/paths";

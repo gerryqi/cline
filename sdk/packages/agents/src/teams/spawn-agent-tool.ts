@@ -3,18 +3,21 @@
  */
 
 import type { providers as LlmsProviders } from "@cline/llms";
+import type {
+	Tool,
+	ToolApprovalRequest,
+	ToolApprovalResult,
+	ToolContext,
+	ToolPolicy,
+} from "@cline/shared";
 import { Agent } from "../agent.js";
 import { createTool } from "../tools/create.js";
 import type {
 	AgentEvent,
 	AgentFinishReason,
 	AgentHooks,
+	BasicLogger,
 	HookErrorMode,
-	Tool,
-	ToolApprovalRequest,
-	ToolApprovalResult,
-	ToolContext,
-	ToolPolicy,
 } from "../types.js";
 
 export interface SpawnAgentInput {
@@ -91,6 +94,10 @@ export interface SpawnAgentToolConfig {
 	requestToolApproval?: (
 		request: ToolApprovalRequest,
 	) => Promise<ToolApprovalResult> | ToolApprovalResult;
+	/**
+	 * Optional logger forwarded to spawned sub-agent runs.
+	 */
+	logger?: BasicLogger;
 }
 
 /**
@@ -144,6 +151,7 @@ export function createSpawnAgentTool(
 				hookErrorMode: config.hookErrorMode,
 				toolPolicies: config.toolPolicies,
 				requestToolApproval: config.requestToolApproval,
+				logger: config.logger,
 			});
 			const subAgentId = subAgent.getAgentId();
 			const conversationId = subAgent.getConversationId();

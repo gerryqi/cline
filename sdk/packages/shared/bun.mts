@@ -30,7 +30,7 @@ const runBuild = async (
 };
 
 await runBuild("node", {
-	entrypoints: ["./src/index.ts"],
+	entrypoints: ["./src/index.ts", "./src/db/index.ts"],
 	outdir: "./dist",
 	target: "node",
 	minify: true,

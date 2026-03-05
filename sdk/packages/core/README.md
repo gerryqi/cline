@@ -7,6 +7,23 @@ Package-level docs are centralized:
 
 `@cline/core` is the stateful orchestration layer (runtime composition, sessions, storage, RPC session adapter).
 
+## RPC Session Backend
+
+`@cline/core/server` provides the SQLite implementation for the RPC session persistence contract:
+
+- `SqliteRpcSessionBackend`
+- `createSqliteRpcSessionBackend(options?)`
+
+Use this backend when starting `@cline/rpc` servers so RPC remains transport-only while session persistence stays owned by `@cline/core`.
+
+## Default Runtime Tools
+
+`@cline/core` now owns default runtime tool construction and Node executors.
+
+- Use `createBuiltinTools(...)`, `createDefaultTools(...)`, and `createDefaultExecutors(...)` from `@cline/core` / `@cline/core/server`.
+- `DefaultRuntimeBuilder` injects these tools at runtime.
+- `@cline/agents` remains browser-safe and only provides the standalone `ask_question` helper tool.
+
 ## Default Session Manager
 
 `@cline/core/server` now exposes `DefaultSessionManager`, a concrete runtime facade that owns:
@@ -18,6 +35,28 @@ Package-level docs are centralized:
 - session status transitions and event fanout via `CoreSessionEvent`
 
 This is the primary API for host clients that should only consume runtime events and outputs without manually creating agents or persisting messages.
+
+## Session Host Factory
+
+`@cline/core/server` also exposes `createSessionHost(options?)`, a higher-level host entrypoint that builds a ready-to-use session manager with backend resolution:
+
+- supports `backendMode: "auto" | "rpc" | "local"`
+- auto-detects and can auto-start RPC in `"auto"` mode
+- falls back to local SQLite session storage when RPC is unavailable
+- accepts runtime defaults (`defaultToolExecutors`, `toolPolicies`, `requestToolApproval`)
+- accepts `sessionService` to force a specific backend instance
+
+This is intended to be the portable client integration API for CLI/desktop/editor hosts.
+
+## Session Context Propagation
+
+`@cline/core` runtime/session flows now consume explicit hook payload session context (`sessionContext.rootSessionId`) for subagent/session linkage, instead of relying on process-global `CLINE_SESSION_ID` mutation in `DefaultSessionManager`.
+
+## Runtime Logger Forwarding
+
+`CoreSessionConfig` now supports an optional `logger`. `DefaultRuntimeBuilder` forwards
+this logger through the built runtime, and `DefaultSessionManager` passes it into root
+agents and spawned sub-agents, so host clients can capture agent-loop trace logs in one place.
 
 ## Team State Persistence Boundary
 
@@ -66,6 +105,7 @@ Legacy `transportType: "http"` is normalized to `transport.type: "streamableHttp
 - `requestDesktopToolApproval(request, options?)`
 - Writes `*.request.*.json` records and polls for matching `*.decision.*.json` responses
 - Used by CLI and desktop app runner scripts to avoid duplicated approval protocol logic
+- `options.approvalDir` and `options.sessionId` are now explicit inputs (no env fallback in core runtime helper)
 
 ## Type Validation Notes
 

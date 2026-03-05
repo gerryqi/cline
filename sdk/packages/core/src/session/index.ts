@@ -6,6 +6,8 @@ export {
 	makeTeamTaskSubSessionId,
 	sanitizeSessionToken,
 } from "./session-graph";
+export type { CreateSessionHostOptions, SessionHost } from "./session-host";
+export { createSessionHost } from "./session-host";
 export type {
 	SendSessionInput,
 	SessionManager,

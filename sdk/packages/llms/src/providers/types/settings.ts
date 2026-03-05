@@ -276,6 +276,7 @@ export const ProviderSettingsSchema = z.object({
 				"tools",
 				"vision",
 				"computer-use",
+				"oauth",
 			]),
 		)
 		.optional(),
@@ -359,9 +360,9 @@ export function toProviderConfig(settings: ProviderSettings): ProviderConfig {
 	// Get provider defaults if available
 	const providerDefaults = OPENAI_COMPATIBLE_PROVIDERS[providerId];
 
-	// Resolve API key (shorthand takes precedence, then auth.apiKey, then OAuth access token)
+	// Resolve API key: OAuth access token wins (most recent), then shorthand apiKey, then auth.apiKey
 	const apiKey =
-		settings.apiKey ?? settings.auth?.apiKey ?? settings.auth?.accessToken;
+		settings.auth?.accessToken ?? settings.apiKey ?? settings.auth?.apiKey;
 	const resolvedBaseUrl =
 		settings.baseUrl ??
 		(providerId === "oca"

@@ -34,6 +34,12 @@ type AgentChunkEvent = {
 	ts: number;
 };
 
+type CoreLogChunk = {
+	level?: string;
+	message?: string;
+	metadata?: unknown;
+};
+
 type ToolCallStartEvent = {
 	toolCallId?: string;
 	toolName?: string;
@@ -396,7 +402,8 @@ export function useChatSession() {
 			if (
 				payload.stream !== "chat_text" &&
 				payload.stream !== "chat_tool_call_start" &&
-				payload.stream !== "chat_tool_call_end"
+				payload.stream !== "chat_tool_call_end" &&
+				payload.stream !== "chat_core_log"
 			) {
 				return;
 			}
@@ -404,13 +411,49 @@ export function useChatSession() {
 			if (!listeningSessionId || payload.sessionId !== listeningSessionId) {
 				return;
 			}
-			const listeningAssistantId = activeAssistantMessageIdRef.current;
-			if (!listeningAssistantId) {
-				return;
-			}
+			let listeningAssistantId = activeAssistantMessageIdRef.current;
 			if (payload.stream === "chat_text") {
+				if (!listeningAssistantId) {
+					const assistantId = makeId("assistant");
+					listeningAssistantId = assistantId;
+					activeAssistantMessageIdRef.current = assistantId;
+					addMessage({
+						id: assistantId,
+						sessionId: listeningSessionId,
+						role: "assistant",
+						content: "",
+						createdAt: payload.ts || Date.now(),
+					});
+				}
 				appendMessageContent(listeningAssistantId, payload.chunk);
 				setRawTranscript((prev) => `${prev}${payload.chunk}`);
+				return;
+			}
+
+			if (payload.stream === "chat_core_log") {
+				let parsed: CoreLogChunk | undefined;
+				try {
+					parsed = JSON.parse(payload.chunk) as CoreLogChunk;
+				} catch {
+					console.info("[core]", payload.chunk);
+					return;
+				}
+				const level = parsed.level?.trim().toLowerCase() || "info";
+				const message = parsed.message?.trim() || payload.chunk;
+				const metadata = parsed.metadata;
+				if (level === "error") {
+					console.error("[core]", message, metadata);
+					return;
+				}
+				if (level === "warn") {
+					console.warn("[core]", message, metadata);
+					return;
+				}
+				if (level === "debug") {
+					console.debug("[core]", message, metadata);
+					return;
+				}
+				console.info("[core]", message, metadata);
 				return;
 			}
 

@@ -1,8 +1,9 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createBuiltinTools, type Tool } from "@cline/agents";
+import type { Tool } from "@cline/agents";
 import { describe, expect, it } from "vitest";
+import { createBuiltinTools } from "../default-tools";
 import { DefaultRuntimeBuilder } from "./runtime-builder";
 
 type LegacyConfig = {

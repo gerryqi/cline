@@ -10,13 +10,9 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
-		"./node": {
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js"
-		},
-		"./browser": {
-			"types": "./dist/index.browser.d.ts",
-			"import": "./dist/index.browser.js"
+		"./db": {
+			"types": "./dist/db/index.d.ts",
+			"import": "./dist/db/index.js"
 		}
 	},
 	"files": [
@@ -34,6 +30,8 @@
 	},
 	"private": true,
 	"dependencies": {
-		"jsonrepair": "^3.13.2"
+		"better-sqlite3": "^11.10.0",
+		"jsonrepair": "^3.13.2",
+		"zod": "^4.3.6"
 	}
 }

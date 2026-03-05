@@ -14,7 +14,7 @@ import {
 	type SkillConfig,
 	type WorkflowConfig,
 } from "@cline/core/server";
-import { listCliSessions } from "../utils/session";
+import { listSessions } from "../utils/session";
 import type { CliOutputMode } from "../utils/types";
 
 type ListIo = {
@@ -387,7 +387,7 @@ export async function runListCommand(input: {
 }
 
 export async function runHistoryListCommand(limit: number): Promise<void> {
-	const rows = (await listCliSessions(limit)) as HistoryListRow[] | undefined;
+	const rows = (await listSessions(limit)) as HistoryListRow[] | undefined;
 	const lines = (rows ?? []).map((row) => formatHistoryListLine(row));
 	if (lines.length > 0) {
 		process.stdout.write(`${lines.join("\n")}\n`);

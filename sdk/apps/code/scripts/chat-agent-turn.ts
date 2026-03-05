@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import {
 	type AgentEvent,
@@ -13,10 +13,17 @@ import {
 	DefaultSessionManager,
 	enrichPromptWithMentions,
 	generateWorkspaceInfo,
+	SessionSource,
 	SqliteSessionStore,
 } from "@cline/core/server";
 import type { providers as LlmsProviders } from "@cline/llms";
 import { providers } from "@cline/llms";
+import {
+	type BasicLogger,
+	formatUserInputBlock,
+	setHomeDir,
+	setHomeDirIfUnset,
+} from "@cline/shared";
 
 type Message = LlmsProviders.Message;
 
@@ -36,6 +43,9 @@ type StartSessionRequest = {
 	teamName: string;
 	missionStepInterval: number;
 	missionTimeIntervalMs: number;
+	sessions?: {
+		homeDir?: string;
+	};
 };
 
 type ChatRunTurnRequest = {
@@ -79,7 +89,7 @@ type ChatTurnResult = {
 type ChatStreamLine =
 	| {
 			type: "chunk";
-			stream: "chat_text";
+			stream: "chat_text" | "chat_core_log";
 			chunk: string;
 	  }
 	| {
@@ -109,7 +119,7 @@ function toPromptMessage(
 	message: string,
 	mode: "act" | "plan" = "act",
 ): string {
-	return `<user_input mode="${mode}">${message}</user_input>`;
+	return formatUserInputBlock(message, mode);
 }
 
 function toMessageHistory(messages: Message[] | undefined): Message[] {
@@ -123,6 +133,51 @@ function writeStreamLine(line: ChatStreamLine): void {
 	process.stdout.write(`${JSON.stringify(line)}\n`);
 }
 
+function encodeLogChunk(
+	level: "debug" | "info" | "warn" | "error",
+	message: string,
+	metadata?: Record<string, unknown>,
+): string {
+	try {
+		return JSON.stringify({ level, message, metadata });
+	} catch {
+		return JSON.stringify({ level, message });
+	}
+}
+
+function createCoreLogger(): BasicLogger {
+	return {
+		debug: (message, metadata) => {
+			writeStreamLine({
+				type: "chunk",
+				stream: "chat_core_log",
+				chunk: encodeLogChunk("debug", message, metadata),
+			});
+		},
+		info: (message, metadata) => {
+			writeStreamLine({
+				type: "chunk",
+				stream: "chat_core_log",
+				chunk: encodeLogChunk("info", message, metadata),
+			});
+		},
+		warn: (message, metadata) => {
+			writeStreamLine({
+				type: "chunk",
+				stream: "chat_core_log",
+				chunk: encodeLogChunk("warn", message, metadata),
+			});
+		},
+		error: (message, metadata) => {
+			writeStreamLine({
+				type: "chunk",
+				stream: "chat_core_log",
+				chunk: encodeLogChunk("error", message, metadata),
+			});
+		},
+	};
+}
+
 function parseAgentEventChunk(chunk: string): AgentEvent | undefined {
 	try {
 		return JSON.parse(chunk) as AgentEvent;
@@ -132,8 +187,17 @@ function parseAgentEventChunk(chunk: string): AgentEvent | undefined {
 }
 
 let cachedDesktopApprovalRequester:
-	| Promise<(request: ToolApprovalRequest) => Promise<ToolApprovalResult>>
+	| Promise<
+			(
+				request: ToolApprovalRequest,
+				options?: {
+					approvalDir?: string;
+					sessionId?: string;
+				},
+			) => Promise<ToolApprovalResult>
+	  >
 	| undefined;
+let activeApprovalSessionId: string | undefined;
 
 async function requestDesktopToolApproval(
 	request: ToolApprovalRequest,
@@ -145,6 +209,10 @@ async function requestDesktopToolApproval(
 					module as unknown as {
 						requestDesktopToolApproval?: (
 							request: ToolApprovalRequest,
+							options?: {
+								approvalDir?: string;
+								sessionId?: string;
+							},
 						) => Promise<ToolApprovalResult>;
 					}
 				).requestDesktopToolApproval;
@@ -163,7 +231,10 @@ async function requestDesktopToolApproval(
 			});
 	}
 	const requester = await cachedDesktopApprovalRequester;
-	return requester(request);
+	return requester(request, {
+		approvalDir: process.env.CLINE_TOOL_APPROVAL_DIR?.trim(),
+		sessionId: activeApprovalSessionId,
+	});
 }
 
 function sanitizeFilename(name: string, index: number): string {
@@ -213,10 +284,17 @@ async function main() {
 
 	const apiKey = parsed.config.apiKey?.trim() || undefined;
 	const cwd = (parsed.config.cwd?.trim() || parsed.config.workspaceRoot).trim();
+	const homeDir = parsed.config.sessions?.homeDir?.trim();
+	if (homeDir) {
+		setHomeDir(homeDir);
+	} else {
+		setHomeDirIfUnset(homedir());
+	}
 	const providerId = providers.normalizeProviderId(parsed.config.provider);
 	const systemPrompt = await resolveSystemPrompt(parsed.config, cwd);
 	const history = toMessageHistory(parsed.messages);
 	const mode = parsed.config.mode ?? "act";
+	const coreLogger = createCoreLogger();
 	const sessionManager = new DefaultSessionManager({
 		sessionService: new CoreSessionService(new SqliteSessionStore()),
 		toolPolicies: {
@@ -294,6 +372,7 @@ async function main() {
 		parsed.attachments?.userFiles,
 	);
 	const started = await sessionManager.start({
+		source: SessionSource.DESKTOP_CHAT,
 		config: {
 			providerId,
 			modelId: parsed.config.model,
@@ -309,10 +388,12 @@ async function main() {
 			teamName: parsed.config.teamName,
 			missionLogIntervalSteps: parsed.config.missionStepInterval,
 			missionLogIntervalMs: parsed.config.missionTimeIntervalMs,
+			logger: coreLogger,
 		},
 		interactive: false,
 		initialMessages: history,
 	});
+	activeApprovalSessionId = started.sessionId;
 	const result = await sessionManager
 		.send({
 			sessionId: started.sessionId,

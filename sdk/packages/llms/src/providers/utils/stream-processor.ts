@@ -5,6 +5,7 @@
  * This provides a clean interface between the streaming API and Cline's storage format.
  */
 
+import { parseJsonStream } from "@cline/shared";
 import { JSONParser } from "@streamparser/json";
 import type {
 	ApiStreamChunk,
@@ -421,11 +422,12 @@ export class StreamResponseProcessor {
 		}
 
 		if (pending.rawInput) {
-			try {
-				return JSON.parse(pending.rawInput);
-			} catch {
-				return this.extractPartialJson(pending.rawInput);
+			const parsed = parseJsonStream(pending.rawInput);
+			if (this.isRecord(parsed)) {
+				return parsed;
 			}
+
+			return this.extractPartialJson(pending.rawInput);
 		}
 
 		return {};
@@ -462,5 +464,9 @@ export class StreamResponseProcessor {
 			"text" in value &&
 			typeof (value as ReasoningDetailParam).text === "string"
 		);
+	}
+
+	private isRecord(value: unknown): value is Record<string, unknown> {
+		return typeof value === "object" && value !== null && !Array.isArray(value);
 	}
 }

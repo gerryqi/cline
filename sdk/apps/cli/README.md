@@ -56,6 +56,14 @@ clite --refresh-models -p cline -m "openai/gpt-10"
 clite rpc start
 clite rpc start --address 127.0.0.1:4317
 
+# Check whether an RPC gateway is running
+clite rpc status
+clite rpc status --address 127.0.0.1:4317
+
+# Request RPC gateway shutdown
+clite rpc stop
+clite rpc stop --address 127.0.0.1:4317
+
 # Authenticate OAuth providers explicitly
 clite auth openai-codex
 clite auth oca
@@ -137,6 +145,8 @@ Subcommands:
 
 - `clite auth <provider>` - Run OAuth login for `cline`, `openai-codex`, or `oca`
 - `clite rpc start` - Start the RPC gateway
+- `clite rpc status` - Check whether the RPC gateway is healthy
+- `clite rpc stop` - Request graceful shutdown of the RPC gateway
 - `clite list ...` - List workflows/rules/skills/agents/history/hooks/mcp
 
 MCP list examples:
@@ -175,7 +185,6 @@ Desktop-integrated approval mode is also supported via env wiring:
 
 - `CLINE_TOOL_APPROVAL_MODE=desktop`
 - `CLINE_TOOL_APPROVAL_DIR=<path>`
-- `CLINE_TOOL_APPROVAL_SESSION_ID=<session-id>` (falls back to `CLINE_SESSION_ID`)
 
 In desktop mode, CLI writes a request JSON file and waits for a matching decision JSON file.
 
@@ -186,8 +195,9 @@ In desktop mode, CLI writes a request JSON file and waits for a matching decisio
 - Default address: `127.0.0.1:4317`
 - Override with `--address <host:port>` or `CLINE_RPC_ADDRESS`
 - Startup behavior: checks health first; if already running at that address, it prints the running server id and exits without starting a duplicate
-- Shutdown: Ctrl+C / `SIGTERM` cleanly stops the in-process server
-- Regular `clite "<prompt>"` runs auto-start RPC in a detached background process when needed, then reuse it for session storage across subsequent CLI runs.
+- Status check: `clite rpc status` prints running/not-running and returns exit code `0` when healthy (`1` when not running)
+- Shutdown: `clite rpc stop` requests graceful shutdown for the target address; `clite rpc start` can also be stopped with Ctrl+C / `SIGTERM`
+- Regular `clite "<prompt>"` runs now initialize sessions through `@cline/core/server` `createSessionHost(...)`, which auto-detects RPC, can auto-start it in the background, and falls back to local SQLite when RPC is unavailable.
 
 ## Development
 
@@ -233,7 +243,6 @@ bun install -g @cline/cli
 - `CLINE_RPC_ADDRESS` - Address used by `clite rpc start` (default `127.0.0.1:4317`)
 - `CLINE_TOOL_APPROVAL_MODE` - Approval mode (`desktop` uses file IPC; unset uses terminal prompt)
 - `CLINE_TOOL_APPROVAL_DIR` - Directory for desktop approval request/decision files
-- `CLINE_TOOL_APPROVAL_SESSION_ID` - Session id namespace for desktop approval files
 - `OPENAI_API_KEY` - API key for OpenAI (when using `-p openai`)
 - `OPENROUTER_API_KEY` - API key for OpenRouter
 
@@ -252,6 +261,7 @@ On startup, `clite` also attempts a legacy settings import:
 ## Features
 
 - **Streaming output** - Responses stream in real-time
+- **Stable stream rendering** - Prefers structured agent events and avoids duplicate text/tool output when chunk mirrors are also emitted
 - **Sub-agent spawning** - `spawn_agent` is available by default unless disabled
 - **Agent teams runtime** - Team tools (tasks/mailbox/mission log) are available by default unless disabled
 - `team_member` payload rules: `action=spawn` requires `agentId` + `rolePrompt`; `action=shutdown` requires `agentId`
@@ -280,6 +290,7 @@ The CLI entrypoint delegates to focused modules so `src/index.ts` acts as orches
 - Core owns agent creation, runtime composition, and session message persistence.
 - CLI no longer directly instantiates `Agent` for chat/task execution.
 - CLI does not perform direct file/db message persistence in run/interactive paths.
+- CLI owns the user-instruction watcher (rules/workflows/skills) because prompt assembly uses rule context before session start; the watcher is disposed on all exit paths.
 
 ## Examples
 

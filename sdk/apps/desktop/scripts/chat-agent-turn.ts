@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { Agent, createBuiltinTools } from "@cline/agents";
+import { Agent } from "@cline/agents";
+import { createBuiltinTools } from "@cline/core/server";
 
 type StartSessionRequest = {
 	workspaceRoot: string;

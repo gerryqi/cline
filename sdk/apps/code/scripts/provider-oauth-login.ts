@@ -103,21 +103,19 @@ function saveProviderOAuthCredentials(
 	existing: providers.ProviderSettings | undefined,
 	credentials: OAuthCredentials,
 ): providers.ProviderSettings {
-	const apiKey = toProviderApiKey(providerId, credentials);
 	const merged: providers.ProviderSettings = {
 		...(existing ?? {
 			provider: providerId as providers.ProviderSettings["provider"],
 		}),
 		provider: providerId as providers.ProviderSettings["provider"],
-		apiKey,
 		auth: {
 			...(existing?.auth ?? {}),
-			accessToken: credentials.access,
+			accessToken: toProviderApiKey(providerId, credentials),
 			refreshToken: credentials.refresh,
 			accountId: credentials.accountId,
 		},
 	};
-	manager.saveProviderSettings(merged);
+	manager.saveProviderSettings(merged, { tokenSource: "oauth" });
 	return merged;
 }
 
@@ -134,8 +132,9 @@ async function main() {
 		existing,
 		credentials,
 	);
+	const resolvedKey = saved.auth?.accessToken ?? saved.apiKey ?? "";
 	process.stdout.write(
-		`${JSON.stringify({ provider: providerId, apiKey: saved.apiKey ?? "" })}\n`,
+		`${JSON.stringify({ provider: providerId, apiKey: resolvedKey })}\n`,
 	);
 }
 

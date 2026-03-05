@@ -252,34 +252,29 @@ describe("hook payload validation and audit logging", () => {
 		expect(isCliHookPayload(null)).toBe(false);
 	});
 
-	it("writes hook audits to explicit hook path when configured", () => {
+	it("writes hook audits to payload session hook path", () => {
 		tempDir = mkdtempSync(path.join(os.tmpdir(), "cli-helper-audit-"));
 		const hookPath = path.join(tempDir, "explicit", "hooks.jsonl");
-		const env = captureEnv();
-		process.env.CLINE_HOOKS_LOG_PATH = hookPath;
-		process.env.CLINE_SESSION_ID = "session_from_env";
-		process.env.CLINE_SESSION_DATA_DIR = path.join(tempDir, "sessions");
-
-		try {
-			appendHookAudit({
-				clineVersion: "",
-				hookName: "tool_call",
-				timestamp: new Date().toISOString(),
-				taskId: "conv_1",
-				workspaceRoots: [],
-				userId: "agent_1",
-				iteration: 1,
-				agent_id: "agent_1",
-				parent_agent_id: null,
-				tool_call: {
-					id: "call_1",
-					name: "read_files",
-					input: { file_paths: ["README.md"] },
-				},
-			});
-		} finally {
-			restoreEnv(env);
-		}
+		appendHookAudit({
+			clineVersion: "",
+			hookName: "tool_call",
+			timestamp: new Date().toISOString(),
+			taskId: "conv_1",
+			sessionContext: {
+				rootSessionId: "session_from_context",
+				hookLogPath: hookPath,
+			},
+			workspaceRoots: [],
+			userId: "agent_1",
+			iteration: 1,
+			agent_id: "agent_1",
+			parent_agent_id: null,
+			tool_call: {
+				id: "call_1",
+				name: "read_files",
+				input: { file_paths: ["README.md"] },
+			},
+		});
 
 		expect(existsSync(hookPath)).toBe(true);
 		const content = readFileSync(hookPath, "utf8");
@@ -287,43 +282,36 @@ describe("hook payload validation and audit logging", () => {
 		expect(content).toContain('"agent_id":"agent_1"');
 	});
 
-	it("falls back to session-derived hook path when session id is set", () => {
+	it("falls back to shared hook audit file when payload context is missing", () => {
 		tempDir = mkdtempSync(path.join(os.tmpdir(), "cli-helper-session-audit-"));
-		const sessionId = "session_abc";
-		const expectedPath = path.join(
-			tempDir,
-			sessionId,
-			`${sessionId}.hooks.jsonl`,
-		);
+		const expectedPath = path.join(tempDir, "hooks", "hooks.jsonl");
 		const env = captureEnv();
+		process.env.CLINE_DATA_DIR = tempDir;
 		delete process.env.CLINE_HOOKS_LOG_PATH;
-		process.env.CLINE_SESSION_ID = sessionId;
-		process.env.CLINE_SESSION_DATA_DIR = tempDir;
+		delete process.env.CLINE_SESSION_ID;
+		delete process.env.CLINE_SESSION_DATA_DIR;
 
-		try {
-			appendHookAudit({
-				clineVersion: "",
-				hookName: "tool_result",
-				timestamp: new Date().toISOString(),
-				taskId: "conv_2",
-				workspaceRoots: [],
-				userId: "agent_2",
-				iteration: 1,
-				agent_id: "agent_2",
-				parent_agent_id: null,
-				tool_result: {
-					id: "call_2",
-					name: "read_files",
-					input: { file_paths: ["README.md"] },
-					output: "ok",
-					durationMs: 5,
-					startedAt: new Date("2026-01-01T00:00:00.000Z"),
-					endedAt: new Date("2026-01-01T00:00:00.005Z"),
-				},
-			});
-		} finally {
-			restoreEnv(env);
-		}
+		appendHookAudit({
+			clineVersion: "",
+			hookName: "tool_result",
+			timestamp: new Date().toISOString(),
+			taskId: "conv_2",
+			workspaceRoots: [],
+			userId: "agent_2",
+			iteration: 1,
+			agent_id: "agent_2",
+			parent_agent_id: null,
+			tool_result: {
+				id: "call_2",
+				name: "read_files",
+				input: { file_paths: ["README.md"] },
+				output: "ok",
+				durationMs: 5,
+				startedAt: new Date("2026-01-01T00:00:00.000Z"),
+				endedAt: new Date("2026-01-01T00:00:00.005Z"),
+			},
+		});
+		restoreEnv(env);
 
 		expect(existsSync(expectedPath)).toBe(true);
 		const content = readFileSync(expectedPath, "utf8");

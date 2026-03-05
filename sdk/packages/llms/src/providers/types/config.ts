@@ -56,7 +56,8 @@ export type ProviderCapability =
 	| "streaming" // Streaming responses
 	| "tools" // Tool/function calling
 	| "vision" // Image inputs
-	| "computer-use"; // Computer use tools
+	| "computer-use" // Computer use tools
+	| "oauth"; // OAuth authentication flow
 
 // =============================================================================
 // Configuration Components

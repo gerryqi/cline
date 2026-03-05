@@ -66,6 +66,7 @@ export enum BUILT_IN_PROVIDER {
 export const PROVIDER_ID_ALIASES: Record<string, BUILT_IN_PROVIDER> = {
 	openai: BUILT_IN_PROVIDER.OPENAI_NATIVE,
 	togetherai: BUILT_IN_PROVIDER.TOGETHER,
+	"sap-ai-core": BUILT_IN_PROVIDER.SAPAICORE,
 };
 
 export const BUILT_IN_PROVIDER_IDS = Object.values(BUILT_IN_PROVIDER) as [

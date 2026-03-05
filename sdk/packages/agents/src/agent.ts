@@ -5,6 +5,7 @@
  */
 
 import { providers } from "@cline/llms";
+import { parseJsonStream } from "@cline/shared";
 import { buildInitialUserContent } from "./agent-input.js";
 import {
 	type AgentExtensionRunner,
@@ -31,6 +32,7 @@ import type {
 	AgentHookControl,
 	AgentResult,
 	AgentUsage,
+	BasicLogger,
 	PendingToolCall,
 	ProcessedTurn,
 	Tool,
@@ -90,6 +92,7 @@ export class Agent {
 	private extensionRunner: AgentExtensionRunner;
 	private readonly hookEngine: HookEngine;
 	private messageBuilder: MessageBuilder;
+	private readonly logger?: BasicLogger;
 	private extensionsInitialized = false;
 	private sessionStarted = false;
 	private activeRunId = "";
@@ -126,6 +129,7 @@ export class Agent {
 		});
 		this.messageBuilder = new MessageBuilder();
 		this.toolRegistry = createToolRegistry([]);
+		this.logger = config.logger;
 		registerLifecycleHandlers(this.hookEngine, this.config);
 
 		// Create handler
@@ -163,6 +167,11 @@ export class Agent {
 		userImages?: string[],
 		userFiles?: string[],
 	): Promise<AgentResult> {
+		this.log("info", "Agent run requested", {
+			agentId: this.agentId,
+			conversationId: this.conversationId,
+			messageLength: userMessage.length,
+		});
 		await this.ensureExtensionsInitialized();
 
 		// Start fresh conversation
@@ -196,6 +205,11 @@ export class Agent {
 		userImages?: string[],
 		userFiles?: string[],
 	): Promise<AgentResult> {
+		this.log("info", "Agent continue requested", {
+			agentId: this.agentId,
+			conversationId: this.conversationId,
+			messageLength: userMessage.length,
+		});
 		await this.ensureExtensionsInitialized();
 
 		const preparedInput = await this.prepareUserInput(userMessage, "continue");
@@ -315,8 +329,15 @@ export class Agent {
 	 */
 	private async executeLoop(triggerMessage: string): Promise<AgentResult> {
 		const startedAt = new Date();
-		this.activeRunId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+		const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+		this.activeRunId = runId;
 		this.abortController = new AbortController();
+		this.log("info", "Agent loop started", {
+			agentId: this.agentId,
+			conversationId: this.conversationId,
+			runId,
+			triggerLength: triggerMessage.length,
+		});
 
 		// Merge abort signals
 		const abortSignal = this.mergeAbortSignals(
@@ -386,6 +407,12 @@ export class Agent {
 				}
 
 				iteration++;
+				this.log("debug", "Agent iteration started", {
+					agentId: this.agentId,
+					conversationId: this.conversationId,
+					runId,
+					iteration,
+				});
 				const iterationStartControl = await this.dispatchLifecycle(
 					"hook.iteration_start",
 					{
@@ -540,6 +567,14 @@ export class Agent {
 					context,
 					{
 						onToolCallStart: async (call) => {
+							this.log("debug", "Tool call started", {
+								agentId: this.agentId,
+								conversationId: this.conversationId,
+								runId,
+								iteration,
+								toolCallId: call.id,
+								toolName: call.name,
+							});
 							this.emit({
 								type: "content_start",
 								contentType: "tool",
@@ -573,6 +608,16 @@ export class Agent {
 							}
 						},
 						onToolCallEnd: async (record) => {
+							this.log("debug", "Tool call finished", {
+								agentId: this.agentId,
+								conversationId: this.conversationId,
+								runId,
+								iteration,
+								toolCallId: record.id,
+								toolName: record.name,
+								durationMs: record.durationMs,
+								error: record.error,
+							});
 							this.emit({
 								type: "content_end",
 								contentType: "tool",
@@ -637,12 +682,32 @@ export class Agent {
 					},
 				});
 				if (toolCancelRequested) {
+					this.log("warn", "Agent iteration cancelled by tool lifecycle", {
+						agentId: this.agentId,
+						conversationId: this.conversationId,
+						runId,
+						iteration,
+					});
 					finishReason = "aborted";
 					break;
 				}
+
+				this.log("debug", "Agent iteration finished", {
+					agentId: this.agentId,
+					conversationId: this.conversationId,
+					runId,
+					iteration,
+					toolCalls: turn.toolCalls.length,
+				});
 			}
 		} catch (error) {
 			finishReason = "error";
+			this.log("error", "Agent loop failed", {
+				agentId: this.agentId,
+				conversationId: this.conversationId,
+				runId,
+				error,
+			});
 			const errorObj =
 				error instanceof Error ? error : new Error(String(error));
 			await this.dispatchLifecycle("hook.error", {
@@ -680,6 +745,14 @@ export class Agent {
 			reason: finishReason,
 			text: finalText,
 			iterations: iteration,
+		});
+		this.log("info", "Agent loop finished", {
+			agentId: this.agentId,
+			conversationId: this.conversationId,
+			runId,
+			finishReason,
+			iterations: iteration,
+			durationMs,
 		});
 
 		const result = {
@@ -736,7 +809,6 @@ export class Agent {
 		let reasoning = "";
 		let reasoningSignature: string | undefined;
 		const redactedReasoningBlocks: string[] = [];
-		const toolCalls: PendingToolCall[] = [];
 		const usage = {
 			inputTokens: 0,
 			outputTokens: 0,
@@ -792,7 +864,7 @@ export class Agent {
 					break;
 
 				case "tool_calls":
-					this.processToolCallChunk(chunk, pendingToolCallsMap, toolCalls);
+					this.processToolCallChunk(chunk, pendingToolCallsMap);
 					break;
 
 				case "usage":
@@ -811,6 +883,7 @@ export class Agent {
 					break;
 			}
 		}
+		const toolCalls = this.finalizePendingToolCalls(pendingToolCallsMap);
 
 		// Add assistant message to history
 		const assistantContent: providers.ContentBlock[] = [];
@@ -878,7 +951,6 @@ export class Agent {
 			string,
 			{ name?: string; arguments: string; signature?: string }
 		>,
-		toolCalls: PendingToolCall[],
 	): void {
 		const { tool_call } = chunk;
 		const callId =
@@ -899,7 +971,18 @@ export class Agent {
 		// Accumulate arguments
 		if (tool_call.function.arguments) {
 			if (typeof tool_call.function.arguments === "string") {
-				pending.arguments += tool_call.function.arguments;
+				const argsChunk = tool_call.function.arguments;
+				const trimmedChunk = argsChunk.trimStart();
+				// Some providers send cumulative argument snapshots instead of deltas.
+				// If we receive a complete JSON payload, replace prior buffered args.
+				if (
+					(trimmedChunk.startsWith("{") || trimmedChunk.startsWith("[")) &&
+					this.tryParseJson(argsChunk) !== undefined
+				) {
+					pending.arguments = argsChunk;
+				} else {
+					pending.arguments += argsChunk;
+				}
 			} else {
 				// Already parsed - serialize it
 				pending.arguments = JSON.stringify(tool_call.function.arguments);
@@ -908,35 +991,36 @@ export class Agent {
 		if (chunk.signature) {
 			pending.signature = chunk.signature;
 		}
+	}
 
-		// Check if this is a complete tool call
-		if (pending.name && pending.arguments) {
-			// Try to parse arguments
-			try {
-				const input = JSON.parse(pending.arguments);
-
-				// Check if already added
-				const existingIndex = toolCalls.findIndex((tc) => tc.id === callId);
-				if (existingIndex === -1) {
-					toolCalls.push({
-						id: callId,
-						name: pending.name,
-						input,
-						signature: pending.signature,
-					});
-				} else {
-					// Update existing
-					toolCalls[existingIndex] = {
-						id: callId,
-						name: pending.name,
-						input,
-						signature: pending.signature,
-					};
-				}
-			} catch {
-				// Arguments not yet complete JSON
+	private finalizePendingToolCalls(
+		pendingMap: Map<
+			string,
+			{ name?: string; arguments: string; signature?: string }
+		>,
+	): PendingToolCall[] {
+		const toolCalls: PendingToolCall[] = [];
+		for (const [id, pending] of pendingMap.entries()) {
+			if (!pending.name || !pending.arguments) {
+				continue;
 			}
+			const input = this.tryParseJson(pending.arguments);
+			if (input === undefined) {
+				continue;
+			}
+			toolCalls.push({
+				id,
+				name: pending.name,
+				input,
+				signature: pending.signature,
+			});
 		}
+		return toolCalls;
+	}
+
+	private tryParseJson(value: string): unknown | undefined {
+		const parsed = parseJsonStream(value);
+		return parsed === value ? undefined : parsed;
 	}
 
 	/**
@@ -1098,6 +1182,12 @@ export class Agent {
 	}
 
 	private reportRecoverableError(error: unknown): void {
+		this.log("warn", "Recoverable agent error", {
+			agentId: this.agentId,
+			conversationId: this.conversationId,
+			runId: this.activeRunId || this.conversationId,
+			error,
+		});
 		try {
 			this.config.onEvent?.({
 				type: "error",
@@ -1206,6 +1296,37 @@ export class Agent {
 				},
 			],
 		});
+	}
+
+	private log(
+		level: "debug" | "info" | "warn" | "error",
+		message: string,
+		metadata?: Record<string, unknown>,
+	): void {
+		const sink = this.logger?.[level];
+		if (!sink) {
+			return;
+		}
+		try {
+			if (level === "error") {
+				const errorMeta =
+					metadata?.error instanceof Error
+						? {
+								...metadata,
+								error: {
+									name: metadata.error.name,
+									message: metadata.error.message,
+									stack: metadata.error.stack,
+								},
+							}
+						: metadata;
+				sink(message, errorMeta);
+				return;
+			}
+			sink(message, metadata);
+		} catch {
+			// Logging failures must never break agent execution.
+		}
 	}
 
 	/**

@@ -1,5 +1,6 @@
 import type { AgentResult } from "@cline/agents";
 import type { providers as LlmsProviders } from "@cline/llms";
+import type { SessionSource } from "../types/common";
 import type { CoreSessionConfig } from "../types/config";
 import type { CoreSessionEvent } from "../types/events";
 import type { SessionRecord } from "../types/sessions";
@@ -7,6 +8,7 @@ import type { SessionManifest } from "./session-manifest";
 
 export interface StartSessionInput {
 	config: CoreSessionConfig;
+	source?: SessionSource;
 	prompt?: string;
 	interactive?: boolean;
 	initialMessages?: LlmsProviders.Message[];
@@ -14,7 +16,7 @@ export interface StartSessionInput {
 	userFiles?: string[];
 	userInstructionWatcher?: import("../agents").UserInstructionConfigWatcher;
 	onTeamRestored?: () => void;
-	defaultToolExecutors?: Partial<import("@cline/agents").ToolExecutors>;
+	defaultToolExecutors?: Partial<import("../default-tools").ToolExecutors>;
 	toolPolicies?: import("@cline/agents").AgentConfig["toolPolicies"];
 	requestToolApproval?: (
 		request: import("@cline/agents").ToolApprovalRequest,

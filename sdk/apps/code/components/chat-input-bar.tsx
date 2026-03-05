@@ -1,5 +1,6 @@
 "use client";
 
+import { invoke } from "@tauri-apps/api/core";
 import {
 	ArrowUp,
 	ChevronDown,
@@ -37,6 +38,8 @@ const FALLBACK_PROVIDER_REASONING_MODELS: Record<string, string[]> = {
 	openrouter: ["anthropic/claude-sonnet-4.6"],
 	gemini: ["gemini-2.5-pro"],
 };
+
+const MODEL_SELECTION_STORAGE_KEY = "cline.code.model-selection.v1";
 
 function hasReasoningCapability(
 	providerReasoningModels: Record<string, string[]>,
@@ -487,11 +490,53 @@ function ModelSelector({
 	const [providerReasoningModels, setProviderReasoningModels] = useState<
 		Record<string, string[]>
 	>(FALLBACK_PROVIDER_REASONING_MODELS);
-	const providers = useMemo(
-		() => Object.keys(providerModels),
-		[providerModels],
+	const [enabledProviderIds, setEnabledProviderIds] = useState<string[] | null>(
+		null,
 	);
-	const modelsForProvider = providerModels[provider] ?? [];
+	const [lastModelByProvider, setLastModelByProvider] = useState<
+		Record<string, string>
+	>(() => {
+		if (typeof window === "undefined") {
+			return {};
+		}
+		try {
+			const raw = window.localStorage.getItem(MODEL_SELECTION_STORAGE_KEY);
+			if (!raw) {
+				return {};
+			}
+			const parsed = JSON.parse(raw) as unknown;
+			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+				return {};
+			}
+			const entries = Object.entries(parsed).filter(
+				([key, value]) =>
+					typeof key === "string" &&
+					typeof value === "string" &&
+					value.length > 0,
+			);
+			return Object.fromEntries(entries);
+		} catch {
+			return {};
+		}
+	});
+	const visibleProviderModels = useMemo(() => {
+		if (!enabledProviderIds || enabledProviderIds.length === 0) {
+			return providerModels;
+		}
+		const next: Record<string, string[]> = {};
+		for (const providerId of enabledProviderIds) {
+			const modelsForId = providerModels[providerId];
+			if (modelsForId && modelsForId.length > 0) {
+				next[providerId] = modelsForId;
+			}
+		}
+		return Object.keys(next).length > 0 ? next : providerModels;
+	}, [enabledProviderIds, providerModels]);
+	const providers = useMemo(
+		() => Object.keys(visibleProviderModels),
+		[visibleProviderModels],
+	);
+	const modelsForProvider = visibleProviderModels[provider] ?? [];
 
 	useEffect(() => {
 		const abortController = new AbortController();
@@ -532,6 +577,61 @@ function ModelSelector({
 		void loadModelCatalog();
 		return () => abortController.abort();
 	}, []);
+
+	useEffect(() => {
+		let cancelled = false;
+
+		async function loadEnabledProviders() {
+			try {
+				const payload = await invoke<{
+					providers?: Array<{ id?: string; enabled?: boolean }>;
+				}>("list_provider_catalog");
+				if (cancelled) {
+					return;
+				}
+				const enabled = (payload.providers ?? [])
+					.filter((item) => item?.enabled && typeof item.id === "string")
+					.map((item) => item.id as string);
+				setEnabledProviderIds(enabled);
+			} catch {
+				// Keep model catalog-only fallback when provider catalog is unavailable.
+			}
+		}
+
+		void loadEnabledProviders();
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	useEffect(() => {
+		setLastModelByProvider((prev) => {
+			if (!provider || !model) {
+				return prev;
+			}
+			if (prev[provider] === model) {
+				return prev;
+			}
+			return {
+				...prev,
+				[provider]: model,
+			};
+		});
+	}, [model, provider]);
+
+	useEffect(() => {
+		if (typeof window === "undefined") {
+			return;
+		}
+		try {
+			window.localStorage.setItem(
+				MODEL_SELECTION_STORAGE_KEY,
+				JSON.stringify(lastModelByProvider),
+			);
+		} catch {
+			// Ignore localStorage persistence failures.
+		}
+	}, [lastModelByProvider]);
 
 	useEffect(() => {
 		if (providers.length === 0) {
@@ -578,6 +678,20 @@ function ModelSelector({
 						return;
 					}
 					onProviderChange(value);
+					const rememberedModel = lastModelByProvider[value];
+					const providerModelIds = visibleProviderModels[value] ?? [];
+					if (
+						rememberedModel &&
+						providerModelIds.includes(rememberedModel) &&
+						rememberedModel !== model
+					) {
+						onModelChange(rememberedModel);
+						return;
+					}
+					const firstModel = providerModelIds[0];
+					if (firstModel && firstModel !== model) {
+						onModelChange(firstModel);
+					}
 				}}
 				value={provider}
 			>

@@ -17,17 +17,12 @@ import type {
 	TeamTeammateSpec,
 } from "@cline/agents";
 import type { providers as LlmsProviders } from "@cline/llms";
-import { resolveTeamDataDir } from "@cline/shared";
+import { resolveRootSessionId, resolveTeamDataDir } from "@cline/shared";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import type { SqliteSessionStore } from "../storage/sqlite-session-store";
 import { SessionSource, type SessionStatus } from "../types/common";
-import {
-	getRootSessionIdFromEnv,
-	nowIso,
-	SessionArtifacts,
-	unlinkIfExists,
-} from "./session-artifacts";
+import { nowIso, SessionArtifacts, unlinkIfExists } from "./session-artifacts";
 import {
 	deriveSubsessionStatus,
 	makeSubSessionId,
@@ -111,11 +106,6 @@ export interface RootSessionArtifacts {
 	hookPath: string;
 	messagesPath: string;
 	manifest: SessionManifest;
-	env: {
-		CLINE_SESSION_ID: string;
-		CLINE_HOOKS_LOG_PATH: string;
-		CLINE_ENABLE_SUBPROCESS_HOOKS: "1";
-	};
 }
 
 export interface UpsertSubagentInput {
@@ -329,6 +319,10 @@ export class CoreSessionService {
 		this.artifacts = new SessionArtifacts(() => this.ensureSessionsDir());
 	}
 
+	private teamTaskQueueKey(rootSessionId: string, agentId: string): string {
+		return `${rootSessionId}::${agentId}`;
+	}
+
 	ensureSessionsDir(): string {
 		return this.store.ensureSessionsDir();
 	}
@@ -367,8 +361,13 @@ export class CoreSessionService {
 			: undefined;
 	}
 
-	private activeTeamTaskSessionId(parentAgentId: string): string | undefined {
-		const queue = this.teamTaskSessionsByAgent.get(parentAgentId);
+	private activeTeamTaskSessionId(
+		rootSessionId: string,
+		parentAgentId: string,
+	): string | undefined {
+		const queue = this.teamTaskSessionsByAgent.get(
+			this.teamTaskQueueKey(rootSessionId, parentAgentId),
+		);
 		if (!queue || queue.length === 0) {
 			return undefined;
 		}
@@ -376,6 +375,7 @@ export class CoreSessionService {
 	}
 
 	private subagentArtifactPaths(
+		rootSessionId: string,
 		sessionId: string,
 		parentAgentId: string,
 		subAgentId: string,
@@ -387,7 +387,7 @@ export class CoreSessionService {
 		return this.artifacts.subagentArtifactPaths(
 			sessionId,
 			subAgentId,
-			this.activeTeamTaskSessionId(parentAgentId),
+			this.activeTeamTaskSessionId(rootSessionId, parentAgentId),
 		);
 	}
 
@@ -470,11 +470,6 @@ export class CoreSessionService {
 			hookPath,
 			messagesPath,
 			manifest,
-			env: {
-				CLINE_SESSION_ID: sessionId,
-				CLINE_HOOKS_LOG_PATH: hookPath,
-				CLINE_ENABLE_SUBPROCESS_HOOKS: "1",
-			},
 		};
 	}
 
@@ -567,7 +562,7 @@ export class CoreSessionService {
 		if (event.tool_call?.name !== "spawn_agent") {
 			return;
 		}
-		const rootSessionId = getRootSessionIdFromEnv();
+		const rootSessionId = resolveRootSessionId(event.sessionContext);
 		if (!rootSessionId) {
 			return;
 		}
@@ -619,7 +614,7 @@ export class CoreSessionService {
 	}
 
 	upsertSubagentSession(input: UpsertSubagentInput): string | undefined {
-		const rootSessionId = input.rootSessionId ?? getRootSessionIdFromEnv();
+		const rootSessionId = input.rootSessionId;
 		if (!rootSessionId) {
 			return undefined;
 		}
@@ -638,6 +633,7 @@ export class CoreSessionService {
 		);
 		const startedAt = nowIso();
 		const artifactPaths = this.subagentArtifactPaths(
+			rootSessionId,
 			sessionId,
 			input.parentAgentId,
 			input.agentId,
@@ -727,6 +723,7 @@ export class CoreSessionService {
 			agentId: event.agent_id,
 			parentAgentId: event.parent_agent_id,
 			conversationId: event.taskId,
+			rootSessionId: resolveRootSessionId(event.sessionContext),
 		});
 	}
 
@@ -822,13 +819,10 @@ export class CoreSessionService {
 	}
 
 	private createTeamTaskSubSession(
+		rootSessionId: string,
 		agentId: string,
 		message: string,
 	): string | undefined {
-		const rootSessionId = getRootSessionIdFromEnv();
-		if (!rootSessionId) {
-			return undefined;
-		}
 		const root = this.readRootSession(rootSessionId);
 		if (!root) {
 			return undefined;
@@ -884,31 +878,42 @@ export class CoreSessionService {
 		return sessionId;
 	}
 
-	onTeamTaskStart(agentId: string, message: string): void {
-		const sessionId = this.createTeamTaskSubSession(agentId, message);
+	onTeamTaskStart(
+		rootSessionId: string,
+		agentId: string,
+		message: string,
+	): void {
+		const sessionId = this.createTeamTaskSubSession(
+			rootSessionId,
+			agentId,
+			message,
+		);
 		if (!sessionId) {
 			return;
 		}
-		const queue = this.teamTaskSessionsByAgent.get(agentId) ?? [];
+		const key = this.teamTaskQueueKey(rootSessionId, agentId);
+		const queue = this.teamTaskSessionsByAgent.get(key) ?? [];
 		queue.push(sessionId);
-		this.teamTaskSessionsByAgent.set(agentId, queue);
+		this.teamTaskSessionsByAgent.set(key, queue);
 	}
 
 	onTeamTaskEnd(
+		rootSessionId: string,
 		agentId: string,
 		status: SessionStatus,
 		summary?: string,
 		messages?: LlmsProviders.Message[],
 	): void {
-		const queue = this.teamTaskSessionsByAgent.get(agentId);
+		const key = this.teamTaskQueueKey(rootSessionId, agentId);
+		const queue = this.teamTaskSessionsByAgent.get(key);
 		if (!queue || queue.length === 0) {
 			return;
 		}
 		const sessionId = queue.shift();
 		if (queue.length === 0) {
-			this.teamTaskSessionsByAgent.delete(agentId);
+			this.teamTaskSessionsByAgent.delete(key);
 		} else {
-			this.teamTaskSessionsByAgent.set(agentId, queue);
+			this.teamTaskSessionsByAgent.set(key, queue);
 		}
 		if (!sessionId) {
 			return;
@@ -920,12 +925,16 @@ export class CoreSessionService {
 		this.applySubagentStatusBySessionId(sessionId, status);
 	}
 
-	handleSubAgentStart(context: SubAgentStartContext): void {
+	handleSubAgentStart(
+		rootSessionId: string,
+		context: SubAgentStartContext,
+	): void {
 		const subSessionId = this.upsertSubagentSession({
 			agentId: context.subAgentId,
 			parentAgentId: context.parentAgentId,
 			conversationId: context.conversationId,
 			prompt: context.input.task,
+			rootSessionId,
 		});
 		if (!subSessionId) {
 			return;
@@ -937,12 +946,13 @@ export class CoreSessionService {
 		this.applySubagentStatusBySessionId(subSessionId, "running");
 	}
 
-	handleSubAgentEnd(context: SubAgentEndContext): void {
+	handleSubAgentEnd(rootSessionId: string, context: SubAgentEndContext): void {
 		const subSessionId = this.upsertSubagentSession({
 			agentId: context.subAgentId,
 			parentAgentId: context.parentAgentId,
 			conversationId: context.conversationId,
 			prompt: context.input.task,
+			rootSessionId,
 		});
 		if (!subSessionId) {
 			return;
@@ -966,10 +976,10 @@ export class CoreSessionService {
 		this.applySubagentStatusBySessionId(subSessionId, "completed");
 	}
 
-	listCliSessions(limit = 200): SessionRowShape[] {
+	listSessions(limit = 200): SessionRowShape[] {
 		const requestedLimit = Math.max(1, Math.floor(limit));
 		const scanLimit = Math.min(requestedLimit * 5, 2000);
-		const rows = this.store.queryAll<SessionRowShape>(
+		let rows = this.store.queryAll<SessionRowShape>(
 			`SELECT session_id, source, pid, started_at, ended_at, exit_code, status, status_lock, interactive,
 					provider, model, cwd, workspace_root, team_name, enable_tools, enable_spawn, enable_teams,
 					parent_session_id, parent_agent_id, agent_id, conversation_id, is_subagent, prompt,
@@ -979,9 +989,44 @@ export class CoreSessionService {
 			 LIMIT ?`,
 			[scanLimit],
 		);
+		const staleRunning = rows.filter(
+			(row) => row.status === "running" && !this.isPidAlive(row.pid),
+		);
+		if (staleRunning.length > 0) {
+			for (const row of staleRunning) {
+				this.updateSessionStatus(row.session_id, "failed", 1);
+			}
+			rows = this.store.queryAll<SessionRowShape>(
+				`SELECT session_id, source, pid, started_at, ended_at, exit_code, status, status_lock, interactive,
+						provider, model, cwd, workspace_root, team_name, enable_tools, enable_spawn, enable_teams,
+						parent_session_id, parent_agent_id, agent_id, conversation_id, is_subagent, prompt,
+						transcript_path, hook_path, messages_path, updated_at
+				 FROM sessions
+				 ORDER BY started_at DESC
+				 LIMIT ?`,
+				[scanLimit],
+			);
+		}
 		return rows
 			.filter((row) => this.hasPersistedConversation(row))
 			.slice(0, requestedLimit);
+	}
+
+	private isPidAlive(pid: number): boolean {
+		if (!Number.isFinite(pid) || pid <= 0) {
+			return false;
+		}
+		try {
+			process.kill(Math.floor(pid), 0);
+			return true;
+		} catch (error) {
+			return (
+				typeof error === "object" &&
+				error !== null &&
+				"code" in error &&
+				(error as { code?: string }).code === "EPERM"
+			);
+		}
 	}
 
 	private hasPersistedConversation(row: SessionRowShape): boolean {
@@ -1011,7 +1056,7 @@ export class CoreSessionService {
 		}
 	}
 
-	deleteCliSession(sessionId: string): { deleted: boolean } {
+	deleteSession(sessionId: string): { deleted: boolean } {
 		const id = sessionId.trim();
 		if (!id) {
 			throw new Error("session id is required");

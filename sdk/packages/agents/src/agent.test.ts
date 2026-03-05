@@ -78,6 +78,49 @@ describe("Agent", () => {
 		expect(events).toContain("done");
 	});
 
+	it("emits loop logs to provided logger", async () => {
+		const { Agent } = await import("./agent.js");
+		const handler = makeHandler([
+			[
+				{ type: "text", id: "r1", text: "Hello from model" },
+				{ type: "usage", id: "r1", inputTokens: 10, outputTokens: 5 },
+				{ type: "done", id: "r1", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const logger = {
+			debug: vi.fn(),
+			info: vi.fn(),
+			warn: vi.fn(),
+			error: vi.fn(),
+		};
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "You are helpful.",
+			tools: [],
+			logger,
+		});
+
+		await agent.run("Say hello");
+
+		expect(
+			logger.info.mock.calls.some(
+				([message]) =>
+					typeof message === "string" && message.includes("Agent loop started"),
+			),
+		).toBe(true);
+		expect(
+			logger.info.mock.calls.some(
+				([message]) =>
+					typeof message === "string" &&
+					message.includes("Agent loop finished"),
+			),
+		).toBe(true);
+		expect(logger.error).not.toHaveBeenCalled();
+	});
+
 	it("executes tool calls and applies tool policy approval", async () => {
 		const { Agent } = await import("./agent.js");
 		const mathTool: Tool<{ a: number; b: number }, { total: number }> =
@@ -139,6 +182,75 @@ describe("Agent", () => {
 		expect(result.toolCalls).toHaveLength(1);
 		expect(result.toolCalls[0]?.output).toEqual({ total: 5 });
 		expect(result.text).toBe("Done");
+	});
+
+	it("finalizes streamed tool arguments at end of turn", async () => {
+		const { Agent } = await import("./agent.js");
+		const teamLogTool = createTool({
+			name: "team_log_update",
+			description: "Append a mission log update",
+			inputSchema: {
+				type: "object",
+				properties: {
+					kind: { type: "string" },
+					summary: { type: "string" },
+				},
+				required: ["kind", "summary"],
+			},
+			execute: async ({ kind, summary }) => ({ kind, summary }),
+		}) as Tool;
+
+		const handler = makeHandler([
+			[
+				{
+					type: "tool_calls",
+					id: "r1",
+					tool_call: {
+						call_id: "call_1",
+						function: {
+							name: "team_log_update",
+							arguments: '{"update":"Spawned two-agent team"}',
+						},
+					},
+				},
+				{
+					type: "tool_calls",
+					id: "r1",
+					tool_call: {
+						call_id: "call_1",
+						function: {
+							arguments:
+								'{"kind":"progress","summary":"Spawned two-agent team"}',
+						},
+					},
+				},
+				{ type: "usage", id: "r1", inputTokens: 10, outputTokens: 5 },
+				{ type: "done", id: "r1", success: true },
+			],
+			[
+				{ type: "text", id: "r2", text: "Done" },
+				{ type: "usage", id: "r2", inputTokens: 2, outputTokens: 1 },
+				{ type: "done", id: "r2", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "Use tools",
+			tools: [teamLogTool],
+		});
+
+		const result = await agent.run("log status");
+
+		expect(result.finishReason).toBe("completed");
+		expect(result.toolCalls).toHaveLength(1);
+		expect(result.toolCalls[0]?.error).toBeUndefined();
+		expect(result.toolCalls[0]?.output).toEqual({
+			kind: "progress",
+			summary: "Spawned two-agent team",
+		});
 	});
 
 	it("continues conversation and clearHistory resets message state", async () => {

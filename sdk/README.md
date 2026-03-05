@@ -27,6 +27,10 @@ Apps built with the Cline SDK (`apps/`):
 - Manual updates to provider fields in settings (toggle, API key, base URL) are persisted to the same provider settings file.
 - In the `@cline/code` UI, selecting `Settings` from the left sidebar switches to `SettingsView`; closing settings returns to chat.
 - Provider IDs from `@cline/llms` must be unique because they are used as React list keys and provider state identifiers.
+- Chat model selection now remembers the last selected `modelId` per `providerId` in local app storage and restores it when switching providers or starting a new chat session.
+- Chat provider/model selectors now prioritize providers enabled in settings (`list_provider_catalog`) and show models for those enabled providers; if provider settings are unavailable, selectors fall back to the full local catalog.
+- Chat transcript tool entries now show expandable `Input` and `Result` payload sections in `apps/code/components/chat-messages.tsx`, including persisted `tool_result` payloads stored as JSON strings.
+- Hydrated/reopened chat sessions now continue applying live `agent://chunk` updates (assistant text + tool events) even when no pre-seeded `activeAssistantMessageId` exists.
 
 `@cline/code` MCP server settings:
 
@@ -41,6 +45,13 @@ Apps built with the Cline SDK (`apps/`):
 - Tabs in this screen: `Rules`, `Workflows`, `Hooks`, `Skills`, and `Agents`.
 - CLI list discovery for this screen resolves from the app `workspace_root` (not the Tauri process cwd).
 - Data shown is read-only discovery output with file paths and summaries, plus refresh and partial-result warnings when any list source fails.
+
+`@cline/code` core logger streaming:
+
+- `apps/code/scripts/chat-agent-turn.ts` passes a `logger` in `sessionManager.start({ config })` so `@cline/core` session/runtime logs can flow back to the app.
+- Core logs are emitted as JSON lines with `type: "chunk"` and `stream: "chat_core_log"` (stdout protocol stream).
+- `apps/code/hooks/use-chat-session.ts` listens for `chat_core_log` and prints them with `console.debug|info|warn|error`.
+- Keep regular `stdout` output in `chat-agent-turn.ts` JSON-only; emitting plain `console.log` there can corrupt stream parsing.
 
 ## Prerequisites
 
@@ -76,12 +87,15 @@ Useful workspace scripts (root `package.json`):
 - `bun run build:apps` - build app targets (`cli` + `desktop` + `code`)
 - `bun run build:llms|build:agents|build:rpc|build:core|build:cli|build:code|build:desktop` - build one workspace package
 - `bun run build:models` - regenerate model metadata in `llms`
-- `bun run dev:cli -- "your prompt"` - run CLI from source
+- `bun run dev:cli -- "your prompt"` - run CLI from source (direct entrypoint, no workspace log prefixing)
 - `bun run dev` - build SDK packages + CLI, then launch code app (`tauri dev`)
 - `bun run dev:code` - launch code app directly
 - `bun run dev:desktop` - launch desktop app directly
 - `bun run typecheck` - typecheck all packages
 - `bun run clean` - remove build outputs across packages
+
+Development note:
+- `@cline/core` and `@cline/code` `typecheck` scripts now use `tsconfig.dev.json` source-path aliases for `@cline/shared` (`packages/shared/src`) so local shared API changes are picked up without rebuilding `dist` types first.
 
 ## Linting and Formatting (Biome)
 

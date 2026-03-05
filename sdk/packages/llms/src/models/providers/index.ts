@@ -37,6 +37,11 @@ export {
 	DEEPSEEK_PROVIDER,
 	getDeepSeekReasoningModels,
 } from "./deepseek.js";
+export {
+	DOUBAO_DEFAULT_MODEL,
+	DOUBAO_MODELS,
+	DOUBAO_PROVIDER,
+} from "./doubao.js";
 // === Fireworks AI ===
 export {
 	FIREWORKS_DEFAULT_MODEL,
@@ -64,6 +69,16 @@ export { HUAWEI_CLOUD_MAAS_PROVIDER } from "./huawei-cloud-maas.js";
 export { HUGGINGFACE_MODELS, HUGGINGFACE_PROVIDER } from "./huggingface.js";
 export { LITELLM_PROVIDER } from "./litellm.js";
 export { LMSTUDIO_PROVIDER } from "./lmstudio.js";
+export {
+	MINIMAX_DEFAULT_MODEL,
+	MINIMAX_MODELS,
+	MINIMAX_PROVIDER,
+} from "./minimax.js";
+export {
+	MOONSHOT_DEFAULT_MODEL,
+	MOONSHOT_MODELS,
+	MOONSHOT_PROVIDER,
+} from "./moonshot.js";
 export {
 	NEBIUS_DEFAULT_MODEL,
 	NEBIUS_MODELS,
@@ -104,12 +119,23 @@ export {
 	OPENROUTER_MODELS,
 	OPENROUTER_PROVIDER,
 } from "./openrouter.js";
+export { QWEN_DEFAULT_MODEL, QWEN_MODELS, QWEN_PROVIDER } from "./qwen.js";
+export {
+	QWEN_CODE_DEFAULT_MODEL,
+	QWEN_CODE_MODELS,
+	QWEN_CODE_PROVIDER,
+} from "./qwen-code.js";
 export { REQUESTY_PROVIDER } from "./requesty.js";
 export {
 	SAMBANOVA_DEFAULT_MODEL,
 	SAMBANOVA_MODELS,
 	SAMBANOVA_PROVIDER,
 } from "./sambanova.js";
+export {
+	SAP_AI_CORE_DEFAULT_MODEL,
+	SAP_AI_CORE_MODELS,
+	SAP_AI_CORE_PROVIDER,
+} from "./sapaicore.js";
 // === Together AI ===
 export {
 	getTogetherLlamaModels,
@@ -130,3 +156,4 @@ export {
 	XAI_MODELS,
 	XAI_PROVIDER,
 } from "./xai.js";
+export { ZAI_DEFAULT_MODEL, ZAI_MODELS, ZAI_PROVIDER } from "./zai.js";

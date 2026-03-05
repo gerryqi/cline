@@ -1,13 +1,12 @@
-import { SESSION_STATUSES } from "@cline/shared";
 import { z } from "zod";
-import { SessionSource } from "../types/common";
+import { SESSION_STATUSES, SessionSource } from "../types/common";
 
 const SessionStatusSchema = z.enum(SESSION_STATUSES);
 
 export const SessionManifestSchema = z.object({
 	version: z.literal(1),
 	session_id: z.string().min(1),
-	source: z.nativeEnum(SessionSource),
+	source: z.enum(SessionSource),
 	pid: z.number().int(),
 	started_at: z.string().min(1),
 	ended_at: z.string().min(1).optional(),

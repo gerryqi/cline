@@ -34,6 +34,27 @@ describe("DefaultRuntimeBuilder", () => {
 		expect(names).not.toContain("spawn_agent");
 	});
 
+	it("forwards runtime logger for downstream agent creation", () => {
+		const logger = {
+			info: () => {},
+		};
+		const runtime = new DefaultRuntimeBuilder().build({
+			config: {
+				providerId: "anthropic",
+				modelId: "claude-sonnet-4-6",
+				apiKey: "key",
+				systemPrompt: "test",
+				cwd: process.cwd(),
+				enableTools: false,
+				enableSpawnAgent: false,
+				enableAgentTeams: false,
+				logger,
+			},
+		});
+
+		expect(runtime.logger).toBe(logger);
+	});
+
 	it("uses readonly preset in plan mode", () => {
 		const runtime = new DefaultRuntimeBuilder().build({
 			config: {

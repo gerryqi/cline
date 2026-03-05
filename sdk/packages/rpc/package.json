@@ -30,11 +30,8 @@
 		"typecheck": "bun tsc --noEmit"
 	},
 	"dependencies": {
-		"@cline/shared": "workspace:*",
 		"@grpc/grpc-js": "^1.14.0",
-		"@grpc/proto-loader": "^0.8.0",
-		"better-sqlite3": "^11.10.0",
-		"zod": "^4.3.6"
+		"@grpc/proto-loader": "^0.8.0"
 	},
 	"devDependencies": {
 		"@types/node": "^20.0.0",

@@ -5,9 +5,13 @@
  */
 
 import type { providers as LlmsProviders } from "@cline/llms";
+import {
+	type JsonSchema,
+	type Tool,
+	type ToolContext,
+	zodToJsonSchema,
+} from "@cline/shared";
 import { z } from "zod";
-import { zodToJsonSchema } from "../default-tools/zod-utils.js";
-import type { JsonSchema, Tool, ToolContext } from "../types.js";
 
 /**
  * Create a tool with proper typing
@@ -88,6 +92,7 @@ export function toToolDefinition(tool: Tool): LlmsProviders.ToolDefinition {
 			type: "object",
 			properties: tool.inputSchema.properties as Record<string, unknown>,
 			required: tool.inputSchema.required,
+			additionalProperties: tool.inputSchema.additionalProperties,
 		},
 	};
 }

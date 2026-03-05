@@ -74,11 +74,6 @@ describe("DefaultSessionManager", () => {
 			hookPath: "/tmp/hook.log",
 			messagesPath: "/tmp/messages.json",
 			manifest,
-			env: {
-				CLINE_SESSION_ID: sessionId,
-				CLINE_HOOKS_LOG_PATH: "/tmp/hook.log",
-				CLINE_ENABLE_SUBPROCESS_HOOKS: "1" as const,
-			},
 		});
 		const persistSessionMessages = vi.fn();
 		const updateSessionStatus = vi.fn().mockResolvedValue({
@@ -86,15 +81,15 @@ describe("DefaultSessionManager", () => {
 			endedAt: "2026-01-01T00:00:05.000Z",
 		});
 		const writeSessionManifest = vi.fn();
-		const listCliSessions = vi.fn().mockResolvedValue([]);
-		const deleteCliSession = vi.fn().mockResolvedValue({ deleted: true });
+		const listSessions = vi.fn().mockResolvedValue([]);
+		const deleteSession = vi.fn().mockResolvedValue({ deleted: true });
 		const sessionService = {
 			createRootSessionWithArtifacts,
 			persistSessionMessages,
 			updateSessionStatus,
 			writeSessionManifest,
-			listCliSessions,
-			deleteCliSession,
+			listSessions,
+			deleteSession,
 		};
 
 		const shutdown = vi.fn();
@@ -153,17 +148,12 @@ describe("DefaultSessionManager", () => {
 				hookPath: "/tmp/hook-2.log",
 				messagesPath: "/tmp/messages-2.json",
 				manifest,
-				env: {
-					CLINE_SESSION_ID: sessionId,
-					CLINE_HOOKS_LOG_PATH: "/tmp/hook-2.log",
-					CLINE_ENABLE_SUBPROCESS_HOOKS: "1" as const,
-				},
 			}),
 			persistSessionMessages: vi.fn(),
 			updateSessionStatus: vi.fn().mockResolvedValue({ updated: true }),
 			writeSessionManifest: vi.fn(),
-			listCliSessions: vi.fn().mockResolvedValue([]),
-			deleteCliSession: vi.fn().mockResolvedValue({ deleted: true }),
+			listSessions: vi.fn().mockResolvedValue([]),
+			deleteSession: vi.fn().mockResolvedValue({ deleted: true }),
 		};
 		const runtimeBuilder = {
 			build: vi.fn().mockReturnValue({
@@ -201,5 +191,61 @@ describe("DefaultSessionManager", () => {
 		expect(run).toHaveBeenCalledTimes(1);
 		expect(continueFn).toHaveBeenCalledTimes(1);
 		expect(sessionService.persistSessionMessages).toHaveBeenCalledTimes(2);
+	});
+
+	it("marks a failed single-run session as failed when run throws", async () => {
+		const sessionId = "sess-fail";
+		const manifest = createManifest(sessionId);
+		const sessionService = {
+			createRootSessionWithArtifacts: vi.fn().mockResolvedValue({
+				manifestPath: "/tmp/manifest-fail.json",
+				transcriptPath: "/tmp/transcript-fail.log",
+				hookPath: "/tmp/hook-fail.log",
+				messagesPath: "/tmp/messages-fail.json",
+				manifest,
+			}),
+			persistSessionMessages: vi.fn(),
+			updateSessionStatus: vi.fn().mockResolvedValue({ updated: true }),
+			writeSessionManifest: vi.fn(),
+			listSessions: vi.fn().mockResolvedValue([]),
+			deleteSession: vi.fn().mockResolvedValue({ deleted: true }),
+		};
+		const runtimeShutdown = vi.fn();
+		const runtimeBuilder = {
+			build: vi.fn().mockReturnValue({
+				tools: [],
+				shutdown: runtimeShutdown,
+			}),
+		};
+		const run = vi.fn().mockRejectedValue(new Error("run failed"));
+		const agentShutdown = vi.fn().mockResolvedValue(undefined);
+		const manager = new DefaultSessionManager({
+			sessionService: sessionService as never,
+			runtimeBuilder,
+			createAgent: () =>
+				({
+					run,
+					continue: vi.fn(),
+					abort: vi.fn(),
+					shutdown: agentShutdown,
+					getMessages: vi.fn().mockReturnValue([]),
+					messages: [],
+				}) as never,
+		});
+
+		await expect(
+			manager.start({
+				config: createConfig(),
+				prompt: "hello",
+				interactive: false,
+			}),
+		).rejects.toThrow("run failed");
+		expect(sessionService.updateSessionStatus).toHaveBeenCalledWith(
+			sessionId,
+			"failed",
+			1,
+		);
+		expect(agentShutdown).toHaveBeenCalledTimes(1);
+		expect(runtimeShutdown).toHaveBeenCalledTimes(1);
 	});
 });

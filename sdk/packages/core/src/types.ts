@@ -66,6 +66,10 @@ export type {
 	SessionRuntime,
 } from "./runtime/session-runtime";
 export type {
+	CreateSessionHostOptions,
+	SessionHost,
+} from "./session/session-host";
+export type {
 	SendSessionInput,
 	SessionManager,
 	StartSessionInput,

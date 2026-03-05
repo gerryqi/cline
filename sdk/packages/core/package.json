@@ -38,7 +38,7 @@
 	"scripts": {
 		"build": "bun run ./build.ts && bun tsc --emitDeclarationOnly",
 		"clean": "rm -rf dist node_modules",
-		"typecheck": "bun tsc --noEmit",
+		"typecheck": "bun tsc -p tsconfig.dev.json --noEmit",
 		"test": "vitest run",
 		"test:watch": "vitest"
 	},
@@ -47,7 +47,6 @@
 		"@cline/llms": "workspace:*",
 		"@cline/rpc": "workspace:*",
 		"@cline/shared": "workspace:*",
-		"better-sqlite3": "^11.10.0",
 		"nanoid": "^5.1.6",
 		"simple-git": "^3.32.3",
 		"yaml": "^2.8.2",

@@ -11,7 +11,10 @@ export type {
 	RuntimeBuilderInput,
 	SessionRuntime,
 } from "./session-runtime";
-export { requestDesktopToolApproval } from "./tool-approval";
+export {
+	type DesktopToolApprovalOptions,
+	requestDesktopToolApproval,
+} from "./tool-approval";
 export {
 	type AvailableWorkflow,
 	listAvailableWorkflowsFromWatcher,

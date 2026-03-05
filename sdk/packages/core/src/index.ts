@@ -19,7 +19,25 @@ export {
 	ChatSummarySchema,
 	ChatViewStateSchema,
 } from "./chat/chat-schema";
-
+export {
+	ALL_DEFAULT_TOOL_NAMES,
+	type AskQuestionExecutor,
+	type CreateBuiltinToolsOptions,
+	type CreateDefaultToolsOptions,
+	createBuiltinTools,
+	createDefaultExecutors,
+	createDefaultTools,
+	createDefaultToolsWithPreset,
+	createToolPoliciesWithPreset,
+	type DefaultExecutorsOptions,
+	type DefaultToolName,
+	DefaultToolNames,
+	type DefaultToolsConfig,
+	type ToolExecutors,
+	type ToolPolicyPresetName,
+	type ToolPresetName,
+	ToolPresets,
+} from "./default-tools";
 export {
 	hasMcpSettingsFile,
 	InMemoryMcpManager,
@@ -52,9 +70,8 @@ export { ProviderSettingsManager } from "./storage/provider-settings-manager";
 
 // Compatibility barrel (legacy imports).
 export type { RuntimeEnvironment, SessionEvent, StoredMessages } from "./types";
-
 export type { SessionStatus } from "./types/common";
-export { SessionSource } from "./types/common";
+export { SESSION_STATUSES, SessionSource } from "./types/common";
 export type {
 	CoreAgentMode,
 	CoreModelConfig,

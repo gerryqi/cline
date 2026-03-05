@@ -16,11 +16,6 @@ export function nowIso(): string {
 	return new Date().toISOString();
 }
 
-export function getRootSessionIdFromEnv(): string | undefined {
-	const value = process.env.CLINE_SESSION_ID?.trim();
-	return value || undefined;
-}
-
 export function unlinkIfExists(path: string | null | undefined): void {
 	if (!path || !existsSync(path)) {
 		return;

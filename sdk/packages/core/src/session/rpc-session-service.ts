@@ -12,15 +12,11 @@ import type {
 } from "@cline/agents";
 import type { providers as LlmsProviders } from "@cline/llms";
 import { RpcSessionClient, type RpcSessionRow } from "@cline/rpc";
+import { resolveRootSessionId } from "@cline/shared";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { SessionSource, type SessionStatus } from "../types/common";
-import {
-	getRootSessionIdFromEnv,
-	nowIso,
-	SessionArtifacts,
-	unlinkIfExists,
-} from "./session-artifacts";
+import { nowIso, SessionArtifacts, unlinkIfExists } from "./session-artifacts";
 import {
 	deriveSubsessionStatus,
 	makeSubSessionId,
@@ -133,6 +129,10 @@ export class RpcCoreSessionService {
 		});
 	}
 
+	private teamTaskQueueKey(rootSessionId: string, agentId: string): string {
+		return `${rootSessionId}::${agentId}`;
+	}
+
 	ensureSessionsDir(): string {
 		if (!existsSync(this.sessionsDirPath)) {
 			mkdirSync(this.sessionsDirPath, { recursive: true });
@@ -156,8 +156,13 @@ export class RpcCoreSessionService {
 		return this.artifacts.sessionManifestPath(sessionId, ensureDir);
 	}
 
-	private activeTeamTaskSessionId(parentAgentId: string): string | undefined {
-		const queue = this.teamTaskSessionsByAgent.get(parentAgentId);
+	private activeTeamTaskSessionId(
+		rootSessionId: string,
+		parentAgentId: string,
+	): string | undefined {
+		const queue = this.teamTaskSessionsByAgent.get(
+			this.teamTaskQueueKey(rootSessionId, parentAgentId),
+		);
 		if (!queue || queue.length === 0) {
 			return undefined;
 		}
@@ -165,6 +170,7 @@ export class RpcCoreSessionService {
 	}
 
 	private subagentArtifactPaths(
+		rootSessionId: string,
 		sessionId: string,
 		parentAgentId: string,
 		subAgentId: string,
@@ -176,7 +182,7 @@ export class RpcCoreSessionService {
 		return this.artifacts.subagentArtifactPaths(
 			sessionId,
 			subAgentId,
-			this.activeTeamTaskSessionId(parentAgentId),
+			this.activeTeamTaskSessionId(rootSessionId, parentAgentId),
 		);
 	}
 
@@ -253,11 +259,6 @@ export class RpcCoreSessionService {
 			hookPath,
 			messagesPath,
 			manifest,
-			env: {
-				CLINE_SESSION_ID: sessionId,
-				CLINE_HOOKS_LOG_PATH: hookPath,
-				CLINE_ENABLE_SUBPROCESS_HOOKS: "1",
-			},
 		};
 	}
 
@@ -300,7 +301,7 @@ export class RpcCoreSessionService {
 		if (event.tool_call?.name !== "spawn_agent") {
 			return;
 		}
-		const rootSessionId = getRootSessionIdFromEnv();
+		const rootSessionId = resolveRootSessionId(event.sessionContext);
 		if (!rootSessionId) {
 			return;
 		}
@@ -334,7 +335,7 @@ export class RpcCoreSessionService {
 	async upsertSubagentSession(
 		input: UpsertSubagentInput,
 	): Promise<string | undefined> {
-		const rootSessionId = input.rootSessionId ?? getRootSessionIdFromEnv();
+		const rootSessionId = input.rootSessionId;
 		if (!rootSessionId) {
 			return undefined;
 		}
@@ -346,6 +347,7 @@ export class RpcCoreSessionService {
 		const existing = await this.client.getSession(sessionId);
 		const startedAt = nowIso();
 		const artifactPaths = this.subagentArtifactPaths(
+			rootSessionId,
 			sessionId,
 			input.parentAgentId,
 			input.agentId,
@@ -417,6 +419,7 @@ export class RpcCoreSessionService {
 			agentId: event.agent_id,
 			parentAgentId: event.parent_agent_id,
 			conversationId: event.taskId,
+			rootSessionId: resolveRootSessionId(event.sessionContext),
 		});
 	}
 
@@ -504,13 +507,10 @@ export class RpcCoreSessionService {
 	}
 
 	private async createTeamTaskSubSession(
+		rootSessionId: string,
 		agentId: string,
 		message: string,
 	): Promise<string | undefined> {
-		const rootSessionId = getRootSessionIdFromEnv();
-		if (!rootSessionId) {
-			return undefined;
-		}
 		const root = await this.readRootSession(rootSessionId);
 		if (!root) {
 			return undefined;
@@ -558,31 +558,42 @@ export class RpcCoreSessionService {
 		return sessionId;
 	}
 
-	async onTeamTaskStart(agentId: string, message: string): Promise<void> {
-		const sessionId = await this.createTeamTaskSubSession(agentId, message);
+	async onTeamTaskStart(
+		rootSessionId: string,
+		agentId: string,
+		message: string,
+	): Promise<void> {
+		const sessionId = await this.createTeamTaskSubSession(
+			rootSessionId,
+			agentId,
+			message,
+		);
 		if (!sessionId) {
 			return;
 		}
-		const queue = this.teamTaskSessionsByAgent.get(agentId) ?? [];
+		const key = this.teamTaskQueueKey(rootSessionId, agentId);
+		const queue = this.teamTaskSessionsByAgent.get(key) ?? [];
 		queue.push(sessionId);
-		this.teamTaskSessionsByAgent.set(agentId, queue);
+		this.teamTaskSessionsByAgent.set(key, queue);
 	}
 
 	async onTeamTaskEnd(
+		rootSessionId: string,
 		agentId: string,
 		status: SessionStatus,
 		summary?: string,
 		messages?: LlmsProviders.Message[],
 	): Promise<void> {
-		const queue = this.teamTaskSessionsByAgent.get(agentId);
+		const key = this.teamTaskQueueKey(rootSessionId, agentId);
+		const queue = this.teamTaskSessionsByAgent.get(key);
 		if (!queue || queue.length === 0) {
 			return;
 		}
 		const sessionId = queue.shift();
 		if (queue.length === 0) {
-			this.teamTaskSessionsByAgent.delete(agentId);
+			this.teamTaskSessionsByAgent.delete(key);
 		} else {
-			this.teamTaskSessionsByAgent.set(agentId, queue);
+			this.teamTaskSessionsByAgent.set(key, queue);
 		}
 		if (!sessionId) {
 			return;
@@ -597,12 +608,16 @@ export class RpcCoreSessionService {
 		await this.applySubagentStatusBySessionId(sessionId, status);
 	}
 
-	async handleSubAgentStart(context: SubAgentStartContext): Promise<void> {
+	async handleSubAgentStart(
+		rootSessionId: string,
+		context: SubAgentStartContext,
+	): Promise<void> {
 		const subSessionId = await this.upsertSubagentSession({
 			agentId: context.subAgentId,
 			parentAgentId: context.parentAgentId,
 			conversationId: context.conversationId,
 			prompt: context.input.task,
+			rootSessionId,
 		});
 		if (!subSessionId) {
 			return;
@@ -614,12 +629,16 @@ export class RpcCoreSessionService {
 		await this.applySubagentStatusBySessionId(subSessionId, "running");
 	}
 
-	async handleSubAgentEnd(context: SubAgentEndContext): Promise<void> {
+	async handleSubAgentEnd(
+		rootSessionId: string,
+		context: SubAgentEndContext,
+	): Promise<void> {
 		const subSessionId = await this.upsertSubagentSession({
 			agentId: context.subAgentId,
 			parentAgentId: context.parentAgentId,
 			conversationId: context.conversationId,
 			prompt: context.input.task,
+			rootSessionId,
 		});
 		if (!subSessionId) {
 			return;
@@ -643,14 +662,40 @@ export class RpcCoreSessionService {
 		await this.applySubagentStatusBySessionId(subSessionId, "completed");
 	}
 
-	async listCliSessions(limit = 200): Promise<SessionRowShape[]> {
+	async listSessions(limit = 200): Promise<SessionRowShape[]> {
 		const requestedLimit = Math.max(1, Math.floor(limit));
 		const scanLimit = Math.min(requestedLimit * 5, 2000);
-		const rows = await this.client.listSessions({ limit: scanLimit });
+		let rows = await this.client.listSessions({ limit: scanLimit });
+		const staleRunning = rows.filter(
+			(row) => row.status === "running" && !this.isPidAlive(row.pid),
+		);
+		if (staleRunning.length > 0) {
+			for (const row of staleRunning) {
+				await this.updateSessionStatus(row.sessionId, "failed", 1);
+			}
+			rows = await this.client.listSessions({ limit: scanLimit });
+		}
 		return rows
 			.map((row) => toShape(row))
 			.filter((row) => this.hasPersistedConversation(row))
 			.slice(0, requestedLimit);
+	}
+
+	private isPidAlive(pid: number): boolean {
+		if (!Number.isFinite(pid) || pid <= 0) {
+			return false;
+		}
+		try {
+			process.kill(Math.floor(pid), 0);
+			return true;
+		} catch (error) {
+			return (
+				typeof error === "object" &&
+				error !== null &&
+				"code" in error &&
+				(error as { code?: string }).code === "EPERM"
+			);
+		}
 	}
 
 	private hasPersistedConversation(row: SessionRowShape): boolean {
@@ -679,7 +724,7 @@ export class RpcCoreSessionService {
 		}
 	}
 
-	async deleteCliSession(sessionId: string): Promise<{ deleted: boolean }> {
+	async deleteSession(sessionId: string): Promise<{ deleted: boolean }> {
 		const id = sessionId.trim();
 		if (!id) {
 			throw new Error("session id is required");

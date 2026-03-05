@@ -1,10 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import {
-	type FastFileIndexOptions,
-	formatFileContentBlock,
-	getFileIndex,
-} from "@cline/shared";
+import { formatFileContentBlock } from "@cline/shared";
+import { type FastFileIndexOptions, getFileIndex } from "./file-indexer";
 
 const DEFAULT_MAX_FILES = 6;
 const DEFAULT_MAX_FILE_BYTES = 60_000;

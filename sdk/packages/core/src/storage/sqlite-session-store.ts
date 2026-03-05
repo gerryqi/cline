@@ -9,7 +9,7 @@ import {
 	nowIso,
 	type SqliteDb,
 	toBoolInt,
-} from "@cline/shared";
+} from "@cline/shared/db";
 import type { SessionStatus } from "../types/common";
 import type { SessionRecord } from "../types/sessions";
 import type { SessionStore } from "../types/storage";

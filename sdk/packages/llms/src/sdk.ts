@@ -69,24 +69,14 @@ export class DefaultLlmsSdk implements LlmsSdk {
 	}
 
 	createHandler(input: CreateHandlerInput): ApiHandler {
-		const providerConfig = this.requireConfiguredProvider(input.providerId);
-		const modelId = input.modelId ?? providerConfig.defaultModel;
-
-		if (!providerConfig.models.has(modelId)) {
-			throw new Error(
-				`Model "${modelId}" is not configured for provider "${input.providerId}".`,
-			);
-		}
-
-		return createProviderHandler({
-			providerId: input.providerId,
-			modelId,
-			...providerConfig.defaults,
-			...input.overrides,
-		});
+		return createProviderHandler(this.toProviderHandlerConfig(input));
 	}
 
 	async createHandlerAsync(input: CreateHandlerInput): Promise<ApiHandler> {
+		return createProviderHandlerAsync(this.toProviderHandlerConfig(input));
+	}
+
+	private toProviderHandlerConfig(input: CreateHandlerInput) {
 		const providerConfig = this.requireConfiguredProvider(input.providerId);
 		const modelId = input.modelId ?? providerConfig.defaultModel;
 
@@ -96,12 +86,12 @@ export class DefaultLlmsSdk implements LlmsSdk {
 			);
 		}
 
-		return createProviderHandlerAsync({
+		return {
 			providerId: input.providerId,
 			modelId,
 			...providerConfig.defaults,
 			...input.overrides,
-		});
+		};
 	}
 
 	registerProvider(input: RegisterProviderInput): void {

@@ -3,6 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { type HookEventPayload, parseHookEventPayload } from "@cline/agents";
+import { resolveHookLogPath } from "@cline/shared";
 import { nanoid } from "nanoid";
 import type { ParsedArgs } from "./types";
 
@@ -297,36 +298,15 @@ function resolveClineDataDir(): string {
 	return join(homedir(), ".cline", "data");
 }
 
-function defaultSessionDataDir(): string {
-	const envPath = process.env.CLINE_SESSION_DATA_DIR?.trim();
-	if (envPath) {
-		return envPath;
-	}
-	return join(resolveClineDataDir(), "sessions");
-}
-
-function defaultSessionHookPath(sessionId: string): string {
-	return join(defaultSessionDataDir(), sessionId, `${sessionId}.hooks.jsonl`);
-}
-
 export function appendHookAudit(event: HookEventPayload): void {
-	const explicitPath = process.env.CLINE_HOOKS_LOG_PATH?.trim();
-	const envSessionId = process.env.CLINE_SESSION_ID?.trim();
-	const sessionHookPath = envSessionId
-		? defaultSessionHookPath(envSessionId)
-		: undefined;
+	const payloadHookPath = resolveHookLogPath(event.sessionContext);
 	const line = `${JSON.stringify({
 		ts: new Date().toISOString(),
 		...event,
 	})}\n`;
-	if (explicitPath) {
-		ensureHookLogDir(explicitPath);
-		appendFileSync(explicitPath, line, "utf-8");
-		return;
-	}
-	if (sessionHookPath) {
-		ensureHookLogDir(sessionHookPath);
-		appendFileSync(sessionHookPath, line, "utf-8");
+	if (payloadHookPath) {
+		ensureHookLogDir(payloadHookPath);
+		appendFileSync(payloadHookPath, line, "utf-8");
 		return;
 	}
 	const dir = ensureHookLogDir();

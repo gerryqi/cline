@@ -136,6 +136,65 @@ function convertUserMessage(content: ContentBlock[]): OpenAIMessage[] {
 }
 
 /**
+ * Normalize a JSON Schema for OpenAI strict mode.
+ *
+ * Strict mode requires:
+ * - `additionalProperties: false` on every object
+ * - All properties listed in `required` (optional ones become nullable)
+ */
+function normalizeForStrictMode(schema: unknown): unknown {
+	if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+		return schema;
+	}
+
+	const s = { ...(schema as Record<string, unknown>) };
+
+	// Remove $schema – OpenAI rejects it
+	delete s.$schema;
+
+	if (s.type === "object") {
+		s.additionalProperties = false;
+
+		const properties = s.properties as Record<string, unknown> | undefined;
+		const required = (s.required as string[] | undefined) ?? [];
+
+		if (properties) {
+			const allKeys = Object.keys(properties);
+			const requiredSet = new Set(required);
+
+			// Make every property required; wrap non-required ones as nullable
+			const normalized: Record<string, unknown> = {};
+			for (const key of allKeys) {
+				let prop = normalizeForStrictMode(properties[key]);
+				if (!requiredSet.has(key)) {
+					// Wrap as nullable via anyOf
+					prop = { anyOf: [prop, { type: "null" }] };
+				}
+				normalized[key] = prop;
+			}
+			s.properties = normalized;
+			s.required = allKeys;
+		}
+	}
+
+	// Recurse into nested schemas
+	if (s.items) {
+		s.items = Array.isArray(s.items)
+			? s.items.map((i) => normalizeForStrictMode(i))
+			: normalizeForStrictMode(s.items);
+	}
+	for (const keyword of ["anyOf", "oneOf", "allOf"] as const) {
+		if (Array.isArray(s[keyword])) {
+			s[keyword] = (s[keyword] as unknown[]).map((i) =>
+				normalizeForStrictMode(i),
+			);
+		}
+	}
+
+	return s;
+}
+
+/**
  * Convert tool definitions to OpenAI format
  */
 export function convertToolsToOpenAI(
@@ -146,7 +205,10 @@ export function convertToolsToOpenAI(
 		function: {
 			name: tool.name,
 			description: tool.description,
-			parameters: tool.inputSchema as OpenAI.FunctionParameters,
+			parameters: normalizeForStrictMode(
+				tool.inputSchema,
+			) as OpenAI.FunctionParameters,
+			strict: true,
 		},
 	}));
 }

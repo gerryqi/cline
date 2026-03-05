@@ -222,12 +222,12 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 			<div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-3">
 				<h1 className="text-lg font-semibold text-foreground">Settings</h1>
 				<Button
-					onClick={onClose}
-					className="justify-start"
 					aria-label="Close settings"
+					className="justify-start"
+					onClick={onClose}
 					variant="ghost"
 				>
-					<X className="h-4 w-4" />
+					<X className="size-3" />
 				</Button>
 			</div>
 
@@ -242,40 +242,40 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 									return (
 										<div key={cat}>
 											<Button
-												variant="ghost"
-												onClick={() => {
-													setActiveNav("Providers");
-													setSelectedProviderId(null);
-													setProvidersExpanded((p) => !p);
-												}}
 												className={cn(
 													"flex w-full items-center justify-between rounded-md px-3 py-2 text-sm transition-colors",
 													activeNav === "Providers"
 														? "bg-accent text-accent-foreground font-medium"
 														: "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
 												)}
+												onClick={() => {
+													setActiveNav("Providers");
+													setSelectedProviderId(null);
+													setProvidersExpanded((p) => !p);
+												}}
+												variant="ghost"
 											>
 												<span>Providers</span>
 												{providersExpanded ? (
-													<ChevronDown className="h-3.5 w-3.5" />
+													<ChevronDown className="size-3" />
 												) : (
-													<ChevronRight className="h-3.5 w-3.5" />
+													<ChevronRight className="size-3" />
 												)}
 											</Button>
 											{providersExpanded && (
 												<div className="ml-3 mt-0.5 flex flex-col gap-0.5 border-l border-border pl-2">
 													{enabledProviders.map((prov) => (
 														<Button
-															variant="ghost"
-															key={prov.id}
-															onClick={() => openProviderDetail(prov.id)}
-															disabled={oauthSigningProviderId === prov.id}
 															className={cn(
 																"justify-start",
 																selectedProviderId === prov.id
 																	? "bg-accent/80 text-foreground"
 																	: "text-muted-foreground hover:text-foreground hover:bg-accent/30",
 															)}
+															disabled={oauthSigningProviderId === prov.id}
+															key={prov.id}
+															onClick={() => openProviderDetail(prov.id)}
+															variant="ghost"
 														>
 															<span className="truncate">{prov.name}</span>
 														</Button>
@@ -287,18 +287,18 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 								}
 								return (
 									<Button
-										key={cat}
-										onClick={() => {
-											setActiveNav(cat);
-											setSelectedProviderId(null);
-										}}
-										variant="ghost"
 										className={cn(
 											"justify-start",
 											activeNav === cat && !selectedProviderId
 												? "bg-accent text-accent-foreground font-medium"
 												: "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
 										)}
+										key={cat}
+										onClick={() => {
+											setActiveNav(cat);
+											setSelectedProviderId(null);
+										}}
+										variant="ghost"
 									>
 										{cat}
 									</Button>
@@ -312,22 +312,22 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 				<div className="flex-1 overflow-hidden">
 					{activeNav === "Providers" && selectedProvider ? (
 						<ProviderDetailContent
-							provider={selectedProvider}
-							onBack={backToProviderList}
-							onUpdate={(updates) =>
-								updateProvider(selectedProvider.id, updates)
-							}
-							onLoadModels={() => void loadProviderModels(selectedProvider.id)}
+							modelsError={modelsErrorByProvider[selectedProvider.id] ?? null}
 							modelsLoading={
 								modelsLoadingByProvider[selectedProvider.id] ?? false
 							}
-							modelsError={modelsErrorByProvider[selectedProvider.id] ?? null}
+							oauthLoginPending={oauthSigningProviderId === selectedProvider.id}
+							onBack={backToProviderList}
+							onLoadModels={() => void loadProviderModels(selectedProvider.id)}
 							onOAuthLogin={
 								isOAuthProvider(selectedProvider.id)
 									? () => void runOAuthProviderLogin(selectedProvider.id)
 									: undefined
 							}
-							oauthLoginPending={oauthSigningProviderId === selectedProvider.id}
+							onUpdate={(updates) =>
+								updateProvider(selectedProvider.id, updates)
+							}
+							provider={selectedProvider}
 						/>
 					) : activeNav === "Providers" ? (
 						providersLoading ? (
@@ -344,9 +344,9 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 							</div>
 						) : (
 							<ProviderListContent
-								providers={providers}
-								onToggle={toggleProvider}
 								onConfigure={openProviderDetail}
+								onToggle={toggleProvider}
+								providers={providers}
 							/>
 						)
 					) : activeNav === "MCP" ? (

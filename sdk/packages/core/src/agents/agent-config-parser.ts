@@ -1,11 +1,7 @@
-import {
-	type AgentConfig,
-	ALL_DEFAULT_TOOL_NAMES,
-	type DefaultToolName,
-	type Tool,
-} from "@cline/agents";
+import type { AgentConfig, Tool } from "@cline/agents";
 import YAML from "yaml";
 import { z } from "zod";
+import { ALL_DEFAULT_TOOL_NAMES, type DefaultToolName } from "../default-tools";
 
 const AgentConfigFrontmatterSchema = z.object({
 	name: z.string().trim().min(1),

@@ -3,13 +3,9 @@ import { join } from "node:path";
 import {
 	AgentTeamsRuntime,
 	bootstrapAgentTeams,
-	createBuiltinTools,
-	type SkillsExecutor,
 	type TeamEvent,
 	type TeamTeammateSpec,
 	type Tool,
-	type ToolExecutors,
-	ToolPresets,
 } from "@cline/agents";
 import { nanoid } from "nanoid";
 import {
@@ -17,6 +13,12 @@ import {
 	type SkillConfig,
 	type UserInstructionConfigWatcher,
 } from "../agents";
+import {
+	createBuiltinTools,
+	type SkillsExecutor,
+	type ToolExecutors,
+	ToolPresets,
+} from "../default-tools";
 import { FileTeamPersistenceStore } from "../session/session-service";
 import type { CoreAgentMode, CoreSessionConfig } from "../types/config";
 import type {
@@ -284,6 +286,7 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 		const {
 			config,
 			hooks,
+			logger,
 			createSpawnTool,
 			onTeamRestored,
 			userInstructionWatcher: sharedUserInstructionWatcher,
@@ -413,6 +416,7 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 						thinking: config.thinking,
 						maxIterations: config.maxIterations,
 						hooks,
+						logger: logger ?? config.logger,
 					},
 				});
 
@@ -442,6 +446,7 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 
 		return {
 			tools,
+			logger: logger ?? config.logger,
 			teamRuntime,
 			shutdown: (reason: string) => {
 				shutdownTeamRuntime(teamRuntime, reason);

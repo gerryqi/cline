@@ -1,0 +1,169 @@
+import { createRequire } from "node:module";
+
+export type SqliteStatement = {
+	run: (...params: unknown[]) => { changes?: number };
+	get: (...params: unknown[]) => Record<string, unknown> | null;
+	all: (...params: unknown[]) => Record<string, unknown>[];
+};
+
+export type SqliteDb = {
+	prepare: (sql: string) => SqliteStatement;
+	exec: (sql: string) => void;
+};
+
+type BunSqliteDb = {
+	query: (sql: string) => {
+		run: (...params: unknown[]) => { changes?: number };
+		get: (...params: unknown[]) => Record<string, unknown> | null;
+		all: (...params: unknown[]) => Record<string, unknown>[];
+	};
+	exec: (sql: string) => void;
+};
+
+export function nowIso(): string {
+	return new Date().toISOString();
+}
+
+export function toBoolInt(value: boolean): number {
+	return value ? 1 : 0;
+}
+
+export function asString(value: unknown): string {
+	return typeof value === "string" ? value : "";
+}
+
+export function asOptionalString(value: unknown): string | undefined {
+	if (typeof value !== "string") {
+		return undefined;
+	}
+	const trimmed = value.trim();
+	return trimmed.length > 0 ? trimmed : undefined;
+}
+
+export function asBool(value: unknown): boolean {
+	return value === 1 || value === true;
+}
+
+export function loadSqliteDb(filePath: string): SqliteDb {
+	const require = createRequire(import.meta.url);
+	const isBunRuntime =
+		typeof (globalThis as { Bun?: unknown }).Bun !== "undefined";
+
+	if (isBunRuntime) {
+		const { Database } = require("bun:sqlite") as {
+			Database: new (
+				path: string,
+				options?: { create?: boolean; strict?: boolean },
+			) => BunSqliteDb;
+		};
+		const db = new Database(filePath, { create: true });
+
+		return {
+			prepare: (sql: string): SqliteStatement => {
+				const query = db.query(sql);
+				return {
+					run: (...params: unknown[]) => query.run(...params),
+					get: (...params: unknown[]) => query.get(...params),
+					all: (...params: unknown[]) => query.all(...params),
+				};
+			},
+			exec: (sql: string) => db.exec(sql),
+		};
+	}
+
+	// Keep the module name non-literal so browser/SSR bundlers don't try to resolve
+	// better-sqlite3 when this Node-only path is not executed.
+	const betterSqlite3ModuleName = ["better", "-sqlite3"].join("");
+	const BetterSqlite3 = require(betterSqlite3ModuleName) as new (
+		path: string,
+	) => SqliteDb;
+	return new BetterSqlite3(filePath);
+}
+
+export interface SessionSchemaOptions {
+	includeLegacyMigrations?: boolean;
+}
+
+export function ensureSessionSchema(
+	db: SqliteDb,
+	options: SessionSchemaOptions = {},
+): void {
+	db.exec("PRAGMA journal_mode = WAL;");
+	db.exec("PRAGMA busy_timeout = 5000;");
+	db.exec(`
+		CREATE TABLE IF NOT EXISTS sessions (
+			session_id TEXT PRIMARY KEY,
+			source TEXT NOT NULL,
+			pid INTEGER NOT NULL,
+			started_at TEXT NOT NULL,
+			ended_at TEXT,
+			exit_code INTEGER,
+			status TEXT NOT NULL,
+			status_lock INTEGER NOT NULL DEFAULT 0,
+			interactive INTEGER NOT NULL,
+			provider TEXT NOT NULL,
+			model TEXT NOT NULL,
+			cwd TEXT NOT NULL,
+			workspace_root TEXT NOT NULL,
+			team_name TEXT,
+			enable_tools INTEGER NOT NULL,
+			enable_spawn INTEGER NOT NULL,
+			enable_teams INTEGER NOT NULL,
+			parent_session_id TEXT,
+			parent_agent_id TEXT,
+			agent_id TEXT,
+			conversation_id TEXT,
+			is_subagent INTEGER NOT NULL DEFAULT 0,
+			prompt TEXT,
+			transcript_path TEXT NOT NULL,
+			hook_path TEXT NOT NULL,
+			messages_path TEXT,
+			updated_at TEXT NOT NULL
+		);
+	`);
+	db.exec(`
+		CREATE TABLE IF NOT EXISTS subagent_spawn_queue (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			root_session_id TEXT NOT NULL,
+			parent_agent_id TEXT NOT NULL,
+			task TEXT,
+			system_prompt TEXT,
+			created_at TEXT NOT NULL,
+			consumed_at TEXT
+		);
+	`);
+
+	if (!options.includeLegacyMigrations) {
+		return;
+	}
+
+	const columns = db.prepare("PRAGMA table_info(sessions);").all();
+	const hasColumn = (name: string): boolean =>
+		columns.some((column) => column.name === name);
+	if (!hasColumn("workspace_root")) {
+		db.exec("ALTER TABLE sessions ADD COLUMN workspace_root TEXT;");
+		db.exec(
+			"UPDATE sessions SET workspace_root = cwd WHERE workspace_root IS NULL OR workspace_root = '';",
+		);
+	}
+	if (!hasColumn("parent_session_id")) {
+		db.exec("ALTER TABLE sessions ADD COLUMN parent_session_id TEXT;");
+	}
+	if (!hasColumn("parent_agent_id")) {
+		db.exec("ALTER TABLE sessions ADD COLUMN parent_agent_id TEXT;");
+	}
+	if (!hasColumn("agent_id")) {
+		db.exec("ALTER TABLE sessions ADD COLUMN agent_id TEXT;");
+	}
+	if (!hasColumn("conversation_id")) {
+		db.exec("ALTER TABLE sessions ADD COLUMN conversation_id TEXT;");
+	}
+	if (!hasColumn("is_subagent")) {
+		db.exec(
+			"ALTER TABLE sessions ADD COLUMN is_subagent INTEGER NOT NULL DEFAULT 0;",
+		);
+	}
+	if (!hasColumn("messages_path")) {
+		db.exec("ALTER TABLE sessions ADD COLUMN messages_path TEXT;");
+	}
+}

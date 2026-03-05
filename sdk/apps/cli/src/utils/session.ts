@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import {
 	CoreSessionService,
+	createSessionHost,
 	RpcCoreSessionService,
 	resolveSessionDataDir,
 	type SessionManifest,
@@ -20,6 +21,7 @@ let initPromise:
 export interface CliSessionManager {
 	start(input: {
 		config: import("@cline/core/server").CoreSessionConfig;
+		source?: import("@cline/core/server").SessionSource;
 		prompt?: string;
 		interactive?: boolean;
 		initialMessages?: import("@cline/llms").providers.Message[];
@@ -27,7 +29,7 @@ export interface CliSessionManager {
 		userFiles?: string[];
 		userInstructionWatcher?: import("@cline/core/server").UserInstructionConfigWatcher;
 		onTeamRestored?: () => void;
-		defaultToolExecutors?: Partial<import("@cline/agents").ToolExecutors>;
+		defaultToolExecutors?: Partial<import("@cline/core/server").ToolExecutors>;
 		toolPolicies?: import("@cline/agents").AgentConfig["toolPolicies"];
 		requestToolApproval?: (
 			request: import("@cline/agents").ToolApprovalRequest,
@@ -145,42 +147,26 @@ export async function getCoreSessionBackend(): Promise<
 }
 
 export async function createDefaultCliSessionManager(options?: {
-	defaultToolExecutors?: Partial<import("@cline/agents").ToolExecutors>;
+	defaultToolExecutors?: Partial<import("@cline/core/server").ToolExecutors>;
 	toolPolicies?: import("@cline/agents").AgentConfig["toolPolicies"];
 	requestToolApproval?: (
 		request: import("@cline/agents").ToolApprovalRequest,
 	) => Promise<import("@cline/agents").ToolApprovalResult>;
 }): Promise<CliSessionManager> {
-	const module = await import("@cline/core/server");
-	const SessionManagerCtor = (
-		module as {
-			DefaultSessionManager?: new (args: {
-				sessionService: RpcCoreSessionService | CoreSessionService;
-				defaultToolExecutors?: Partial<import("@cline/agents").ToolExecutors>;
-				toolPolicies?: import("@cline/agents").AgentConfig["toolPolicies"];
-				requestToolApproval?: (
-					request: import("@cline/agents").ToolApprovalRequest,
-				) => Promise<import("@cline/agents").ToolApprovalResult>;
-			}) => CliSessionManager;
-		}
-	).DefaultSessionManager;
-	if (!SessionManagerCtor) {
-		throw new Error("@cline/core/server does not export DefaultSessionManager");
-	}
-	return new SessionManagerCtor({
+	return (await createSessionHost({
 		sessionService: await getCoreSessions(),
 		defaultToolExecutors: options?.defaultToolExecutors,
 		toolPolicies: options?.toolPolicies,
 		requestToolApproval: options?.requestToolApproval,
-	});
+	})) as CliSessionManager;
 }
 
-export async function listCliSessions(limit = 200): Promise<unknown[]> {
-	return await (await getCoreSessions()).listCliSessions(limit);
+export async function listSessions(limit = 200): Promise<unknown[]> {
+	return await (await getCoreSessions()).listSessions(limit);
 }
 
-export async function deleteCliSession(
+export async function deleteSession(
 	sessionId: string,
 ): Promise<{ deleted: boolean }> {
-	return await (await getCoreSessions()).deleteCliSession(sessionId);
+	return await (await getCoreSessions()).deleteSession(sessionId);
 }

@@ -6,15 +6,15 @@
  */
 /** biome-ignore-all lint/style/noNonNullAssertion: static */
 
+import { MODELS_DEV_PROVIDER_KEY_MAP } from "@cline/shared";
 import {
 	fetchModelsDevProviderModels,
 	sortModelsByReleaseDate,
 } from "../../models/models-dev-catalog.js";
-import * as modelProviderExports from "../../models/providers/index.js";
-import type {
-	ModelCollection,
-	ProviderProtocol,
-} from "../../models/schemas/index.js";
+import {
+	buildOpenAICompatibleProviderDefaults,
+	type OpenAICompatibleProviderDefaults,
+} from "../shared/openai-compatible.js";
 import type {
 	ModelCatalogConfig,
 	ModelInfo,
@@ -39,31 +39,6 @@ export interface ProviderDefaults {
 export const DEFAULT_MODELS_CATALOG_URL = "https://models.dev/api.json";
 const DEFAULT_MODELS_CATALOG_CACHE_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_PRIVATE_MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
-
-// Cline's internal provider key: key used in models.dev
-const MODELS_DEV_PROVIDER_KEY_MAP: Record<string, string> = {
-	openai: "openai-native",
-	anthropic: "anthropic",
-	google: "gemini",
-	deepseek: "deepseek",
-	xai: "xai",
-	together: "togetherai",
-	fireworks: "fireworks-ai",
-	groq: "groq",
-	cerebras: "cerebras",
-	sambanova: "sambanova",
-	nebius: "nebius",
-	huggingface: "huggingface",
-	openrouter: "openrouter",
-	ollama: "ollama-cloud",
-	"vercel-ai-gateway": "vercel",
-	aihubmix: "aihubmix",
-	hicap: "hicap",
-	"nous-research": "nousResearch",
-	"huawei-cloud-maas": "huawei-cloud-maas",
-	baseten: "baseten",
-	"google-vertex-anthropic": "vertex",
-};
 
 const GENERATED_KEYS_BY_PROVIDER: Record<string, string[]> = {
 	cline: ["vercel-ai-gateway", "cline"],
@@ -151,9 +126,7 @@ function resolvePrivateCacheKey(
 	providerId: string,
 	config: ProviderConfig,
 ): string {
-	return `${providerId}:${normalizeBaseUrl(config.baseUrl)}:${fingerprint(
-		resolveAuthToken(config) ?? "",
-	)}`;
+	return `${providerId}:${normalizeBaseUrl(config.baseUrl)}:${fingerprint(resolveAuthToken(config) ?? "")}`;
 }
 
 function includeCapability(
@@ -499,52 +472,22 @@ export function clearPrivateModelsCatalogCache(): void {
 	PRIVATE_MODELS_IN_FLIGHT.clear();
 }
 
-function isModelCollection(value: unknown): value is ModelCollection {
-	if (!value || typeof value !== "object") {
-		return false;
-	}
-
-	const maybeCollection = value as Partial<ModelCollection>;
-	return (
-		typeof maybeCollection.provider === "object" &&
-		typeof maybeCollection.models === "object"
+function toRuntimeProviderDefaults(
+	defaults: Record<string, OpenAICompatibleProviderDefaults>,
+): Record<string, ProviderDefaults> {
+	return Object.fromEntries(
+		Object.entries(defaults).map(([providerId, providerDefaults]) => [
+			providerId,
+			{
+				baseUrl: providerDefaults.baseUrl,
+				modelId: providerDefaults.modelId,
+				knownModels: providerDefaults.knownModels,
+				capabilities: providerDefaults.capabilities as
+					| ProviderCapability[]
+					| undefined,
+			},
+		]),
 	);
-}
-
-function isOpenAICompatibleProtocol(
-	protocol: ProviderProtocol | undefined,
-): boolean {
-	return (
-		protocol === "openai-chat" ||
-		protocol === "openai-responses" ||
-		protocol === "openai-r1"
-	);
-}
-
-function buildOpenAICompatibleProviders(): Record<string, ProviderDefaults> {
-	const defaults: Record<string, ProviderDefaults> = {};
-
-	for (const value of Object.values(modelProviderExports)) {
-		if (!isModelCollection(value)) {
-			continue;
-		}
-
-		const provider = value.provider;
-		if (!isOpenAICompatibleProtocol(provider.protocol)) {
-			continue;
-		}
-		if (!provider.baseUrl) {
-			continue;
-		}
-
-		defaults[provider.id] = {
-			baseUrl: provider.baseUrl,
-			modelId: provider.defaultModelId,
-			capabilities: provider.capabilities as ProviderCapability[] | undefined,
-		};
-	}
-
-	return defaults;
 }
 
 /**
@@ -553,7 +496,7 @@ function buildOpenAICompatibleProviders(): Record<string, ProviderDefaults> {
  * Model data is sourced from @cline/models to maintain a single source of truth.
  */
 export const OPENAI_COMPATIBLE_PROVIDERS: Record<string, ProviderDefaults> =
-	buildOpenAICompatibleProviders();
+	toRuntimeProviderDefaults(buildOpenAICompatibleProviderDefaults());
 
 /**
  * Get provider configuration by ID

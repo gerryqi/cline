@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { providers } from "@cline/llms";
+import { models, providers } from "@cline/llms";
 import type { ProviderSettings } from "../types/provider-settings";
 import { emptyStoredProviderSettings } from "../types/provider-settings";
 import { resolveClineDataDir } from "./paths";
@@ -205,11 +205,17 @@ function resolveModelForProvider(
 	legacy: LegacyGlobalState,
 	providerId: string,
 	mode: LegacyMode,
+	activeProviderForMode: string | undefined,
 ): string | undefined {
 	const modePrefix = mode === "plan" ? "planMode" : "actMode";
-	const fallbackModel = trimNonEmpty(
-		mode === "plan" ? legacy.planModeApiModelId : legacy.actModeApiModelId,
-	);
+	const fallbackModel =
+		providerId === activeProviderForMode
+			? trimNonEmpty(
+					mode === "plan"
+						? legacy.planModeApiModelId
+						: legacy.actModeApiModelId,
+				)
+			: undefined;
 	const providerModelKeyById: Record<string, keyof LegacyGlobalState> = {
 		openrouter: `${modePrefix}OpenRouterModelId` as keyof LegacyGlobalState,
 		cline: `${modePrefix}ClineModelId` as keyof LegacyGlobalState,
@@ -319,13 +325,30 @@ function resolveLegacyCodexAuth(
 	}
 }
 
+function getDefaultModelForProvider(providerId: string): string | undefined {
+	const builtInModels = models.getGeneratedModelsForProvider(providerId);
+	const firstModelId = Object.keys(builtInModels)[0];
+	return firstModelId ?? undefined;
+}
+
 function buildLegacyProviderSettings(
 	providerId: string,
 	legacyGlobalState: LegacyGlobalState,
 	legacySecrets: LegacySecrets,
 	mode: LegacyMode,
 ): ProviderSettings | undefined {
-	const model = resolveModelForProvider(legacyGlobalState, providerId, mode);
+	const activeProviderForMode = trimNonEmpty(
+		mode === "plan"
+			? legacyGlobalState.planModeApiProvider
+			: legacyGlobalState.actModeApiProvider,
+	);
+	const model =
+		resolveModelForProvider(
+			legacyGlobalState,
+			providerId,
+			mode,
+			activeProviderForMode,
+		) ?? getDefaultModelForProvider(providerId);
 	const reasoning = resolveReasoning(legacyGlobalState, providerId, mode);
 	const timeout =
 		typeof legacyGlobalState.requestTimeoutMs === "number" &&

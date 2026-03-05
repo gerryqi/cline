@@ -1,6 +1,7 @@
 "use client";
 
 import {
+	AlertCircle,
 	Bot,
 	ChevronDown,
 	ChevronRight,
@@ -46,6 +47,8 @@ type ToolApprovalRequestItem = {
 	agentId?: string;
 	conversationId?: string;
 };
+
+const IS_DEBUG = process.env.NODE_ENV === "test";
 
 export function ChatMessages({
 	sessionId,
@@ -212,7 +215,7 @@ function MessageBubble({
 		>
 			<div
 				className={cn(
-					"rounded-xl px-4 text-sm overflow-hidden",
+					"rounded-xl pl-3 text-sm overflow-hidden",
 					isUser && "max-w-[85%] bg-card text-foreground/80 text-right",
 					!isUser && !isError && "text-foreground w-full",
 					isError &&
@@ -243,6 +246,43 @@ type ToolSummary = {
 	label: string;
 	details: string[];
 };
+
+function parseJsonString(value: string): unknown {
+	try {
+		return JSON.parse(value) as unknown;
+	} catch {
+		return value;
+	}
+}
+
+function normalizeDisplayValue(value: unknown): unknown {
+	if (typeof value !== "string") {
+		return value;
+	}
+	const trimmed = value.trim();
+	if (
+		(trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+		(trimmed.startsWith("[") && trimmed.endsWith("]"))
+	) {
+		return parseJsonString(trimmed);
+	}
+	return value;
+}
+
+function formatToolValue(value: unknown): string {
+	const normalized = normalizeDisplayValue(value);
+	if (normalized == null) {
+		return "";
+	}
+	if (typeof normalized === "string") {
+		return normalized;
+	}
+	try {
+		return JSON.stringify(normalized, null, 2);
+	} catch {
+		return String(normalized);
+	}
+}
 
 function parseToolPayload(raw: string): ToolPayload | null {
 	try {
@@ -345,10 +385,7 @@ function buildToolSummary(
 		if (queries.length > 0) {
 			return {
 				label: `${inProgress ? "Exploring" : "Explored"} ${pluralize(queries.length, "search")}`,
-				details: queries.map(
-					(query) =>
-						`${inProgress ? "Searching for" : "Searched for"} ${query}`,
-				),
+				details: queries.map((query) => query),
 			};
 		}
 	}
@@ -358,15 +395,13 @@ function buildToolSummary(
 		if (commands.length === 1) {
 			return {
 				label: `${inProgress ? "Running" : "Ran"} ${commands[0]}`,
-				details: [`${inProgress ? "Running" : "Ran"} ${commands[0]}`],
+				details: [commands[0]],
 			};
 		}
 		if (commands.length > 1) {
 			return {
 				label: `${inProgress ? "Running" : "Ran"} ${pluralize(commands.length, "command")}`,
-				details: commands.map(
-					(command) => `${inProgress ? "Running" : "Ran"} ${command}`,
-				),
+				details: commands.map((command) => command.trim()),
 			};
 		}
 	}
@@ -485,42 +520,65 @@ function ToolMessageBlock({ message }: { message: ChatMessage }) {
 		? buildToolSummary(toolName, payload.input, payload.result, inProgress)
 		: buildToolSummaryFromMeta(toolName, kind, inProgress);
 	const details = summary.details;
+	const inputPreview =
+		IS_DEBUG && payload ? formatToolValue(payload.input) : "";
+	const resultPreview = payload?.isError ? formatToolValue(payload.result) : "";
+	const hasExpandedSections =
+		details.length > 1 || Boolean(inputPreview || resultPreview);
 
 	return (
 		<div className="flex justify-start w-full">
-			<div
-				className={cn(
-					"w-full rounded-xl py-1 text-xs",
-					payload?.isError
-						? "border border-destructive/40 bg-destructive/10 text-destructive"
-						: "text-muted-foreground",
-				)}
-			>
+			<div className={cn("w-full rounded-xl text-xs")}>
 				<Button
-					className="w-full justify-start gap-2 p-0 text-left font-medium text-foreground/80 hover:bg-transparent"
+					className="w-full justify-start gap-2 p-0 text-left font-medium text-foreground/80 hover:bg-transparent text-xs"
 					onClick={() => setExpanded((current) => !current)}
 					type="button"
 					variant="ghost"
 				>
-					<Icon className="h-3.5 w-3.5" />
+					{payload?.isError ? (
+						<AlertCircle className="size-3 text-destructive/80" />
+					) : (
+						<Icon className="size-3" />
+					)}
 					<span>{summary.label}</span>
-					{details.length > 0 ? (
-						<span className="ml-1 text-muted-foreground">
+					{hasExpandedSections ? (
+						<span className="text-muted-foreground">
 							{expanded ? (
-								<ChevronDown className="h-3.5 w-3.5" />
+								<ChevronDown className="size-3" />
 							) : (
-								<ChevronRight className="h-3.5 w-3.5" />
+								<ChevronRight className="size-3" />
 							)}
 						</span>
 					) : null}
 				</Button>
-				{expanded && details.length > 0 ? (
-					<div className="space-y-1 pl-6 text-muted-foreground">
-						{details.map((detail) => (
-							<div className="text-sm" key={`${message.id}_${detail}`}>
-								{detail}
+				{expanded ? (
+					<div className="pl-8 text-muted-foreground">
+						{hasExpandedSections ? (
+							<div className="space-y-1">
+								{details.map((detail) => (
+									<div className="text-xxs" key={`${message.id}_${detail}`}>
+										{detail}
+									</div>
+								))}
 							</div>
-						))}
+						) : null}
+						{inputPreview ? (
+							<div className="space-y-1">
+								<div className="text-xxs uppercase tracking-wide text-muted-foreground/80">
+									Input
+								</div>
+								<pre className="max-h-52 overflow-auto rounded-md border border-border/70 bg-background/60 p-2 text-xxs leading-relaxed text-foreground whitespace-pre-wrap break-all">
+									{inputPreview}
+								</pre>
+							</div>
+						) : null}
+						{resultPreview ? (
+							<div className="space-y-1">
+								<pre className="max-h-64 overflow-auto rounded-md border border-border/70 bg-background/60 p-2 text-xxs leading-relaxed text-foreground whitespace-pre-wrap break-all">
+									{resultPreview}
+								</pre>
+							</div>
+						) : null}
 					</div>
 				) : null}
 			</div>

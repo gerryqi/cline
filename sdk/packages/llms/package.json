@@ -35,6 +35,7 @@
 		"generate:models": "bun run scripts/generate-models.ts"
 	},
 	"dependencies": {
+		"@cline/shared": "workspace:*",
 		"@ai-sdk/amazon-bedrock": "^4.0.67",
 		"@ai-sdk/google-vertex": "^4.0.74",
 		"@anthropic-ai/sdk": "^0.78.0",

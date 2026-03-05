@@ -71,6 +71,32 @@ type SessionMessage = {
 const filterOptions = ["All", "Running", "Recent", "Pinned"] as const;
 type FilterOption = (typeof filterOptions)[number];
 
+function parseTimestamp(value?: string): number {
+	if (!value) return Number.NEGATIVE_INFINITY;
+	const trimmed = value.trim();
+	const maybeEpoch = Number(trimmed);
+	if (Number.isFinite(maybeEpoch)) {
+		// Treat 10-digit epochs as seconds; 13-digit as milliseconds.
+		if (/^\d{10}$/.test(trimmed)) {
+			return maybeEpoch * 1000;
+		}
+		return maybeEpoch;
+	}
+	const parsed = new Date(trimmed).getTime();
+	return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+}
+
+function compareSessionsByStartedAtDesc(
+	a: SessionHistoryItem,
+	b: SessionHistoryItem,
+): number {
+	const timeDelta = parseTimestamp(b.startedAt) - parseTimestamp(a.startedAt);
+	if (timeDelta !== 0) {
+		return timeDelta;
+	}
+	return b.sessionId.localeCompare(a.sessionId);
+}
+
 function normalizeDiscoveredStatus(
 	status: string,
 	prompt?: string,
@@ -95,12 +121,10 @@ function normalizeDiscoveredStatus(
 
 function formatRelativeTime(value?: string): string {
 	if (!value) return "just now";
-	const trimmed = value.trim();
-	const maybeEpoch = Number(trimmed);
-	const date =
-		Number.isFinite(maybeEpoch) && trimmed.length >= 10
-			? new Date(maybeEpoch)
-			: new Date(value);
+	const timestamp = parseTimestamp(value);
+	const date = Number.isFinite(timestamp)
+		? new Date(timestamp)
+		: new Date(value);
 	if (Number.isNaN(date.getTime())) return "";
 
 	const diffMs = Date.now() - date.getTime();
@@ -129,17 +153,41 @@ function toTitle(session: SessionHistoryItem): string {
 }
 
 function titleFromMessages(messages: SessionMessage[]): string | null {
-	for (const message of messages) {
-		if (message.role !== "user") {
-			continue;
-		}
-		const content = typeof message.content === "string" ? message.content : "";
-		const line = normalizeTitle(content).trim().split("\n")[0]?.trim();
-		if (line) {
-			return line.slice(0, 70);
+	for (const role of ["user", "assistant"] as const) {
+		for (const message of messages) {
+			if (message.role !== role) {
+				continue;
+			}
+			const content =
+				typeof message.content === "string" ? message.content : "";
+			const line = normalizeTitle(content).trim().split("\n")[0]?.trim();
+			if (line) {
+				return line.slice(0, 70);
+			}
 		}
 	}
 	return null;
+}
+
+function inferStatusFromMessages(
+	status: SessionHistoryStatus,
+	messages: SessionMessage[],
+): SessionHistoryStatus {
+	const meaningfulMessages = messages.filter((message) => {
+		if (message.role !== "user" && message.role !== "assistant") {
+			return false;
+		}
+		const content = typeof message.content === "string" ? message.content : "";
+		return content.trim().length > 0;
+	});
+	if (meaningfulMessages.length === 0) {
+		return status === "running" ? "running" : "idle";
+	}
+	const lastMeaningful = meaningfulMessages[meaningfulMessages.length - 1];
+	if (status === "failed" && lastMeaningful.role === "assistant") {
+		return "completed";
+	}
+	return status;
 }
 
 function toThread(session: SessionHistoryItem): Thread {
@@ -207,6 +255,9 @@ export function AgentSidebar({
 		new Map(),
 	);
 	const titleLoadingRef = useRef<Set<string>>(new Set());
+	const messageHydratedStatusRef = useRef<Map<string, SessionHistoryStatus>>(
+		new Map(),
+	);
 
 	const refreshSessions = useCallback(async () => {
 		setIsLoadingHistory(true);
@@ -220,17 +271,25 @@ export function AgentSidebar({
 				}).catch(() => []),
 			]);
 			const discovered = [...chatDiscovered, ...cliDiscovered];
-			const topLevelSessions: SessionHistoryItem[] = discovered
-				.filter((session) => !session.isSubagent && !session.parentSessionId)
-				.map((session) => ({
+			const topLevelById = new Map<string, SessionHistoryItem>();
+			for (const session of discovered) {
+				const normalized: SessionHistoryItem = {
 					...session,
 					status: normalizeDiscoveredStatus(session.status, session.prompt),
-				}))
-				.sort((a, b) => {
-					const aTs = new Date(a.startedAt).getTime();
-					const bTs = new Date(b.startedAt).getTime();
-					return (Number.isNaN(bTs) ? 0 : bTs) - (Number.isNaN(aTs) ? 0 : aTs);
-				});
+				};
+				const existing = topLevelById.get(normalized.sessionId);
+				if (!existing) {
+					topLevelById.set(normalized.sessionId, normalized);
+					continue;
+				}
+				// Keep the canonical top-level session with the newer start time.
+				if (compareSessionsByStartedAtDesc(normalized, existing) < 0) {
+					topLevelById.set(normalized.sessionId, normalized);
+				}
+			}
+			const topLevelSessions = Array.from(topLevelById.values())
+				.filter((session) => !session.isSubagent && !session.parentSessionId)
+				.sort(compareSessionsByStartedAtDesc);
 
 			setSessions(topLevelSessions);
 			const mapped = topLevelSessions.map(toThread);
@@ -394,7 +453,18 @@ export function AgentSidebar({
 				continue;
 			}
 			const existing = threads.find((item) => item.id === sessionId);
-			if (!existing || !existing.title.startsWith("Session ")) {
+			if (!existing) {
+				continue;
+			}
+			const lastHydratedStatus =
+				messageHydratedStatusRef.current.get(sessionId);
+			const shouldHydrateTitle = existing.title.startsWith("Session ");
+			const shouldHydrateStatus =
+				existing.status === "failed" ||
+				existing.status === "completed" ||
+				existing.status === "idle" ||
+				lastHydratedStatus !== session.status;
+			if (!shouldHydrateTitle && !shouldHydrateStatus) {
 				continue;
 			}
 			titleLoadingRef.current.add(sessionId);
@@ -404,21 +474,40 @@ export function AgentSidebar({
 			})
 				.then((messages) => {
 					const nextTitle = titleFromMessages(messages);
-					if (!nextTitle) {
-						return;
-					}
 					setThreads((current) =>
-						current.map((thread) =>
-							thread.id === sessionId
-								? { ...thread, title: nextTitle }
-								: thread,
-						),
+						current.map((thread) => {
+							if (thread.id !== sessionId) {
+								return thread;
+							}
+							const nextStatus = inferStatusFromMessages(
+								thread.status,
+								messages,
+							);
+							const title = nextTitle ?? thread.title;
+							if (title === thread.title && nextStatus === thread.status) {
+								return thread;
+							}
+							return { ...thread, title, status: nextStatus };
+						}),
+					);
+					setSessions((current) =>
+						current.map((item) => {
+							if (item.sessionId !== sessionId) {
+								return item;
+							}
+							const nextStatus = inferStatusFromMessages(item.status, messages);
+							if (nextStatus === item.status) {
+								return item;
+							}
+							return { ...item, status: nextStatus };
+						}),
 					);
 				})
 				.catch(() => {
 					// Ignore sessions that cannot be hydrated.
 				})
 				.finally(() => {
+					messageHydratedStatusRef.current.set(sessionId, session.status);
 					titleLoadingRef.current.delete(sessionId);
 				});
 		}

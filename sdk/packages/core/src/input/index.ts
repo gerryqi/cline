@@ -1,5 +1,5 @@
-export type { FastFileIndexOptions } from "@cline/shared";
-export { getFileIndex, prewarmFileIndex } from "@cline/shared";
+export type { FastFileIndexOptions } from "./file-indexer";
+export { getFileIndex, prewarmFileIndex } from "./file-indexer";
 export type {
 	MentionEnricherOptions,
 	MentionEnrichmentResult,
