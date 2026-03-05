@@ -169,8 +169,63 @@ function ChatThreadPane({
 	const [showDiffView, setShowDiffView] = useState(false);
 	const [deletingSession, setDeletingSession] = useState(false);
 	const [gitBranch, setGitBranch] = useState("no-git");
+	const [providerCredentials, setProviderCredentials] = useState<
+		Record<string, { apiKey: string }>
+	>({});
 	const hydratedSessionRef = useRef<string | null>(null);
 	const resetThreadRef = useRef<string | null>(null);
+
+	useEffect(() => {
+		let cancelled = false;
+
+		async function loadProviderCredentials() {
+			try {
+				const payload = await invoke<{
+					providers?: Array<{
+						id?: string;
+						apiKey?: string;
+						baseUrl?: string;
+					}>;
+				}>("list_provider_catalog");
+				if (cancelled) {
+					return;
+				}
+				const next: Record<string, { apiKey: string }> = {};
+				for (const provider of payload.providers ?? []) {
+					const id = provider.id?.trim();
+					if (!id) {
+						continue;
+					}
+					next[id] = {
+						apiKey: provider.apiKey?.trim() ?? "",
+					};
+				}
+				setProviderCredentials(next);
+			} catch {
+				// Keep current config if provider catalog cannot be read.
+			}
+		}
+
+		void loadProviderCredentials();
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	useEffect(() => {
+		const selected = providerCredentials[config.provider];
+		if (!selected) {
+			return;
+		}
+		const nextApiKey = selected.apiKey;
+		if (config.apiKey === nextApiKey) {
+			return;
+		}
+		setConfig((prev) => ({
+			...prev,
+			apiKey: nextApiKey,
+		}));
+	}, [config.apiKey, config.provider, providerCredentials, setConfig]);
 
 	const refreshGitBranch = useCallback(async () => {
 		try {
@@ -464,7 +519,14 @@ function ChatThreadPane({
 					}
 					onPromptInputChange={setPromptInput}
 					onProviderChange={(nextProvider) =>
-						setConfig((prev) => ({ ...prev, provider: nextProvider }))
+						setConfig((prev) => {
+							const selected = providerCredentials[nextProvider];
+							return {
+								...prev,
+								provider: nextProvider,
+								apiKey: selected?.apiKey ?? "",
+							};
+						})
 					}
 					onReset={() => {
 						setPendingAttachments([]);

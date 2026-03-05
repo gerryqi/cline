@@ -2,6 +2,8 @@
 
 This repository contains the SDK packages that power Cline agent runtimes.
 
+Contributor onboarding and architecture guidance is centralized in [`AGENTS.md`](/Users/beatrix/dev/clinee/sdk-wip/AGENTS.md).
+
 It is organized as a Bun workspace with four SDK packages and three app targets:
 
 SDK packages (`packages/`):
@@ -404,7 +406,7 @@ console.log(result.text)
 
 ## Navigation Tips
 
-- Read each package `README.md` first, then `ARCHITECTURE.md`/`DOC.md` files.
+- Start with [`AGENTS.md`](/Users/beatrix/dev/clinee/sdk-wip/AGENTS.md) for onboarding + architecture, then read package `README.md` files and any package `DOC.md` details.
 - Follow imports from `apps/cli/src/index.ts` and `apps/desktop/src-tauri/src/main.rs` to understand package boundaries.
 - Prefer `src/` for implementation and `dist/` only for built output verification.
 - Start debugging integration behavior from `apps/cli/src/index.ts`, then drill into `packages/core/src/runtime`, `packages/agents/src/agent.ts`, and `packages/llms/src/sdk.ts`.

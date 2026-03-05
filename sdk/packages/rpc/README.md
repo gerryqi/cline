@@ -6,11 +6,21 @@ Package-level docs are centralized:
 - Architecture and interactions: [`packages/ARCHITECTURE.md`](../ARCHITECTURE.md)
 
 `@cline/rpc` provides transport/control-plane APIs for sessions, tasks, events, spawn queues, and tool approvals.
+It also exposes runtime session execution RPCs:
+
+- `StartRuntimeSession(request_json)` - create/start a server-side runtime session
+- `SendRuntimeSession(session_id, request_json)` - execute a prompt turn on that runtime session
+- `RunProviderAction(request_json)` - provider catalog/model/settings actions
+- `RunProviderOAuthLogin(provider)` - provider OAuth login action
+
+Runtime payload DTOs consumed by multiple hosts are defined in `@cline/shared`
+(`packages/shared/src/rpc/runtime.ts`), while transport/service wiring remains in `@cline/rpc`.
 
 It also exposes server lifecycle helpers:
 
 - `getRpcServerHealth(address)` for health checks
 - `requestRpcServerShutdown(address)` for remote graceful shutdown
+- `registerRpcClient(address, input)` for client registration (`clientId`, `clientType`, optional metadata)
 
 ## Session Backend Injection
 

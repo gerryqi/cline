@@ -7,10 +7,14 @@ import type { DeleteSessionResponse__Output } from "./proto/generated/cline/rpc/
 import type { EnqueueSpawnRequestResponse__Output } from "./proto/generated/cline/rpc/v1/EnqueueSpawnRequestResponse.js";
 import type { GetSessionResponse__Output } from "./proto/generated/cline/rpc/v1/GetSessionResponse.js";
 import type { ListSessionsResponse__Output } from "./proto/generated/cline/rpc/v1/ListSessionsResponse.js";
+import type { RunProviderActionResponse__Output } from "./proto/generated/cline/rpc/v1/RunProviderActionResponse.js";
+import type { RunProviderOAuthLoginResponse__Output } from "./proto/generated/cline/rpc/v1/RunProviderOAuthLoginResponse.js";
+import type { SendRuntimeSessionResponse__Output } from "./proto/generated/cline/rpc/v1/SendRuntimeSessionResponse.js";
 import type {
 	SessionRecord,
 	SessionRecord__Output,
 } from "./proto/generated/cline/rpc/v1/SessionRecord.js";
+import type { StartRuntimeSessionResponse__Output } from "./proto/generated/cline/rpc/v1/StartRuntimeSessionResponse.js";
 import type { UpdateSessionRequest } from "./proto/generated/cline/rpc/v1/UpdateSessionRequest.js";
 import type { UpdateSessionResponse__Output } from "./proto/generated/cline/rpc/v1/UpdateSessionResponse.js";
 import type { UpsertSessionRequest } from "./proto/generated/cline/rpc/v1/UpsertSessionRequest.js";
@@ -215,6 +219,54 @@ export class RpcSessionClient {
 		);
 		const task = response.item?.task?.trim();
 		return task ? task : undefined;
+	}
+
+	public async startRuntimeSession(
+		requestJson: string,
+	): Promise<{ sessionId: string }> {
+		const response = await this.unary<StartRuntimeSessionResponse__Output>(
+			(callback) => {
+				this.client.StartRuntimeSession({ requestJson }, callback);
+			},
+		);
+		return { sessionId: response.sessionId ?? "" };
+	}
+
+	public async sendRuntimeSession(
+		sessionId: string,
+		requestJson: string,
+	): Promise<{ resultJson: string }> {
+		const response = await this.unary<SendRuntimeSessionResponse__Output>(
+			(callback) => {
+				this.client.SendRuntimeSession({ sessionId, requestJson }, callback);
+			},
+		);
+		return { resultJson: response.resultJson ?? "" };
+	}
+
+	public async runProviderAction(
+		requestJson: string,
+	): Promise<{ resultJson: string }> {
+		const response = await this.unary<RunProviderActionResponse__Output>(
+			(callback) => {
+				this.client.RunProviderAction({ requestJson }, callback);
+			},
+		);
+		return { resultJson: response.resultJson ?? "" };
+	}
+
+	public async runProviderOAuthLogin(
+		provider: string,
+	): Promise<{ provider: string; apiKey: string }> {
+		const response = await this.unary<RunProviderOAuthLoginResponse__Output>(
+			(callback) => {
+				this.client.RunProviderOAuthLogin({ provider }, callback);
+			},
+		);
+		return {
+			provider: response.provider ?? "",
+			apiKey: response.apiKey ?? "",
+		};
 	}
 
 	private async unary<TResponse = unknown>(

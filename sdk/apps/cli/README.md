@@ -64,6 +64,13 @@ clite rpc status --address 127.0.0.1:4317
 clite rpc stop
 clite rpc stop --address 127.0.0.1:4317
 
+# Ensure a compatible runtime server is available (JSON output for host apps)
+clite rpc ensure --address 127.0.0.1:4317 --json
+
+# Register a client with the RPC gateway
+clite rpc register --address 127.0.0.1:4317 --client-type desktop --client-id code-desktop
+clite rpc register --meta app=code --meta host=tauri
+
 # Authenticate OAuth providers explicitly
 clite auth openai-codex
 clite auth oca
@@ -147,6 +154,8 @@ Subcommands:
 - `clite rpc start` - Start the RPC gateway
 - `clite rpc status` - Check whether the RPC gateway is healthy
 - `clite rpc stop` - Request graceful shutdown of the RPC gateway
+- `clite rpc ensure` - Ensure a compatible runtime-capable RPC server is available and return the effective address
+- `clite rpc register` - Register a client id/type (+ optional metadata) with the RPC gateway
 - `clite list ...` - List workflows/rules/skills/agents/history/hooks/mcp
 
 MCP list examples:
@@ -197,6 +206,9 @@ In desktop mode, CLI writes a request JSON file and waits for a matching decisio
 - Startup behavior: checks health first; if already running at that address, it prints the running server id and exits without starting a duplicate
 - Status check: `clite rpc status` prints running/not-running and returns exit code `0` when healthy (`1` when not running)
 - Shutdown: `clite rpc stop` requests graceful shutdown for the target address; `clite rpc start` can also be stopped with Ctrl+C / `SIGTERM`
+- Ensure: `clite rpc ensure` reuses a compatible server when possible; if the listener is stale/incompatible it can launch a fresh server on a new available port and report that effective address
+- Client registration: `clite rpc register --client-type <type> [--client-id <id>] [--meta key=value]...` registers host identity for RPC clients
+- Runtime APIs: `clite rpc start` now wires server-side runtime handlers for `StartRuntimeSession` and `SendRuntimeSession` (used by `@cline/code` chat start/send actions)
 - Regular `clite "<prompt>"` runs now initialize sessions through `@cline/core/server` `createSessionHost(...)`, which auto-detects RPC, can auto-start it in the background, and falls back to local SQLite when RPC is unavailable.
 
 ## Development

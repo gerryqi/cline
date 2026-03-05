@@ -31,9 +31,17 @@ import type { RequestToolApprovalResponse } from "./proto/generated/cline/rpc/v1
 import type { RespondToolApprovalRequest__Output } from "./proto/generated/cline/rpc/v1/RespondToolApprovalRequest.js";
 import type { RespondToolApprovalResponse } from "./proto/generated/cline/rpc/v1/RespondToolApprovalResponse.js";
 import type { RoutedEvent as RoutedEventMessage } from "./proto/generated/cline/rpc/v1/RoutedEvent.js";
+import type { RunProviderActionRequest__Output } from "./proto/generated/cline/rpc/v1/RunProviderActionRequest.js";
+import type { RunProviderActionResponse } from "./proto/generated/cline/rpc/v1/RunProviderActionResponse.js";
+import type { RunProviderOAuthLoginRequest__Output } from "./proto/generated/cline/rpc/v1/RunProviderOAuthLoginRequest.js";
+import type { RunProviderOAuthLoginResponse } from "./proto/generated/cline/rpc/v1/RunProviderOAuthLoginResponse.js";
+import type { SendRuntimeSessionRequest__Output } from "./proto/generated/cline/rpc/v1/SendRuntimeSessionRequest.js";
+import type { SendRuntimeSessionResponse } from "./proto/generated/cline/rpc/v1/SendRuntimeSessionResponse.js";
 import type { SessionRecord as SessionRecordMessage } from "./proto/generated/cline/rpc/v1/SessionRecord.js";
 import type { ShutdownRequest__Output } from "./proto/generated/cline/rpc/v1/ShutdownRequest.js";
 import type { ShutdownResponse } from "./proto/generated/cline/rpc/v1/ShutdownResponse.js";
+import type { StartRuntimeSessionRequest__Output } from "./proto/generated/cline/rpc/v1/StartRuntimeSessionRequest.js";
+import type { StartRuntimeSessionResponse } from "./proto/generated/cline/rpc/v1/StartRuntimeSessionResponse.js";
 import type { StartTaskRequest__Output } from "./proto/generated/cline/rpc/v1/StartTaskRequest.js";
 import type { StreamEventsRequest__Output } from "./proto/generated/cline/rpc/v1/StreamEventsRequest.js";
 import type { TaskResponse } from "./proto/generated/cline/rpc/v1/TaskResponse.js";
@@ -45,6 +53,9 @@ import type { ProtoGrpcType } from "./proto/generated/rpc.js";
 import type {
 	PendingApproval,
 	RoutedEvent,
+	RpcClientRegistrationInput,
+	RpcClientRegistrationResult,
+	RpcRuntimeHandlers,
 	RpcServerHandle,
 	RpcServerOptions,
 	RpcSessionBackend,
@@ -98,6 +109,10 @@ type DeleteSessionRequest = DeleteSessionRequest__Output;
 type EnqueueSpawnRequestRequest = EnqueueSpawnRequestRequest__Output;
 type ClaimSpawnRequestRequest = ClaimSpawnRequestRequest__Output;
 type StartTaskRequest = StartTaskRequest__Output;
+type StartRuntimeSessionRequest = StartRuntimeSessionRequest__Output;
+type SendRuntimeSessionRequest = SendRuntimeSessionRequest__Output;
+type RunProviderActionRequest = RunProviderActionRequest__Output;
+type RunProviderOAuthLoginRequest = RunProviderOAuthLoginRequest__Output;
 type CompleteTaskRequest = CompleteTaskRequest__Output;
 type StreamEventsRequest = StreamEventsRequest__Output;
 type ShutdownRequest = ShutdownRequest__Output;
@@ -285,6 +300,8 @@ function messageToRow(message: SessionRecordMessage): RpcSessionRow {
 class ClineGatewayRuntime {
 	private readonly serverId = randomUUID();
 	private readonly address: string;
+	private readonly startedAt: string;
+	private readonly runtimeHandlers?: RpcRuntimeHandlers;
 	private readonly sessions = new Map<string, SessionState>();
 	private readonly tasks = new Map<string, TaskState>();
 	private readonly approvals = new Map<string, ApprovalState>();
@@ -292,9 +309,15 @@ class ClineGatewayRuntime {
 	private readonly store: RpcSessionBackend;
 	private nextSubscriberId = 1;
 
-	constructor(address: string, sessionBackend: RpcSessionBackend) {
+	constructor(
+		address: string,
+		sessionBackend: RpcSessionBackend,
+		runtimeHandlers?: RpcRuntimeHandlers,
+	) {
 		this.address = address;
+		this.startedAt = nowIso();
 		this.store = sessionBackend;
+		this.runtimeHandlers = runtimeHandlers;
 		this.store.init();
 	}
 
@@ -303,6 +326,7 @@ class ClineGatewayRuntime {
 			serverId: this.serverId,
 			address: this.address,
 			running: true,
+			startedAt: this.startedAt,
 		};
 	}
 
@@ -454,6 +478,68 @@ class ClineGatewayRuntime {
 				createdAt: item.createdAt,
 				consumedAt: item.consumedAt ?? "",
 			},
+		};
+	}
+
+	public async startRuntimeSession(
+		request: StartRuntimeSessionRequest,
+	): Promise<StartRuntimeSessionResponse> {
+		const handler = this.runtimeHandlers?.startSession;
+		if (!handler) {
+			throw new Error("runtime start handler is not configured");
+		}
+		const payload = safeString(request.requestJson);
+		const result = await handler(payload);
+		const sessionId = safeString(result.sessionId).trim();
+		if (!sessionId) {
+			throw new Error("runtime start handler returned empty sessionId");
+		}
+		return { sessionId };
+	}
+
+	public async sendRuntimeSession(
+		request: SendRuntimeSessionRequest,
+	): Promise<SendRuntimeSessionResponse> {
+		const handler = this.runtimeHandlers?.sendSession;
+		if (!handler) {
+			throw new Error("runtime send handler is not configured");
+		}
+		const sessionId = safeString(request.sessionId).trim();
+		if (!sessionId) {
+			throw new Error("sessionId is required");
+		}
+		const payload = safeString(request.requestJson);
+		const result = await handler(sessionId, payload);
+		return { resultJson: safeString(result.resultJson) };
+	}
+
+	public async runProviderAction(
+		request: RunProviderActionRequest,
+	): Promise<RunProviderActionResponse> {
+		const handler = this.runtimeHandlers?.runProviderAction;
+		if (!handler) {
+			throw new Error("provider action handler is not configured");
+		}
+		const payload = safeString(request.requestJson);
+		const result = await handler(payload);
+		return { resultJson: safeString(result.resultJson) };
+	}
+
+	public async runProviderOAuthLogin(
+		request: RunProviderOAuthLoginRequest,
+	): Promise<RunProviderOAuthLoginResponse> {
+		const handler = this.runtimeHandlers?.runProviderOAuthLogin;
+		if (!handler) {
+			throw new Error("provider oauth handler is not configured");
+		}
+		const provider = safeString(request.provider).trim();
+		if (!provider) {
+			throw new Error("provider is required");
+		}
+		const result = await handler(provider);
+		return {
+			provider: safeString(result.provider).trim(),
+			apiKey: safeString(result.apiKey),
 		};
 	}
 
@@ -733,6 +819,17 @@ type ClineGatewayHealthClient = grpc.Client & {
 			response: ShutdownResponse | undefined,
 		) => void,
 	) => void;
+	RegisterClient: (
+		request: {
+			clientId?: string;
+			clientType?: string;
+			metadata?: Record<string, string>;
+		},
+		callback: (
+			error: grpc.ServiceError | null,
+			response: RegisterClientResponse | undefined,
+		) => void,
+	) => void;
 };
 
 function createGatewayClient(address: string): ClineGatewayHealthClient {
@@ -790,6 +887,41 @@ export async function requestRpcServerShutdown(
 	});
 }
 
+export async function registerRpcClient(
+	address: string,
+	input: RpcClientRegistrationInput,
+): Promise<RpcClientRegistrationResult | undefined> {
+	return await new Promise<RpcClientRegistrationResult | undefined>(
+		(resolve) => {
+			let client: ClineGatewayHealthClient | undefined;
+			try {
+				client = createGatewayClient(address);
+			} catch {
+				resolve(undefined);
+				return;
+			}
+			client.RegisterClient(
+				{
+					clientId: input.clientId,
+					clientType: input.clientType,
+					metadata: input.metadata ?? {},
+				},
+				(error, response) => {
+					client?.close();
+					if (error || !response) {
+						resolve(undefined);
+						return;
+					}
+					resolve({
+						clientId: safeString(response.clientId).trim(),
+						registered: response.registered === true,
+					});
+				},
+			);
+		},
+	);
+}
+
 export async function startRpcServer(
 	options: RpcServerOptions,
 ): Promise<RpcServerHandle> {
@@ -815,7 +947,11 @@ export async function startRpcServer(
 			return;
 		}
 
-		const runtime = new ClineGatewayRuntime(address, options.sessionBackend);
+		const runtime = new ClineGatewayRuntime(
+			address,
+			options.sessionBackend,
+			options.runtimeHandlers,
+		);
 		const server = new grpc.Server();
 		let stopRequested = false;
 		const stopBoundServer = async (): Promise<void> => {
@@ -974,6 +1110,82 @@ export async function startRpcServer(
 						null,
 					);
 				}
+			},
+			StartRuntimeSession: (
+				call: grpc.ServerUnaryCall<
+					StartRuntimeSessionRequest,
+					StartRuntimeSessionResponse
+				>,
+				callback: grpc.sendUnaryData<StartRuntimeSessionResponse>,
+			) => {
+				void runtime
+					.startRuntimeSession(call.request)
+					.then((result) => {
+						callback(null, result);
+					})
+					.catch((error) => {
+						callback(
+							{ code: grpc.status.INVALID_ARGUMENT, message: String(error) },
+							null,
+						);
+					});
+			},
+			SendRuntimeSession: (
+				call: grpc.ServerUnaryCall<
+					SendRuntimeSessionRequest,
+					SendRuntimeSessionResponse
+				>,
+				callback: grpc.sendUnaryData<SendRuntimeSessionResponse>,
+			) => {
+				void runtime
+					.sendRuntimeSession(call.request)
+					.then((result) => {
+						callback(null, result);
+					})
+					.catch((error) => {
+						callback(
+							{ code: grpc.status.INVALID_ARGUMENT, message: String(error) },
+							null,
+						);
+					});
+			},
+			RunProviderAction: (
+				call: grpc.ServerUnaryCall<
+					RunProviderActionRequest,
+					RunProviderActionResponse
+				>,
+				callback: grpc.sendUnaryData<RunProviderActionResponse>,
+			) => {
+				void runtime
+					.runProviderAction(call.request)
+					.then((result) => {
+						callback(null, result);
+					})
+					.catch((error) => {
+						callback(
+							{ code: grpc.status.INVALID_ARGUMENT, message: String(error) },
+							null,
+						);
+					});
+			},
+			RunProviderOAuthLogin: (
+				call: grpc.ServerUnaryCall<
+					RunProviderOAuthLoginRequest,
+					RunProviderOAuthLoginResponse
+				>,
+				callback: grpc.sendUnaryData<RunProviderOAuthLoginResponse>,
+			) => {
+				void runtime
+					.runProviderOAuthLogin(call.request)
+					.then((result) => {
+						callback(null, result);
+					})
+					.catch((error) => {
+						callback(
+							{ code: grpc.status.INVALID_ARGUMENT, message: String(error) },
+							null,
+						);
+					});
 			},
 			StartTask: (
 				call: grpc.ServerUnaryCall<StartTaskRequest, TaskResponse>,

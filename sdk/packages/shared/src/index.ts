@@ -19,6 +19,23 @@ export {
 	xmlTagsRemoval,
 } from "./prompt/format";
 export type {
+	RpcAgentMode,
+	RpcChatAttachmentFile,
+	RpcChatAttachments,
+	RpcChatMessage,
+	RpcChatRunTurnRequest,
+	RpcChatStartSessionRequest,
+	RpcChatToolCallResult,
+	RpcChatTurnResult,
+	RpcProviderActionRequest,
+	RpcProviderCatalogResponse,
+	RpcProviderListItem,
+	RpcProviderModel,
+	RpcProviderModelsResponse,
+	RpcProviderOAuthLoginResponse,
+	RpcSessionStorageOptions,
+} from "./rpc/runtime";
+export type {
 	HookSessionContext,
 	HookSessionContextProvider,
 } from "./session/hook-context";

@@ -45,6 +45,7 @@
         "@cline/agents": "workspace:*",
         "@cline/core": "workspace:*",
         "@cline/llms": "workspace:*",
+        "@cline/rpc": "workspace:*",
         "@cline/shared": "workspace:*",
         "@hookform/resolvers": "^3.9.1",
         "@radix-ui/react-accordion": "1.2.12",

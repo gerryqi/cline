@@ -16,3 +16,10 @@ It now also exports hook session context primitives used across agents/core/CLI:
 - `resolveHookSessionContext(...)`
 - `resolveRootSessionId(...)`
 - `resolveHookLogPath(...)`
+
+It also exports cross-client RPC runtime payload DTOs used by multiple hosts
+(`@cline/cli`, `@cline/code`) so request/response contracts are not duplicated
+outside transport wiring:
+
+- chat runtime payloads (`RpcChatStartSessionRequest`, `RpcChatRunTurnRequest`, `RpcChatTurnResult`)
+- provider runtime payloads (`RpcProviderActionRequest`, `RpcProviderCatalogResponse`, `RpcProviderOAuthLoginResponse`)

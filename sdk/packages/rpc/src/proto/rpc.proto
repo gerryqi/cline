@@ -14,6 +14,10 @@ service ClineGateway {
   rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
   rpc EnqueueSpawnRequest(EnqueueSpawnRequestRequest) returns (EnqueueSpawnRequestResponse);
   rpc ClaimSpawnRequest(ClaimSpawnRequestRequest) returns (ClaimSpawnRequestResponse);
+  rpc StartRuntimeSession(StartRuntimeSessionRequest) returns (StartRuntimeSessionResponse);
+  rpc SendRuntimeSession(SendRuntimeSessionRequest) returns (SendRuntimeSessionResponse);
+  rpc RunProviderAction(RunProviderActionRequest) returns (RunProviderActionResponse);
+  rpc RunProviderOAuthLogin(RunProviderOAuthLoginRequest) returns (RunProviderOAuthLoginResponse);
   rpc StartTask(StartTaskRequest) returns (TaskResponse);
   rpc CompleteTask(CompleteTaskRequest) returns (TaskResponse);
   rpc PublishEvent(PublishEventRequest) returns (PublishEventResponse);
@@ -29,6 +33,7 @@ message HealthResponse {
   string server_id = 1;
   string address = 2;
   bool running = 3;
+  string started_at = 4;
 }
 
 message ShutdownRequest {}
@@ -181,6 +186,40 @@ message ClaimSpawnRequestRequest {
 
 message ClaimSpawnRequestResponse {
   SpawnQueueItem item = 1;
+}
+
+message StartRuntimeSessionRequest {
+  string request_json = 1;
+}
+
+message StartRuntimeSessionResponse {
+  string session_id = 1;
+}
+
+message SendRuntimeSessionRequest {
+  string session_id = 1;
+  string request_json = 2;
+}
+
+message SendRuntimeSessionResponse {
+  string result_json = 1;
+}
+
+message RunProviderActionRequest {
+  string request_json = 1;
+}
+
+message RunProviderActionResponse {
+  string result_json = 1;
+}
+
+message RunProviderOAuthLoginRequest {
+  string provider = 1;
+}
+
+message RunProviderOAuthLoginResponse {
+  string provider = 1;
+  string api_key = 2;
 }
 
 message StartTaskRequest {

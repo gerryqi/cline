@@ -47,6 +47,10 @@ struct AppContext {
     workspace_root: String,
 }
 
+const DEFAULT_RPC_ADDRESS: &str = "127.0.0.1:4317";
+const DEFAULT_RPC_CLIENT_ID: &str = "code-desktop";
+const DEFAULT_RPC_CLIENT_TYPE: &str = "desktop";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SessionStorageOptions {
@@ -1085,6 +1089,111 @@ fn resolve_cli_workdir(cli_entrypoint: &Path, context: &AppContext) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(&context.launch_cwd))
 }
 
+fn resolve_rpc_address() -> String {
+    std::env::var("CLINE_RPC_ADDRESS")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_RPC_ADDRESS.to_string())
+}
+
+fn run_cli_rpc_output_command(
+    cli_entrypoint: &Path,
+    cli_workdir: &Path,
+    args: &[&str],
+) -> Result<std::process::Output, String> {
+    Command::new("bun")
+        .arg("run")
+        .arg(cli_entrypoint.to_string_lossy().to_string())
+        .arg("rpc")
+        .args(args)
+        .current_dir(cli_workdir)
+        .output()
+        .map_err(|e| format!("failed running rpc {}: {e}", args.join(" ")))
+}
+
+fn ensure_rpc_server(
+    cli_entrypoint: &Path,
+    cli_workdir: &Path,
+    rpc_address: &str,
+) -> Result<String, String> {
+    let output = run_cli_rpc_output_command(
+        cli_entrypoint,
+        cli_workdir,
+        &["ensure", "--address", rpc_address, "--json"],
+    )?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            format!("rpc ensure exited with {}", output.status)
+        } else {
+            stderr
+        });
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let parsed = serde_json::from_str::<Value>(&stdout)
+        .map_err(|e| format!("invalid rpc ensure json response: {e}"))?;
+    let ensured = parsed
+        .get("address")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "rpc ensure response missing address".to_string())?;
+    Ok(ensured)
+}
+
+fn register_rpc_client(
+    cli_entrypoint: &Path,
+    cli_workdir: &Path,
+    rpc_address: &str,
+) -> Result<(), String> {
+    let output = run_cli_rpc_output_command(
+        cli_entrypoint,
+        cli_workdir,
+        &[
+            "register",
+            "--address",
+            rpc_address,
+            "--client-id",
+            DEFAULT_RPC_CLIENT_ID,
+            "--client-type",
+            DEFAULT_RPC_CLIENT_TYPE,
+            "--meta",
+            "app=code",
+            "--meta",
+            "host=tauri",
+        ],
+    )?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    Err(if stderr.is_empty() {
+        format!("rpc register exited with {}", output.status)
+    } else {
+        stderr
+    })
+}
+
+fn bootstrap_rpc_gateway(context: &AppContext) -> Result<(), String> {
+    let Some(cli_entrypoint) = resolve_workspace_cli_entrypoint_path(&context.workspace_root)
+        .or_else(|| resolve_cli_entrypoint_path(context))
+    else {
+        return Err(format!(
+            "CLI entrypoint not found. checked workspace_root={} and launch_cwd={}",
+            context.workspace_root, context.launch_cwd
+        ));
+    };
+    let cli_workdir = resolve_cli_workdir(&cli_entrypoint, context);
+    let requested_rpc_address = resolve_rpc_address();
+    let ensured_rpc_address =
+        ensure_rpc_server(&cli_entrypoint, &cli_workdir, &requested_rpc_address)?;
+    std::env::set_var("CLINE_RPC_ADDRESS", &ensured_rpc_address);
+
+    register_rpc_client(&cli_entrypoint, &cli_workdir, &ensured_rpc_address)?;
+    Ok(())
+}
+
 fn run_cli_list_json_command(
     cli_entrypoint: &Path,
     workspace_root: &str,
@@ -1797,13 +1906,13 @@ fn resolve_chat_create_session_script_path(context: &AppContext) -> Option<PathB
     candidates.into_iter().find(|path| path.exists())
 }
 
-fn create_chat_session_via_core(
+fn create_chat_session_via_rpc_runtime(
     context: &AppContext,
     config: &StartSessionRequest,
 ) -> Result<String, String> {
     let Some(script_path) = resolve_chat_create_session_script_path(context) else {
         return Err(format!(
-            "chat create-session script not found. checked workspace_root={} and launch_cwd={}",
+            "chat RPC start-session script not found. checked workspace_root={} and launch_cwd={}",
             context.workspace_root, context.launch_cwd
         ));
     };
@@ -1819,7 +1928,7 @@ fn create_chat_session_via_core(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("failed to start create-session script: {e}"))?;
+        .map_err(|e| format!("failed to start RPC start-session script: {e}"))?;
 
     if let Some(stdin) = child.stdin.as_mut() {
         stdin
@@ -1847,11 +1956,11 @@ fn create_chat_session_via_core(
 
     let status = child
         .wait()
-        .map_err(|e| format!("failed waiting for create-session script: {e}"))?;
+        .map_err(|e| format!("failed waiting for RPC start-session script: {e}"))?;
     if !status.success() {
         let stderr_trimmed = stderr.trim();
         return Err(if stderr_trimmed.is_empty() {
-            format!("create-session script exited with {status}")
+            format!("RPC start-session script exited with {status}")
         } else {
             stderr_trimmed.to_string()
         });
@@ -1865,7 +1974,7 @@ fn create_chat_session_via_core(
     Ok(response.session_id)
 }
 
-fn run_chat_turn_script(
+fn run_chat_turn_via_rpc_runtime(
     app: &AppHandle,
     session_id: &str,
     context: &AppContext,
@@ -1873,7 +1982,7 @@ fn run_chat_turn_script(
 ) -> Result<ChatTurnResult, String> {
     let Some(script_path) = resolve_chat_turn_script_path(context) else {
         return Err(format!(
-            "chat runner script not found. checked workspace_root={} and launch_cwd={}",
+            "chat RPC turn script not found. checked workspace_root={} and launch_cwd={}",
             context.workspace_root, context.launch_cwd
         ));
     };
@@ -1900,26 +2009,26 @@ fn run_chat_turn_script(
             approval_dir.to_string_lossy().to_string(),
         )
         .spawn()
-        .map_err(|e| format!("failed to start chat runner script: {e}"))?;
+        .map_err(|e| format!("failed to start chat RPC turn script: {e}"))?;
 
     if let Some(stdin) = child.stdin.as_mut() {
         stdin
             .write_all(stdin_body.as_bytes())
-            .map_err(|e| format!("failed writing chat runner stdin: {e}"))?;
+            .map_err(|e| format!("failed writing chat RPC turn stdin: {e}"))?;
         stdin
             .flush()
-            .map_err(|e| format!("failed flushing chat runner stdin: {e}"))?;
+            .map_err(|e| format!("failed flushing chat RPC turn stdin: {e}"))?;
     }
     let _ = child.stdin.take();
 
     let stdout = child
         .stdout
         .take()
-        .ok_or_else(|| "failed to capture chat runner stdout".to_string())?;
+        .ok_or_else(|| "failed to capture chat RPC turn stdout".to_string())?;
     let stderr = child
         .stderr
         .take()
-        .ok_or_else(|| "failed to capture chat runner stderr".to_string())?;
+        .ok_or_else(|| "failed to capture chat RPC turn stderr".to_string())?;
 
     let stderr_handle = thread::spawn(move || {
         let mut reader = BufReader::new(stderr);
@@ -1937,7 +2046,7 @@ fn run_chat_turn_script(
         line.clear();
         let bytes = stdout_reader
             .read_line(&mut line)
-            .map_err(|e| format!("failed reading chat runner output: {e}"))?;
+            .map_err(|e| format!("failed reading chat RPC turn output: {e}"))?;
         if bytes == 0 {
             break;
         }
@@ -1999,19 +2108,19 @@ fn run_chat_turn_script(
 
     let status = child
         .wait()
-        .map_err(|e| format!("failed waiting for chat runner: {e}"))?;
+        .map_err(|e| format!("failed waiting for chat RPC turn script: {e}"))?;
     let stderr_output = stderr_handle.join().unwrap_or_default();
 
     if !status.success() {
         let stderr = stderr_output.trim().to_string();
         return Err(if stderr.is_empty() {
-            format!("chat runner exited with {status}")
+            format!("chat RPC turn script exited with {status}")
         } else {
             stderr
         });
     }
 
-    final_result.ok_or_else(|| "chat runner returned no result".to_string())
+    final_result.ok_or_else(|| "chat RPC turn returned no result".to_string())
 }
 
 fn append_session_chunk(session_id: &str, stream: &str, chunk: &str, ts: u64) {
@@ -3012,7 +3121,7 @@ async fn chat_session_command(
             };
             resolve_chat_config_api_key(&mut config)?;
             ensure_start_session_home_dir(&mut config);
-            let session_id = create_chat_session_via_core(&context, &config)?;
+            let session_id = create_chat_session_via_rpc_runtime(&context, &config)?;
             let mut sessions = state
                 .sessions
                 .lock()
@@ -3115,7 +3224,7 @@ async fn chat_session_command(
             };
 
             let turn_result = tauri::async_runtime::spawn_blocking(move || {
-                run_chat_turn_script(
+                run_chat_turn_via_rpc_runtime(
                     &app_for_turn,
                     &session_id_for_turn,
                     &context_for_turn,
@@ -3897,6 +4006,9 @@ fn main() {
         launch_cwd,
         workspace_root,
     };
+    if let Err(error) = bootstrap_rpc_gateway(&app_context) {
+        eprintln!("[rpc] startup bootstrap failed: {error}");
+    }
 
     tauri::Builder::default()
         .manage(store)

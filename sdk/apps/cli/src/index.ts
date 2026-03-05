@@ -51,6 +51,8 @@ import {
 import { formatHookDispatchOutput, runHookCommand } from "./commands/hook";
 import { runHistoryListCommand, runListCommand } from "./commands/list";
 import {
+	runRpcEnsureCommand,
+	runRpcRegisterCommand,
 	runRpcStartCommand,
 	runRpcStatusCommand,
 	runRpcStopCommand,
@@ -1090,16 +1092,10 @@ function showHelp(): void {
 ${c.bold}USAGE${c.reset}
   clite [OPTIONS] [PROMPT]
   clite -i                    Interactive mode
-  clite list history          List saved history items
-  clite list hooks            List hook file locations
-  clite list mcp              List configured MCP servers
   clite auth <provider>       Run OAuth login (cline|openai-codex|oca)
   clite hook < payload.json   Handle hook payload from stdin
   clite list <workflows|rules|skills|agents|history|hooks|mcp>
                               List workflow/rule/skill/agent configs, history, or hook file paths
-  clite rpc start             [Internal] Start RPC server
-  clite rpc status            Check RPC server health
-  clite rpc stop              Request RPC server shutdown
   echo "prompt" | clite       Pipe input
 
 ${c.bold}OPTIONS${c.reset}
@@ -1159,12 +1155,6 @@ ${c.bold}EXAMPLES${c.reset}
   clite list mcp
   clite auth openai-codex
   clite auth oca
-  clite rpc start
-  clite rpc status
-  clite rpc stop
-  clite rpc start --address 127.0.0.1:4317
-  clite rpc status --address 127.0.0.1:4317
-  clite rpc stop --address 127.0.0.1:4317
   clite "What is 2+2?"
   clite "Read package.json and summarize it"
   clite "Search for TODO comments in the codebase"
@@ -1173,6 +1163,14 @@ ${c.bold}EXAMPLES${c.reset}
   clite --tools --teams "Create teammates for planner/coder/reviewer and execute tasks"
   clite --no-tools "Answer from general knowledge only"
   cat file.txt | clite "Summarize this"
+  
+${c.bold}INTERNAL${c.reset}
+  clite rpc <start|status|stop|ensure> --address <host:port>
+							  RPC server commands with custom address
+  clite rpc register --client-type <type> --client-id <id>
+							  Register a client with RPC server (e.g. --client-type desktop --client-id example)
+  clite rpc ensure --json
+							  Ensure compatible runtime server, auto-selecting a new port when needed
 `);
 }
 
@@ -1217,6 +1215,14 @@ async function main(): Promise<void> {
 		}
 		if (rpcSubcommand === "stop") {
 			const code = await runRpcStopCommand(rawArgs, writeln, writeErr);
+			process.exit(code);
+		}
+		if (rpcSubcommand === "ensure") {
+			const code = await runRpcEnsureCommand(rawArgs, writeln, writeErr);
+			process.exit(code);
+		}
+		if (rpcSubcommand === "register") {
+			const code = await runRpcRegisterCommand(rawArgs, writeln, writeErr);
 			process.exit(code);
 		}
 		writeErr(`unknown rpc subcommand "${rawArgs[1] ?? ""}"`);

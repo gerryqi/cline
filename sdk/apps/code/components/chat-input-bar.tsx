@@ -490,9 +490,7 @@ function ModelSelector({
 	const [providerReasoningModels, setProviderReasoningModels] = useState<
 		Record<string, string[]>
 	>(FALLBACK_PROVIDER_REASONING_MODELS);
-	const [enabledProviderIds, setEnabledProviderIds] = useState<string[] | null>(
-		null,
-	);
+	const [enabledProviderIds, setEnabledProviderIds] = useState<string[]>([]);
 	const [lastModelByProvider, setLastModelByProvider] = useState<
 		Record<string, string>
 	>(() => {
@@ -520,17 +518,11 @@ function ModelSelector({
 		}
 	});
 	const visibleProviderModels = useMemo(() => {
-		if (!enabledProviderIds || enabledProviderIds.length === 0) {
-			return providerModels;
-		}
 		const next: Record<string, string[]> = {};
 		for (const providerId of enabledProviderIds) {
-			const modelsForId = providerModels[providerId];
-			if (modelsForId && modelsForId.length > 0) {
-				next[providerId] = modelsForId;
-			}
+			next[providerId] = providerModels[providerId] ?? [];
 		}
-		return Object.keys(next).length > 0 ? next : providerModels;
+		return next;
 	}, [enabledProviderIds, providerModels]);
 	const providers = useMemo(
 		() => Object.keys(visibleProviderModels),

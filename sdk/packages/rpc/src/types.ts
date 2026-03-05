@@ -1,6 +1,7 @@
 export interface RpcServerOptions {
 	address?: string;
 	sessionBackend: RpcSessionBackend;
+	runtimeHandlers?: RpcRuntimeHandlers;
 }
 
 export interface RpcServerHandle {
@@ -9,6 +10,30 @@ export interface RpcServerHandle {
 	port: number;
 	startedAt: string;
 	stop: () => Promise<void>;
+}
+
+export interface RpcClientRegistrationInput {
+	clientId?: string;
+	clientType?: string;
+	metadata?: Record<string, string>;
+}
+
+export interface RpcClientRegistrationResult {
+	clientId: string;
+	registered: boolean;
+}
+
+export interface RpcRuntimeHandlers {
+	startSession?: (requestJson: string) => Promise<{ sessionId: string }>;
+	sendSession?: (
+		sessionId: string,
+		requestJson: string,
+	) => Promise<{ resultJson: string }>;
+	runProviderAction?: (requestJson: string) => Promise<{ resultJson: string }>;
+	runProviderOAuthLogin?: (provider: string) => Promise<{
+		provider: string;
+		apiKey: string;
+	}>;
 }
 
 export interface RoutedEvent {

@@ -2,6 +2,7 @@ export { RpcSessionClient } from "./client.js";
 export {
 	getRpcServerHandle,
 	getRpcServerHealth,
+	registerRpcClient,
 	requestRpcServerShutdown,
 	startRpcServer,
 	stopRpcServer,
@@ -9,6 +10,9 @@ export {
 export type {
 	PendingApproval,
 	RoutedEvent,
+	RpcClientRegistrationInput,
+	RpcClientRegistrationResult,
+	RpcRuntimeHandlers,
 	RpcServerHandle,
 	RpcServerOptions,
 	RpcSessionBackend,

@@ -12,6 +12,23 @@ From `apps/code/`:
 - `bun run build:binary` - build desktop binary
 - `bun run typecheck` - TypeScript check
 
+## RPC Bootstrap On Startup
+
+- On app startup, Tauri calls `clite rpc ensure --json` to guarantee a compatible runtime-capable RPC server.
+- If a stale/incompatible listener exists on the requested address, `rpc ensure` can launch a fresh server on a different available port.
+- Tauri sets `CLINE_RPC_ADDRESS` from the ensured response so all subsequent script RPC calls use the effective port.
+- Once healthy, it registers the desktop client with `clite rpc register --client-type desktop --client-id code-desktop`.
+- Requested RPC address defaults to `127.0.0.1:4317` and can be overridden with `CLINE_RPC_ADDRESS`.
+- Provider flows also use RPC bridge scripts:
+  - [`scripts/provider-settings.ts`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/scripts/provider-settings.ts) -> `RunProviderAction`
+  - [`scripts/provider-oauth-login.ts`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/scripts/provider-oauth-login.ts) -> `RunProviderOAuthLogin`
+
+## Provider Selector Behavior
+
+- The chat input provider selector only shows providers that the user has configured in Provider Settings (`enabled: true` in the provider catalog).
+- Providers that are not configured are hidden from both provider and model pickers in the chat input bar.
+- Chat config now hydrates `apiKey` from the provider catalog and re-syncs it whenever the selected provider changes, so OAuth-saved credentials (for example `cline`) are used automatically when starting a session.
+
 ## Chat Message Exchange Lifecycle
 
 This section explains how one chat turn moves through the app and why messages can appear either live or after hydration.
@@ -33,13 +50,15 @@ Key path:
 - It also creates an assistant placeholder message for streaming text.
 - Then it calls `chat_session_command` with `action: "send"`.
 
-### 3) Run Turn Script (Tauri -> Node Runner)
+### 3) RPC Runtime Calls (Tauri -> RPC Bridge Scripts -> RPC)
 
-- Tauri spawns [`scripts/chat-agent-turn.ts`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/scripts/chat-agent-turn.ts).
-- The script streams JSON lines back to Tauri:
-  - `type: "chunk"`, `stream: "chat_text" | "chat_core_log"`
-  - `type: "tool_call_start"`
-  - `type: "tool_call_end"`
+- Tauri spawns RPC bridge scripts: [`scripts/chat-create-session.ts`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/scripts/chat-create-session.ts) and [`scripts/chat-agent-turn.ts`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/scripts/chat-agent-turn.ts).
+- Both scripts are now thin RPC clients:
+  - `chat-create-session.ts` calls RPC `StartRuntimeSession`.
+  - `chat-agent-turn.ts` calls RPC `SendRuntimeSession`.
+- The runtime execution now lives in the long-running RPC server process started via `clite rpc start`.
+- RPC bridge output for send remains newline-delimited JSON with:
+  - `type: "chunk"`, `stream: "chat_text"`
   - `type: "result"`
 
 ### 4) Live Stream Events (Tauri -> Frontend)
@@ -47,8 +66,6 @@ Key path:
 - Tauri emits each stream line via `app.emit("agent://chunk", payload)`.
 - Frontend listens with `listen("agent://chunk", ...)` and updates messages live:
   - `chat_text` -> append to active assistant message
-  - `chat_tool_call_start` -> add `role: "tool"` message
-  - `chat_tool_call_end` -> update that tool message
 
 Important behavior:
 - If no active assistant message exists (for example after hydration), incoming `chat_text` now creates one automatically before appending. This keeps live updates working in reopened sessions.
@@ -127,8 +144,8 @@ If messages show after restart but not live:
 1. Verify `agent://chunk` events are received in `use-chat-session.ts` listener.
 2. Verify `payload.sessionId` matches active session.
 3. Verify `chat_text` creates/uses an assistant message ID before append.
-4. Verify runner output lines are valid JSON (`chat-agent-turn.ts`).
-5. Verify Tauri emits chunk types (`chat_text`, `chat_tool_call_start`, `chat_tool_call_end`).
+4. Verify RPC bridge output lines are valid JSON (`chat-agent-turn.ts`).
+5. Verify Tauri emits `chat_text` chunks and a final `result`.
 
 If tool calls are present but not visible:
 
