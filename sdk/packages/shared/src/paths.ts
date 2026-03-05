@@ -46,6 +46,14 @@ export function resolveSessionDataDir(): string {
 	return join(resolveClineDataDir(), "sessions");
 }
 
+export function resolveTeamDataDir(): string {
+	const explicitDir = process.env.CLINE_TEAM_DATA_DIR?.trim();
+	if (explicitDir) {
+		return explicitDir;
+	}
+	return join(resolveClineDataDir(), "teams");
+}
+
 export function resolveProviderSettingsPath(): string {
 	const explicitPath = process.env.CLINE_PROVIDER_SETTINGS_PATH?.trim();
 	if (explicitPath) {

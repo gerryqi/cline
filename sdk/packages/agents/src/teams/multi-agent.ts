@@ -57,6 +57,12 @@ export enum TeamMessageType {
 	TeamTaskCompleted = "team_task_completed",
 }
 
+export interface TeammateLifecycleSpec {
+	rolePrompt: string;
+	modelId?: string;
+	maxIterations?: number;
+}
+
 /**
  * Event emitted during team execution
  */
@@ -69,7 +75,12 @@ export type TeamEvent =
 			error?: Error;
 	  }
 	| { type: TeamMessageType.AgentEvent; agentId: string; event: AgentEvent }
-	| { type: TeamMessageType.TeammateSpawned; agentId: string; role?: string }
+	| {
+			type: TeamMessageType.TeammateSpawned;
+			agentId: string;
+			role?: string;
+			teammate: TeammateLifecycleSpec;
+	  }
 	| { type: TeamMessageType.TeammateShutdown; agentId: string; reason?: string }
 	| { type: TeamMessageType.TeamTaskUpdated; task: TeamTask }
 	| { type: TeamMessageType.TeamMessage; message: TeamMailboxMessage }
@@ -948,6 +959,11 @@ export class AgentTeamsRuntime {
 			type: TeamMessageType.TeammateSpawned,
 			agentId,
 			role: config.role,
+			teammate: {
+				rolePrompt: config.systemPrompt,
+				modelId: config.modelId,
+				maxIterations: config.maxIterations,
+			},
 		});
 		return {
 			agentId: teammate.agentId,

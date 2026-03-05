@@ -14,6 +14,7 @@ export type {
 export type {
 	ProviderConfig,
 	ProviderSettings,
+	ProviderTokenSource,
 	StoredProviderSettings,
 	StoredProviderSettingsEntry,
 } from "./provider-settings";

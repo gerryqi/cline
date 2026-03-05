@@ -68,6 +68,7 @@ export type {
 	SessionToolEvent,
 } from "./types/events";
 export type {
+	ProviderTokenSource,
 	StoredProviderSettings,
 	StoredProviderSettingsEntry,
 } from "./types/provider-settings";

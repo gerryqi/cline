@@ -797,6 +797,11 @@ export interface AgentConfig {
 	headers?: Record<string, string>;
 	/** Optional provider model catalog overrides */
 	knownModels?: Record<string, LlmsProviders.ModelInfo>;
+	/**
+	 * Optional preloaded conversation history for resume flows.
+	 * When provided, start by calling continue() to preserve history.
+	 */
+	initialMessages?: LlmsProviders.Message[];
 
 	// -------------------------------------------------------------------------
 	// Agent Behavior
@@ -911,6 +916,7 @@ export const AgentConfigSchema = z.object({
 	knownModels: z
 		.record(z.string(), z.custom<LlmsProviders.ModelInfo>())
 		.optional(),
+	initialMessages: z.array(z.custom<LlmsProviders.Message>()).optional(),
 
 	// Agent Behavior
 	systemPrompt: z.string(),

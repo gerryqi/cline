@@ -13,40 +13,26 @@
  *   echo "prompt" | agent              # pipe input
  */
 
-import {
-	appendFileSync,
-	existsSync,
-	readFileSync,
-	writeFileSync,
-} from "node:fs";
+import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import {
-	Agent,
 	type AgentEvent,
 	type AgentHooks,
-	type AgentResult,
-	createBuiltinTools,
-	createSpawnAgentTool as createSdkSpawnAgentTool,
 	createSubprocessHooks,
 	type HookEventPayload,
 	type RunHookResult,
 	type TeamEvent,
-	type Tool,
 	type ToolApprovalRequest,
 	type ToolApprovalResult,
 	type ToolPolicy,
-	ToolPresets,
 } from "@cline/agents";
 import {
 	createTeamName,
 	createUserInstructionConfigWatcher,
-	DefaultRuntimeBuilder,
 	loadRulesForSystemPromptFromWatcher,
 	migrateLegacyProviderSettings,
 	ProviderSettingsManager,
 	prewarmFileIndex,
-	type SessionManifest,
-	SessionSource,
 	type UserInstructionConfigWatcher,
 } from "@cline/core/server";
 import { providers } from "@cline/llms";
@@ -60,11 +46,7 @@ import {
 	runAuthProviderCommand,
 } from "./commands/auth";
 import { formatHookDispatchOutput, runHookCommand } from "./commands/hook";
-import {
-	type HistorySessionRow,
-	runHistoryListCommand,
-	runListCommand,
-} from "./commands/list";
+import { runHistoryListCommand, runListCommand } from "./commands/list";
 import { runRpcStartCommand } from "./commands/rpc";
 import {
 	buildDefaultSystemPrompt,
@@ -79,22 +61,16 @@ import {
 	resolveWorkspaceRoot,
 	truncate,
 } from "./utils/helpers";
+import { loadInteractiveResumeMessages } from "./utils/resume";
 import {
-	createRootCliSessionWithArtifacts,
+	createDefaultCliSessionManager,
 	deleteCliSession,
-	handleSubAgentEnd,
-	handleSubAgentStart,
 	listCliSessions,
-	onTeamTaskEnd,
-	onTeamTaskStart,
-	updateCliSessionStatusInStore,
-	writeCliSessionManifest,
 } from "./utils/session";
 import type { ActiveCliSession, CliOutputMode, Config } from "./utils/types";
 
 let activeCliSession: ActiveCliSession | undefined;
-let cliSessionExitBound = false;
-let activeRuntimeAbort: ((reason: string) => void) | undefined;
+let activeRuntimeAbort: (() => void) | undefined;
 let streamErrorGuardsBound = false;
 let activeInlineStream: "text" | "reasoning" | undefined;
 let inlineStreamHasOutput = false;
@@ -130,131 +106,16 @@ function installStreamErrorGuards(): void {
 	process.stderr.on("error", onStderrError);
 }
 
-function setActiveRuntimeAbort(
-	abortFn: ((reason: string) => void) | undefined,
-): void {
+function setActiveRuntimeAbort(abortFn: (() => void) | undefined): void {
 	activeRuntimeAbort = abortFn;
 }
 
-function abortActiveRuntime(reason: string): void {
+function abortActiveRuntime(): void {
 	try {
-		activeRuntimeAbort?.(reason);
+		activeRuntimeAbort?.();
 	} catch {
 		// Best-effort abort path.
 	}
-}
-
-function persistApiMessages(messages: AgentResult["messages"]): void {
-	if (!activeCliSession) {
-		return;
-	}
-	writeFileSync(
-		activeCliSession.messagesPath,
-		`${JSON.stringify(
-			{
-				version: 1,
-				updated_at: nowIso(),
-				messages,
-			},
-			null,
-			2,
-		)}\n`,
-		"utf8",
-	);
-}
-
-function persistCurrentAgentMessages(agent: Agent): void {
-	try {
-		persistApiMessages(agent.getMessages());
-	} catch {
-		// Best-effort persistence path for interrupted/failed runs.
-	}
-}
-
-async function createCliSession(
-	config: Config,
-	prompt: string | undefined,
-	interactive: boolean,
-): Promise<ActiveCliSession> {
-	const sessionId = process.env.CLINE_SESSION_ID?.trim() || "";
-	const created = await createRootCliSessionWithArtifacts({
-		sessionId,
-		source: SessionSource.CLI,
-		pid: process.pid,
-		interactive,
-		provider: config.providerId,
-		model: config.modelId,
-		cwd: config.cwd,
-		workspaceRoot: config.workspaceRoot || config.cwd,
-		teamName: config.teamName,
-		enableTools: config.enableTools,
-		enableSpawn: config.enableSpawnAgent,
-		enableTeams: config.enableAgentTeams,
-		prompt: prompt?.trim() || undefined,
-		startedAt: nowIso(),
-	});
-	process.env.CLINE_SESSION_ID = created.env.CLINE_SESSION_ID;
-	process.env.CLINE_HOOKS_LOG_PATH = created.env.CLINE_HOOKS_LOG_PATH;
-	process.env.CLINE_ENABLE_SUBPROCESS_HOOKS =
-		created.env.CLINE_ENABLE_SUBPROCESS_HOOKS;
-
-	return {
-		manifestPath: created.manifestPath,
-		transcriptPath: created.transcriptPath,
-		hookPath: created.hookPath,
-		messagesPath: created.messagesPath,
-		manifest: created.manifest,
-	};
-}
-
-async function updateCliSessionStatus(
-	status: SessionManifest["status"],
-	exitCode?: number | null,
-): Promise<void> {
-	if (!activeCliSession) {
-		return;
-	}
-	const result = await updateCliSessionStatusInStore(
-		activeCliSession.manifest.session_id,
-		status,
-		exitCode,
-	);
-	if (!result.updated) {
-		return;
-	}
-	const endedAt = result.endedAt ?? nowIso();
-	activeCliSession.manifest.status = status;
-	activeCliSession.manifest.ended_at = endedAt;
-	activeCliSession.manifest.exit_code = exitCode ?? undefined;
-	await writeCliSessionManifest(
-		activeCliSession.manifestPath,
-		activeCliSession.manifest,
-	);
-}
-
-function bindCliSessionExitHandlers(): void {
-	if (cliSessionExitBound) {
-		return;
-	}
-	cliSessionExitBound = true;
-	process.on("exit", (code) => {
-		if (activeCliSession?.manifest.status === "running") {
-			void updateCliSessionStatus(code === 0 ? "completed" : "failed", code);
-		}
-	});
-	process.on("SIGTERM", () => {
-		abortActiveRuntime("sigterm");
-		if (activeCliSession?.manifest.status === "running") {
-			void updateCliSessionStatus("cancelled", null);
-		}
-		process.exit(143);
-	});
-	process.on("SIGINT", () => {
-		abortActiveRuntime("sigint");
-		if (activeCliSession?.manifest.status === "running") {
-			void updateCliSessionStatus("cancelled", null);
-		}
-	});
 }
 
 // =============================================================================
@@ -273,6 +134,19 @@ const c = {
 };
 
 let currentOutputMode: CliOutputMode = "text";
+
+function formatUsd(value: number): string {
+	if (!Number.isFinite(value)) {
+		return "$0.00";
+	}
+	if (value >= 1) {
+		return `$${value.toFixed(2)}`;
+	}
+	if (value >= 0.01) {
+		return `$${value.toFixed(4)}`;
+	}
+	return `$${value.toFixed(6)}`;
+}
 
 function jsonReplacer(_key: string, value: unknown): unknown {
 	if (value instanceof Error) {
@@ -514,61 +388,6 @@ function createRuntimeHooks(): AgentHooks | undefined {
 	}).hooks;
 }
 
-function createBuiltinToolsList(cwd: string, mode: Config["mode"]): Tool[] {
-	const preset =
-		mode === "plan" ? ToolPresets.readonly : ToolPresets.development;
-	return createBuiltinTools({
-		cwd,
-		...preset,
-		executors: {
-			askQuestion: askQuestionInTerminal,
-		},
-	});
-}
-
-function createCliSpawnTool(
-	config: Config,
-	hooks: AgentHooks | undefined,
-): Tool {
-	return createSdkSpawnAgentTool({
-		providerId: config.providerId,
-		modelId: config.modelId,
-		apiKey: config.apiKey,
-		baseUrl: config.baseUrl,
-		knownModels: config.knownModels,
-		defaultMaxIterations: 5,
-		createSubAgentTools: () => createBuiltinToolsList(config.cwd, config.mode),
-		hooks,
-		toolPolicies: config.toolPolicies,
-		requestToolApproval,
-		onSubAgentStart: ({ subAgentId, conversationId, parentAgentId, input }) => {
-			void handleSubAgentStart({
-				subAgentId,
-				conversationId,
-				parentAgentId,
-				input,
-			});
-		},
-		onSubAgentEnd: ({
-			subAgentId,
-			conversationId,
-			parentAgentId,
-			input,
-			result,
-			error,
-		}) => {
-			void handleSubAgentEnd({
-				subAgentId,
-				conversationId,
-				parentAgentId,
-				input,
-				result,
-				error,
-			});
-		},
-	}) as Tool;
-}
-
 // =============================================================================
 // CLI Output
 // =============================================================================
@@ -646,55 +465,6 @@ function closeInlineStreamIfNeeded(): void {
 	inlineStreamHasOutput = false;
 }
 
-function parsePersistedMessages(raw: string): providers.Message[] {
-	if (!raw.trim()) {
-		return [];
-	}
-	const parsed = JSON.parse(raw) as { messages?: unknown } | unknown[];
-	const messages = Array.isArray(parsed)
-		? parsed
-		: Array.isArray((parsed as { messages?: unknown })?.messages)
-			? ((parsed as { messages: unknown[] }).messages ?? [])
-			: [];
-	return messages as providers.Message[];
-}
-
-async function loadSessionMessages(
-	sessionId: string,
-): Promise<providers.Message[]> {
-	const target = sessionId.trim();
-	if (!target) {
-		throw new Error("--session requires <id>");
-	}
-	const rows = (await listCliSessions(2000)) as HistorySessionRow[];
-	const row = rows.find((item) => item.session_id === target);
-	if (!row) {
-		throw new Error(`could not find session "${target}"`);
-	}
-	const messagesPath = row.messages_path?.trim();
-	if (!messagesPath || !existsSync(messagesPath)) {
-		return [];
-	}
-	try {
-		return parsePersistedMessages(readFileSync(messagesPath, "utf8"));
-	} catch {
-		return [];
-	}
-}
-
-function hydrateAgentMessages(
-	agent: Agent,
-	messages: providers.Message[],
-): void {
-	if (messages.length === 0) {
-		return;
-	}
-	// Agent does not expose a public restore API yet; hydrate internal buffer to resume chat context.
-	(agent as unknown as { messages: providers.Message[] }).messages = [
-		...messages,
-	];
-}
-
 // =============================================================================
 // Agent Runner
 // =============================================================================
@@ -707,35 +477,18 @@ async function runAgent(
 	const startTime = performance.now();
 	void prewarmFileIndex(config.cwd);
 	const hooks = createRuntimeHooks();
-	const runtime = new DefaultRuntimeBuilder().build({
-		config,
-		hooks,
-		onTeamEvent: handleTeamEvent,
-		createSpawnTool: () => createCliSpawnTool(config, hooks),
+	const sessionManager = await createDefaultCliSessionManager({
 		defaultToolExecutors: {
 			askQuestion: askQuestionInTerminal,
 		},
-		userInstructionWatcher,
-		onTeamRestored: () => {
-			if (config.outputMode === "json") {
-				emitJsonLine("stdout", {
-					type: "team_restored",
-					teamName: config.teamName ?? "(unknown team)",
-				});
-				return;
-			}
-			writeln(
-				`${c.dim}[team] restored persisted team state for "${config.teamName ?? "(unknown team)"}"${c.reset}`,
-			);
-		},
+		toolPolicies: config.toolPolicies,
+		requestToolApproval,
 	});
-	const { tools } = runtime;
 
-	let agent: Agent;
 	let errorAlreadyReported = false;
 	let reasoningChunkCount = 0;
 	let redactedReasoningChunkCount = 0;
-	const onEvent = (event: AgentEvent) => {
+	const onAgentEvent = (event: AgentEvent) => {
 		if (event.type === "error") {
 			errorAlreadyReported = true;
 		}
@@ -746,38 +499,54 @@ async function runAgent(
 			}
 		}
 		handleEvent(event, config);
-		if ((event.type === "iteration_end" || event.type === "done") && agent) {
-			persistCurrentAgentMessages(agent);
-		}
 	};
-	agent = new Agent({
-		providerId: config.providerId,
-		modelId: config.modelId,
-		apiKey: config.apiKey,
-		baseUrl: config.baseUrl,
-		knownModels: config.knownModels,
-		thinking: config.thinking,
-		systemPrompt: config.systemPrompt,
-		tools,
-		maxIterations: config.maxIterations,
-		onEvent,
-		hooks,
-		toolPolicies: config.toolPolicies,
-		requestToolApproval,
+	const unsubscribe = sessionManager.subscribe((event: unknown) => {
+		const typedEvent = event as
+			| { type: "agent_event"; payload: { event: AgentEvent } }
+			| { type: "chunk"; payload: { stream: string; chunk: string } }
+			| { type: string; payload?: unknown };
+		if (typedEvent.type === "agent_event") {
+			const payload = typedEvent.payload as { event?: AgentEvent } | undefined;
+			if (payload?.event) {
+				onAgentEvent(payload.event);
+			}
+			return;
+		}
+		const chunkEvent = event as
+			| { type: "chunk"; payload: { stream: string; chunk: string } }
+			| { type: string; payload?: unknown };
+		if (
+			chunkEvent.type !== "chunk" ||
+			!chunkEvent.payload ||
+			typeof chunkEvent.payload !== "object"
+		) {
+			return;
+		}
+		const payload = chunkEvent.payload as { stream?: string; chunk?: string };
+		if (payload.stream !== "agent" || typeof payload.chunk !== "string") {
+			return;
+		}
+		try {
+			onAgentEvent(JSON.parse(payload.chunk) as AgentEvent);
+		} catch {
+			// Best-effort event parsing path.
+		}
 	});
 	let abortRequested = false;
-	const abortAll = (reason: string) => {
+	let activeSessionId: string | undefined;
+	const abortAll = () => {
 		if (abortRequested) {
 			return false;
 		}
 		abortRequested = true;
-		agent.abort();
-		runtime.shutdown(reason);
+		if (activeSessionId) {
+			void sessionManager.abort(activeSessionId);
+		}
 		return true;
 	};
 	setActiveRuntimeAbort(abortAll);
 	const handleSigint = () => {
-		if (abortAll("sigint")) {
+		if (abortAll()) {
 			if (config.outputMode === "json") {
 				emitJsonLine("stdout", {
 					type: "run_abort_requested",
@@ -798,8 +567,42 @@ async function runAgent(
 			config.cwd,
 			userInstructionWatcher,
 		);
-		const result = await agent.run(userInput);
-		persistApiMessages(result.messages);
+		const started = await sessionManager.start({
+			config: {
+				...config,
+				hooks,
+				onTeamEvent: handleTeamEvent,
+			},
+			interactive: false,
+			userInstructionWatcher,
+			onTeamRestored: () => {
+				if (config.outputMode === "json") {
+					emitJsonLine("stdout", {
+						type: "team_restored",
+						teamName: config.teamName ?? "(unknown team)",
+					});
+					return;
+				}
+				writeln(
+					`${c.dim}[team] restored persisted team state for "${config.teamName ?? "(unknown team)"}"${c.reset}`,
+				);
+			},
+		});
+		activeSessionId = started.sessionId;
+		activeCliSession = {
+			manifestPath: started.manifestPath,
+			transcriptPath: started.transcriptPath,
+			hookPath: started.hookPath,
+			messagesPath: started.messagesPath,
+			manifest: started.manifest,
+		};
+		const result = await sessionManager.send({
+			sessionId: started.sessionId,
+			prompt: userInput,
+		});
+		if (!result) {
+			throw new Error("session manager did not return a result");
+		}
 		if (config.outputMode === "json") {
 			emitJsonLine("stdout", {
 				type: "run_result",
@@ -812,7 +615,6 @@ async function runAgent(
 			});
 		}
 		if (abortRequested || result.finishReason === "aborted") {
-			void updateCliSessionStatus("cancelled", null);
 			writeln();
 			return;
 		}
@@ -835,6 +637,9 @@ async function runAgent(
 			if (config.showUsage) {
 				const tokens = result.usage.inputTokens + result.usage.outputTokens;
 				parts.push(`${tokens} tokens`);
+				if (typeof result.usage.totalCost === "number") {
+					parts.push(`${formatUsd(result.usage.totalCost)} est. cost`);
+				}
 				if (result.iterations > 1) {
 					parts.push(`${result.iterations} iterations`);
 				}
@@ -848,19 +653,16 @@ async function runAgent(
 			);
 		}
 	} catch (err) {
-		persistCurrentAgentMessages(agent);
 		if (config.outputMode === "text") {
 			writeln();
 		}
 		if (!errorAlreadyReported) {
 			writeErr(err instanceof Error ? err.message : String(err));
 		}
-		await updateCliSessionStatus("failed", 1);
 		process.exit(1);
 	} finally {
-		persistCurrentAgentMessages(agent);
-		runtime.shutdown("run_complete");
 		process.off("SIGINT", handleSigint);
+		unsubscribe();
 		if (activeRuntimeAbort === abortAll) {
 			setActiveRuntimeAbort(undefined);
 		}
@@ -998,30 +800,8 @@ function handleTeamEvent(event: TeamEvent): void {
 			);
 			break;
 		case "task_start":
-			void onTeamTaskStart(event.agentId, event.message);
 			break;
 		case "task_end":
-			if (event.error) {
-				void onTeamTaskEnd(
-					event.agentId,
-					"failed",
-					`[error] ${event.error.message}`,
-				);
-			} else if (event.result?.finishReason === "aborted") {
-				void onTeamTaskEnd(
-					event.agentId,
-					"cancelled",
-					"[done] aborted",
-					event.result.messages,
-				);
-			} else {
-				void onTeamTaskEnd(
-					event.agentId,
-					"completed",
-					`[done] ${event.result?.finishReason ?? "completed"}`,
-					event.result?.messages,
-				);
-			}
 			break;
 		case "agent_event":
 			break;
@@ -1035,7 +815,7 @@ function handleTeamEvent(event: TeamEvent): void {
 async function runInteractive(
 	config: Config,
 	userInstructionWatcher?: UserInstructionConfigWatcher,
-	initialMessages?: providers.Message[],
+	resumeSessionId?: string,
 ): Promise<void> {
 	if (config.outputMode === "json") {
 		writeErr("interactive mode is not supported with --output json");
@@ -1055,14 +835,66 @@ async function runInteractive(
 		prompt: `${c.green}>${c.reset} `,
 	});
 	const hooks = createRuntimeHooks();
-	const runtime = new DefaultRuntimeBuilder().build({
-		config,
-		hooks,
-		onTeamEvent: handleTeamEvent,
-		createSpawnTool: () => createCliSpawnTool(config, hooks),
+	const sessionManager = await createDefaultCliSessionManager({
 		defaultToolExecutors: {
 			askQuestion: askQuestionInTerminal,
 		},
+		toolPolicies: config.toolPolicies,
+		requestToolApproval,
+	});
+
+	let turnErrorReported = false;
+	const onAgentEvent = (event: AgentEvent) => {
+		if (event.type === "error") {
+			turnErrorReported = true;
+		}
+		handleEvent(event, config);
+	};
+	const unsubscribe = sessionManager.subscribe((event: unknown) => {
+		const typedEvent = event as
+			| { type: "agent_event"; payload: { event: AgentEvent } }
+			| { type: "chunk"; payload: { stream: string; chunk: string } }
+			| { type: string; payload?: unknown };
+		if (typedEvent.type === "agent_event") {
+			const payload = typedEvent.payload as { event?: AgentEvent } | undefined;
+			if (payload?.event) {
+				onAgentEvent(payload.event);
+			}
+			return;
+		}
+		const chunkEvent = event as
+			| { type: "chunk"; payload: { stream: string; chunk: string } }
+			| { type: string; payload?: unknown };
+		if (
+			chunkEvent.type !== "chunk" ||
+			!chunkEvent.payload ||
+			typeof chunkEvent.payload !== "object"
+		) {
+			return;
+		}
+		const payload = chunkEvent.payload as { stream?: string; chunk?: string };
+		if (payload.stream !== "agent" || typeof payload.chunk !== "string") {
+			return;
+		}
+		try {
+			onAgentEvent(JSON.parse(payload.chunk) as AgentEvent);
+		} catch {
+			// Best-effort event parsing path.
+		}
+	});
+
+	const initialMessages = await loadInteractiveResumeMessages(
+		sessionManager,
+		resumeSessionId,
+	);
+	const started = await sessionManager.start({
+		config: {
+			...config,
+			hooks,
+			onTeamEvent: handleTeamEvent,
+		},
+		interactive: true,
+		initialMessages,
 		userInstructionWatcher,
 		onTeamRestored: () => {
 			if (config.outputMode === "json") {
@@ -1077,53 +909,29 @@ async function runInteractive(
 			);
 		},
 	});
-	const { tools } = runtime;
-
-	// Create a single agent for the interactive session to maintain conversation history
-	let agent: Agent;
-	let turnErrorReported = false;
-	const onEvent = (event: AgentEvent) => {
-		if (event.type === "error") {
-			turnErrorReported = true;
-		}
-		handleEvent(event, config);
-		if ((event.type === "iteration_end" || event.type === "done") && agent) {
-			persistCurrentAgentMessages(agent);
-		}
+	activeCliSession = {
+		manifestPath: started.manifestPath,
+		transcriptPath: started.transcriptPath,
+		hookPath: started.hookPath,
+		messagesPath: started.messagesPath,
+		manifest: started.manifest,
 	};
-	agent = new Agent({
-		providerId: config.providerId,
-		modelId: config.modelId,
-		apiKey: config.apiKey,
-		baseUrl: config.baseUrl,
-		knownModels: config.knownModels,
-		thinking: config.thinking,
-		systemPrompt: config.systemPrompt,
-		tools,
-		maxIterations: config.maxIterations,
-		onEvent,
-		hooks,
-		toolPolicies: config.toolPolicies,
-		requestToolApproval,
-	});
-	hydrateAgentMessages(agent, initialMessages ?? []);
+	const activeSessionId = started.sessionId;
 
-	let isFirstMessage = (initialMessages?.length ?? 0) === 0;
 	let isRunning = false;
 	let abortRequested = false;
-	const abortAll = (reason: string) => {
+	const abortAll = () => {
 		if (abortRequested) {
 			return false;
 		}
 		abortRequested = true;
-		agent.abort();
-		runtime.shutdown(reason);
+		void sessionManager.abort(activeSessionId);
 		return true;
 	};
 	setActiveRuntimeAbort(abortAll);
 	const handleSigint = () => {
 		if (isRunning) {
-			if (abortAll("sigint")) {
+			if (abortAll()) {
 				if (config.outputMode === "json") {
 					emitJsonLine("stdout", {
 						type: "run_abort_requested",
@@ -1167,27 +975,19 @@ async function runInteractive(
 			writeln();
 			const startTime = performance.now();
 
-			let result: AgentResult;
-			if (isFirstMessage) {
-				printModelProviderInfo(config);
-				const userInput = await buildUserInputMessage(
-					input,
-					config.mode,
-					config.cwd,
-					userInstructionWatcher,
-				);
-				result = await agent.run(userInput);
-				isFirstMessage = false;
-			} else {
-				const userInput = await buildUserInputMessage(
-					input,
-					config.mode,
-					config.cwd,
-					userInstructionWatcher,
-				);
-				result = await agent.continue(userInput);
+			const userInput = await buildUserInputMessage(
+				input,
+				config.mode,
+				config.cwd,
+				userInstructionWatcher,
+			);
+			const result = await sessionManager.send({
+				sessionId: activeSessionId,
+				prompt: userInput,
+			});
+			if (!result) {
+				throw new Error("session manager did not return a result");
 			}
-			persistApiMessages(result.messages);
 
 			writeln();
 
@@ -1200,6 +1000,9 @@ async function runInteractive(
 				if (config.showUsage) {
 					const tokens = result.usage.inputTokens + result.usage.outputTokens;
 					parts.push(`${tokens} tokens`);
+					if (typeof result.usage.totalCost === "number") {
+						parts.push(`${formatUsd(result.usage.totalCost)} est. cost`);
+					}
 					if (result.iterations > 1) {
 						parts.push(`${result.iterations} iterations`);
 					}
@@ -1209,14 +1012,12 @@ async function runInteractive(
 
 			writeln();
 		} catch (err) {
-			persistCurrentAgentMessages(agent);
 			writeln();
 			if (!turnErrorReported) {
 				writeErr(err instanceof Error ? err.message : String(err));
 			}
 			writeln();
 		} finally {
-			persistCurrentAgentMessages(agent);
 			isRunning = false;
 			rl.resume();
 			rl.prompt();
@@ -1224,9 +1025,9 @@ async function runInteractive(
 	});
 
 	rl.on("close", () => {
-		persistCurrentAgentMessages(agent);
 		process.off("SIGINT", handleSigint);
-		abortAll("interactive_close");
+		void sessionManager.stop(activeSessionId);
+		unsubscribe();
 		if (activeRuntimeAbort === abortAll) {
 			setActiveRuntimeAbort(undefined);
 		}
@@ -1250,9 +1051,9 @@ ${c.bold}USAGE${c.reset}
   clite list mcp              List configured MCP servers
   clite auth <provider>       Run OAuth login (cline|openai-codex|oca)
   clite hook < payload.json   Handle hook payload from stdin
-  clite rpc start             Start RPC server
   clite list <workflows|rules|skills|agents|history|hooks|mcp>
                               List workflow/rule/skill/agent configs, history, or hook file paths
+  clite rpc start             [Internal] Start RPC server
   echo "prompt" | clite       Pipe input
 
 ${c.bold}OPTIONS${c.reset}
@@ -1262,9 +1063,10 @@ ${c.bold}OPTIONS${c.reset}
   -k, --key <api-key>         API key override for this run
   -n, --max-iterations <n>    Max agentic loop iterations (currently ignored; runtime is unbounded)
   -i, --interactive           Interactive mode with multi-turn conversation
-  -u, --usage                 Show token usage after response
+  -u, --usage                 Show token usage and estimated cost after response
   -t, --timings               Show timing information
   --thinking                  Enable model thinking/reasoning when supported
+  --refresh-models        	  Refresh provider model catalog from live endpoints for this run
   --mode <act|plan>           Agent mode for tool presets (default: act)
   --output <text|json>        Output format (default: text)
   --json                      Shorthand for --output json (NDJSON stream)
@@ -1430,14 +1232,14 @@ async function main(): Promise<void> {
 		process.stdout.write(JSON.stringify(await deleteCliSession(sessionId)));
 		process.exit(0);
 	}
-	let initialMessages: providers.Message[] | undefined;
+	let resumeSessionId: string | undefined;
 	if (args.sessionId !== undefined) {
 		const sessionId = args.sessionId.trim();
 		if (!sessionId) {
 			writeErr("--session requires <id>");
 			process.exit(1);
 		}
-		initialMessages = await loadSessionMessages(sessionId);
+		resumeSessionId = sessionId;
 		process.env.CLINE_HOOK_AGENT_RESUME = "1";
 		args = {
 			...args,
@@ -1520,21 +1322,23 @@ async function main(): Promise<void> {
 	}
 
 	let knownModels: Config["knownModels"];
-	try {
-		const resolvedProviderConfig = await providers.resolveProviderConfig(
-			provider,
-			{
-				loadLatestOnInit: true,
-				loadPrivateOnAuth: true,
-				failOnError: false,
-			},
-		);
-		knownModels = resolvedProviderConfig?.knownModels;
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		writeln(
-			`${c.dim}[model-catalog] latest refresh failed, using bundled defaults (${message})${c.reset}`,
-		);
+	if (args.liveModelCatalog) {
+		try {
+			const resolvedProviderConfig = await providers.resolveProviderConfig(
+				provider,
+				{
+					loadLatestOnInit: true,
+					loadPrivateOnAuth: true,
+					failOnError: false,
+				},
+			);
+			knownModels = resolvedProviderConfig?.knownModels;
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			writeln(
+				`${c.dim}[model-catalog] latest refresh failed, using bundled defaults (${message})${c.reset}`,
+			);
+		}
 	}
 	const knownModelIds = knownModels ? Object.keys(knownModels) : [];
 
@@ -1594,8 +1398,6 @@ async function main(): Promise<void> {
 			`${c.dim}[provider-settings] failed to persist selection (${message})${c.reset}`,
 		);
 	}
-	bindCliSessionExitHandlers();
-
 	// Check for piped input
 	if (!process.stdin.isTTY && !args.interactive) {
 		const chunks: Buffer[] = [];
@@ -1608,11 +1410,7 @@ async function main(): Promise<void> {
 			const prompt = args.prompt
 				? `${args.prompt}\n\n${pipedInput}`
 				: pipedInput;
-			activeCliSession = await createCliSession(config, prompt, false);
 			await runAgent(prompt, config, userInstructionWatcher);
-			if (activeCliSession?.manifest.status === "running") {
-				await updateCliSessionStatus("completed", 0);
-			}
 			stopUserInstructionWatcher();
 			process.off("exit", stopUserInstructionWatcher);
 			return;
@@ -1630,30 +1428,22 @@ async function main(): Promise<void> {
 
 	// Interactive mode
 	if (args.interactive || !args.prompt) {
-		activeCliSession = await createCliSession(config, undefined, true);
-		await runInteractive(config, userInstructionWatcher, initialMessages);
-		if (activeCliSession?.manifest.status === "running") {
-			await updateCliSessionStatus("completed", 0);
-		}
+		await runInteractive(config, userInstructionWatcher, resumeSessionId);
 		stopUserInstructionWatcher();
 		process.off("exit", stopUserInstructionWatcher);
 		return;
 	}
 
 	// Single prompt mode
-	activeCliSession = await createCliSession(config, args.prompt, false);
 	await runAgent(args.prompt, config, userInstructionWatcher);
-	if (activeCliSession?.manifest.status === "running") {
-		await updateCliSessionStatus("completed", 0);
-	}
 	stopUserInstructionWatcher();
 	process.off("exit", stopUserInstructionWatcher);
 	// Exit once agent is done in non-interactive mode
 	return;
 }
 
-main().catch(async (err) => {
+main().catch((err) => {
 	writeErr(err instanceof Error ? err.message : String(err));
-	await updateCliSessionStatus("failed", 1);
+	abortActiveRuntime();
 	process.exit(1);
 });

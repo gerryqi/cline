@@ -1,3 +1,4 @@
+export { DefaultSessionManager } from "./default-session-manager";
 export { RpcCoreSessionService } from "./rpc-session-service";
 export {
 	deriveSubsessionStatus,
@@ -5,7 +6,12 @@ export {
 	makeTeamTaskSubSessionId,
 	sanitizeSessionToken,
 } from "./session-graph";
-export type { SessionManager } from "./session-manager";
+export type {
+	SendSessionInput,
+	SessionManager,
+	StartSessionInput,
+	StartSessionResult,
+} from "./session-manager";
 export type { SessionManifest } from "./session-manifest";
 export type {
 	CreateRootSessionWithArtifactsInput,

@@ -6,13 +6,7 @@ import {
 	truncate,
 	writeHookJson,
 } from "../utils/helpers";
-import {
-	appendSubagentHookAudit,
-	appendSubagentTranscriptLine,
-	applySubagentStatus,
-	queueSpawnRequest,
-	upsertSubagentSessionFromHook,
-} from "../utils/session";
+import { getCoreSessionBackend } from "../utils/session";
 
 export async function runHookCommand(writeErr: (text: string) => void) {
 	try {
@@ -30,26 +24,30 @@ export async function runHookCommand(writeErr: (text: string) => void) {
 		}
 
 		appendHookAudit(payload);
-		await queueSpawnRequest(payload);
-		const subSessionId = await upsertSubagentSessionFromHook(payload);
+		const sessions = await getCoreSessionBackend();
+		await sessions.queueSpawnRequest(payload);
+		const subSessionId = await sessions.upsertSubagentSessionFromHook(payload);
 		if (subSessionId) {
-			await appendSubagentHookAudit(subSessionId, payload);
+			await sessions.appendSubagentHookAudit(subSessionId, payload);
 			if (payload.hookName === "tool_call") {
-				await appendSubagentTranscriptLine(
+				await sessions.appendSubagentTranscriptLine(
 					subSessionId,
 					`[tool] ${payload.tool_call?.name ?? "unknown"}`,
 				);
 			}
 			if (payload.hookName === "agent_end") {
-				await appendSubagentTranscriptLine(subSessionId, "[done] completed");
+				await sessions.appendSubagentTranscriptLine(
+					subSessionId,
+					"[done] completed",
+				);
 			}
 			if (payload.hookName === "session_shutdown") {
-				await appendSubagentTranscriptLine(
+				await sessions.appendSubagentTranscriptLine(
 					subSessionId,
 					`[shutdown] ${payload.reason ?? "session shutdown"}`,
 				);
 			}
-			await applySubagentStatus(subSessionId, payload);
+			await sessions.applySubagentStatus(subSessionId, payload);
 		}
 
 		switch (payload.hookName) {

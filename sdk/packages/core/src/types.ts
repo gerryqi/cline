@@ -65,7 +65,12 @@ export type {
 	RuntimeBuilderInput,
 	SessionRuntime,
 } from "./runtime/session-runtime";
-export type { SessionManager } from "./session/session-manager";
+export type {
+	SendSessionInput,
+	SessionManager,
+	StartSessionInput,
+	StartSessionResult,
+} from "./session/session-manager";
 export type { SessionManifest } from "./session/session-manifest";
 export type {
 	CreateRootSessionWithArtifactsInput,

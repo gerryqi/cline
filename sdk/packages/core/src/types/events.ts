@@ -26,6 +26,13 @@ export interface SessionToolEvent {
 
 export type CoreSessionEvent =
 	| { type: "chunk"; payload: SessionChunkEvent }
+	| {
+			type: "agent_event";
+			payload: {
+				sessionId: string;
+				event: import("@cline/agents").AgentEvent;
+			};
+	  }
 	| { type: "ended"; payload: SessionEndedEvent }
 	| { type: "hook"; payload: SessionToolEvent }
 	| { type: "status"; payload: { sessionId: string; status: string } };

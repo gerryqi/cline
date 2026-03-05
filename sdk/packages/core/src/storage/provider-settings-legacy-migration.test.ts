@@ -64,9 +64,10 @@ describe("migrateLegacyProviderSettings", () => {
 				budgetTokens: 2048,
 			},
 		});
+		expect(manager.read().providers.anthropic?.tokenSource).toBe("migration");
 	});
 
-	it("does not overwrite existing provider settings", () => {
+	it("migrates missing providers without overwriting existing providers", () => {
 		const tempDir = mkdtempSync(
 			path.join(os.tmpdir(), "core-legacy-provider-"),
 		);
@@ -100,11 +101,16 @@ describe("migrateLegacyProviderSettings", () => {
 			dataDir: tempDir,
 		});
 
-		expect(result.migrated).toBe(false);
+		expect(result.migrated).toBe(true);
 		expect(manager.getProviderSettings("openai")?.apiKey).toBe(
 			"already-migrated",
 		);
-		expect(manager.getProviderSettings("anthropic")).toBeUndefined();
+		expect(manager.getProviderSettings("anthropic")).toEqual({
+			provider: "anthropic",
+			apiKey: "legacy-key",
+		});
+		expect(manager.read().providers.openai?.tokenSource).toBe("manual");
+		expect(manager.read().providers.anthropic?.tokenSource).toBe("migration");
 	});
 
 	it("migrates legacy OpenAI Codex OAuth credentials", () => {
@@ -161,5 +167,8 @@ describe("migrateLegacyProviderSettings", () => {
 				accountId: "acct_123",
 			},
 		});
+		expect(manager.read().providers["openai-codex"]?.tokenSource).toBe(
+			"migration",
+		);
 	});
 });

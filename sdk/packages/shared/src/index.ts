@@ -19,6 +19,7 @@ export {
 	resolveRulesConfigSearchPaths,
 	resolveSessionDataDir,
 	resolveSkillsConfigSearchPaths,
+	resolveTeamDataDir,
 	resolveWorkflowsConfigSearchPaths,
 	SKILLS_CONFIG_DIRECTORY_NAME,
 	WORKFLOWS_CONFIG_DIRECTORY_NAME,

@@ -277,7 +277,7 @@ export function McpServersContent() {
 		await upsertServer(input);
 	};
 
-	const openMcpCatalog = () => {
+	const _openMcpCatalog = () => {
 		window.open("https://mcp.so", "_blank", "noopener,noreferrer");
 	};
 

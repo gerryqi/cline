@@ -57,6 +57,7 @@ describe("cli e2e", () => {
 		expect(asText(result.stdout)).toContain("--output <text|json>");
 		expect(asText(result.stdout)).toContain("--sandbox");
 		expect(asText(result.stdout)).toContain("--thinking");
+		expect(asText(result.stdout)).toContain("--refresh-models");
 		expect(asText(result.stdout)).toContain(
 			"clite list <workflows|rules|skills|agents|history|hooks|mcp>",
 		);

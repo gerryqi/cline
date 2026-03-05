@@ -147,6 +147,9 @@ export class Agent {
 		this.agentId = `agent_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 		this.conversationId = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 		this.parentAgentId = config.parentAgentId ?? null;
+		if ((config.initialMessages?.length ?? 0) > 0) {
+			this.restore(config.initialMessages ?? []);
+		}
 	}
 
 	/**
@@ -225,6 +228,15 @@ export class Agent {
 	 */
 	clearHistory(): void {
 		this.messages = [];
+		this.conversationId = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+		this.sessionStarted = false;
+	}
+
+	/**
+	 * Replace conversation history with preloaded messages for resume flows.
+	 */
+	restore(messages: providers.Message[]): void {
+		this.messages = [...messages];
 		this.conversationId = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 		this.sessionStarted = false;
 	}

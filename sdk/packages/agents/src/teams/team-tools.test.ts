@@ -1,6 +1,7 @@
+import { resolveTeamDataDir } from "@cline/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentTeamsRuntime } from "./multi-agent";
-import { createAgentTeamsTools, resolveTeamDataDir } from "./team-tools";
+import { createAgentTeamsTools } from "./team-tools";
 
 type EnvSnapshot = {
 	CLINE_DATA_DIR: string | undefined;
@@ -58,9 +59,66 @@ describe("createAgentTeamsTools schema surface", () => {
 		const teamMember = tools.find((tool) => tool.name === "team_member");
 		const teamAwaitRun = tools.find((tool) => tool.name === "team_await_run");
 
-		expect(teamTask?.inputSchema.properties?.action).toBeDefined();
-		expect(teamMessage?.inputSchema.properties?.action).toBeDefined();
-		expect(teamMember?.inputSchema.properties?.action).toBeDefined();
-		expect(teamAwaitRun?.inputSchema.properties?.runId).toBeDefined();
+		expect(teamTask?.inputSchema.type).toBe("object");
+		expect(teamMessage?.inputSchema.type).toBe("object");
+		expect(teamMember?.inputSchema.type).toBe("object");
+		expect(teamAwaitRun?.inputSchema.type).toBe("object");
+	});
+
+	it("returns actionable spawn validation guidance when rolePrompt is missing", async () => {
+		const runtime = new AgentTeamsRuntime({ teamName: "test-team" });
+		const tools = createAgentTeamsTools({
+			runtime,
+			requesterId: "lead",
+			teammateRuntime: {
+				providerId: "anthropic",
+				modelId: "claude-sonnet-4-5-20250929",
+			},
+		});
+		const teamMember = tools.find((tool) => tool.name === "team_member");
+		expect(teamMember).toBeDefined();
+
+		await expect(
+			teamMember?.execute(
+				{
+					action: "spawn",
+					agentId: "python-poet",
+				},
+				{
+					agentId: "lead",
+					conversationId: "conv-1",
+					iteration: 1,
+				},
+			),
+		).rejects.toThrow(
+			'action=spawn requires non-empty "agentId" and "rolePrompt"',
+		);
+	});
+
+	it("returns actionable guidance when action is missing", async () => {
+		const runtime = new AgentTeamsRuntime({ teamName: "test-team" });
+		const tools = createAgentTeamsTools({
+			runtime,
+			requesterId: "lead",
+			teammateRuntime: {
+				providerId: "anthropic",
+				modelId: "claude-sonnet-4-5-20250929",
+			},
+		});
+		const teamMember = tools.find((tool) => tool.name === "team_member");
+		expect(teamMember).toBeDefined();
+
+		await expect(
+			teamMember?.execute(
+				{
+					agentId: "python-poet",
+				},
+				{
+					agentId: "lead",
+					conversationId: "conv-1",
+					iteration: 1,
+				},
+			),
+		).rejects.toThrow('team_member requires "action" (spawn|shutdown)');
 	});
 });

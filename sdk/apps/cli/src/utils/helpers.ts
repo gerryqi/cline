@@ -354,6 +354,7 @@ export function parseArgs(args: string[]): ParsedArgs {
 		mode: "act",
 		sandbox: false,
 		thinking: false,
+		liveModelCatalog: false,
 		enableSpawnAgent: true,
 		enableAgentTeams: true,
 		enableTools: true,
@@ -379,6 +380,8 @@ export function parseArgs(args: string[]): ParsedArgs {
 			result.showTimings = true;
 		} else if (arg === "--thinking") {
 			result.thinking = true;
+		} else if (arg === "--refresh-models") {
+			result.liveModelCatalog = true;
 		} else if (arg === "--json") {
 			result.outputMode = "json";
 		} else if (arg === "--sandbox") {

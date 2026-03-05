@@ -4,9 +4,9 @@ import {
 	AgentTeamsRuntime,
 	bootstrapAgentTeams,
 	createBuiltinTools,
-	FileTeamPersistenceStore,
 	type SkillsExecutor,
 	type TeamEvent,
+	type TeamTeammateSpec,
 	type Tool,
 	type ToolExecutors,
 	ToolPresets,
@@ -17,6 +17,7 @@ import {
 	type SkillConfig,
 	type UserInstructionConfigWatcher,
 } from "../agents";
+import { FileTeamPersistenceStore } from "../session/session-service";
 import type { CoreAgentMode, CoreSessionConfig } from "../types/config";
 import type {
 	RuntimeBuilder,
@@ -341,6 +342,8 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 					teamName: effectiveTeamName,
 				})
 			: undefined;
+		const restoredTeamState = teamPersistence?.loadState();
+		const restoredTeammateSpecs = teamPersistence?.getTeammateSpecs() ?? [];
 
 		const ensureTeamRuntime = (): AgentTeamsRuntime | undefined => {
 			if (!normalized.enableAgentTeams) {
@@ -356,11 +359,29 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 					onTeamEvent: (event: TeamEvent) => {
 						onTeamEvent(event);
 						if (teamRuntime && teamPersistence) {
+							if (
+								event.type === "teammate_spawned" &&
+								event.teammate?.rolePrompt
+							) {
+								const spec: TeamTeammateSpec = {
+									agentId: event.agentId,
+									rolePrompt: event.teammate.rolePrompt,
+									modelId: event.teammate.modelId,
+									maxIterations: event.teammate.maxIterations,
+								};
+								teamPersistence.upsertTeammateSpec(spec);
+							}
+							if (event.type === "teammate_shutdown") {
+								teamPersistence.removeTeammateSpec(event.agentId);
+							}
 							teamPersistence.appendTaskHistory(event);
 							teamPersistence.persist(teamRuntime);
 						}
 					},
 				});
+				if (restoredTeamState) {
+					teamRuntime.hydrateState(restoredTeamState);
+				}
 			}
 
 			if (!teamToolsRegistered) {
@@ -372,7 +393,8 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 				const teamBootstrap = bootstrapAgentTeams({
 					runtime: teamRuntime,
 					leadAgentId: "lead",
-					persistence: teamPersistence,
+					restoredFromPersistence: Boolean(restoredTeamState),
+					restoredTeammates: restoredTeammateSpecs,
 					createBaseTools: normalized.enableTools
 						? () =>
 								createBuiltinToolsList(

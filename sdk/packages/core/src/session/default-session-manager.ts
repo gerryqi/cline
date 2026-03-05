@@ -1,0 +1,569 @@
+import { existsSync, readFileSync } from "node:fs";
+import {
+	Agent,
+	type AgentConfig,
+	type AgentEvent,
+	type AgentResult,
+	createBuiltinTools,
+	createSpawnAgentTool,
+	type TeamEvent,
+	type Tool,
+	type ToolApprovalRequest,
+	type ToolApprovalResult,
+	type ToolExecutors,
+	ToolPresets,
+} from "@cline/agents";
+import type { providers as LlmsProviders } from "@cline/llms";
+import { DefaultRuntimeBuilder } from "../runtime/runtime-builder";
+import type { BuiltRuntime, RuntimeBuilder } from "../runtime/session-runtime";
+import { SessionSource, type SessionStatus } from "../types/common";
+import type { CoreSessionConfig } from "../types/config";
+import type { CoreSessionEvent } from "../types/events";
+import type { SessionRecord } from "../types/sessions";
+import type { RpcCoreSessionService } from "./rpc-session-service";
+import { nowIso } from "./session-artifacts";
+import type {
+	SendSessionInput,
+	SessionManager,
+	StartSessionInput,
+	StartSessionResult,
+} from "./session-manager";
+import type {
+	CoreSessionService,
+	RootSessionArtifacts,
+	SessionRowShape,
+} from "./session-service";
+
+type SessionBackend = CoreSessionService | RpcCoreSessionService;
+
+type ActiveSession = {
+	sessionId: string;
+	config: CoreSessionConfig;
+	artifacts: RootSessionArtifacts;
+	runtime: BuiltRuntime;
+	agent: Agent;
+	started: boolean;
+	aborting: boolean;
+	interactive: boolean;
+};
+
+export interface DefaultSessionManagerOptions {
+	sessionService: SessionBackend;
+	runtimeBuilder?: RuntimeBuilder;
+	createAgent?: (config: AgentConfig) => Agent;
+	defaultToolExecutors?: Partial<ToolExecutors>;
+	toolPolicies?: AgentConfig["toolPolicies"];
+	requestToolApproval?: (
+		request: ToolApprovalRequest,
+	) => Promise<ToolApprovalResult>;
+}
+
+const MAX_SCAN_LIMIT = 5000;
+
+function serializeAgentEvent(event: AgentEvent): string {
+	return JSON.stringify(event, (_key, value) => {
+		if (value instanceof Error) {
+			return {
+				name: value.name,
+				message: value.message,
+				stack: value.stack,
+			};
+		}
+		return value;
+	});
+}
+
+function toSessionRecord(row: SessionRowShape): SessionRecord {
+	return {
+		sessionId: row.session_id,
+		source: row.source as SessionSource,
+		pid: row.pid,
+		startedAt: row.started_at,
+		endedAt: row.ended_at ?? null,
+		exitCode: row.exit_code ?? null,
+		status: row.status,
+		interactive: row.interactive === 1,
+		provider: row.provider,
+		model: row.model,
+		cwd: row.cwd,
+		workspaceRoot: row.workspace_root,
+		teamName: row.team_name ?? undefined,
+		enableTools: row.enable_tools === 1,
+		enableSpawn: row.enable_spawn === 1,
+		enableTeams: row.enable_teams === 1,
+		parentSessionId: row.parent_session_id ?? undefined,
+		parentAgentId: row.parent_agent_id ?? undefined,
+		agentId: row.agent_id ?? undefined,
+		conversationId: row.conversation_id ?? undefined,
+		isSubagent: row.is_subagent === 1,
+		prompt: row.prompt ?? undefined,
+		transcriptPath: row.transcript_path,
+		hookPath: row.hook_path,
+		messagesPath: row.messages_path ?? undefined,
+		updatedAt: row.updated_at ?? nowIso(),
+	};
+}
+
+export class DefaultSessionManager implements SessionManager {
+	private readonly sessionService: SessionBackend;
+	private readonly runtimeBuilder: RuntimeBuilder;
+	private readonly createAgentInstance: (config: AgentConfig) => Agent;
+	private readonly defaultToolExecutors?: Partial<ToolExecutors>;
+	private readonly defaultToolPolicies?: AgentConfig["toolPolicies"];
+	private readonly defaultRequestToolApproval?: (
+		request: ToolApprovalRequest,
+	) => Promise<ToolApprovalResult>;
+	private readonly listeners = new Set<(event: CoreSessionEvent) => void>();
+	private readonly sessions = new Map<string, ActiveSession>();
+
+	constructor(options: DefaultSessionManagerOptions) {
+		this.sessionService = options.sessionService;
+		this.runtimeBuilder = options.runtimeBuilder ?? new DefaultRuntimeBuilder();
+		this.createAgentInstance =
+			options.createAgent ?? ((config) => new Agent(config));
+		this.defaultToolExecutors = options.defaultToolExecutors;
+		this.defaultToolPolicies = options.toolPolicies;
+		this.defaultRequestToolApproval = options.requestToolApproval;
+	}
+
+	async start(input: StartSessionInput): Promise<StartSessionResult> {
+		const sessionId = input.config.sessionId?.trim() ?? "";
+		const artifacts = (await this.invoke("createRootSessionWithArtifacts", {
+			sessionId,
+			source: SessionSource.CLI,
+			pid: process.pid,
+			interactive: input.interactive === true,
+			provider: input.config.providerId,
+			model: input.config.modelId,
+			cwd: input.config.cwd,
+			workspaceRoot: input.config.workspaceRoot ?? input.config.cwd,
+			teamName: input.config.teamName,
+			enableTools: input.config.enableTools,
+			enableSpawn: input.config.enableSpawnAgent,
+			enableTeams: input.config.enableAgentTeams,
+			prompt: input.prompt?.trim() || undefined,
+			startedAt: nowIso(),
+		})) as RootSessionArtifacts;
+		process.env.CLINE_SESSION_ID = artifacts.env.CLINE_SESSION_ID;
+		process.env.CLINE_HOOKS_LOG_PATH = artifacts.env.CLINE_HOOKS_LOG_PATH;
+		process.env.CLINE_ENABLE_SUBPROCESS_HOOKS =
+			artifacts.env.CLINE_ENABLE_SUBPROCESS_HOOKS;
+
+		const runtime = this.runtimeBuilder.build({
+			config: input.config,
+			hooks: input.config.hooks,
+			onTeamEvent: (event: TeamEvent) => {
+				void this.handleTeamEvent(event);
+				input.config.onTeamEvent?.(event);
+			},
+			createSpawnTool: () => this.createSpawnTool(input.config),
+			onTeamRestored: input.onTeamRestored,
+			userInstructionWatcher: input.userInstructionWatcher,
+			defaultToolExecutors:
+				input.defaultToolExecutors ?? this.defaultToolExecutors,
+		});
+		const tools = [...runtime.tools, ...(input.config.extraTools ?? [])];
+		const agent = this.createAgentInstance({
+			providerId: input.config.providerId,
+			modelId: input.config.modelId,
+			apiKey: input.config.apiKey,
+			baseUrl: input.config.baseUrl,
+			knownModels: input.config.knownModels,
+			thinking: input.config.thinking,
+			systemPrompt: input.config.systemPrompt,
+			maxIterations: input.config.maxIterations,
+			tools,
+			hooks: input.config.hooks,
+			hookErrorMode: input.config.hookErrorMode,
+			initialMessages: input.initialMessages,
+			toolPolicies: input.toolPolicies ?? this.defaultToolPolicies,
+			requestToolApproval:
+				input.requestToolApproval ?? this.defaultRequestToolApproval,
+			onEvent: (event: AgentEvent) => {
+				this.emit({
+					type: "agent_event",
+					payload: {
+						sessionId: artifacts.manifest.session_id,
+						event,
+					},
+				});
+				this.emit({
+					type: "chunk",
+					payload: {
+						sessionId: artifacts.manifest.session_id,
+						stream: "agent",
+						chunk: serializeAgentEvent(event),
+						ts: Date.now(),
+					},
+				});
+			},
+		});
+
+		const active: ActiveSession = {
+			sessionId: artifacts.manifest.session_id,
+			config: input.config,
+			artifacts,
+			runtime,
+			agent,
+			started: false,
+			aborting: false,
+			interactive: input.interactive === true,
+		};
+		active.started = (input.initialMessages?.length ?? 0) > 0;
+		this.sessions.set(active.sessionId, active);
+		this.emitStatus(active.sessionId, "running");
+
+		let result: AgentResult | undefined;
+		if (input.prompt?.trim()) {
+			result = await this.runTurn(active, {
+				prompt: input.prompt,
+				userImages: input.userImages,
+				userFiles: input.userFiles,
+			});
+			if (!active.interactive) {
+				await this.finalizeSingleRun(active, result.finishReason);
+			}
+		}
+
+		return {
+			sessionId: active.sessionId,
+			manifest: artifacts.manifest,
+			manifestPath: artifacts.manifestPath,
+			transcriptPath: artifacts.transcriptPath,
+			hookPath: artifacts.hookPath,
+			messagesPath: artifacts.messagesPath,
+			result,
+		};
+	}
+
+	async send(input: SendSessionInput): Promise<AgentResult | undefined> {
+		const session = this.sessions.get(input.sessionId);
+		if (!session) {
+			throw new Error(`session not found: ${input.sessionId}`);
+		}
+		const result = await this.runTurn(session, input);
+		if (!session.interactive) {
+			await this.finalizeSingleRun(session, result.finishReason);
+		}
+		return result;
+	}
+
+	async abort(sessionId: string): Promise<void> {
+		const session = this.sessions.get(sessionId);
+		if (!session) {
+			return;
+		}
+		session.aborting = true;
+		session.agent.abort();
+	}
+
+	async stop(sessionId: string): Promise<void> {
+		const session = this.sessions.get(sessionId);
+		if (!session) {
+			return;
+		}
+		await this.updateStatus(session, "cancelled", null);
+		await session.agent.shutdown("session_stop");
+		await Promise.resolve(session.runtime.shutdown("session_stop"));
+		this.sessions.delete(sessionId);
+		this.emit({
+			type: "ended",
+			payload: {
+				sessionId,
+				reason: "stopped",
+				ts: Date.now(),
+			},
+		});
+	}
+
+	async get(sessionId: string): Promise<SessionRecord | undefined> {
+		const row = await this.getRow(sessionId);
+		return row ? toSessionRecord(row) : undefined;
+	}
+
+	async list(limit = 200): Promise<SessionRecord[]> {
+		const rows = await this.listRows(limit);
+		return rows.map((row) => toSessionRecord(row));
+	}
+
+	async delete(sessionId: string): Promise<boolean> {
+		if (this.sessions.has(sessionId)) {
+			await this.stop(sessionId);
+		}
+		const result = await this.invoke<{ deleted: boolean }>(
+			"deleteCliSession",
+			sessionId,
+		);
+		return result.deleted;
+	}
+
+	async readTranscript(sessionId: string, maxChars?: number): Promise<string> {
+		const row = await this.getRow(sessionId);
+		if (!row?.transcript_path || !existsSync(row.transcript_path)) {
+			return "";
+		}
+		const raw = readFileSync(row.transcript_path, "utf8");
+		if (typeof maxChars === "number" && Number.isFinite(maxChars)) {
+			return raw.slice(-Math.max(0, Math.floor(maxChars)));
+		}
+		return raw;
+	}
+
+	async readMessages(sessionId: string): Promise<LlmsProviders.Message[]> {
+		const row = await this.getRow(sessionId);
+		const messagesPath = row?.messages_path?.trim();
+		if (!messagesPath || !existsSync(messagesPath)) {
+			return [];
+		}
+		try {
+			const raw = readFileSync(messagesPath, "utf8");
+			if (!raw.trim()) {
+				return [];
+			}
+			const parsed = JSON.parse(raw) as { messages?: unknown } | unknown[];
+			const messages = Array.isArray(parsed)
+				? parsed
+				: Array.isArray((parsed as { messages?: unknown }).messages)
+					? ((parsed as { messages: unknown[] }).messages ?? [])
+					: [];
+			return messages as LlmsProviders.Message[];
+		} catch {
+			return [];
+		}
+	}
+
+	async readHooks(sessionId: string, limit = 200): Promise<unknown[]> {
+		const row = await this.getRow(sessionId);
+		if (!row?.hook_path || !existsSync(row.hook_path)) {
+			return [];
+		}
+		const lines = readFileSync(row.hook_path, "utf8")
+			.split("\n")
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0);
+		const sliced = lines.slice(-Math.max(1, Math.floor(limit)));
+		return sliced.map((line) => {
+			try {
+				return JSON.parse(line) as unknown;
+			} catch {
+				return { raw: line };
+			}
+		});
+	}
+
+	subscribe(listener: (event: CoreSessionEvent) => void): () => void {
+		this.listeners.add(listener);
+		return () => {
+			this.listeners.delete(listener);
+		};
+	}
+
+	private async runTurn(
+		session: ActiveSession,
+		input: {
+			prompt: string;
+			userImages?: string[];
+			userFiles?: string[];
+		},
+	): Promise<AgentResult> {
+		const prompt = input.prompt.trim();
+		if (!prompt) {
+			throw new Error("prompt cannot be empty");
+		}
+
+		const shouldContinue =
+			session.started || session.agent.getMessages().length > 0;
+		const result = shouldContinue
+			? await session.agent.continue(prompt, input.userImages, input.userFiles)
+			: await session.agent.run(prompt, input.userImages, input.userFiles);
+		session.started = true;
+
+		await this.invoke<void>(
+			"persistSessionMessages",
+			session.sessionId,
+			result.messages,
+		);
+		return result;
+	}
+
+	private async finalizeSingleRun(
+		session: ActiveSession,
+		finishReason: AgentResult["finishReason"],
+	): Promise<void> {
+		if (finishReason === "aborted" || session.aborting) {
+			await this.updateStatus(session, "cancelled", null);
+		} else {
+			await this.updateStatus(session, "completed", 0);
+		}
+		await session.agent.shutdown("session_complete");
+		await Promise.resolve(session.runtime.shutdown("session_complete"));
+		this.sessions.delete(session.sessionId);
+		this.emit({
+			type: "ended",
+			payload: {
+				sessionId: session.sessionId,
+				reason: finishReason,
+				ts: Date.now(),
+			},
+		});
+	}
+
+	private async updateStatus(
+		session: ActiveSession,
+		status: SessionStatus,
+		exitCode?: number | null,
+	): Promise<void> {
+		const result = await this.invoke<{ updated: boolean; endedAt?: string }>(
+			"updateSessionStatus",
+			session.sessionId,
+			status,
+			exitCode,
+		);
+		if (!result.updated) {
+			return;
+		}
+		session.artifacts.manifest.status = status;
+		session.artifacts.manifest.ended_at = result.endedAt ?? nowIso();
+		session.artifacts.manifest.exit_code =
+			typeof exitCode === "number" ? exitCode : null;
+		await this.invoke<void>(
+			"writeSessionManifest",
+			session.artifacts.manifestPath,
+			session.artifacts.manifest,
+		);
+		this.emitStatus(session.sessionId, status);
+	}
+
+	private emitStatus(sessionId: string, status: string): void {
+		this.emit({
+			type: "status",
+			payload: { sessionId, status },
+		});
+	}
+
+	private async listRows(limit: number): Promise<SessionRowShape[]> {
+		const normalizedLimit = Math.max(1, Math.floor(limit));
+		return this.invoke<SessionRowShape[]>(
+			"listCliSessions",
+			Math.min(normalizedLimit, MAX_SCAN_LIMIT),
+		);
+	}
+
+	private async getRow(
+		sessionId: string,
+	): Promise<SessionRowShape | undefined> {
+		const target = sessionId.trim();
+		if (!target) {
+			return undefined;
+		}
+		const rows = await this.listRows(MAX_SCAN_LIMIT);
+		return rows.find((row) => row.session_id === target);
+	}
+
+	private createSpawnTool(config: CoreSessionConfig): Tool {
+		const createBaseTools = () => {
+			if (!config.enableTools) {
+				return [] as Tool[];
+			}
+			const preset =
+				config.mode === "plan" ? ToolPresets.readonly : ToolPresets.development;
+			return createBuiltinTools({
+				cwd: config.cwd,
+				...preset,
+				executors: this.defaultToolExecutors,
+			});
+		};
+
+		return createSpawnAgentTool({
+			providerId: config.providerId,
+			modelId: config.modelId,
+			apiKey: config.apiKey,
+			baseUrl: config.baseUrl,
+			knownModels: config.knownModels,
+			defaultMaxIterations: config.maxIterations,
+			createSubAgentTools: createBaseTools,
+			hooks: config.hooks,
+			toolPolicies: this.defaultToolPolicies,
+			requestToolApproval: this.defaultRequestToolApproval,
+			onSubAgentStart: (context) => {
+				void this.invokeOptional("handleSubAgentStart", context);
+			},
+			onSubAgentEnd: (context) => {
+				void this.invokeOptional("handleSubAgentEnd", context);
+			},
+		}) as Tool;
+	}
+
+	private async handleTeamEvent(event: TeamEvent): Promise<void> {
+		switch (event.type) {
+			case "task_start":
+				await this.invokeOptional(
+					"onTeamTaskStart",
+					event.agentId,
+					event.message,
+				);
+				break;
+			case "task_end":
+				if (event.error) {
+					await this.invokeOptional(
+						"onTeamTaskEnd",
+						event.agentId,
+						"failed",
+						`[error] ${event.error.message}`,
+					);
+					return;
+				}
+				if (event.result?.finishReason === "aborted") {
+					await this.invokeOptional(
+						"onTeamTaskEnd",
+						event.agentId,
+						"cancelled",
+						"[done] aborted",
+						event.result.messages,
+					);
+					return;
+				}
+				await this.invokeOptional(
+					"onTeamTaskEnd",
+					event.agentId,
+					"completed",
+					`[done] ${event.result?.finishReason ?? "completed"}`,
+					event.result?.messages,
+				);
+				break;
+			default:
+				break;
+		}
+	}
+
+	private emit(event: CoreSessionEvent): void {
+		for (const listener of this.listeners) {
+			listener(event);
+		}
+	}
+
+	private async invoke<T>(method: string, ...args: unknown[]): Promise<T> {
+		const callable = (
+			this.sessionService as unknown as Record<string, unknown>
+		)[method];
+		if (typeof callable !== "function") {
+			throw new Error(`session service method not available: ${method}`);
+		}
+		const fn = callable as (...params: unknown[]) => T | Promise<T>;
+		return Promise.resolve(fn.apply(this.sessionService, args));
+	}
+
+	private async invokeOptional(
+		method: string,
+		...args: unknown[]
+	): Promise<void> {
+		const callable = (
+			this.sessionService as unknown as Record<string, unknown>
+		)[method];
+		if (typeof callable !== "function") {
+			return;
+		}
+		const fn = callable as (...params: unknown[]) => unknown;
+		await Promise.resolve(fn.apply(this.sessionService, args));
+	}
+}

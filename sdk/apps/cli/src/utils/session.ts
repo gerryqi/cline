@@ -1,18 +1,11 @@
 import { spawn } from "node:child_process";
-import type {
-	HookEventPayload,
-	SubAgentEndContext,
-	SubAgentStartContext,
-} from "@cline/agents";
 import {
 	CoreSessionService,
-	type RootSessionArtifacts,
 	RpcCoreSessionService,
 	resolveSessionDataDir,
 	type SessionManifest,
 	SqliteSessionStore,
 } from "@cline/core/server";
-import type { providers as LlmsProviders } from "@cline/llms";
 import { getRpcServerHealth } from "@cline/rpc";
 
 const DEFAULT_RPC_ADDRESS =
@@ -23,6 +16,44 @@ let localSessions: CoreSessionService | undefined;
 let initPromise:
 	| Promise<RpcCoreSessionService | CoreSessionService>
 	| undefined;
+
+export interface CliSessionManager {
+	start(input: {
+		config: import("@cline/core/server").CoreSessionConfig;
+		prompt?: string;
+		interactive?: boolean;
+		initialMessages?: import("@cline/llms").providers.Message[];
+		userImages?: string[];
+		userFiles?: string[];
+		userInstructionWatcher?: import("@cline/core/server").UserInstructionConfigWatcher;
+		onTeamRestored?: () => void;
+		defaultToolExecutors?: Partial<import("@cline/agents").ToolExecutors>;
+		toolPolicies?: import("@cline/agents").AgentConfig["toolPolicies"];
+		requestToolApproval?: (
+			request: import("@cline/agents").ToolApprovalRequest,
+		) => Promise<import("@cline/agents").ToolApprovalResult>;
+	}): Promise<{
+		sessionId: string;
+		manifest: SessionManifest;
+		manifestPath: string;
+		transcriptPath: string;
+		hookPath: string;
+		messagesPath: string;
+		result?: import("@cline/agents").AgentResult;
+	}>;
+	send(input: {
+		sessionId: string;
+		prompt: string;
+		userImages?: string[];
+		userFiles?: string[];
+	}): Promise<import("@cline/agents").AgentResult | undefined>;
+	readMessages(
+		sessionId: string,
+	): Promise<import("@cline/llms").providers.Message[]>;
+	abort(sessionId: string): Promise<void>;
+	stop(sessionId: string): Promise<void>;
+	subscribe(listener: (event: unknown) => void): () => void;
+}
 
 function isLikelyScriptEntryPath(pathValue: string | undefined): boolean {
 	if (!pathValue) {
@@ -107,111 +138,41 @@ async function getCoreSessions(): Promise<
 	return await initPromise;
 }
 
-export async function createRootCliSessionWithArtifacts(input: {
-	sessionId: string;
-	source: SessionManifest["source"];
-	pid: number;
-	interactive: boolean;
-	provider: string;
-	model: string;
-	cwd: string;
-	workspaceRoot: string;
-	teamName?: string;
-	enableTools: boolean;
-	enableSpawn: boolean;
-	enableTeams: boolean;
-	prompt?: string;
-	startedAt?: string;
-}): Promise<RootSessionArtifacts> {
-	return await (await getCoreSessions()).createRootSessionWithArtifacts(input);
+export async function getCoreSessionBackend(): Promise<
+	RpcCoreSessionService | CoreSessionService
+> {
+	return getCoreSessions();
 }
 
-export async function writeCliSessionManifest(
-	manifestPath: string,
-	manifest: SessionManifest,
-): Promise<void> {
-	(await getCoreSessions()).writeSessionManifest(manifestPath, manifest);
-}
-
-export async function updateCliSessionStatusInStore(
-	sessionId: string,
-	status: SessionManifest["status"],
-	exitCode?: number | null,
-): Promise<{ updated: boolean; endedAt?: string }> {
-	return await (await getCoreSessions()).updateSessionStatus(
-		sessionId,
-		status,
-		exitCode,
-	);
-}
-
-export async function queueSpawnRequest(
-	event: HookEventPayload,
-): Promise<void> {
-	await (await getCoreSessions()).queueSpawnRequest(event);
-}
-
-export async function upsertSubagentSessionFromHook(
-	event: HookEventPayload,
-): Promise<string | undefined> {
-	return await (await getCoreSessions()).upsertSubagentSessionFromHook(event);
-}
-
-export async function appendSubagentHookAudit(
-	subSessionId: string,
-	event: HookEventPayload,
-): Promise<void> {
-	await (await getCoreSessions()).appendSubagentHookAudit(subSessionId, event);
-}
-
-export async function appendSubagentTranscriptLine(
-	subSessionId: string,
-	line: string,
-): Promise<void> {
-	await (await getCoreSessions()).appendSubagentTranscriptLine(
-		subSessionId,
-		line,
-	);
-}
-
-export async function applySubagentStatus(
-	subSessionId: string,
-	event: HookEventPayload,
-): Promise<void> {
-	await (await getCoreSessions()).applySubagentStatus(subSessionId, event);
-}
-
-export async function onTeamTaskStart(
-	agentId: string,
-	message: string,
-): Promise<void> {
-	await (await getCoreSessions()).onTeamTaskStart(agentId, message);
-}
-
-export async function onTeamTaskEnd(
-	agentId: string,
-	status: SessionManifest["status"],
-	summary?: string,
-	messages?: LlmsProviders.Message[],
-): Promise<void> {
-	await (await getCoreSessions()).onTeamTaskEnd(
-		agentId,
-		status,
-		summary,
-		messages,
-	);
-}
-
-export async function handleSubAgentStart(
-	context: SubAgentStartContext,
-): Promise<void> {
-	await (await getCoreSessions()).handleSubAgentStart(context);
-}
-
-export async function handleSubAgentEnd(
-	context: SubAgentEndContext,
-): Promise<void> {
-	await (await getCoreSessions()).handleSubAgentEnd(context);
+export async function createDefaultCliSessionManager(options?: {
+	defaultToolExecutors?: Partial<import("@cline/agents").ToolExecutors>;
+	toolPolicies?: import("@cline/agents").AgentConfig["toolPolicies"];
+	requestToolApproval?: (
+		request: import("@cline/agents").ToolApprovalRequest,
+	) => Promise<import("@cline/agents").ToolApprovalResult>;
+}): Promise<CliSessionManager> {
+	const module = await import("@cline/core/server");
+	const SessionManagerCtor = (
+		module as {
+			DefaultSessionManager?: new (args: {
+				sessionService: RpcCoreSessionService | CoreSessionService;
+				defaultToolExecutors?: Partial<import("@cline/agents").ToolExecutors>;
+				toolPolicies?: import("@cline/agents").AgentConfig["toolPolicies"];
+				requestToolApproval?: (
+					request: import("@cline/agents").ToolApprovalRequest,
+				) => Promise<import("@cline/agents").ToolApprovalResult>;
+			}) => CliSessionManager;
+		}
+	).DefaultSessionManager;
+	if (!SessionManagerCtor) {
+		throw new Error("@cline/core/server does not export DefaultSessionManager");
+	}
+	return new SessionManagerCtor({
+		sessionService: await getCoreSessions(),
+		defaultToolExecutors: options?.defaultToolExecutors,
+		toolPolicies: options?.toolPolicies,
+		requestToolApproval: options?.requestToolApproval,
+	});
 }
 
 export async function listCliSessions(limit = 200): Promise<unknown[]> {

@@ -42,6 +42,7 @@ describe("ProviderSettingsManager", () => {
 		expect(reloaded.getProviderConfig("anthropic")?.modelId).toBe(
 			"claude-sonnet-4-6",
 		);
+		expect(reloaded.read().providers.anthropic?.tokenSource).toBe("manual");
 	});
 
 	it("tracks provider-specific settings while preserving last-used provider", () => {
@@ -69,6 +70,28 @@ describe("ProviderSettingsManager", () => {
 		);
 		expect(manager.getProviderSettings("openai-native")?.model).toBe("gpt-5");
 		expect(manager.getLastUsedProviderSettings()?.provider).toBe("anthropic");
+		expect(manager.read().providers["openai-native"]?.tokenSource).toBe(
+			"manual",
+		);
+	});
+
+	it("allows overriding token source metadata", () => {
+		const tempDir = mkdtempSync(
+			path.join(os.tmpdir(), "core-provider-settings-"),
+		);
+		tempDirs.push(tempDir);
+		const filePath = path.join(tempDir, "provider-settings.json");
+		const manager = new ProviderSettingsManager({ filePath });
+
+		manager.saveProviderSettings(
+			{
+				provider: "openai-codex",
+				apiKey: "oauth-token",
+			},
+			{ tokenSource: "oauth" },
+		);
+
+		expect(manager.read().providers["openai-codex"]?.tokenSource).toBe("oauth");
 	});
 
 	it("ignores invalid persisted JSON and falls back to empty state", () => {

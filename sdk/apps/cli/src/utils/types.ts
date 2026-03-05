@@ -74,6 +74,7 @@ export interface ParsedArgs {
 	outputMode: CliOutputMode;
 	mode: CliAgentMode;
 	thinking: boolean;
+	liveModelCatalog: boolean;
 	invalidOutputMode?: string;
 	invalidMode?: string;
 	sandbox: boolean;

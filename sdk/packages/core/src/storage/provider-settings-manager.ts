@@ -5,6 +5,7 @@ import {
 	type ProviderConfig,
 	type ProviderSettings,
 	ProviderSettingsSchema,
+	type ProviderTokenSource,
 	type StoredProviderSettings,
 	StoredProviderSettingsSchema,
 	toProviderConfig,
@@ -21,6 +22,7 @@ export interface ProviderSettingsManagerOptions {
 
 export interface SaveProviderSettingsOptions {
 	setLastUsed?: boolean;
+	tokenSource?: ProviderTokenSource;
 }
 
 export class ProviderSettingsManager {
@@ -74,6 +76,9 @@ export class ProviderSettingsManager {
 		const previous = this.read();
 		const providerId = validatedSettings.provider;
 		const shouldSetLastUsed = options.setLastUsed !== false;
+		const previousEntry = previous.providers[providerId];
+		const tokenSource =
+			options.tokenSource ?? previousEntry?.tokenSource ?? "manual";
 		const next: StoredProviderSettings = {
 			...previous,
 			providers: {
@@ -81,6 +86,7 @@ export class ProviderSettingsManager {
 				[providerId]: {
 					settings: validatedSettings,
 					updatedAt: nowIso(),
+					tokenSource,
 				},
 			},
 			lastUsedProvider: shouldSetLastUsed

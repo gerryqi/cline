@@ -82,12 +82,10 @@ export {
 	type CreateAgentTeamsToolsOptions,
 	createAgentTeamsTools,
 	createSpawnAgentTool,
-	FileTeamPersistenceStore,
-	type FileTeamPersistenceStoreOptions,
 	type SubAgentEndContext,
 	type SubAgentStartContext,
 	type TeamEvent,
-	type TeamPersistenceStore,
+	type TeammateLifecycleSpec,
 	type TeamTeammateRuntimeConfig,
 	type TeamTeammateSpec,
 } from "./teams/index.js";

@@ -7,9 +7,12 @@ export const ProviderSettingsSchema: z.ZodType<ProviderSettings> =
 	providers.ProviderSettingsSchema;
 export const toProviderConfig = providers.toProviderConfig;
 
+export type ProviderTokenSource = "manual" | "oauth" | "migration";
+
 export interface StoredProviderSettingsEntry {
 	settings: ProviderSettings;
 	updatedAt: string;
+	tokenSource: ProviderTokenSource;
 }
 
 export interface StoredProviderSettings {
@@ -22,6 +25,7 @@ export const StoredProviderSettingsEntrySchema: z.ZodType<StoredProviderSettings
 	z.object({
 		settings: providers.ProviderSettingsSchema,
 		updatedAt: z.string().datetime(),
+		tokenSource: z.enum(["manual", "oauth", "migration"]).default("manual"),
 	});
 
 export const StoredProviderSettingsSchema: z.ZodType<StoredProviderSettings> =

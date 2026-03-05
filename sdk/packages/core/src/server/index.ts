@@ -170,7 +170,7 @@ export {
 	listAvailableWorkflowsFromWatcher,
 	resolveWorkflowSlashCommandFromWatcher,
 } from "../runtime/workflows";
-
+export { DefaultSessionManager } from "../session/default-session-manager";
 export { RpcCoreSessionService } from "../session/rpc-session-service";
 export {
 	deriveSubsessionStatus,
@@ -178,7 +178,12 @@ export {
 	makeTeamTaskSubSessionId,
 	sanitizeSessionToken,
 } from "../session/session-graph";
-export type { SessionManager } from "../session/session-manager";
+export type {
+	SendSessionInput,
+	SessionManager,
+	StartSessionInput,
+	StartSessionResult,
+} from "../session/session-manager";
 export type { SessionManifest } from "../session/session-manifest";
 export type {
 	CreateRootSessionWithArtifactsInput,

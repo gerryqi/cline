@@ -40,13 +40,17 @@ clite -i
 # Pipe input
 cat file.txt | clite "Summarize this"
 
-# Show usage stats
+# Show usage stats (tokens + estimated cost when available)
 clite -u -t "Explain quantum computing"
 
 # Stream structured NDJSON output
 clite --output json "Summarize this repository"
 # equivalent
 clite --json "Summarize this repository"
+
+# Refresh model catalog from provider endpoints for this run 
+# to use a new model not available in the built-in model catalog yet 
+clite --refresh-models -p cline -m "openai/gpt-10"
 
 # Start the RPC gateway server (blocks until Ctrl+C)
 clite rpc start
@@ -95,14 +99,15 @@ During OAuth login, `clite` now tries to open the authorization URL in your defa
 | Flag | Description |
 |------|-------------|
 | `-s, --system <prompt>` | System prompt for the agent |
-| `-m, --model <id>` | Model ID (default: provider's first model from live catalog; fallback `claude-sonnet-4-6`) |
+| `-m, --model <id>` | Model ID (default: provider's first model from bundled catalog; fallback `claude-sonnet-4-6`) |
 | `-p, --provider <id>` | Provider ID (default: anthropic) |
 | `-k, --key <api-key>` | API key override for this run |
 | `-n, --max-iterations <n>` | Max agentic loop iterations (currently ignored; runtime is unbounded) |
 | `-i, --interactive` | Interactive mode |
-| `-u, --usage` | Show token usage |
+| `-u, --usage` | Show token usage and estimated cost (when available) |
 | `-t, --timings` | Show timing info |
 | `--thinking` | Enable model thinking/reasoning when supported |
+| `--refresh-models` | Refresh model catalog from provider endpoints for this run |
 | `--output <text|json>` | Output format (default: `text`) |
 | `--json` | Shorthand for `--output json` (NDJSON stream) |
 | `--sandbox` | Run with isolated local state; avoids writing to `~/.cline` |
@@ -236,17 +241,20 @@ bun install -g @cline/cli
 
 For OAuth providers (`cline`, `openai-codex`, `oca`), you can either use `clite auth <provider>` or let `clite` prompt for OAuth automatically when no API key is configured.
 
-On startup, `clite` also performs a one-time legacy settings import when `settings/providers.json` is empty:
+On startup, `clite` also attempts a legacy settings import:
 
 - Source files: `<CLINE_DATA_DIR>/globalState.json` and `<CLINE_DATA_DIR>/secrets.json`
 - Target file: `<CLINE_DATA_DIR>/settings/providers.json` (or `CLINE_PROVIDER_SETTINGS_PATH`)
-- Existing `providers.json` data is never overwritten
+- Existing providers in `providers.json` are never overwritten
+- Missing providers discovered in legacy files are merged into `providers.json`
+- Migrated provider entries are annotated with `tokenSource: "migration"`
 
 ## Features
 
 - **Streaming output** - Responses stream in real-time
 - **Sub-agent spawning** - `spawn_agent` is available by default unless disabled
 - **Agent teams runtime** - Team tools (tasks/mailbox/mission log) are available by default unless disabled
+- `team_member` payload rules: `action=spawn` requires `agentId` + `rolePrompt`; `action=shutdown` requires `agentId`
 - **Pipe support** - Accepts piped input for processing files
 - **Interactive mode** - Multi-turn conversations
 - **JSON output mode** - NDJSON records for run lifecycle, agent/team events, and final result (`--output json` / `--json`)
@@ -263,6 +271,15 @@ The CLI entrypoint delegates to focused modules so `src/index.ts` acts as orches
 - `src/commands/rpc.ts` - `clite rpc start` lifecycle command
 - `src/runtime/prompt.ts` - default system prompt and user-input enrichment builders
 - `src/index.ts` - process/session lifecycle, streaming output, run loop orchestration
+
+## Runtime Ownership
+
+`clite` now routes both prompt and interactive flows through `@cline/core/server` `DefaultSessionManager`.
+
+- CLI renders runtime events and handles terminal UX.
+- Core owns agent creation, runtime composition, and session message persistence.
+- CLI no longer directly instantiates `Agent` for chat/task execution.
+- CLI does not perform direct file/db message persistence in run/interactive paths.
 
 ## Examples
 
@@ -290,6 +307,8 @@ clite auth openai-codex
 
 # Team workflow with persistent name
 clite --team-name release-team "Plan, implement, and verify release checklist"
+# Team state file is written after meaningful team activity only
+# (fresh empty team sessions do not create state.json)
 
 # Interactive coding session
 clite -i -s "You are an expert Python developer"

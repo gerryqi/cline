@@ -3,14 +3,17 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import {
-	Agent,
 	type AgentEvent,
 	getClineDefaultSystemPrompt,
+	type ToolApprovalRequest,
+	type ToolApprovalResult,
 } from "@cline/agents";
 import {
-	DefaultRuntimeBuilder,
+	CoreSessionService,
+	DefaultSessionManager,
 	enrichPromptWithMentions,
 	generateWorkspaceInfo,
+	SqliteSessionStore,
 } from "@cline/core/server";
 import type { providers as LlmsProviders } from "@cline/llms";
 import { providers } from "@cline/llms";
@@ -120,40 +123,29 @@ function writeStreamLine(line: ChatStreamLine): void {
 	process.stdout.write(`${JSON.stringify(line)}\n`);
 }
 
+function parseAgentEventChunk(chunk: string): AgentEvent | undefined {
+	try {
+		return JSON.parse(chunk) as AgentEvent;
+	} catch {
+		return undefined;
+	}
+}
+
 let cachedDesktopApprovalRequester:
-	| Promise<
-			(request: {
-				toolCallId: string;
-				toolName: string;
-				input?: unknown;
-				iteration?: number;
-				agentId?: string;
-				conversationId?: string;
-			}) => Promise<{ approved: boolean; reason?: string }>
-	  >
+	| Promise<(request: ToolApprovalRequest) => Promise<ToolApprovalResult>>
 	| undefined;
 
-async function requestDesktopToolApproval(request: {
-	toolCallId: string;
-	toolName: string;
-	input?: unknown;
-	iteration?: number;
-	agentId?: string;
-	conversationId?: string;
-}): Promise<{ approved: boolean; reason?: string }> {
+async function requestDesktopToolApproval(
+	request: ToolApprovalRequest,
+): Promise<ToolApprovalResult> {
 	if (!cachedDesktopApprovalRequester) {
 		cachedDesktopApprovalRequester = import("@cline/core/server")
 			.then((module) => {
 				const fn = (
-					module as {
-						requestDesktopToolApproval?: (request: {
-							toolCallId: string;
-							toolName: string;
-							input?: unknown;
-							iteration?: number;
-							agentId?: string;
-							conversationId?: string;
-						}) => Promise<{ approved: boolean; reason?: string }>;
+					module as unknown as {
+						requestDesktopToolApproval?: (
+							request: ToolApprovalRequest,
+						) => Promise<ToolApprovalResult>;
 					}
 				).requestDesktopToolApproval;
 				if (typeof fn !== "function") {
@@ -225,8 +217,83 @@ async function main() {
 	const systemPrompt = await resolveSystemPrompt(parsed.config, cwd);
 	const history = toMessageHistory(parsed.messages);
 	const mode = parsed.config.mode ?? "act";
+	const sessionManager = new DefaultSessionManager({
+		sessionService: new CoreSessionService(new SqliteSessionStore()),
+		toolPolicies: {
+			"*": {
+				autoApprove: parsed.config.autoApproveTools !== false,
+			},
+		},
+		requestToolApproval: requestDesktopToolApproval,
+	});
+	const unsubscribe = sessionManager.subscribe((event) => {
+		let agentEvent: AgentEvent | undefined;
+		const eventType = (event as { type: string }).type;
+		const payload = (event as { payload?: unknown }).payload;
 
-	const runtime = new DefaultRuntimeBuilder().build({
+		if (eventType === "agent_event") {
+			agentEvent = (payload as { event?: AgentEvent } | undefined)?.event;
+		}
+		if (!agentEvent && eventType === "chunk") {
+			const chunkPayload = payload as
+				| { stream?: string; chunk?: string }
+				| undefined;
+			if (
+				chunkPayload?.stream === "agent" &&
+				typeof chunkPayload.chunk === "string"
+			) {
+				agentEvent = parseAgentEventChunk(chunkPayload.chunk);
+			}
+		}
+		if (!agentEvent) {
+			return;
+		}
+		if (
+			agentEvent.type === "content_start" &&
+			agentEvent.contentType === "text" &&
+			agentEvent.text
+		) {
+			writeStreamLine({
+				type: "chunk",
+				stream: "chat_text",
+				chunk: agentEvent.text,
+			});
+			return;
+		}
+		if (
+			agentEvent.type === "content_start" &&
+			agentEvent.contentType === "tool"
+		) {
+			writeStreamLine({
+				type: "tool_call_start",
+				toolCallId: agentEvent.toolCallId ?? "",
+				toolName: agentEvent.toolName ?? "unknown_tool",
+				input: agentEvent.input,
+			});
+			return;
+		}
+		if (
+			agentEvent.type === "content_end" &&
+			agentEvent.contentType === "tool"
+		) {
+			writeStreamLine({
+				type: "tool_call_end",
+				toolCallId: agentEvent.toolCallId ?? "",
+				toolName: agentEvent.toolName ?? "unknown_tool",
+				output: agentEvent.output,
+				error: agentEvent.error,
+				durationMs: agentEvent.durationMs ?? 0,
+			});
+		}
+	});
+
+	const enriched = await enrichPromptWithMentions(parsed.prompt, cwd);
+	const input = toPromptMessage(enriched.prompt, mode);
+	const userImages = parsed.attachments?.userImages ?? [];
+	const fileMaterialized = await materializeUserFiles(
+		parsed.attachments?.userFiles,
+	);
+	const started = await sessionManager.start({
 		config: {
 			providerId,
 			modelId: parsed.config.model,
@@ -243,79 +310,29 @@ async function main() {
 			missionLogIntervalSteps: parsed.config.missionStepInterval,
 			missionLogIntervalMs: parsed.config.missionTimeIntervalMs,
 		},
+		interactive: false,
+		initialMessages: history,
 	});
-
-	const agent = new Agent({
-		providerId,
-		modelId: parsed.config.model,
-		apiKey,
-		systemPrompt,
-		maxIterations: parsed.config.maxIterations ?? 10,
-		tools: runtime.tools,
-		toolPolicies: {
-			"*": {
-				autoApprove: parsed.config.autoApproveTools !== false,
-			},
-		},
-		requestToolApproval: requestDesktopToolApproval,
-		onEvent: (event: AgentEvent) => {
-			if (
-				event.type === "content_start" &&
-				event.contentType === "text" &&
-				event.text
-			) {
-				writeStreamLine({
-					type: "chunk",
-					stream: "chat_text",
-					chunk: event.text,
-				});
-				return;
+	const result = await sessionManager
+		.send({
+			sessionId: started.sessionId,
+			prompt: input,
+			userImages,
+			userFiles: fileMaterialized.paths,
+		})
+		.finally(async () => {
+			unsubscribe();
+			if (fileMaterialized.tempDir) {
+				try {
+					await rm(fileMaterialized.tempDir, { recursive: true, force: true });
+				} catch {
+					// best effort cleanup
+				}
 			}
-			if (event.type === "content_start" && event.contentType === "tool") {
-				writeStreamLine({
-					type: "tool_call_start",
-					toolCallId: event.toolCallId ?? "",
-					toolName: event.toolName ?? "unknown_tool",
-					input: event.input,
-				});
-				return;
-			}
-			if (event.type === "content_end" && event.contentType === "tool") {
-				writeStreamLine({
-					type: "tool_call_end",
-					toolCallId: event.toolCallId ?? "",
-					toolName: event.toolName ?? "unknown_tool",
-					output: event.output,
-					error: event.error,
-					durationMs: event.durationMs ?? 0,
-				});
-			}
-		},
-	});
-
-	if (history.length > 0) {
-		(agent as unknown as { messages: Message[] }).messages = [...history];
+		});
+	if (!result) {
+		throw new Error("session manager did not return a result");
 	}
-
-	const enriched = await enrichPromptWithMentions(parsed.prompt, cwd);
-	const input = toPromptMessage(enriched.prompt, mode);
-	const userImages = parsed.attachments?.userImages ?? [];
-	const fileMaterialized = await materializeUserFiles(
-		parsed.attachments?.userFiles,
-	);
-	const result = await (history.length > 0
-		? agent.continue(input, userImages, fileMaterialized.paths)
-		: agent.run(input, userImages, fileMaterialized.paths)
-	).finally(async () => {
-		await runtime.shutdown("chat_turn_complete");
-		if (fileMaterialized.tempDir) {
-			try {
-				await rm(fileMaterialized.tempDir, { recursive: true, force: true });
-			} catch {
-				// best effort cleanup
-			}
-		}
-	});
 
 	writeStreamLine({
 		type: "result",

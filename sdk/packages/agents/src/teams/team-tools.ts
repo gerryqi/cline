@@ -1,13 +1,3 @@
-import {
-	appendFileSync,
-	existsSync,
-	mkdirSync,
-	readFileSync,
-	renameSync,
-	writeFileSync,
-} from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import type { providers as LlmsProviders } from "@cline/llms";
 import { z } from "zod";
 import {
@@ -16,171 +6,13 @@ import {
 } from "../default-tools/zod-utils.js";
 import { createTool } from "../tools/create.js";
 import type { AgentHooks, Tool } from "../types.js";
-import type {
-	AgentTeamsRuntime,
-	TeamEvent,
-	TeamRuntimeState,
-} from "./multi-agent.js";
+import type { AgentTeamsRuntime, TeamRuntimeState } from "./multi-agent.js";
 
 export interface TeamTeammateSpec {
 	agentId: string;
 	rolePrompt: string;
 	modelId?: string;
 	maxIterations?: number;
-}
-
-export interface TeamPersistenceStore {
-	loadState(): TeamRuntimeState | undefined;
-	getTeammateSpecs(): TeamTeammateSpec[];
-	upsertTeammateSpec(spec: TeamTeammateSpec): void;
-	removeTeammateSpec(agentId: string): void;
-	persist(runtime: AgentTeamsRuntime): void;
-	appendTaskHistory(event: TeamEvent): void;
-}
-
-interface PersistedTeamEnvelope {
-	version: 1;
-	updatedAt: string;
-	teamState: TeamRuntimeState;
-	teammates: TeamTeammateSpec[];
-}
-
-export interface FileTeamPersistenceStoreOptions {
-	teamName: string;
-	baseDir?: string;
-}
-
-export function resolveTeamDataDir(): string {
-	const explicitDir = process.env.CLINE_TEAM_DATA_DIR?.trim();
-	if (explicitDir) {
-		return explicitDir;
-	}
-	const clineDataDir = process.env.CLINE_DATA_DIR?.trim();
-	if (clineDataDir) {
-		return join(clineDataDir, "teams");
-	}
-	return join(homedir(), ".cline", "data", "teams");
-}
-
-export class FileTeamPersistenceStore implements TeamPersistenceStore {
-	private readonly dirPath: string;
-	private readonly statePath: string;
-	private readonly taskHistoryPath: string;
-	private readonly teammateSpecs: Map<string, TeamTeammateSpec> = new Map();
-
-	constructor(options: FileTeamPersistenceStoreOptions) {
-		const safeTeamName = sanitizeTeamName(options.teamName);
-		const baseDir = options.baseDir?.trim() || resolveTeamDataDir();
-		this.dirPath = join(baseDir, safeTeamName);
-		this.statePath = join(this.dirPath, "state.json");
-		this.taskHistoryPath = join(this.dirPath, "task-history.jsonl");
-	}
-
-	loadState(): TeamRuntimeState | undefined {
-		if (!existsSync(this.statePath)) {
-			return undefined;
-		}
-		try {
-			const raw = readFileSync(this.statePath, "utf8");
-			const parsed = JSON.parse(raw) as PersistedTeamEnvelope;
-			if (parsed.version !== 1 || !parsed.teamState) {
-				return undefined;
-			}
-			for (const spec of parsed.teammates ?? []) {
-				this.teammateSpecs.set(spec.agentId, spec);
-			}
-			return reviveTeamStateDates(parsed.teamState);
-		} catch {
-			return undefined;
-		}
-	}
-
-	getTeammateSpecs(): TeamTeammateSpec[] {
-		return Array.from(this.teammateSpecs.values());
-	}
-
-	upsertTeammateSpec(spec: TeamTeammateSpec): void {
-		this.teammateSpecs.set(spec.agentId, spec);
-	}
-
-	removeTeammateSpec(agentId: string): void {
-		this.teammateSpecs.delete(agentId);
-	}
-
-	persist(runtime: AgentTeamsRuntime): void {
-		this.ensureDir();
-		const envelope: PersistedTeamEnvelope = {
-			version: 1,
-			updatedAt: new Date().toISOString(),
-			teamState: runtime.exportState(),
-			teammates: Array.from(this.teammateSpecs.values()),
-		};
-		const tmpPath = `${this.statePath}.tmp`;
-		writeFileSync(tmpPath, `${JSON.stringify(envelope, null, 2)}\n`, "utf8");
-		renameSync(tmpPath, this.statePath);
-	}
-
-	appendTaskHistory(event: TeamEvent): void {
-		let task: Record<string, unknown> = {};
-		switch (event.type) {
-			case "team_task_updated":
-				task = event.task as unknown as Record<string, unknown>;
-				break;
-			case "team_message":
-				task = {
-					agentId: event.message.fromAgentId,
-					toAgentId: event.message.toAgentId,
-					subject: event.message.subject,
-					taskId: event.message.taskId,
-				};
-				break;
-			case "team_mission_log":
-				task = {
-					agentId: event.entry.agentId,
-					kind: event.entry.kind,
-					summary: event.entry.summary,
-					taskId: event.entry.taskId,
-				};
-				break;
-			case "teammate_spawned":
-			case "teammate_shutdown":
-			case "task_start":
-				task = {
-					agentId: event.agentId,
-					message: "message" in event ? event.message : undefined,
-				};
-				break;
-			case "task_end":
-				task = {
-					agentId: event.agentId,
-					finishReason: event.result?.finishReason,
-					error: event.error?.message,
-				};
-				break;
-			case "agent_event":
-				task = {
-					agentId: event.agentId,
-					eventType: event.event.type,
-				};
-				break;
-		}
-		this.ensureDir();
-		appendFileSync(
-			this.taskHistoryPath,
-			`${JSON.stringify({
-				ts: new Date().toISOString(),
-				type: event.type,
-				task,
-			})}\n`,
-			"utf8",
-		);
-	}
-
-	private ensureDir(): void {
-		if (!existsSync(this.dirPath)) {
-			mkdirSync(this.dirPath, { recursive: true });
-		}
-	}
 }
 
 const TeamMemberInputSchema = z.object({
@@ -364,6 +196,29 @@ const TeamLogUpdateInputSchema = z.object({
 
 const TeamCleanupInputSchema = z.object({});
 
+function formatTeamMemberInputError(input: unknown): string {
+	const action =
+		typeof input === "object" && input !== null && "action" in input
+			? (input as { action?: unknown }).action
+			: undefined;
+	if (action === "spawn") {
+		return (
+			'team_member action=spawn requires non-empty "agentId" and "rolePrompt". ' +
+			'Example: {"action":"spawn","agentId":"python-poet","rolePrompt":"Write concise Python-focused haiku"}'
+		);
+	}
+	if (action === "shutdown") {
+		return (
+			'team_member action=shutdown requires non-empty "agentId". ' +
+			'Example: {"action":"shutdown","agentId":"python-poet"}'
+		);
+	}
+	return (
+		'team_member requires "action" (spawn|shutdown). ' +
+		'For spawn include "agentId" and "rolePrompt"; for shutdown include "agentId".'
+	);
+}
+
 type TeamMemberInput = z.infer<typeof TeamMemberInputSchema>;
 type TeamStatusInput = z.infer<typeof TeamStatusInputSchema>;
 type TeamTaskInput = z.infer<typeof TeamTaskInputSchema>;
@@ -391,7 +246,6 @@ export interface CreateAgentTeamsToolsOptions {
 	teammateRuntime: TeamTeammateRuntimeConfig;
 	createBaseTools?: () => Tool[];
 	allowSpawn?: boolean;
-	persistence?: TeamPersistenceStore;
 }
 
 export interface BootstrapAgentTeamsOptions {
@@ -399,7 +253,8 @@ export interface BootstrapAgentTeamsOptions {
 	teammateRuntime: TeamTeammateRuntimeConfig;
 	createBaseTools?: () => Tool[];
 	leadAgentId?: string;
-	persistence?: TeamPersistenceStore;
+	restoredTeammates?: TeamTeammateSpec[];
+	restoredFromPersistence?: boolean;
 }
 
 export interface BootstrapAgentTeamsResult {
@@ -425,7 +280,6 @@ function spawnTeamTeammate(
 			teammateRuntime: options.teammateRuntime,
 			createBaseTools: options.createBaseTools,
 			allowSpawn: false,
-			persistence: options.persistence,
 		}),
 	);
 	options.runtime.spawnTeammate({
@@ -450,15 +304,7 @@ export function bootstrapAgentTeams(
 	options: BootstrapAgentTeamsOptions,
 ): BootstrapAgentTeamsResult {
 	const leadAgentId = options.leadAgentId ?? "lead";
-	let restoredFromPersistence = false;
-
-	if (options.persistence) {
-		const restored = options.persistence.loadState();
-		if (restored) {
-			options.runtime.hydrateState(restored);
-			restoredFromPersistence = true;
-		}
-	}
+	const restoredFromPersistence = options.restoredFromPersistence === true;
 
 	const tools = createAgentTeamsTools({
 		runtime: options.runtime,
@@ -466,11 +312,10 @@ export function bootstrapAgentTeams(
 		teammateRuntime: options.teammateRuntime,
 		createBaseTools: options.createBaseTools,
 		allowSpawn: true,
-		persistence: options.persistence,
 	});
 
 	const restoredTeammates: string[] = [];
-	for (const spec of options.persistence?.getTeammateSpecs() ?? []) {
+	for (const spec of options.restoredTeammates ?? []) {
 		if (options.runtime.isTeammateActive(spec.agentId)) {
 			continue;
 		}
@@ -479,13 +324,10 @@ export function bootstrapAgentTeams(
 			requesterId: leadAgentId,
 			teammateRuntime: options.teammateRuntime,
 			createBaseTools: options.createBaseTools,
-			persistence: options.persistence,
 			spec,
 		});
 		restoredTeammates.push(spec.agentId);
 	}
-
-	options.persistence?.persist(options.runtime);
 
 	return {
 		tools,
@@ -504,19 +346,25 @@ export function createAgentTeamsTools(
 		createTool<TeamMemberInput, { agentId: string; status: string }>({
 			name: "team_member",
 			description:
-				"Manage persistent teammate lifecycle. Use action=spawn or action=shutdown.",
+				"Manage teammate lifecycle. action=spawn requires agentId+rolePrompt; action=shutdown requires agentId.",
 			inputSchema: zodToJsonSchema(TeamMemberInputSchema),
 			execute: async (input) => {
-				const validatedInput = validateWithZod(TeamMemberInputSchema, input);
+				const validatedInputResult = TeamMemberInputSchema.safeParse(input);
+				if (!validatedInputResult.success) {
+					throw new Error(formatTeamMemberInputError(input));
+				}
+				const validatedInput = validatedInputResult.data;
 				if (options.runtime.getMemberRole(options.requesterId) !== "lead") {
 					throw new Error("Only the lead agent can manage teammates.");
 				}
 				switch (validatedInput.action) {
 					case "spawn": {
-						const spawnInput = validateWithZod(
-							TeamMemberSpawnInputSchema,
-							input,
-						);
+						const spawnInputResult =
+							TeamMemberSpawnInputSchema.safeParse(input);
+						if (!spawnInputResult.success) {
+							throw new Error(formatTeamMemberInputError(input));
+						}
+						const spawnInput = spawnInputResult.data;
 						if (!allowSpawn) {
 							throw new Error(
 								"Spawning teammates is disabled in this context.",
@@ -533,24 +381,21 @@ export function createAgentTeamsTools(
 							requesterId: options.requesterId,
 							teammateRuntime: options.teammateRuntime,
 							createBaseTools: options.createBaseTools,
-							persistence: options.persistence,
 							spec,
 						});
-						options.persistence?.upsertTeammateSpec(spec);
-						options.persistence?.persist(options.runtime);
 						return { agentId: spawnInput.agentId, status: "spawned" };
 					}
 					case "shutdown": {
-						const shutdownInput = validateWithZod(
-							TeamMemberShutdownInputSchema,
-							input,
-						);
+						const shutdownInputResult =
+							TeamMemberShutdownInputSchema.safeParse(input);
+						if (!shutdownInputResult.success) {
+							throw new Error(formatTeamMemberInputError(input));
+						}
+						const shutdownInput = shutdownInputResult.data;
 						options.runtime.shutdownTeammate(
 							shutdownInput.agentId,
 							shutdownInput.reason,
 						);
-						options.persistence?.removeTeammateSpec(shutdownInput.agentId);
-						options.persistence?.persist(options.runtime);
 						return { agentId: shutdownInput.agentId, status: "stopped" };
 					}
 				}
@@ -811,7 +656,6 @@ export function createAgentTeamsTools(
 					throw new Error("Only the lead agent can run cleanup.");
 				}
 				options.runtime.cleanup();
-				options.persistence?.persist(options.runtime);
 				return { status: "cleaned" };
 			},
 		}) as Tool,

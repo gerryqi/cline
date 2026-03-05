@@ -178,6 +178,46 @@ describe("Agent", () => {
 		expect(agent.getMessages()).toEqual([]);
 	});
 
+	it("restores preloaded messages via config and restore()", async () => {
+		const { Agent } = await import("./agent.js");
+		const handler = makeHandler([
+			[
+				{ type: "text", id: "r1", text: "restored" },
+				{ type: "usage", id: "r1", inputTokens: 1, outputTokens: 1 },
+				{ type: "done", id: "r1", success: true },
+			],
+			[
+				{ type: "text", id: "r2", text: "restored-again" },
+				{ type: "usage", id: "r2", inputTokens: 1, outputTokens: 1 },
+				{ type: "done", id: "r2", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const initial = [
+			{ role: "user", content: [{ type: "text", text: "history" }] },
+		];
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "Restore support",
+			tools: [],
+			initialMessages: initial,
+		});
+
+		expect(agent.getMessages()).toEqual(initial);
+		const first = await agent.continue("resume");
+		expect(first.text).toBe("restored");
+
+		const restored = [
+			{ role: "assistant", content: [{ type: "text", text: "new-state" }] },
+		];
+		agent.restore(restored);
+		expect(agent.getMessages()).toEqual(restored);
+		const second = await agent.continue("resume-2");
+		expect(second.text).toBe("restored-again");
+	});
+
 	it("supports shutdown hooks and early run cancellation via hook control", async () => {
 		const { Agent } = await import("./agent.js");
 		const handler = makeHandler([

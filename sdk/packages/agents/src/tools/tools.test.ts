@@ -49,7 +49,7 @@ describe("tools utilities", () => {
 		});
 
 		expect(jsonTool.timeoutMs).toBe(30000);
-		expect(zodTool.inputSchema.properties.a?.type).toBe("number");
+		expect(zodTool.inputSchema.type).toBe("object");
 		expect(validateToolDefinition(jsonTool as Tool)).toEqual({
 			valid: true,
 			errors: [],

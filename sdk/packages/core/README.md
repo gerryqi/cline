@@ -7,6 +7,24 @@ Package-level docs are centralized:
 
 `@cline/core` is the stateful orchestration layer (runtime composition, sessions, storage, RPC session adapter).
 
+## Default Session Manager
+
+`@cline/core/server` now exposes `DefaultSessionManager`, a concrete runtime facade that owns:
+
+- root session creation + manifest/artifact wiring
+- runtime/tool composition through `DefaultRuntimeBuilder`
+- agent lifecycle (run/continue/abort/stop)
+- session message persistence after each turn
+- session status transitions and event fanout via `CoreSessionEvent`
+
+This is the primary API for host clients that should only consume runtime events and outputs without manually creating agents or persisting messages.
+
+## Team State Persistence Boundary
+
+Team state file persistence (`state.json` and `task-history.jsonl`) is owned by `@cline/core` session services/runtime wiring.
+
+`@cline/agents` team tooling emits in-memory runtime events only; `@cline/core` consumes those events and performs filesystem persistence.
+
 ## OAuth Callback Behavior
 
 For `openai-codex` CLI login, the local callback server now binds to the same host/port/path as the configured redirect URI (`OPENAI_CODEX_OAUTH_CONFIG.redirectUri`) to avoid localhost/127.0.0.1 mismatches on some systems.
@@ -38,8 +56,8 @@ Legacy `transportType: "http"` is normalized to `transport.type: "streamableHttp
 `@cline/core` exposes `migrateLegacyProviderSettings(...)` to bootstrap the new provider settings file from legacy state storage:
 
 - Reads legacy files from `~/.cline/data/globalState.json` and `~/.cline/data/secrets.json` (or `CLINE_DATA_DIR`)
-- Writes the new provider settings format to `settings/providers.json`
-- Skips migration if `providers.json` already contains provider entries
+- Merges missing providers into `settings/providers.json` without overwriting existing providers
+- Marks migrated provider entries with `tokenSource: "migration"`
 
 ## Desktop Tool Approval Helper
 

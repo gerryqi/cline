@@ -47,6 +47,7 @@ describe("parseArgs", () => {
 			mode: "act",
 			sandbox: false,
 			thinking: false,
+			liveModelCatalog: false,
 			enableSpawnAgent: true,
 			enableAgentTeams: true,
 			enableTools: true,
@@ -84,6 +85,7 @@ describe("parseArgs", () => {
 			"--usage",
 			"--timings",
 			"--thinking",
+			"--refresh-models",
 			"--mode",
 			"plan",
 			"Audit",
@@ -99,6 +101,7 @@ describe("parseArgs", () => {
 		expect(parsed.showUsage).toBe(true);
 		expect(parsed.showTimings).toBe(true);
 		expect(parsed.thinking).toBe(true);
+		expect(parsed.liveModelCatalog).toBe(true);
 		expect(parsed.outputMode).toBe("text");
 		expect(parsed.mode).toBe("plan");
 		expect(parsed.cwd).toBe("/tmp/work");

@@ -65,7 +65,6 @@ Workspace boundary note:
 - `createSpawnAgentTool`
 - `createAgentTeam`
 - `createWorkerReviewerTeam`
-- `FileTeamPersistenceStore`
 
 #### Team Tool Surface
 
@@ -138,6 +137,9 @@ const agent = new Agent({
 		enableSearch: true,
 		enableBash: true,
 		enableWebFetch: true,
+		enableEditor: true,
+		enableSkills: true,
+		enableAskQuestion: true,
 	}),
 })
 

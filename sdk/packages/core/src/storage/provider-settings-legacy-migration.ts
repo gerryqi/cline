@@ -546,7 +546,8 @@ export function migrateLegacyProviderSettings(
 	options: MigrateLegacyProviderSettingsOptions,
 ): MigrateLegacyProviderSettingsResult {
 	const existing = options.providerSettingsManager.read();
-	if (Object.keys(existing.providers).length > 0) {
+	const legacyStorage = resolveLegacyStorage(options);
+	if (!legacyStorage) {
 		return {
 			migrated: false,
 			providerCount: Object.keys(existing.providers).length,
@@ -554,18 +555,19 @@ export function migrateLegacyProviderSettings(
 		};
 	}
 
-	const legacyStorage = resolveLegacyStorage(options);
-	if (!legacyStorage) {
-		return { migrated: false, providerCount: 0 };
-	}
-
 	const { globalState, secrets } = legacyStorage;
 	const mode: LegacyMode = globalState.mode === "plan" ? "plan" : "act";
 	const candidates = collectCandidateProviderIds(globalState, secrets);
 	const next = emptyStoredProviderSettings();
+	next.providers = { ...existing.providers };
+	next.lastUsedProvider = existing.lastUsedProvider;
 	const now = new Date().toISOString();
+	let addedProviderCount = 0;
 
 	for (const providerId of candidates) {
+		if (next.providers[providerId]) {
+			continue;
+		}
 		const settings = buildLegacyProviderSettings(
 			providerId,
 			globalState,
@@ -578,11 +580,17 @@ export function migrateLegacyProviderSettings(
 		next.providers[providerId] = {
 			settings,
 			updatedAt: now,
+			tokenSource: "migration",
 		};
+		addedProviderCount += 1;
 	}
 
-	if (Object.keys(next.providers).length === 0) {
-		return { migrated: false, providerCount: 0 };
+	if (addedProviderCount === 0) {
+		return {
+			migrated: false,
+			providerCount: Object.keys(existing.providers).length,
+			lastUsedProvider: existing.lastUsedProvider,
+		};
 	}
 
 	const preferredProvider = trimNonEmpty(
@@ -591,9 +599,10 @@ export function migrateLegacyProviderSettings(
 			: globalState.actModeApiProvider,
 	);
 	next.lastUsedProvider =
-		preferredProvider && next.providers[preferredProvider]
+		existing.lastUsedProvider ??
+		(preferredProvider && next.providers[preferredProvider]
 			? preferredProvider
-			: Object.keys(next.providers)[0];
+			: Object.keys(next.providers)[0]);
 
 	options.providerSettingsManager.write(next);
 
