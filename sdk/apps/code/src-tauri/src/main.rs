@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
@@ -159,6 +159,13 @@ struct ChatCreateSessionResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ProviderOauthLoginResponse {
+    provider: String,
+    api_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ChatSessionCommandRequest {
     action: String,
     session_id: Option<String>,
@@ -185,6 +192,97 @@ struct ChatRuntimeSession {
     ended_at: Option<u64>,
     status: String,
     prompt: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpServerRecord {
+    name: String,
+    transport_type: String,
+    disabled: bool,
+    command: Option<String>,
+    args: Option<Vec<String>>,
+    cwd: Option<String>,
+    env: Option<HashMap<String, String>>,
+    url: Option<String>,
+    headers: Option<HashMap<String, String>>,
+    metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpServersResponse {
+    settings_path: String,
+    has_settings_file: bool,
+    servers: Vec<McpServerRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpServerUpsertInput {
+    name: String,
+    transport_type: String,
+    command: Option<String>,
+    args: Option<Vec<String>>,
+    cwd: Option<String>,
+    env: Option<HashMap<String, String>>,
+    url: Option<String>,
+    headers: Option<HashMap<String, String>>,
+    disabled: Option<bool>,
+    metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuleListItem {
+    name: String,
+    instructions: String,
+    path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkflowListItem {
+    id: String,
+    name: String,
+    instructions: String,
+    path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillListItem {
+    name: String,
+    description: Option<String>,
+    instructions: String,
+    path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentListItem {
+    name: String,
+    path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HookListItem {
+    file_name: String,
+    hook_event_name: Option<String>,
+    path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UserInstructionListsResponse {
+    workspace_root: String,
+    rules: Vec<RuleListItem>,
+    workflows: Vec<WorkflowListItem>,
+    skills: Vec<SkillListItem>,
+    agents: Vec<AgentListItem>,
+    hooks: Vec<HookListItem>,
+    warnings: Vec<String>,
 }
 
 #[derive(Default)]
@@ -515,7 +613,9 @@ fn normalize_chat_finish_status(status: Option<&str>) -> String {
     if normalized.is_empty() {
         return "completed".to_string();
     }
-    if normalized.contains("cancel") || normalized.contains("abort") || normalized.contains("interrupt")
+    if normalized.contains("cancel")
+        || normalized.contains("abort")
+        || normalized.contains("interrupt")
     {
         return "cancelled".to_string();
     }
@@ -545,7 +645,12 @@ fn kanban_data_root() -> Option<PathBuf> {
     }
 
     let home = std::env::var("HOME").ok()?;
-    Some(PathBuf::from(home).join(".cline").join("apps").join("kanban"))
+    Some(
+        PathBuf::from(home)
+            .join(".cline")
+            .join("apps")
+            .join("kanban"),
+    )
 }
 
 fn session_log_path(session_id: &str) -> Option<PathBuf> {
@@ -632,11 +737,7 @@ fn append_chat_usage_hook_event(session_id: &str, result: &ChatTurnResult) {
     });
 
     if let Ok(line) = serde_json::to_string(&payload) {
-        if let Ok(mut file) = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-        {
+        if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
             let _ = file.write_all(format!("{line}\n").as_bytes());
         }
     }
@@ -650,9 +751,10 @@ fn read_persisted_chat_messages(session_id: &str) -> Result<Option<Vec<Value>>, 
         return Ok(None);
     }
 
-    let raw = fs::read_to_string(path).map_err(|e| format!("failed reading session messages: {e}"))?;
-    let parsed =
-        serde_json::from_str::<Value>(&raw).map_err(|e| format!("failed parsing session messages: {e}"))?;
+    let raw =
+        fs::read_to_string(path).map_err(|e| format!("failed reading session messages: {e}"))?;
+    let parsed = serde_json::from_str::<Value>(&raw)
+        .map_err(|e| format!("failed parsing session messages: {e}"))?;
 
     let messages = parsed
         .get("messages")
@@ -670,7 +772,10 @@ fn session_has_messages(messages: &[Value]) -> bool {
 
 fn derive_prompt_from_messages(messages: &[Value]) -> Option<String> {
     for message in messages {
-        let role = message.get("role").and_then(|v| v.as_str()).unwrap_or_default();
+        let role = message
+            .get("role")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
         if role != "user" {
             continue;
         }
@@ -705,7 +810,10 @@ fn stringify_message_content(value: &Value) -> String {
                         .unwrap_or_default()
                         .to_string(),
                     "tool_use" => {
-                        let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("tool_call");
+                        let name = obj
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("tool_call");
                         format!("[tool] {name}")
                     }
                     "tool_result" => {
@@ -870,11 +978,21 @@ fn shared_session_artifact_path(session_id: &str, suffix: &str) -> Option<PathBu
 fn resolve_cli_entrypoint_path(context: &AppContext) -> Option<PathBuf> {
     let candidates = [
         PathBuf::from(&context.workspace_root)
+            .join("apps")
+            .join("cli")
+            .join("src")
+            .join("index.ts"),
+        PathBuf::from(&context.workspace_root)
             .join("packages")
             .join("cli")
             .join("src")
             .join("index.ts"),
         PathBuf::from(&context.workspace_root)
+            .join("cli")
+            .join("src")
+            .join("index.ts"),
+        PathBuf::from(&context.launch_cwd)
+            .join("apps")
             .join("cli")
             .join("src")
             .join("index.ts"),
@@ -892,12 +1010,683 @@ fn resolve_cli_entrypoint_path(context: &AppContext) -> Option<PathBuf> {
     candidates.into_iter().find(|path| path.exists())
 }
 
+fn resolve_workspace_cli_entrypoint_path(workspace_root: &str) -> Option<PathBuf> {
+    let candidates = [
+        PathBuf::from(workspace_root)
+            .join("apps")
+            .join("cli")
+            .join("src")
+            .join("index.ts"),
+        PathBuf::from(workspace_root)
+            .join("packages")
+            .join("cli")
+            .join("src")
+            .join("index.ts"),
+        PathBuf::from(workspace_root)
+            .join("cli")
+            .join("src")
+            .join("index.ts"),
+    ];
+
+    candidates.into_iter().find(|path| path.exists())
+}
+
 fn resolve_cli_workdir(cli_entrypoint: &Path, context: &AppContext) -> PathBuf {
     cli_entrypoint
         .parent()
         .and_then(|p: &Path| p.parent())
         .map(|p: &Path| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from(&context.launch_cwd))
+}
+
+fn run_cli_list_json_command(
+    cli_entrypoint: &Path,
+    workspace_root: &str,
+    target: &str,
+) -> Result<String, String> {
+    let output = Command::new("bun")
+        .arg("run")
+        .arg(cli_entrypoint.to_string_lossy().to_string())
+        .arg("list")
+        .arg(target)
+        .arg("--json")
+        .current_dir(workspace_root)
+        .output()
+        .map_err(|e| format!("failed running list {target}: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            format!("list {target} exited with {}", output.status)
+        } else {
+            stderr
+        });
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn parse_cli_list_json<T: DeserializeOwned>(target: &str, raw: &str) -> Result<Vec<T>, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    serde_json::from_str::<Vec<T>>(trimmed)
+        .map_err(|e| format!("failed parsing list {target} JSON: {e}"))
+}
+
+fn resolve_provider_oauth_login_script_path(context: &AppContext) -> Option<PathBuf> {
+    let candidates = [
+        PathBuf::from(&context.workspace_root)
+            .join("apps")
+            .join("code")
+            .join("scripts")
+            .join("provider-oauth-login.ts"),
+        PathBuf::from(&context.workspace_root)
+            .join("scripts")
+            .join("provider-oauth-login.ts"),
+        PathBuf::from(&context.launch_cwd)
+            .join("scripts")
+            .join("provider-oauth-login.ts"),
+        PathBuf::from(&context.launch_cwd)
+            .join("apps")
+            .join("code")
+            .join("scripts")
+            .join("provider-oauth-login.ts"),
+    ];
+    candidates.into_iter().find(|path| path.exists())
+}
+
+fn resolve_provider_settings_script_path(context: &AppContext) -> Option<PathBuf> {
+    let candidates = [
+        PathBuf::from(&context.workspace_root)
+            .join("apps")
+            .join("code")
+            .join("scripts")
+            .join("provider-settings.ts"),
+        PathBuf::from(&context.workspace_root)
+            .join("scripts")
+            .join("provider-settings.ts"),
+        PathBuf::from(&context.launch_cwd)
+            .join("scripts")
+            .join("provider-settings.ts"),
+        PathBuf::from(&context.launch_cwd)
+            .join("apps")
+            .join("code")
+            .join("scripts")
+            .join("provider-settings.ts"),
+    ];
+    candidates.into_iter().find(|path| path.exists())
+}
+
+fn run_bun_script_json(
+    script_path: &Path,
+    script_workdir: &Path,
+    stdin_body: String,
+    command_name: &str,
+) -> Result<Value, String> {
+    let mut child = Command::new("bun")
+        .current_dir(script_workdir)
+        .arg("run")
+        .arg(script_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to start {command_name} script: {e}"))?;
+
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin
+            .write_all(stdin_body.as_bytes())
+            .map_err(|e| format!("failed writing {command_name} stdin: {e}"))?;
+        stdin
+            .flush()
+            .map_err(|e| format!("failed flushing {command_name} stdin: {e}"))?;
+    }
+    let _ = child.stdin.take();
+
+    let mut stdout = String::new();
+    if let Some(mut handle) = child.stdout.take() {
+        handle
+            .read_to_string(&mut stdout)
+            .map_err(|e| format!("failed reading {command_name} output: {e}"))?;
+    }
+
+    let mut stderr = String::new();
+    if let Some(mut handle) = child.stderr.take() {
+        handle
+            .read_to_string(&mut stderr)
+            .map_err(|e| format!("failed reading {command_name} stderr: {e}"))?;
+    }
+
+    let status = child
+        .wait()
+        .map_err(|e| format!("failed waiting for {command_name} script: {e}"))?;
+
+    if !status.success() {
+        let stderr = stderr.trim().to_string();
+        if !stderr.is_empty() {
+            return Err(stderr);
+        }
+        let stdout = stdout.trim().to_string();
+        if !stdout.is_empty() {
+            return Err(stdout);
+        }
+        return Err(format!("{command_name} script failed with status {status}"));
+    }
+
+    serde_json::from_str::<Value>(stdout.trim())
+        .map_err(|e| format!("invalid {command_name} response: {e}"))
+}
+
+fn resolve_mcp_settings_path() -> Result<PathBuf, String> {
+    if let Ok(value) = std::env::var("CLINE_MCP_SETTINGS_PATH") {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Ok(PathBuf::from(trimmed));
+        }
+    }
+    let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_string())?;
+    Ok(PathBuf::from(home)
+        .join(".cline")
+        .join("data")
+        .join("settings")
+        .join("cline_mcp_settings.json"))
+}
+
+fn parse_string_map(value: Option<&Value>) -> Option<HashMap<String, String>> {
+    let Some(obj) = value.and_then(|v| v.as_object()) else {
+        return None;
+    };
+    let mut out = HashMap::new();
+    for (key, val) in obj {
+        if let Some(text) = val.as_str() {
+            out.insert(key.clone(), text.to_string());
+        }
+    }
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+fn parse_bool(value: Option<&Value>) -> bool {
+    value.and_then(|v| v.as_bool()).unwrap_or(false)
+}
+
+fn parse_mcp_server_record(name: &str, body: &Value) -> Result<McpServerRecord, String> {
+    let obj = body
+        .as_object()
+        .ok_or_else(|| format!("Invalid MCP settings: server \"{name}\" must be an object"))?;
+    let disabled = parse_bool(obj.get("disabled"));
+    let metadata = obj.get("metadata").cloned();
+
+    if let Some(transport) = obj.get("transport") {
+        let transport_obj = transport.as_object().ok_or_else(|| {
+            format!("Invalid MCP settings: server \"{name}\" has invalid transport object")
+        })?;
+        let transport_type = transport_obj
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if transport_type != "stdio"
+            && transport_type != "sse"
+            && transport_type != "streamableHttp"
+        {
+            return Err(format!(
+                "Invalid MCP settings: server \"{name}\" has unsupported transport type \"{transport_type}\""
+            ));
+        }
+
+        if transport_type == "stdio" {
+            let command = transport_obj
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if command.is_empty() {
+                return Err(format!(
+                    "Invalid MCP settings: server \"{name}\" requires transport.command for stdio"
+                ));
+            }
+            let args = transport_obj
+                .get("args")
+                .and_then(|v| v.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(|value| value.to_string()))
+                        .collect::<Vec<String>>()
+                })
+                .filter(|items| !items.is_empty());
+            let cwd = transport_obj
+                .get("cwd")
+                .and_then(|v| v.as_str())
+                .map(|value| value.to_string())
+                .filter(|value| !value.trim().is_empty());
+            let env = parse_string_map(transport_obj.get("env"));
+            return Ok(McpServerRecord {
+                name: name.to_string(),
+                transport_type,
+                disabled,
+                command: Some(command),
+                args,
+                cwd,
+                env,
+                url: None,
+                headers: None,
+                metadata,
+            });
+        }
+
+        let url = transport_obj
+            .get("url")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if url.is_empty() {
+            return Err(format!(
+                "Invalid MCP settings: server \"{name}\" requires transport.url for URL transport"
+            ));
+        }
+        let headers = parse_string_map(transport_obj.get("headers"));
+        return Ok(McpServerRecord {
+            name: name.to_string(),
+            transport_type,
+            disabled,
+            command: None,
+            args: None,
+            cwd: None,
+            env: None,
+            url: Some(url),
+            headers,
+            metadata,
+        });
+    }
+
+    if obj.contains_key("command") {
+        let command = obj
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if command.is_empty() {
+            return Err(format!(
+                "Invalid MCP settings: server \"{name}\" requires command for stdio transport"
+            ));
+        }
+        let transport_type = obj
+            .get("type")
+            .and_then(|v| v.as_str())
+            .or_else(|| obj.get("transportType").and_then(|v| v.as_str()))
+            .unwrap_or("stdio")
+            .trim()
+            .to_string();
+        if transport_type != "stdio" {
+            return Err(format!(
+                "Invalid MCP settings: server \"{name}\" command-based transport must use type \"stdio\""
+            ));
+        }
+        let args = obj
+            .get("args")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(|value| value.to_string()))
+                    .collect::<Vec<String>>()
+            })
+            .filter(|items| !items.is_empty());
+        let cwd = obj
+            .get("cwd")
+            .and_then(|v| v.as_str())
+            .map(|value| value.to_string())
+            .filter(|value| !value.trim().is_empty());
+        let env = parse_string_map(obj.get("env"));
+        return Ok(McpServerRecord {
+            name: name.to_string(),
+            transport_type: "stdio".to_string(),
+            disabled,
+            command: Some(command),
+            args,
+            cwd,
+            env,
+            url: None,
+            headers: None,
+            metadata,
+        });
+    }
+
+    if obj.contains_key("url") {
+        let url = obj
+            .get("url")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if url.is_empty() {
+            return Err(format!(
+                "Invalid MCP settings: server \"{name}\" requires url for URL transport"
+            ));
+        }
+        let raw_type = obj
+            .get("type")
+            .and_then(|v| v.as_str())
+            .or_else(|| obj.get("transportType").and_then(|v| v.as_str()))
+            .unwrap_or("sse");
+        let transport_type = if raw_type == "http" {
+            "streamableHttp"
+        } else {
+            raw_type
+        };
+        if transport_type != "sse" && transport_type != "streamableHttp" {
+            return Err(format!(
+                "Invalid MCP settings: server \"{name}\" url-based transport must use type \"sse\" or \"streamableHttp\""
+            ));
+        }
+        let headers = parse_string_map(obj.get("headers"));
+        return Ok(McpServerRecord {
+            name: name.to_string(),
+            transport_type: transport_type.to_string(),
+            disabled,
+            command: None,
+            args: None,
+            cwd: None,
+            env: None,
+            url: Some(url),
+            headers,
+            metadata,
+        });
+    }
+
+    Err(format!(
+        "Invalid MCP settings: server \"{name}\" must define transport or a legacy command/url shape"
+    ))
+}
+
+fn parse_mcp_server_record_fallback(name: &str, body: &Value) -> Option<McpServerRecord> {
+    let obj = body.as_object()?;
+    let disabled = parse_bool(obj.get("disabled"));
+    if !disabled {
+        return None;
+    }
+
+    let raw_transport_type = obj
+        .get("transport")
+        .and_then(|v| v.as_object())
+        .and_then(|transport| transport.get("type"))
+        .and_then(|v| v.as_str())
+        .or_else(|| obj.get("type").and_then(|v| v.as_str()))
+        .or_else(|| obj.get("transportType").and_then(|v| v.as_str()))
+        .unwrap_or("stdio");
+
+    let normalized_transport_type = match raw_transport_type {
+        "sse" => "sse",
+        "streamableHttp" | "http" => "streamableHttp",
+        _ => "stdio",
+    };
+
+    let command = obj
+        .get("command")
+        .and_then(|v| v.as_str())
+        .map(|v| v.to_string());
+    let args = obj
+        .get("args")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(|value| value.to_string()))
+                .collect::<Vec<String>>()
+        })
+        .filter(|items| !items.is_empty());
+    let cwd = obj
+        .get("cwd")
+        .and_then(|v| v.as_str())
+        .map(|v| v.to_string())
+        .filter(|v| !v.trim().is_empty());
+    let env = parse_string_map(obj.get("env"));
+
+    let url = obj
+        .get("url")
+        .and_then(|v| v.as_str())
+        .map(|v| v.to_string())
+        .or_else(|| {
+            obj.get("transport")
+                .and_then(|v| v.as_object())
+                .and_then(|transport| transport.get("url"))
+                .and_then(|v| v.as_str())
+                .map(|v| v.to_string())
+        });
+    let headers = parse_string_map(obj.get("headers").or_else(|| {
+        obj.get("transport")
+            .and_then(|v| v.as_object())
+            .and_then(|transport| transport.get("headers"))
+    }));
+
+    Some(McpServerRecord {
+        name: name.to_string(),
+        transport_type: normalized_transport_type.to_string(),
+        disabled,
+        command,
+        args,
+        cwd,
+        env,
+        url,
+        headers,
+        metadata: obj.get("metadata").cloned(),
+    })
+}
+
+fn read_mcp_servers_from_path(path: &Path) -> Result<Vec<McpServerRecord>, String> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let raw = fs::read_to_string(path).map_err(|e| format!("failed reading MCP settings: {e}"))?;
+    let parsed = serde_json::from_str::<Value>(&raw)
+        .map_err(|e| format!("invalid MCP settings JSON: {e}"))?;
+    let root = parsed
+        .as_object()
+        .ok_or_else(|| "invalid MCP settings JSON: root must be an object".to_string())?;
+    let servers = root
+        .get("mcpServers")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| "invalid MCP settings JSON: mcpServers must be an object".to_string())?;
+    let mut out: Vec<McpServerRecord> = Vec::new();
+    for (name, body) in servers {
+        match parse_mcp_server_record(name, body) {
+            Ok(record) => out.push(record),
+            Err(error) => {
+                if let Some(fallback) = parse_mcp_server_record_fallback(name, body) {
+                    out.push(fallback);
+                } else {
+                    return Err(error);
+                }
+            }
+        }
+    }
+    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(out)
+}
+
+fn read_mcp_servers_map(path: &Path) -> Result<serde_json::Map<String, Value>, String> {
+    if !path.exists() {
+        return Ok(serde_json::Map::new());
+    }
+    let raw = fs::read_to_string(path).map_err(|e| format!("failed reading MCP settings: {e}"))?;
+    let parsed = serde_json::from_str::<Value>(&raw)
+        .map_err(|e| format!("invalid MCP settings JSON: {e}"))?;
+    let root = parsed
+        .as_object()
+        .ok_or_else(|| "invalid MCP settings JSON: root must be an object".to_string())?;
+    let servers = root
+        .get("mcpServers")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| "invalid MCP settings JSON: mcpServers must be an object".to_string())?;
+    Ok(servers.clone())
+}
+
+fn server_record_to_json(record: &McpServerRecord) -> Result<Value, String> {
+    if record.transport_type == "stdio" {
+        let command = record
+            .command
+            .as_ref()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| "command is required for stdio transport".to_string())?;
+        let mut transport = serde_json::Map::new();
+        transport.insert("type".to_string(), Value::String("stdio".to_string()));
+        transport.insert("command".to_string(), Value::String(command));
+        if let Some(args) = &record.args {
+            let cleaned: Vec<Value> = args
+                .iter()
+                .map(|item| item.trim())
+                .filter(|item| !item.is_empty())
+                .map(|item| Value::String(item.to_string()))
+                .collect();
+            if !cleaned.is_empty() {
+                transport.insert("args".to_string(), Value::Array(cleaned));
+            }
+        }
+        if let Some(cwd) = &record.cwd {
+            let trimmed = cwd.trim();
+            if !trimmed.is_empty() {
+                transport.insert("cwd".to_string(), Value::String(trimmed.to_string()));
+            }
+        }
+        if let Some(env) = &record.env {
+            let mut env_obj = serde_json::Map::new();
+            for (key, value) in env {
+                if !key.trim().is_empty() {
+                    env_obj.insert(key.clone(), Value::String(value.clone()));
+                }
+            }
+            if !env_obj.is_empty() {
+                transport.insert("env".to_string(), Value::Object(env_obj));
+            }
+        }
+        let mut server = serde_json::Map::new();
+        server.insert("transport".to_string(), Value::Object(transport));
+        if record.disabled {
+            server.insert("disabled".to_string(), Value::Bool(true));
+        }
+        if let Some(metadata) = &record.metadata {
+            server.insert("metadata".to_string(), metadata.clone());
+        }
+        return Ok(Value::Object(server));
+    }
+
+    if record.transport_type != "sse" && record.transport_type != "streamableHttp" {
+        return Err(format!(
+            "unsupported transport type \"{}\"",
+            record.transport_type
+        ));
+    }
+    let url = record
+        .url
+        .as_ref()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| "url is required for URL transport".to_string())?;
+    let mut transport = serde_json::Map::new();
+    transport.insert(
+        "type".to_string(),
+        Value::String(record.transport_type.clone()),
+    );
+    transport.insert("url".to_string(), Value::String(url));
+    if let Some(headers) = &record.headers {
+        let mut headers_obj = serde_json::Map::new();
+        for (key, value) in headers {
+            if !key.trim().is_empty() {
+                headers_obj.insert(key.clone(), Value::String(value.clone()));
+            }
+        }
+        if !headers_obj.is_empty() {
+            transport.insert("headers".to_string(), Value::Object(headers_obj));
+        }
+    }
+    let mut server = serde_json::Map::new();
+    server.insert("transport".to_string(), Value::Object(transport));
+    if record.disabled {
+        server.insert("disabled".to_string(), Value::Bool(true));
+    }
+    if let Some(metadata) = &record.metadata {
+        server.insert("metadata".to_string(), metadata.clone());
+    }
+    Ok(Value::Object(server))
+}
+
+fn write_mcp_servers_map(
+    path: &Path,
+    servers: serde_json::Map<String, Value>,
+) -> Result<(), String> {
+    let mut entries: Vec<(String, Value)> = servers.into_iter().collect();
+    entries.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    let mut sorted = serde_json::Map::new();
+    for (key, value) in entries {
+        sorted.insert(key, value);
+    }
+
+    let mut root = serde_json::Map::new();
+    root.insert("mcpServers".to_string(), Value::Object(sorted));
+    let body = serde_json::to_vec_pretty(&Value::Object(root))
+        .map_err(|e| format!("failed encoding MCP settings: {e}"))?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed creating MCP settings directory: {e}"))?;
+    }
+    let mut with_newline = body;
+    with_newline.push(b'\n');
+    fs::write(path, with_newline).map_err(|e| format!("failed writing MCP settings: {e}"))?;
+    Ok(())
+}
+
+fn open_path_with_default_app(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let status = Command::new("open")
+            .arg(path)
+            .status()
+            .map_err(|e| format!("failed to open path: {e}"))?;
+        if status.success() {
+            return Ok(());
+        }
+        return Err(format!("open command exited with status {status}"));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let path_arg = path.to_string_lossy().to_string();
+        let status = Command::new("cmd")
+            .args(["/C", "start", "", &path_arg])
+            .status()
+            .map_err(|e| format!("failed to open path: {e}"))?;
+        if status.success() {
+            return Ok(());
+        }
+        return Err(format!("start command exited with status {status}"));
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let status = Command::new("xdg-open")
+            .arg(path)
+            .status()
+            .map_err(|e| format!("failed to open path: {e}"))?;
+        if status.success() {
+            return Ok(());
+        }
+        return Err(format!("xdg-open command exited with status {status}"));
+    }
+
+    #[allow(unreachable_code)]
+    Err("opening files is not supported on this platform".to_string())
 }
 
 fn resolve_chat_turn_script_path(context: &AppContext) -> Option<PathBuf> {
@@ -962,7 +1751,10 @@ fn resolve_chat_create_session_script_path(context: &AppContext) -> Option<PathB
     candidates.into_iter().find(|path| path.exists())
 }
 
-fn create_chat_session_via_core(context: &AppContext, config: &StartSessionRequest) -> Result<String, String> {
+fn create_chat_session_via_core(
+    context: &AppContext,
+    config: &StartSessionRequest,
+) -> Result<String, String> {
     let Some(script_path) = resolve_chat_create_session_script_path(context) else {
         return Err(format!(
             "chat create-session script not found. checked workspace_root={} and launch_cwd={}",
@@ -1040,11 +1832,11 @@ fn run_chat_turn_script(
         ));
     };
 
-    let stdin_body =
-        serde_json::to_string(request).map_err(|e| format!("failed serializing chat turn request: {e}"))?;
+    let stdin_body = serde_json::to_string(request)
+        .map_err(|e| format!("failed serializing chat turn request: {e}"))?;
 
-    let approval_dir =
-        tool_approval_dir().unwrap_or_else(|| PathBuf::from(".").join(".cline").join("tool-approvals"));
+    let approval_dir = tool_approval_dir()
+        .unwrap_or_else(|| PathBuf::from(".").join(".cline").join("tool-approvals"));
     let _ = fs::create_dir_all(&approval_dir);
 
     let mut child = Command::new("bun")
@@ -1057,7 +1849,10 @@ fn run_chat_turn_script(
         .env("CLINE_SESSION_ID", session_id)
         .env("CLINE_TOOL_APPROVAL_MODE", "desktop")
         .env("CLINE_TOOL_APPROVAL_SESSION_ID", session_id)
-        .env("CLINE_TOOL_APPROVAL_DIR", approval_dir.to_string_lossy().to_string())
+        .env(
+            "CLINE_TOOL_APPROVAL_DIR",
+            approval_dir.to_string_lossy().to_string(),
+        )
         .spawn()
         .map_err(|e| format!("failed to start chat runner script: {e}"))?;
 
@@ -1242,7 +2037,12 @@ fn team_base_dir() -> Option<PathBuf> {
         }
     }
     let home = std::env::var("HOME").ok()?;
-    Some(PathBuf::from(home).join(".cline").join("data").join("teams"))
+    Some(
+        PathBuf::from(home)
+            .join(".cline")
+            .join("data")
+            .join("teams"),
+    )
 }
 
 fn team_state_path(team_name: &str) -> Option<PathBuf> {
@@ -1374,15 +2174,19 @@ fn start_session(
     if let Some(parent) = hook_log_path.parent() {
         let _ = fs::create_dir_all(parent);
     }
-    let approval_dir =
-        tool_approval_dir().unwrap_or_else(|| PathBuf::from(".").join(".cline").join("tool-approvals"));
+    let approval_dir = tool_approval_dir()
+        .unwrap_or_else(|| PathBuf::from(".").join(".cline").join("tool-approvals"));
     let _ = fs::create_dir_all(&approval_dir);
 
     let mut command = Command::new("bun");
     command
         .current_dir(&request.workspace_root)
         .args(args)
-        .stdin(if interactive { Stdio::piped() } else { Stdio::null() })
+        .stdin(if interactive {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env("NO_COLOR", "1")
@@ -1391,12 +2195,23 @@ fn start_session(
         .env("CLINE_SESSION_ID", id.clone())
         .env("CLINE_TOOL_APPROVAL_MODE", "desktop")
         .env("CLINE_TOOL_APPROVAL_SESSION_ID", id.clone())
-        .env("CLINE_TOOL_APPROVAL_DIR", approval_dir.to_string_lossy().to_string())
-        .env("CLINE_HOOKS_LOG_PATH", hook_log_path.to_string_lossy().to_string())
+        .env(
+            "CLINE_TOOL_APPROVAL_DIR",
+            approval_dir.to_string_lossy().to_string(),
+        )
+        .env(
+            "CLINE_HOOKS_LOG_PATH",
+            hook_log_path.to_string_lossy().to_string(),
+        )
         .env(
             "CLINE_SESSION_DATA_DIR",
             shared_session_data_dir()
-                .unwrap_or_else(|| PathBuf::from(".").join(".cline").join("data").join("sessions"))
+                .unwrap_or_else(|| {
+                    PathBuf::from(".")
+                        .join(".cline")
+                        .join("data")
+                        .join("sessions")
+                })
                 .to_string_lossy()
                 .to_string(),
         )
@@ -1548,7 +2363,10 @@ fn abort_session(
 }
 
 #[tauri::command]
-fn poll_sessions(app: AppHandle, state: State<'_, Arc<SessionStore>>) -> Result<Vec<String>, String> {
+fn poll_sessions(
+    app: AppHandle,
+    state: State<'_, Arc<SessionStore>>,
+) -> Result<Vec<String>, String> {
     let mut sessions = state
         .sessions
         .lock()
@@ -1579,11 +2397,17 @@ fn poll_sessions(app: AppHandle, state: State<'_, Arc<SessionStore>>) -> Result<
         emit_session_ended(&app, session_id, reason.clone());
     }
 
-    Ok(ended.into_iter().map(|(session_id, _)| session_id).collect())
+    Ok(ended
+        .into_iter()
+        .map(|(session_id, _)| session_id)
+        .collect())
 }
 
 #[tauri::command]
-fn list_cli_sessions(context: State<'_, AppContext>, limit: Option<usize>) -> Result<Vec<CliDiscoveredSession>, String> {
+fn list_cli_sessions(
+    context: State<'_, AppContext>,
+    limit: Option<usize>,
+) -> Result<Vec<CliDiscoveredSession>, String> {
     let Some(cli_entrypoint) = resolve_cli_entrypoint_path(&context) else {
         return Ok(vec![]);
     };
@@ -1606,8 +2430,8 @@ fn list_cli_sessions(context: State<'_, AppContext>, limit: Option<usize>) -> Re
         return Err(format!("failed to list cli sessions: {stderr}"));
     }
 
-    let parsed =
-        serde_json::from_slice::<Value>(&output.stdout).map_err(|e| format!("invalid sessions json: {e}"))?;
+    let parsed = serde_json::from_slice::<Value>(&output.stdout)
+        .map_err(|e| format!("invalid sessions json: {e}"))?;
     let mut out: Vec<CliDiscoveredSession> = Vec::new();
     let Some(items) = parsed.as_array() else {
         return Ok(out);
@@ -1702,6 +2526,120 @@ fn list_cli_sessions(context: State<'_, AppContext>, limit: Option<usize>) -> Re
 }
 
 #[tauri::command]
+fn run_provider_oauth_login(
+    context: State<'_, AppContext>,
+    provider: String,
+) -> Result<ProviderOauthLoginResponse, String> {
+    let Some(script_path) = resolve_provider_oauth_login_script_path(&context) else {
+        return Err(format!(
+            "provider oauth login script not found. checked workspace_root={} and launch_cwd={}",
+            context.workspace_root, context.launch_cwd
+        ));
+    };
+    let script_workdir = script_path
+        .parent()
+        .and_then(|parent| parent.parent())
+        .map(|value| value.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from(&context.launch_cwd));
+
+    let response = run_bun_script_json(
+        &script_path,
+        &script_workdir,
+        serde_json::json!({ "provider": provider }).to_string(),
+        "provider oauth",
+    )?;
+
+    serde_json::from_value::<ProviderOauthLoginResponse>(response)
+        .map_err(|e| format!("invalid provider oauth response: {e}"))
+}
+
+#[tauri::command]
+fn list_provider_catalog(context: State<'_, AppContext>) -> Result<Value, String> {
+    let Some(script_path) = resolve_provider_settings_script_path(&context) else {
+        return Err(format!(
+            "provider settings script not found. checked workspace_root={} and launch_cwd={}",
+            context.workspace_root, context.launch_cwd
+        ));
+    };
+    let script_workdir = script_path
+        .parent()
+        .and_then(|parent| parent.parent())
+        .map(|value| value.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from(&context.launch_cwd));
+
+    run_bun_script_json(
+        &script_path,
+        &script_workdir,
+        serde_json::json!({ "action": "listProviders" }).to_string(),
+        "provider settings",
+    )
+}
+
+#[tauri::command]
+fn list_provider_models(
+    context: State<'_, AppContext>,
+    provider: String,
+) -> Result<Value, String> {
+    let Some(script_path) = resolve_provider_settings_script_path(&context) else {
+        return Err(format!(
+            "provider settings script not found. checked workspace_root={} and launch_cwd={}",
+            context.workspace_root, context.launch_cwd
+        ));
+    };
+    let script_workdir = script_path
+        .parent()
+        .and_then(|parent| parent.parent())
+        .map(|value| value.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from(&context.launch_cwd));
+
+    run_bun_script_json(
+        &script_path,
+        &script_workdir,
+        serde_json::json!({
+            "action": "getProviderModels",
+            "providerId": provider
+        })
+        .to_string(),
+        "provider settings",
+    )
+}
+
+#[tauri::command]
+fn save_provider_settings(
+    context: State<'_, AppContext>,
+    provider: String,
+    enabled: Option<bool>,
+    api_key: Option<String>,
+    base_url: Option<String>,
+) -> Result<Value, String> {
+    let Some(script_path) = resolve_provider_settings_script_path(&context) else {
+        return Err(format!(
+            "provider settings script not found. checked workspace_root={} and launch_cwd={}",
+            context.workspace_root, context.launch_cwd
+        ));
+    };
+    let script_workdir = script_path
+        .parent()
+        .and_then(|parent| parent.parent())
+        .map(|value| value.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from(&context.launch_cwd));
+
+    run_bun_script_json(
+        &script_path,
+        &script_workdir,
+        serde_json::json!({
+            "action": "saveProviderSettings",
+            "providerId": provider,
+            "enabled": enabled,
+            "apiKey": api_key,
+            "baseUrl": base_url
+        })
+        .to_string(),
+        "provider settings",
+    )
+}
+
+#[tauri::command]
 fn delete_cli_session(context: State<'_, AppContext>, session_id: String) -> Result<(), String> {
     let Some(cli_entrypoint) = resolve_cli_entrypoint_path(&context) else {
         return Err("CLI entrypoint not found".to_string());
@@ -1735,7 +2673,10 @@ fn delete_cli_session(context: State<'_, AppContext>, session_id: String) -> Res
 }
 
 #[tauri::command]
-fn read_session_hooks(session_id: String, limit: Option<usize>) -> Result<Vec<SessionHookEvent>, String> {
+fn read_session_hooks(
+    session_id: String,
+    limit: Option<usize>,
+) -> Result<Vec<SessionHookEvent>, String> {
     let path = match session_hook_log_path(&session_id) {
         Some(path) if path.exists() => path,
         _ => match shared_session_hook_path(&session_id) {
@@ -1800,7 +2741,12 @@ fn read_session_hooks(session_id: String, limit: Option<usize>) -> Result<Vec<Se
             .get("tool_call")
             .and_then(|v| v.get("input"))
             .cloned()
-            .or_else(|| value.get("tool_result").and_then(|v| v.get("input")).cloned());
+            .or_else(|| {
+                value
+                    .get("tool_result")
+                    .and_then(|v| v.get("input"))
+                    .cloned()
+            });
         let tool_output = value
             .get("tool_result")
             .and_then(|v| v.get("output"))
@@ -2043,11 +2989,7 @@ async fn chat_session_command(
             })
         }
         "send" => {
-            let prompt = request
-                .prompt
-                .unwrap_or_default()
-                .trim()
-                .to_string();
+            let prompt = request.prompt.unwrap_or_default().trim().to_string();
             let attachments = request.attachments.clone();
             let has_attachments = attachments
                 .as_ref()
@@ -2079,15 +3021,17 @@ async fn chat_session_command(
                     .sessions
                     .lock()
                     .map_err(|_| "failed to lock chat session store")?;
-                sessions.entry(session_id.clone()).or_insert(ChatRuntimeSession {
-                    config,
-                    prompt: derive_prompt_from_messages(&messages),
-                    messages,
-                    busy: false,
-                    started_at: now_ms(),
-                    ended_at: None,
-                    status: "idle".to_string(),
-                });
+                sessions
+                    .entry(session_id.clone())
+                    .or_insert(ChatRuntimeSession {
+                        config,
+                        prompt: derive_prompt_from_messages(&messages),
+                        messages,
+                        busy: false,
+                        started_at: now_ms(),
+                        ended_at: None,
+                        status: "idle".to_string(),
+                    });
             }
 
             let (config, messages) = {
@@ -2140,8 +3084,7 @@ async fn chat_session_command(
                 session.busy = false;
                 if let Ok(Ok(result)) = &turn_result {
                     session.messages = result.messages.clone();
-                    session.status =
-                        normalize_chat_finish_status(result.finish_reason.as_deref());
+                    session.status = normalize_chat_finish_status(result.finish_reason.as_deref());
                     session.ended_at = Some(now_ms());
                     append_chat_usage_hook_event(&session_id, result);
                     if !prompt.is_empty() {
@@ -2242,10 +3185,10 @@ fn read_session_messages(
 ) -> Result<Vec<HydratedChatMessage>, String> {
     let messages = if let Some(path) = shared_session_messages_path(&session_id) {
         if path.exists() {
-            let raw =
-                fs::read_to_string(path).map_err(|e| format!("failed reading session messages: {e}"))?;
-            let parsed =
-                serde_json::from_str::<Value>(&raw).map_err(|e| format!("failed parsing session messages: {e}"))?;
+            let raw = fs::read_to_string(path)
+                .map_err(|e| format!("failed reading session messages: {e}"))?;
+            let parsed = serde_json::from_str::<Value>(&raw)
+                .map_err(|e| format!("failed parsing session messages: {e}"))?;
             parsed
                 .get("messages")
                 .and_then(|v| v.as_array())
@@ -2350,7 +3293,8 @@ fn read_session_messages(
                         .unwrap_or("")
                         .to_string();
                     let input = obj.get("input").cloned().unwrap_or(Value::Null);
-                    let payload = build_tool_payload_json(&tool_name, input.clone(), Value::Null, false);
+                    let payload =
+                        build_tool_payload_json(&tool_name, input.clone(), Value::Null, false);
                     let out_index = out.len();
                     out.push(HydratedChatMessage {
                         id: format!("{message_id_base}_tool_use_{block_idx}"),
@@ -2383,11 +3327,17 @@ fn read_session_messages(
                         .unwrap_or("")
                         .to_string();
                     let result = obj.get("content").cloned().unwrap_or(Value::Null);
-                    let is_error = obj.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let is_error = obj
+                        .get("is_error")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
 
-                    if let Some((out_index, tool_name, input)) = pending_tool_messages.remove(&tool_use_id) {
+                    if let Some((out_index, tool_name, input)) =
+                        pending_tool_messages.remove(&tool_use_id)
+                    {
                         if let Some(existing) = out.get_mut(out_index) {
-                            existing.content = build_tool_payload_json(&tool_name, input, result, is_error);
+                            existing.content =
+                                build_tool_payload_json(&tool_name, input, result, is_error);
                             existing.meta = Some(HydratedChatMessageMeta {
                                 tool_name: Some(tool_name),
                                 hook_event_name: Some("history_tool_result".to_string()),
@@ -2398,7 +3348,12 @@ fn read_session_messages(
                             id: format!("{message_id_base}_tool_result_{block_idx}"),
                             session_id: Some(session_id.clone()),
                             role: "tool".to_string(),
-                            content: build_tool_payload_json("tool_result", Value::Null, result, is_error),
+                            content: build_tool_payload_json(
+                                "tool_result",
+                                Value::Null,
+                                result,
+                                is_error,
+                            ),
                             created_at: block_ts,
                             meta: Some(HydratedChatMessageMeta {
                                 tool_name: Some("tool_result".to_string()),
@@ -2479,7 +3434,8 @@ fn list_chat_sessions(
 
     if let Some(base) = shared_session_data_dir() {
         if base.exists() {
-            let entries = fs::read_dir(base).map_err(|e| format!("failed reading session data dir: {e}"))?;
+            let entries =
+                fs::read_dir(base).map_err(|e| format!("failed reading session data dir: {e}"))?;
             for entry in entries.flatten() {
                 let path = entry.path();
                 if !path.is_dir() {
@@ -2499,7 +3455,12 @@ fn list_chat_sessions(
                 let is_desktop_chat = fs::read_to_string(&manifest_path)
                     .ok()
                     .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
-                    .and_then(|value| value.get("source").and_then(|v| v.as_str()).map(|v| v == "desktop-chat"))
+                    .and_then(|value| {
+                        value
+                            .get("source")
+                            .and_then(|v| v.as_str())
+                            .map(|v| v == "desktop-chat")
+                    })
                     .unwrap_or(false);
                 if !is_desktop_chat && !session_id.starts_with("chat_") {
                     continue;
@@ -2631,7 +3592,10 @@ fn delete_chat_session(
 }
 
 #[tauri::command]
-fn poll_tool_approvals(session_id: String, limit: Option<usize>) -> Result<Vec<ToolApprovalRequestItem>, String> {
+fn poll_tool_approvals(
+    session_id: String,
+    limit: Option<usize>,
+) -> Result<Vec<ToolApprovalRequestItem>, String> {
     let Some(dir) = tool_approval_dir() else {
         return Ok(vec![]);
     };
@@ -2680,8 +3644,8 @@ fn respond_tool_approval(
     let Some(path) = tool_approval_decision_path(&session_id, &request_id) else {
         return Err("tool approval decision path unavailable".to_string());
     };
-    let request_path = tool_approval_dir()
-        .map(|dir| dir.join(format!("{session_id}.request.{request_id}.json")));
+    let request_path =
+        tool_approval_dir().map(|dir| dir.join(format!("{session_id}.request.{request_id}.json")));
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("failed preparing approval dir: {e}"))?;
     }
@@ -2690,12 +3654,187 @@ fn respond_tool_approval(
         "reason": reason,
         "ts": now_ms(),
     });
-    fs::write(path, serde_json::to_vec(&body).map_err(|e| format!("failed encoding decision: {e}"))?)
-        .map_err(|e| format!("failed writing tool approval decision: {e}"))?;
+    fs::write(
+        path,
+        serde_json::to_vec(&body).map_err(|e| format!("failed encoding decision: {e}"))?,
+    )
+    .map_err(|e| format!("failed writing tool approval decision: {e}"))?;
     if let Some(req_path) = request_path {
         let _ = fs::remove_file(req_path);
     }
     Ok(())
+}
+
+#[tauri::command]
+fn list_user_instruction_configs(
+    context: State<'_, AppContext>,
+) -> Result<UserInstructionListsResponse, String> {
+    let Some(cli_entrypoint) = resolve_workspace_cli_entrypoint_path(&context.workspace_root)
+    else {
+        return Err(format!(
+            "CLI entrypoint not found under workspace_root={}",
+            context.workspace_root
+        ));
+    };
+
+    let mut warnings: Vec<String> = Vec::new();
+
+    let rules = match run_cli_list_json_command(&cli_entrypoint, &context.workspace_root, "rules")
+        .and_then(|raw| parse_cli_list_json::<RuleListItem>("rules", &raw))
+    {
+        Ok(items) => items,
+        Err(error) => {
+            warnings.push(format!("rules: {error}"));
+            Vec::new()
+        }
+    };
+
+    let workflows =
+        match run_cli_list_json_command(&cli_entrypoint, &context.workspace_root, "workflows")
+            .and_then(|raw| parse_cli_list_json::<WorkflowListItem>("workflows", &raw))
+        {
+            Ok(items) => items,
+            Err(error) => {
+                warnings.push(format!("workflows: {error}"));
+                Vec::new()
+            }
+        };
+
+    let skills = match run_cli_list_json_command(&cli_entrypoint, &context.workspace_root, "skills")
+        .and_then(|raw| parse_cli_list_json::<SkillListItem>("skills", &raw))
+    {
+        Ok(items) => items,
+        Err(error) => {
+            warnings.push(format!("skills: {error}"));
+            Vec::new()
+        }
+    };
+
+    let agents = match run_cli_list_json_command(&cli_entrypoint, &context.workspace_root, "agents")
+        .and_then(|raw| parse_cli_list_json::<AgentListItem>("agents", &raw))
+    {
+        Ok(items) => items,
+        Err(error) => {
+            warnings.push(format!("agents: {error}"));
+            Vec::new()
+        }
+    };
+
+    let hooks = match run_cli_list_json_command(&cli_entrypoint, &context.workspace_root, "hooks")
+        .and_then(|raw| parse_cli_list_json::<HookListItem>("hooks", &raw))
+    {
+        Ok(items) => items,
+        Err(error) => {
+            warnings.push(format!("hooks: {error}"));
+            Vec::new()
+        }
+    };
+
+    Ok(UserInstructionListsResponse {
+        workspace_root: context.workspace_root.clone(),
+        rules,
+        workflows,
+        skills,
+        agents,
+        hooks,
+        warnings,
+    })
+}
+
+#[tauri::command]
+fn list_mcp_servers() -> Result<McpServersResponse, String> {
+    let settings_path = resolve_mcp_settings_path()?;
+    let has_settings_file = settings_path.exists();
+    let servers = read_mcp_servers_from_path(&settings_path)?;
+    Ok(McpServersResponse {
+        settings_path: settings_path.to_string_lossy().to_string(),
+        has_settings_file,
+        servers,
+    })
+}
+
+#[tauri::command]
+fn set_mcp_server_disabled(name: String, disabled: bool) -> Result<McpServersResponse, String> {
+    let server_name = name.trim().to_string();
+    if server_name.is_empty() {
+        return Err("server name is required".to_string());
+    }
+    let settings_path = resolve_mcp_settings_path()?;
+    let mut servers = read_mcp_servers_map(&settings_path)?;
+    let Some(body) = servers.get(&server_name).cloned() else {
+        return Err(format!("unknown MCP server: {server_name}"));
+    };
+    let mut record = parse_mcp_server_record(&server_name, &body)?;
+    record.disabled = disabled;
+    servers.insert(server_name, server_record_to_json(&record)?);
+    write_mcp_servers_map(&settings_path, servers)?;
+    list_mcp_servers()
+}
+
+#[tauri::command]
+fn upsert_mcp_server(input: McpServerUpsertInput) -> Result<McpServersResponse, String> {
+    let server_name = input.name.trim().to_string();
+    if server_name.is_empty() {
+        return Err("server name is required".to_string());
+    }
+    let transport_type = input.transport_type.trim().to_string();
+    if transport_type != "stdio" && transport_type != "sse" && transport_type != "streamableHttp" {
+        return Err("transportType must be one of: stdio, sse, streamableHttp".to_string());
+    }
+    let settings_path = resolve_mcp_settings_path()?;
+    let mut servers = read_mcp_servers_map(&settings_path)?;
+    let record = McpServerRecord {
+        name: server_name.clone(),
+        transport_type,
+        disabled: input.disabled.unwrap_or(false),
+        command: input.command,
+        args: input.args,
+        cwd: input.cwd,
+        env: input.env,
+        url: input.url,
+        headers: input.headers,
+        metadata: input.metadata,
+    };
+    let json = server_record_to_json(&record)?;
+    servers.insert(server_name, json);
+    write_mcp_servers_map(&settings_path, servers)?;
+    list_mcp_servers()
+}
+
+#[tauri::command]
+fn delete_mcp_server(name: String) -> Result<McpServersResponse, String> {
+    let server_name = name.trim().to_string();
+    if server_name.is_empty() {
+        return Err("server name is required".to_string());
+    }
+    let settings_path = resolve_mcp_settings_path()?;
+    let mut servers = read_mcp_servers_map(&settings_path)?;
+    if servers.remove(&server_name).is_none() {
+        return Err(format!("unknown MCP server: {server_name}"));
+    }
+    write_mcp_servers_map(&settings_path, servers)?;
+    list_mcp_servers()
+}
+
+#[tauri::command]
+fn open_mcp_settings_file() -> Result<String, String> {
+    let settings_path = resolve_mcp_settings_path()?;
+    if !settings_path.exists() {
+        if let Some(parent) = settings_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("failed creating MCP settings directory: {e}"))?;
+        }
+        let initial = serde_json::json!({
+            "mcpServers": {}
+        });
+        let mut body = serde_json::to_vec_pretty(&initial)
+            .map_err(|e| format!("failed encoding MCP settings: {e}"))?;
+        body.push(b'\n');
+        fs::write(&settings_path, body)
+            .map_err(|e| format!("failed writing MCP settings file: {e}"))?;
+    }
+    open_path_with_default_app(&settings_path)?;
+    Ok(settings_path.to_string_lossy().to_string())
 }
 
 fn main() {
@@ -2721,6 +3860,10 @@ fn main() {
             stop_session,
             poll_sessions,
             list_cli_sessions,
+            run_provider_oauth_login,
+            list_provider_catalog,
+            list_provider_models,
+            save_provider_settings,
             delete_cli_session,
             read_session_hooks,
             read_team_state,
@@ -2730,6 +3873,12 @@ fn main() {
             get_git_branch,
             list_git_branches,
             checkout_git_branch,
+            list_user_instruction_configs,
+            list_mcp_servers,
+            set_mcp_server_disabled,
+            upsert_mcp_server,
+            delete_mcp_server,
+            open_mcp_settings_file,
             chat_session_command,
             read_session_transcript,
             read_session_messages,

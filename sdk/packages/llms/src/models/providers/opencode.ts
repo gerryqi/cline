@@ -20,9 +20,9 @@ export const OPENCODE_PROVIDER: ModelCollection = {
 		name: "OpenCode",
 		description: "OpenCode SDK multi-provider runtime",
 		protocol: "openai-chat",
-		baseUrl: "http://127.0.0.1:4096",
+		baseUrl: "",
 		defaultModelId: OPENCODE_DEFAULT_MODEL,
-		capabilities: ["reasoning"],
+		capabilities: ["reasoning", "oauth"],
 	},
 	models: OPENCODE_MODELS,
 };

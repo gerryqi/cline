@@ -17,6 +17,31 @@ Apps built with the Cline SDK (`apps/`):
 - `@cline/code`: Tauri desktop app that embeds a Next.js UI and composes the SDK packages
 - `@cline/desktop`: Tauri desktop app that embeds a Next.js UI and composes the SDK packages
 
+`@cline/code` OAuth provider sign-in:
+
+- Clicking a provider in settings opens its configuration view.
+- Provider settings now load from `@cline/llms` provider registry IDs (instead of static seed data).
+- Provider model lists are lazy loaded per provider when the detail panel is opened/refreshed.
+- OAuth providers (`Cline`, `OCA`, `OpenAI Codex`) expose a `Login via Browser` action in the provider API key section.
+- OAuth credentials are persisted by core storage in `~/.cline/data/settings/providers.json` through `ProviderSettingsManager`.
+- Manual updates to provider fields in settings (toggle, API key, base URL) are persisted to the same provider settings file.
+- In the `@cline/code` UI, selecting `Settings` from the left sidebar switches to `SettingsView`; closing settings returns to chat.
+- Provider IDs from `@cline/llms` must be unique because they are used as React list keys and provider state identifiers.
+
+`@cline/code` MCP server settings:
+
+- The `Settings -> MCP Servers` screen reads and writes the same MCP settings file used by CLI.
+- Default path: `~/.cline/data/settings/cline_mcp_settings.json`
+- Override path: `CLINE_MCP_SETTINGS_PATH`
+- Supported actions in UI: list, enable/disable, add/edit, delete MCP server registrations, and open the config file from the path/button in settings.
+
+`@cline/code` Rules settings lists:
+
+- The `Settings -> Rules` screen now loads real config data through the CLI list pipeline (`list rules|workflows|skills|agents|hooks --json`).
+- Tabs in this screen: `Rules`, `Workflows`, `Hooks`, `Skills`, and `Agents`.
+- CLI list discovery for this screen resolves from the app `workspace_root` (not the Tauri process cwd).
+- Data shown is read-only discovery output with file paths and summaries, plus refresh and partial-result warnings when any list source fails.
+
 ## Prerequisites
 
 Install these before working in this repo:

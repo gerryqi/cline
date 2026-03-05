@@ -1,0 +1,367 @@
+"use client";
+
+import { invoke } from "@tauri-apps/api/core";
+import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import type {
+	Provider,
+	ProviderCatalogResponse,
+	ProviderModelsResponse,
+} from "@/lib/provider-schema";
+import { cn } from "@/lib/utils";
+import { McpServersContent } from "./mcp-view";
+import {
+	ProviderDetailContent,
+	ProviderListContent,
+} from "./provider-list-view";
+import { RulesView } from "./rules-view";
+
+// -----------------------------------------------------------
+// Settings nav categories
+// -----------------------------------------------------------
+
+const navCategories = [
+	"General",
+	"Providers",
+	"Agents",
+	"Features",
+	"MCP",
+	"Account",
+] as const;
+
+type NavCategory = (typeof navCategories)[number];
+
+// -----------------------------------------------------------
+// Component
+// -----------------------------------------------------------
+
+export function SettingsView({ onClose }: { onClose: () => void }) {
+	const [activeNav, setActiveNav] = useState<NavCategory>("Providers");
+	const [providersExpanded, setProvidersExpanded] = useState(true);
+	const [providers, setProviders] = useState<Provider[]>([]);
+	const [providersLoading, setProvidersLoading] = useState(true);
+	const [providerCatalogError, setProviderCatalogError] = useState<
+		string | null
+	>(null);
+	const [modelsLoadingByProvider, setModelsLoadingByProvider] = useState<
+		Record<string, boolean>
+	>({});
+	const [modelsErrorByProvider, setModelsErrorByProvider] = useState<
+		Record<string, string | null>
+	>({});
+	const [oauthSigningProviderId, setOauthSigningProviderId] = useState<
+		string | null
+	>(null);
+	const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
+		null,
+	);
+
+	const loadProviderCatalog = useCallback(async () => {
+		setProvidersLoading(true);
+		setProviderCatalogError(null);
+		try {
+			const payload = await invoke<ProviderCatalogResponse>(
+				"list_provider_catalog",
+			);
+			setProviders(payload.providers);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			setProviderCatalogError(message);
+			setProviders([]);
+		} finally {
+			setProvidersLoading(false);
+		}
+	}, []);
+
+	useEffect(() => {
+		void loadProviderCatalog();
+	}, [loadProviderCatalog]);
+
+	const persistProviderSettings = useCallback(
+		async (
+			id: string,
+			updates: {
+				enabled?: boolean;
+				apiKey?: string;
+				baseUrl?: string;
+			},
+		) => {
+			try {
+				await invoke("save_provider_settings", {
+					provider: id,
+					enabled: updates.enabled,
+					api_key: updates.apiKey,
+					base_url: updates.baseUrl,
+				});
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				window.alert(`Failed to save provider settings for ${id}: ${message}`);
+			}
+		},
+		[],
+	);
+
+	const toggleProvider = useCallback(
+		(id: string) => {
+			setProviders((prev) =>
+				prev.map((p) => {
+					if (p.id !== id) {
+						return p;
+					}
+					const nextEnabled = !p.enabled;
+					void persistProviderSettings(id, { enabled: nextEnabled });
+					return { ...p, enabled: nextEnabled };
+				}),
+			);
+		},
+		[persistProviderSettings],
+	);
+
+	const updateProvider = useCallback(
+		(id: string, updates: Partial<Provider>) => {
+			setProviders((prev) =>
+				prev.map((p) => (p.id === id ? { ...p, ...updates } : p)),
+			);
+			void persistProviderSettings(id, {
+				apiKey: updates.apiKey,
+				baseUrl: updates.baseUrl,
+			});
+		},
+		[persistProviderSettings],
+	);
+
+	const loadProviderModels = useCallback(async (id: string) => {
+		setModelsLoadingByProvider((prev) => ({ ...prev, [id]: true }));
+		setModelsErrorByProvider((prev) => ({ ...prev, [id]: null }));
+		try {
+			const payload = await invoke<ProviderModelsResponse>(
+				"list_provider_models",
+				{
+					provider: id,
+				},
+			);
+			setProviders((prev) =>
+				prev.map((provider) =>
+					provider.id === id
+						? {
+								...provider,
+								modelList: payload.models,
+								models: payload.models.length,
+							}
+						: provider,
+				),
+			);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			setModelsErrorByProvider((prev) => ({ ...prev, [id]: message }));
+		} finally {
+			setModelsLoadingByProvider((prev) => ({ ...prev, [id]: false }));
+		}
+	}, []);
+
+	const enabledProviders = providers.filter((p) => p.enabled);
+	const selectedProvider = selectedProviderId
+		? (providers.find((p) => p.id === selectedProviderId) ?? null)
+		: null;
+
+	const isOAuthProvider = (id: string) =>
+		id === "cline" || id === "oca" || id === "openai-codex";
+
+	const runOAuthProviderLogin = async (id: string) => {
+		setOauthSigningProviderId(id);
+		try {
+			const result = await invoke<{ provider: string; apiKey: string }>(
+				"run_provider_oauth_login",
+				{
+					provider: id,
+				},
+			);
+			setProviders((prev) =>
+				prev.map((provider) =>
+					provider.id === id
+						? { ...provider, enabled: true, apiKey: result.apiKey }
+						: provider,
+				),
+			);
+			setSelectedProviderId(id);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			window.alert(`Failed to sign in to ${id}: ${message}`);
+		} finally {
+			setOauthSigningProviderId(null);
+		}
+	};
+
+	const openProviderDetail = (id: string) => {
+		setActiveNav("Providers");
+		setSelectedProviderId(id);
+	};
+
+	useEffect(() => {
+		if (!selectedProviderId) {
+			return;
+		}
+		const selected = providers.find(
+			(provider) => provider.id === selectedProviderId,
+		);
+		if (!selected || selected.modelList) {
+			return;
+		}
+		void loadProviderModels(selectedProviderId);
+	}, [loadProviderModels, providers, selectedProviderId]);
+
+	const backToProviderList = () => {
+		setSelectedProviderId(null);
+	};
+
+	return (
+		<div className="flex h-full flex-col overflow-hidden bg-background">
+			{/* Header bar */}
+			<div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-3">
+				<h1 className="text-lg font-semibold text-foreground">Settings</h1>
+				<Button
+					onClick={onClose}
+					className="justify-start"
+					aria-label="Close settings"
+					variant="ghost"
+				>
+					<X className="h-4 w-4" />
+				</Button>
+			</div>
+
+			{/* Body */}
+			<div className="flex flex-1 overflow-hidden">
+				{/* Settings sidebar nav */}
+				<nav className="w-56 shrink-0 border-r border-border">
+					<ScrollArea className="h-full">
+						<div className="flex flex-col gap-0.5 p-3">
+							{navCategories.map((cat) => {
+								if (cat === "Providers") {
+									return (
+										<div key={cat}>
+											<Button
+												variant="ghost"
+												onClick={() => {
+													setActiveNav("Providers");
+													setSelectedProviderId(null);
+													setProvidersExpanded((p) => !p);
+												}}
+												className={cn(
+													"flex w-full items-center justify-between rounded-md px-3 py-2 text-sm transition-colors",
+													activeNav === "Providers"
+														? "bg-accent text-accent-foreground font-medium"
+														: "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+												)}
+											>
+												<span>Providers</span>
+												{providersExpanded ? (
+													<ChevronDown className="h-3.5 w-3.5" />
+												) : (
+													<ChevronRight className="h-3.5 w-3.5" />
+												)}
+											</Button>
+											{providersExpanded && (
+												<div className="ml-3 mt-0.5 flex flex-col gap-0.5 border-l border-border pl-2">
+													{enabledProviders.map((prov) => (
+														<Button
+															variant="ghost"
+															key={prov.id}
+															onClick={() => openProviderDetail(prov.id)}
+															disabled={oauthSigningProviderId === prov.id}
+															className={cn(
+																"justify-start",
+																selectedProviderId === prov.id
+																	? "bg-accent/80 text-foreground"
+																	: "text-muted-foreground hover:text-foreground hover:bg-accent/30",
+															)}
+														>
+															<span className="truncate">{prov.name}</span>
+														</Button>
+													))}
+												</div>
+											)}
+										</div>
+									);
+								}
+								return (
+									<Button
+										key={cat}
+										onClick={() => {
+											setActiveNav(cat);
+											setSelectedProviderId(null);
+										}}
+										variant="ghost"
+										className={cn(
+											"justify-start",
+											activeNav === cat && !selectedProviderId
+												? "bg-accent text-accent-foreground font-medium"
+												: "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+										)}
+									>
+										{cat}
+									</Button>
+								);
+							})}
+						</div>
+					</ScrollArea>
+				</nav>
+
+				{/* Content area */}
+				<div className="flex-1 overflow-hidden">
+					{activeNav === "Providers" && selectedProvider ? (
+						<ProviderDetailContent
+							provider={selectedProvider}
+							onBack={backToProviderList}
+							onUpdate={(updates) =>
+								updateProvider(selectedProvider.id, updates)
+							}
+							onLoadModels={() => void loadProviderModels(selectedProvider.id)}
+							modelsLoading={
+								modelsLoadingByProvider[selectedProvider.id] ?? false
+							}
+							modelsError={modelsErrorByProvider[selectedProvider.id] ?? null}
+							onOAuthLogin={
+								isOAuthProvider(selectedProvider.id)
+									? () => void runOAuthProviderLogin(selectedProvider.id)
+									: undefined
+							}
+							oauthLoginPending={oauthSigningProviderId === selectedProvider.id}
+						/>
+					) : activeNav === "Providers" ? (
+						providersLoading ? (
+							<div className="flex h-full items-center justify-center">
+								<p className="text-sm text-muted-foreground">
+									Loading providers...
+								</p>
+							</div>
+						) : providerCatalogError ? (
+							<div className="flex h-full items-center justify-center">
+								<p className="max-w-xl px-4 text-center text-sm text-destructive">
+									Failed to load providers: {providerCatalogError}
+								</p>
+							</div>
+						) : (
+							<ProviderListContent
+								providers={providers}
+								onToggle={toggleProvider}
+								onConfigure={openProviderDetail}
+							/>
+						)
+					) : activeNav === "MCP" ? (
+						<McpServersContent />
+					) : activeNav === "Agents" ? (
+						<RulesView />
+					) : (
+						<div className="flex h-full items-center justify-center">
+							<p className="text-sm text-muted-foreground">
+								{activeNav} settings coming soon.
+							</p>
+						</div>
+					)}
+				</div>
+			</div>
+		</div>
+	);
+}

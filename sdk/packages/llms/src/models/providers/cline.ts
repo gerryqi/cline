@@ -18,7 +18,7 @@ export const CLINE_PROVIDER: ModelCollection = {
 		protocol: "openai-chat",
 		baseUrl: "https://api.cline.bot/api/v1",
 		defaultModelId: CLINE_DEFAULT_MODEL,
-		capabilities: ["reasoning", "prompt-cache"],
+		capabilities: ["reasoning", "prompt-cache", "tools", "oauth"],
 		env: ["CLINE_API_KEY"],
 	},
 	models: CLINE_MODELS,

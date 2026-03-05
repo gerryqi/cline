@@ -43,7 +43,7 @@ export const CLAUDE_CODE_PROVIDER: ModelCollection = {
 		name: "Claude Code",
 		description: "Use Claude Code SDK with Claude Pro/Max subscription",
 		protocol: "openai-chat",
-		baseUrl: "https://claude.ai",
+		baseUrl: "",
 		defaultModelId: CLAUDE_CODE_DEFAULT_MODEL,
 		capabilities: ["reasoning"],
 	},

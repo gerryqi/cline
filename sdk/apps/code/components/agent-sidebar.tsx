@@ -186,10 +186,12 @@ function formatCostUsd(value?: number): string | null {
 export function AgentSidebar({
 	onNewThread,
 	onOpenSession,
+	setView,
 	activeSessionId,
 }: {
 	onNewThread?: () => void;
 	onOpenSession?: (session: SessionHistoryItem) => void;
+	setView: (view: "chat" | "settings") => void;
 	activeSessionId?: string | null;
 }) {
 	const [sessions, setSessions] = useState<SessionHistoryItem[]>([]);
@@ -653,7 +655,11 @@ export function AgentSidebar({
 			</div>
 
 			<div className="shrink-0 border-t border-sidebar-border bg-sidebar p-3">
-				<Button type="button" variant="sidebarItem">
+				<Button
+					type="button"
+					variant="sidebarItem"
+					onClick={() => setView("settings")}
+				>
 					<Settings className="h-4 w-4" />
 					Settings
 				</Button>

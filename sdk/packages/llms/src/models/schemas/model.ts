@@ -199,6 +199,7 @@ export const ProviderCapabilitySchema = z.enum([
 	"reasoning",
 	"prompt-cache",
 	"tools",
+	"oauth",
 ]);
 
 export type ProviderCapability = z.infer<typeof ProviderCapabilitySchema>;

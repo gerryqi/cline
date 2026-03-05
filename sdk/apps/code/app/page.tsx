@@ -7,6 +7,7 @@ import { AgentSidebar } from "@/components/agent-sidebar";
 import { ChatInputBar } from "@/components/chat-input-bar";
 import { ChatMessages } from "@/components/chat-messages";
 import { DiffView } from "@/components/diff-view";
+import { SettingsView } from "@/components/settings-view";
 import {
 	Sidebar,
 	SidebarInset,
@@ -37,6 +38,7 @@ function toThreadTitle(prompt?: string): string {
 }
 
 export default function Home() {
+	const [view, setView] = useState<"chat" | "diff" | "settings">("chat");
 	const [threads, setThreads] = useState<Thread[]>(() => [
 		{ id: makeThreadId() },
 	]);
@@ -95,6 +97,14 @@ export default function Home() {
 	const activeThread =
 		threads.find((thread) => thread.id === activeThreadId) ?? threads[0];
 
+	if (view === "settings") {
+		return (
+			<div className="fixed inset-0 z-50 bg-background text-foreground">
+				<SettingsView onClose={() => setView("chat")} />
+			</div>
+		);
+	}
+
 	return (
 		<SidebarProvider>
 			<div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
@@ -103,6 +113,7 @@ export default function Home() {
 						activeSessionId={activeHistorySessionId}
 						onNewThread={handleNewThread}
 						onOpenSession={handleOpenSession}
+						setView={setView}
 					/>
 					<SidebarRail />
 				</Sidebar>
