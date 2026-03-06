@@ -179,6 +179,8 @@ export interface SapConfig {
 	resourceGroup?: string;
 	deploymentId?: string;
 	useOrchestrationMode?: boolean;
+	api?: "orchestration" | "foundation-models";
+	defaultSettings?: Record<string, unknown>;
 }
 
 /**

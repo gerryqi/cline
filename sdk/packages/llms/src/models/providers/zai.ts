@@ -15,6 +15,7 @@ export const ZAI_PROVIDER: ModelCollection = {
 		id: "zai",
 		name: "Z.AI",
 		description: "Z.AI's family of LLMs",
+		protocol: "openai-chat",
 		baseUrl: "https://api.z.ai/api/paas/v4",
 		defaultModelId: ZAI_DEFAULT_MODEL,
 		capabilities: ["reasoning"],

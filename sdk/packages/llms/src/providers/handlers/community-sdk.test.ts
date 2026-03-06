@@ -1,10 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiStreamChunk } from "../types";
-import { ClaudeCodeHandler, OpenCodeHandler } from "./community-sdk";
+import {
+	ClaudeCodeHandler,
+	OpenCodeHandler,
+	SapAiCoreHandler,
+} from "./community-sdk";
 
 const streamTextSpy = vi.fn();
 const claudeCodeSpy = vi.fn((modelId: string) => ({ modelId }));
 const opencodeSpy = vi.fn((modelId: string) => ({ modelId }));
+const sapAiProviderSpy = vi.fn((modelId: string) => ({ modelId }));
+let lastCreateSapAiProviderOptions: Record<string, unknown> | undefined;
 
 vi.mock("ai", () => ({
 	streamText: (input: unknown) => streamTextSpy(input),
@@ -20,6 +26,14 @@ vi.mock("ai-sdk-provider-opencode-sdk", () => ({
 	createOpencode: () => (modelId: string) => opencodeSpy(modelId),
 }));
 
+vi.mock("@jerome-benoit/sap-ai-provider", () => ({
+	sapai: (modelId: string) => sapAiProviderSpy(modelId),
+	createSAPAIProvider: (options?: Record<string, unknown>) => {
+		lastCreateSapAiProviderOptions = options;
+		return (modelId: string) => sapAiProviderSpy(modelId);
+	},
+}));
+
 async function* makeStreamParts(parts: unknown[]) {
 	for (const part of parts) {
 		yield part;
@@ -29,6 +43,7 @@ async function* makeStreamParts(parts: unknown[]) {
 describe("Community SDK handlers", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		lastCreateSapAiProviderOptions = undefined;
 	});
 
 	describe("ClaudeCodeHandler", () => {
@@ -144,6 +159,64 @@ describe("Community SDK handlers", () => {
 			}
 
 			expect(opencodeSpy).toHaveBeenCalledWith("openai/gpt-5.1-codex-max");
+		});
+	});
+
+	describe("SapAiCoreHandler", () => {
+		it("uses a fallback model id when model is missing", () => {
+			const handler = new SapAiCoreHandler({
+				providerId: "sapaicore",
+				modelId: "",
+			});
+
+			expect(handler.getModel().id).toBe("anthropic--claude-3.5-sonnet");
+		});
+
+		it("maps sap config to provider create options and streams text", async () => {
+			streamTextSpy.mockReturnValue({
+				fullStream: makeStreamParts([
+					{ type: "text-delta", textDelta: "Hello" },
+					{
+						type: "finish",
+						usage: { inputTokens: 10, outputTokens: 3 },
+					},
+				]),
+			});
+
+			const handler = new SapAiCoreHandler({
+				providerId: "sapaicore",
+				modelId: "gpt-4o",
+				sap: {
+					resourceGroup: "default",
+					deploymentId: "dep-123",
+					useOrchestrationMode: false,
+					defaultSettings: {
+						modelParams: { temperature: 0 },
+					},
+				},
+			});
+
+			const chunks: ApiStreamChunk[] = [];
+			for await (const chunk of handler.createMessage("System", [
+				{ role: "user", content: "Hi" },
+			])) {
+				chunks.push(chunk);
+			}
+
+			expect(sapAiProviderSpy).toHaveBeenCalledWith("gpt-4o");
+			expect(lastCreateSapAiProviderOptions).toEqual({
+				resourceGroup: "default",
+				deploymentId: "dep-123",
+				api: "foundation-models",
+				defaultSettings: {
+					modelParams: { temperature: 0 },
+				},
+			});
+			expect(chunks.map((chunk) => chunk.type)).toEqual([
+				"text",
+				"usage",
+				"done",
+			]);
 		});
 	});
 });

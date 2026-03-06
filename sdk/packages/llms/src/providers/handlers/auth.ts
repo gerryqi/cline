@@ -84,14 +84,23 @@ export function resolveApiKeyForProvider(
 	explicitApiKey: string | undefined,
 	env: Record<string, string | undefined> = process.env,
 ): string | undefined {
+	const normalizedProviderId = normalizeProviderId(providerId);
 	const explicit = explicitApiKey?.trim();
 	if (explicit) {
 		return explicit;
 	}
 
-	const providerKey = resolveFromKeys(getProviderEnvKeys(providerId), env);
+	const providerKey = resolveFromKeys(
+		getProviderEnvKeys(normalizedProviderId),
+		env,
+	);
 	if (providerKey) {
 		return providerKey;
+	}
+
+	// LM Studio local runtime typically does not require auth.
+	if (normalizedProviderId === BUILT_IN_PROVIDER.LMSTUDIO) {
+		return "noop";
 	}
 
 	return resolveFromKeys(DEFAULT_FALLBACK_ENV_KEYS, env);

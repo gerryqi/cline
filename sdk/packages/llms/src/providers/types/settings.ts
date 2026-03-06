@@ -134,6 +134,8 @@ export const SapSettingsSchema = z.object({
 	resourceGroup: z.string().optional(),
 	deploymentId: z.string().optional(),
 	useOrchestrationMode: z.boolean().optional(),
+	api: z.enum(["orchestration", "foundation-models"]).optional(),
+	defaultSettings: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type SapSettings = z.infer<typeof SapSettingsSchema>;

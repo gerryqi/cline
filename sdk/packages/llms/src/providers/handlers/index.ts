@@ -20,7 +20,9 @@ export {
 	createClaudeCodeHandler,
 	createCodexHandler,
 	createOpenCodeHandler,
+	createSapAiCoreHandler,
 	OpenCodeHandler,
+	SapAiCoreHandler,
 } from "./community-sdk";
 export { createGeminiHandler, GeminiHandler } from "./gemini-base";
 // OpenAI Chat Completions API handler

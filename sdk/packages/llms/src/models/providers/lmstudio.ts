@@ -13,6 +13,7 @@ export const LMSTUDIO_PROVIDER: ModelCollection = {
 		id: "lmstudio",
 		name: "LM Studio",
 		description: "Local model inference with LM Studio",
+		protocol: "openai-chat",
 		baseUrl: "http://localhost:1234/v1",
 		defaultModelId: Object.keys(LMSTUDIO_MODELS)[0],
 		env: ["LMSTUDIO_API_KEY"],

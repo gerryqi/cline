@@ -3,6 +3,7 @@ import type { ModelInfo, ProviderConfig } from "../types/index.js";
 import {
 	clearLiveModelsCatalogCache,
 	clearPrivateModelsCatalogCache,
+	OPENAI_COMPATIBLE_PROVIDERS,
 	resolveProviderConfig,
 } from "./providers";
 
@@ -104,5 +105,16 @@ describe("resolveProviderConfig", () => {
 		);
 
 		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("includes lmstudio and zai as OpenAI-compatible providers", () => {
+		expect(OPENAI_COMPATIBLE_PROVIDERS).toHaveProperty("lmstudio");
+		expect(OPENAI_COMPATIBLE_PROVIDERS).toHaveProperty("zai");
+		expect(OPENAI_COMPATIBLE_PROVIDERS.lmstudio?.baseUrl).toBe(
+			"http://localhost:1234/v1",
+		);
+		expect(OPENAI_COMPATIBLE_PROVIDERS.zai?.baseUrl).toBe(
+			"https://api.z.ai/api/paas/v4",
+		);
 	});
 });

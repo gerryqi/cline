@@ -45,9 +45,9 @@ This keeps provider default derivation and protocol filtering in one place.
 
 - Provider IDs and alias normalization (for example, `openai` -> `openai-native`) are centralized in `src/providers/types/provider-ids.ts` and reused across provider auth, handler factory routing, and app call sites.
 - The model registry lazy-loader (`src/models/registry.ts`) includes `openai-native` (plus `openai` alias), `openrouter`, `zai`, `doubao`, `moonshot`, `qwen`, `qwen-code`, `sapaicore`, and `minimax` as built-in provider loaders.
-- `openai-codex`, `claude-code`, `opencode`, and Vertex Claude routes share a common AI SDK runtime bridge (`handlers/ai-sdk-community.ts`) for message mapping and stream normalization.
-- `openai-codex`, `claude-code`, and `opencode` are consolidated in `handlers/community-sdk.ts` and share a common SDK-backed handler base (`handlers/ai-sdk-provider-base.ts`) for provider loading, model resolution, and stream wiring.
-- Tests for Claude Code and OpenCode community handlers are consolidated in `handlers/community-sdk.test.ts`.
+- `openai-codex`, `claude-code`, `opencode`, `sapaicore`, and Vertex Claude routes share a common AI SDK runtime bridge (`handlers/ai-sdk-community.ts`) for message mapping and stream normalization.
+- `openai-codex`, `claude-code`, `opencode`, and `sapaicore` are consolidated in `handlers/community-sdk.ts` and share a common SDK-backed handler base (`handlers/ai-sdk-provider-base.ts`) for provider loading, model resolution, and stream wiring.
+- Tests for Claude Code, OpenCode, and SAP AI Core community handlers are consolidated in `handlers/community-sdk.test.ts`.
 - `providerId: "openai-codex"` uses `ai-sdk-provider-codex-cli` (Codex CLI), not OpenCode.
 - Codex CLI executes its own tools; AI SDK custom tool schemas are ignored for this provider path.
 - OAuth-backed `openai-codex` settings do not force `OPENAI_API_KEY`; only explicit OpenAI API keys (`sk-...`) map to Codex CLI env.
@@ -56,6 +56,7 @@ This keeps provider default derivation and protocol filtering in one place.
 - `providerId: "opencode"` uses the OpenCode provider (`ai-sdk-provider-opencode-sdk`).
 - `opencode` ignores AI SDK custom tool schemas; tools are executed provider-side.
 - `providerId: "claude-code"` uses `ai-sdk-provider-claude-code`, defaults to `sonnet`, and supports `sonnet`, `opus`, `haiku`.
+- `providerId: "sapaicore"` uses `@jerome-benoit/sap-ai-provider`; auth is handled by SAP AI SDK environment credentials (`AICORE_SERVICE_KEY` or `VCAP_SERVICES`).
 - Set `AI_SDK_LOG_WARNINGS=false` to suppress AI SDK warning logs.
 - Provider settings `headers` must be a string-to-string map (`Record<string, string>`).
 - Provider settings OAuth auth schema includes `auth.expiresAt` (epoch ms) for runtime token refresh orchestration in `@cline/core`.
@@ -67,50 +68,52 @@ Source of truth for the legacy list: `src/core/api/index.ts`.
 
 | Provider | Old code | New package |
 | --- | --- | --- |
-| `aihubmix` | Yes | Yes |
-| `anthropic` | Yes | Yes |
-| `asksage` | Yes | Yes |
-| `baseten` | Yes | Yes |
-| `bedrock` | Yes | Yes |
-| `cerebras` | Yes | Yes |
-| `claude-code` | Yes | Yes |
-| `cline` | Yes | Yes |
-| `deepseek` | Yes | Yes |
-| `dify` | Yes | Yes |
-| `doubao` | Yes | Yes |
-| `fireworks` | Yes | Yes |
-| `gemini` | Yes | Yes |
-| `groq` | Yes | Yes |
-| `hicap` | Yes | Yes |
-| `huawei-cloud-maas` | Yes | Yes |
-| `huggingface` | Yes | Yes |
-| `litellm` | Yes | Yes |
-| `lmstudio` | Yes | Yes |
-| `minimax` | Yes | Yes |
-| `mistral` | Yes | Yes |
-| `moonshot` | Yes | Yes |
-| `nebius` | Yes | Yes |
-| `nousResearch` | Yes | Yes |
-| `oca` | Yes | Yes |
-| `ollama` | Yes | Yes |
-| `opencode` | No | Yes |
-| `openai` | Yes | Yes |
-| `openai-native` | Yes | Yes |
-| `openai-codex` | Yes | Yes |
-| `openrouter` | Yes | Yes |
-| `qwen` | Yes | Yes |
-| `qwen-code` | Yes | Yes |
-| `requesty` | Yes | Yes |
-| `sambanova` | Yes | Yes |
-| `sapaicore` | Yes | Yes |
-| `together` | Yes | Yes |
-| `vercel-ai-gateway` | Yes | Yes |
-| `vertex` | Yes | Yes |
-| `vscode-lm` | Yes | No |
-| `xai` | Yes | Yes |
-| `zai` | Yes | Yes |
+| `aihubmix` | ✅ | ✅ |
+| `anthropic` | ✅ | ✅ |
+| `asksage` | ✅ | ❌ |
+| `baseten` | ✅ | ✅ |
+| `bedrock` | ✅ | ✅ |
+| `cerebras` | ✅ | ✅ |
+| `claude-code` | ✅ | ✅ |
+| `cline` | ✅ | ✅ |
+| `deepseek` | ✅ | ✅ |
+| `dify` | ✅ | ❌ |
+| `doubao` | ✅ | ✅ |
+| `fireworks` | ✅ | ✅ |
+| `gemini` | ✅ | ✅ |
+| `groq` | ✅ | ✅ |
+| `hicap` | ✅ | ✅ |
+| `huawei-cloud-maas` | ✅ | ✅ |
+| `huggingface` | ✅ | ✅ |
+| `litellm` | ✅ | ✅ |
+| `lmstudio` | ✅ | ✅ |
+| `minimax` | ✅ | ❌ |
+| `mistral` | ✅ | ❌ |
+| `moonshot` | ✅ | ✅ |
+| `nebius` | ✅ | ✅ |
+| `nousResearch` | ✅ | ✅ |
+| `oca` | ✅ | ✅ |
+| `ollama` | ✅ | ✅ |
+| `openai` | ✅ | ✅ |
+| `openai-codex` | ✅ | ✅ |
+| `openai-native` | ✅ | ✅ |
+| `opencode` | ❌ | ✅ |
+| `openrouter` | ✅ | ✅ |
+| `qwen` | ✅ | ✅ |
+| `qwen-code` | ✅ | ✅ |
+| `requesty` | ✅ | ✅ |
+| `sambanova` | ✅ | ✅ |
+| `sapaicore` | ✅ | ✅ |
+| `together` | ✅ | ✅ |
+| `vercel-ai-gateway` | ✅ | ✅ |
+| `vertex` | ✅ | ✅ |
+| `vscode-lm` | ✅ | ❌ |
+| `xai` | ✅ | ✅ |
+| `zai` | ✅ | ✅ |
 
 `vscode-lm` is client-hosted (VS Code LM/Copilot runtime), so it is not a built-in package provider. VS Code clients can add it via `registerHandler()` or `registerAsyncHandler()`.
+
+`New package` is marked `✅` only when the provider has a built-in handler route in `src/providers/index.ts` (explicit or OpenAI-compatible defaults), not just an enum entry.
 
 ## Live Provider Smoke Test
 

@@ -5,6 +5,7 @@
  * - Codex CLI (`openai-codex`)
  * - Claude Code (`claude-code`)
  * - OpenCode (`opencode`)
+ * - SAP AI Core (`sapaicore`)
  */
 
 import type { ProviderConfig } from "../types";
@@ -247,6 +248,60 @@ export class OpenCodeHandler extends AiSdkProviderHandler {
 	}
 }
 
+export class SapAiCoreHandler extends AiSdkProviderHandler {
+	protected getProviderDefinition() {
+		return {
+			moduleName: "@jerome-benoit/sap-ai-provider",
+			createExportName: "createSAPAIProvider",
+			providerExportName: "sapai",
+			missingDependencyError:
+				"SAP AI Core provider requires `@jerome-benoit/sap-ai-provider` at runtime.",
+		};
+	}
+
+	protected getDefaultModelId(): string {
+		return "anthropic--claude-3.5-sonnet";
+	}
+
+	protected getProviderCreateOptions(): Record<string, unknown> | undefined {
+		const sapOptions = this.config.sap ?? {};
+		const api =
+			sapOptions.api ??
+			(sapOptions.useOrchestrationMode === undefined
+				? undefined
+				: sapOptions.useOrchestrationMode
+					? "orchestration"
+					: "foundation-models");
+
+		const createOptions: Record<string, unknown> = {
+			resourceGroup: sapOptions.resourceGroup,
+			deploymentId: sapOptions.deploymentId,
+			api,
+			defaultSettings: sapOptions.defaultSettings,
+		};
+
+		const cleaned = Object.fromEntries(
+			Object.entries(createOptions).filter(([, value]) => value !== undefined),
+		);
+		return Object.keys(cleaned).length > 0 ? cleaned : undefined;
+	}
+
+	protected getStreamErrorMessage(): string {
+		return "SAP AI Core stream failed";
+	}
+
+	protected getEmitStreamOptions(): Omit<
+		EmitAiSdkStreamOptions,
+		"responseId" | "errorMessage" | "calculateCost"
+	> {
+		return {
+			reasoningTypes: ["reasoning-delta", "reasoning"],
+			enableToolCalls: true,
+			toolCallArgsOrder: ["args", "input"],
+		};
+	}
+}
+
 export function createCodexHandler(config: ProviderConfig): CodexHandler {
 	return new CodexHandler(config);
 }
@@ -259,4 +314,10 @@ export function createClaudeCodeHandler(
 
 export function createOpenCodeHandler(config: ProviderConfig): OpenCodeHandler {
 	return new OpenCodeHandler(config);
+}
+
+export function createSapAiCoreHandler(
+	config: ProviderConfig,
+): SapAiCoreHandler {
+	return new SapAiCoreHandler(config);
 }

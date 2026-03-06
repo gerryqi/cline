@@ -156,6 +156,7 @@ export {
 	createOpenAIResponsesHandler,
 	createOpenCodeHandler,
 	createR1Handler,
+	createSapAiCoreHandler,
 	createVertexHandler,
 	DEFAULT_MODELS_CATALOG_URL,
 	GeminiHandler,
@@ -181,6 +182,7 @@ export {
 	registerAsyncHandler,
 	registerHandler,
 	resolveProviderConfig,
+	SapAiCoreHandler,
 	unregisterHandler,
 	// Vertex AI handler
 	VertexHandler,
@@ -243,6 +245,7 @@ import {
 	ClaudeCodeHandler,
 	CodexHandler,
 	OpenCodeHandler,
+	SapAiCoreHandler,
 } from "./handlers/community-sdk";
 import { GeminiHandler } from "./handlers/gemini-base";
 import { OpenAIBaseHandler } from "./handlers/openai-base";
@@ -328,6 +331,9 @@ function mergeProviderDefaults(
 function createOpenAICompatibleHandler(config: ProviderConfig): ApiHandler {
 	if (config.providerId === BUILT_IN_PROVIDER.OPENAI_CODEX) {
 		return new CodexHandler(config);
+	}
+	if (config.providerId === BUILT_IN_PROVIDER.SAPAICORE) {
+		return new SapAiCoreHandler(config);
 	}
 	if (config.providerId === BUILT_IN_PROVIDER.OCA) {
 		return createOcaHandler(config);
