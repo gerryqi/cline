@@ -212,17 +212,19 @@ export function saveOAuthProviderSettings(
 	existing: providers.ProviderSettings | undefined,
 	credentials: OAuthCredentials,
 ): providers.ProviderSettings {
+	const auth = {
+		...(existing?.auth ?? {}),
+		accessToken: toProviderApiKey(providerId, credentials),
+		refreshToken: credentials.refresh,
+		accountId: credentials.accountId,
+	} as providers.ProviderSettings["auth"] & { expiresAt?: number };
+	auth.expiresAt = credentials.expires;
 	const merged: providers.ProviderSettings = {
 		...(existing ?? {
 			provider: providerId as providers.ProviderSettings["provider"],
 		}),
 		provider: providerId as providers.ProviderSettings["provider"],
-		auth: {
-			...(existing?.auth ?? {}),
-			accessToken: toProviderApiKey(providerId, credentials),
-			refreshToken: credentials.refresh,
-			accountId: credentials.accountId,
-		},
+		auth,
 	};
 	providerSettingsManager.saveProviderSettings(merged, {
 		tokenSource: "oauth",

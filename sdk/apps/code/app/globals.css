@@ -99,6 +99,9 @@
 }
 
 @layer components {
+	.markdown * {
+		@apply text-sm;
+	}
 	.markdown a {
 		@apply underline;
 	}
@@ -109,9 +112,10 @@
 		@apply rounded bg-muted px-1 py-0.5;
 	}
 	.markdown h1 {
-		@apply text-xl font-semibold;
+		@apply text-lg font-bold;
 	}
-	.markdown h2 {
+	.markdown h2,
+	h3 {
 		@apply text-lg font-semibold;
 	}
 	.markdown ul {
@@ -125,6 +129,11 @@
 	}
 	.markdown pre {
 		@apply overflow-x-auto rounded bg-muted p-3;
+	}
+	.markdown div,
+	pre,
+	code {
+		@apply space-y-1;
 	}
 }
 

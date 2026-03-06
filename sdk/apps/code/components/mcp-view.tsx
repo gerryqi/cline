@@ -434,16 +434,16 @@ export function McpServersContent() {
 														void deleteServer(server.name);
 													}
 												}}
-												disabled={isBusy}
+												disabled={!server.disabled && isBusy}
 											>
 												<Trash2 className="h-3.5 w-3.5" />
 											</Button>
 											<Switch
 												checked={!server.disabled}
 												onCheckedChange={(enabled) =>
-													void toggleServer(server, !enabled)
+													toggleServer(server, !enabled)
 												}
-												disabled={isBusy}
+												disabled={!server.disabled && isBusy}
 												aria-label={`Enable ${server.name}`}
 											/>
 										</div>

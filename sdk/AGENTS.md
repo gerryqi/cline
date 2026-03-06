@@ -68,12 +68,33 @@ flowchart LR
 2. `@cline/rpc` server handles session/task/event/approval RPCs.
 3. SQLite session backend is provided by `@cline/core/server` (`createSqliteRpcSessionBackend`).
 
+### OAuth refresh ownership
+
+- OAuth token refresh is owned by `@cline/core` session runtime (not UI/CLI clients).
+- Managed OAuth providers: `cline`, `oca`, `openai-codex`.
+- Core refreshes tokens pre-turn, persists refreshed credentials, and performs single-flight refresh in long-lived runtimes (for example RPC servers).
+
 ### `apps/code` startup flow (latest)
 
 1. On launch, Tauri checks RPC health via `clite rpc status`.
 2. If not healthy, it starts RPC in background via `clite rpc start`.
 3. After health is confirmed, it registers the desktop client via `clite rpc register`.
-4. Chat turn execution currently still runs through `apps/code/scripts/chat-agent-turn.ts` (core-powered runner), while session/control-plane capabilities are RPC-ready.
+4. Tauri starts a local persistent chat WebSocket bridge (`ws://127.0.0.1:<port>/chat`) and exposes the endpoint via `get_chat_ws_endpoint`.
+5. `apps/code` UI opens one persistent socket and sends chat control commands (`start/send/abort/reset`) as request envelopes over that connection.
+6. Host broadcasts chat stream events over the same socket using one canonical schema (`chat_event`) while still emitting `agent://chunk` for compatibility.
+7. Host-to-runtime remains RPC/gRPC-backed via existing bridge scripts:
+   - `apps/code/scripts/chat-create-session.ts` (`StartRuntimeSession`)
+   - `apps/code/scripts/chat-agent-turn.ts` (`SendRuntimeSession`)
+   - `apps/code/scripts/chat-stream-events.ts` (`StreamEvents`)
+
+### `apps/code` canonical chat transport schema
+
+- Command request envelope:
+  - `{ "requestId": string, "request": ChatSessionCommandRequest }`
+- Command response envelope:
+  - `{ "type": "chat_response", "requestId": string, "response"?: ChatSessionCommandResponse, "error"?: string }`
+- Stream event envelope:
+  - `{ "type": "chat_event", "event": StreamChunkEvent }`
 
 ## Design System (UI apps)
 

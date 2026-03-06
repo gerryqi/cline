@@ -4,6 +4,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
+import type { AbortRuntimeSessionRequest__Output } from "./proto/generated/cline/rpc/v1/AbortRuntimeSessionRequest.js";
+import type { AbortRuntimeSessionResponse } from "./proto/generated/cline/rpc/v1/AbortRuntimeSessionResponse.js";
 import type { ClaimSpawnRequestRequest__Output } from "./proto/generated/cline/rpc/v1/ClaimSpawnRequestRequest.js";
 import type { ClaimSpawnRequestResponse } from "./proto/generated/cline/rpc/v1/ClaimSpawnRequestResponse.js";
 import type { CompleteTaskRequest__Output } from "./proto/generated/cline/rpc/v1/CompleteTaskRequest.js";
@@ -111,6 +113,7 @@ type ClaimSpawnRequestRequest = ClaimSpawnRequestRequest__Output;
 type StartTaskRequest = StartTaskRequest__Output;
 type StartRuntimeSessionRequest = StartRuntimeSessionRequest__Output;
 type SendRuntimeSessionRequest = SendRuntimeSessionRequest__Output;
+type AbortRuntimeSessionRequest = AbortRuntimeSessionRequest__Output;
 type RunProviderActionRequest = RunProviderActionRequest__Output;
 type RunProviderOAuthLoginRequest = RunProviderOAuthLoginRequest__Output;
 type CompleteTaskRequest = CompleteTaskRequest__Output;
@@ -494,7 +497,10 @@ class ClineGatewayRuntime {
 		if (!sessionId) {
 			throw new Error("runtime start handler returned empty sessionId");
 		}
-		return { sessionId };
+		return {
+			sessionId,
+			startResultJson: safeString(result.startResultJson),
+		};
 	}
 
 	public async sendRuntimeSession(
@@ -511,6 +517,21 @@ class ClineGatewayRuntime {
 		const payload = safeString(request.requestJson);
 		const result = await handler(sessionId, payload);
 		return { resultJson: safeString(result.resultJson) };
+	}
+
+	public async abortRuntimeSession(
+		request: AbortRuntimeSessionRequest,
+	): Promise<AbortRuntimeSessionResponse> {
+		const handler = this.runtimeHandlers?.abortSession;
+		if (!handler) {
+			throw new Error("runtime abort handler is not configured");
+		}
+		const sessionId = safeString(request.sessionId).trim();
+		if (!sessionId) {
+			throw new Error("sessionId is required");
+		}
+		const result = await handler(sessionId);
+		return { applied: result.applied === true };
 	}
 
 	public async runProviderAction(
@@ -1139,6 +1160,25 @@ export async function startRpcServer(
 			) => {
 				void runtime
 					.sendRuntimeSession(call.request)
+					.then((result) => {
+						callback(null, result);
+					})
+					.catch((error) => {
+						callback(
+							{ code: grpc.status.INVALID_ARGUMENT, message: String(error) },
+							null,
+						);
+					});
+			},
+			AbortRuntimeSession: (
+				call: grpc.ServerUnaryCall<
+					AbortRuntimeSessionRequest,
+					AbortRuntimeSessionResponse
+				>,
+				callback: grpc.sendUnaryData<AbortRuntimeSessionResponse>,
+			) => {
+				void runtime
+					.abortRuntimeSession(call.request)
 					.then((result) => {
 						callback(null, result);
 					})

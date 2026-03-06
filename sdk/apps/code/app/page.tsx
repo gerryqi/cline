@@ -380,6 +380,18 @@ function ChatThreadPane({
 		setPendingAttachments([]);
 		await sendPrompt(trimmed, toSend);
 	}, [pendingAttachments, promptInput, sendPrompt]);
+	const handleApproveToolApproval = useCallback(
+		(requestId: string) => {
+			void approveToolApproval(requestId);
+		},
+		[approveToolApproval],
+	);
+	const handleRejectToolApproval = useCallback(
+		(requestId: string) => {
+			void rejectToolApproval(requestId);
+		},
+		[rejectToolApproval],
+	);
 
 	const activeSessionToDelete = sessionId ?? historySession?.sessionId ?? null;
 
@@ -452,19 +464,12 @@ function ChatThreadPane({
 					/>
 				) : (
 					<ChatMessages
-						onApproveToolApproval={(requestId) =>
-							void approveToolApproval(requestId)
-						}
-						onRejectToolApproval={(requestId) =>
-							void rejectToolApproval(requestId)
-						}
+						onApproveToolApproval={handleApproveToolApproval}
+						onRejectToolApproval={handleRejectToolApproval}
 						error={error}
 						messages={messages}
 						model={config.model}
 						pendingToolApprovals={pendingToolApprovals}
-						onPromptInputChange={setPromptInput}
-						onSend={() => void handleSend()}
-						promptInput={promptInput}
 						provider={config.provider}
 						sessionId={sessionId}
 						streamingMessageId={activeAssistantMessageId}

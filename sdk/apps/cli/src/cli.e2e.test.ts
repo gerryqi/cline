@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import {
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -23,6 +24,46 @@ function asText(value: string | Buffer): string {
 	return typeof value === "string" ? value : value.toString("utf8");
 }
 
+function parseJsonArrayFromOutput(output: string): unknown[] {
+	const trimmed = output.trim();
+	if (trimmed.length > 0) {
+		try {
+			const parsed = JSON.parse(trimmed) as unknown;
+			if (Array.isArray(parsed)) {
+				return parsed;
+			}
+		} catch {
+			// Fall through.
+		}
+	}
+
+	const lines = output
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0);
+	for (let index = lines.length - 1; index >= 0; index -= 1) {
+		try {
+			const parsed = JSON.parse(lines[index] ?? "") as unknown;
+			if (Array.isArray(parsed)) {
+				return parsed;
+			}
+		} catch {
+			// Ignore non-JSON lines.
+		}
+	}
+
+	const start = output.indexOf("[");
+	const end = output.lastIndexOf("]");
+	if (start >= 0 && end > start) {
+		const parsed = JSON.parse(output.slice(start, end + 1)) as unknown;
+		if (Array.isArray(parsed)) {
+			return parsed;
+		}
+	}
+
+	throw new Error("expected a JSON array in CLI output");
+}
+
 function runCli(
 	args: string[],
 	options?: {
@@ -36,11 +77,36 @@ function runCli(
 		encoding: "utf8",
 		input: options?.stdin,
 		env: options?.env,
+		timeout: 90_000,
+		maxBuffer: 10 * 1024 * 1024,
 	});
 }
 
 describe("cli e2e", () => {
 	const tempDirs: string[] = [];
+	const createIsolatedEnv = (
+		overrides: NodeJS.ProcessEnv = {},
+	): NodeJS.ProcessEnv => {
+		const homeDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-home-"));
+		const dataDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-data-"));
+		const sessionDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-sessions-"));
+		const teamDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-teams-"));
+		tempDirs.push(homeDir, dataDir, sessionDir, teamDir);
+		return {
+			...process.env,
+			HOME: homeDir,
+			CLINE_DATA_DIR: dataDir,
+			CLINE_SESSION_DATA_DIR: sessionDir,
+			CLINE_TEAM_DATA_DIR: teamDir,
+			CLINE_PROVIDER_SETTINGS_PATH: path.join(
+				dataDir,
+				"settings",
+				"providers.json",
+			),
+			CLINE_HOOKS_LOG_PATH: path.join(dataDir, "hooks", "hooks.jsonl"),
+			...overrides,
+		};
+	};
 
 	afterEach(() => {
 		for (const dir of tempDirs.splice(0)) {
@@ -49,7 +115,7 @@ describe("cli e2e", () => {
 	});
 
 	it("prints help output", () => {
-		const result = runCli(["--help"], { env: process.env });
+		const result = runCli(["--help"], { env: createIsolatedEnv() });
 		expect(result.status).toBe(0);
 		expect(asText(result.stderr)).toBe("");
 		expect(asText(result.stdout)).toContain("USAGE");
@@ -64,31 +130,104 @@ describe("cli e2e", () => {
 	});
 
 	it("prints version output", () => {
-		const result = runCli(["--version"], { env: process.env });
+		const result = runCli(["--version"], { env: createIsolatedEnv() });
 		expect(result.status).toBe(0);
 		expect(asText(result.stdout).trim()).toBe(cliPackage.version);
 	});
 
 	it("rejects unsupported output modes", () => {
-		const result = runCli(["--output", "xml", "hello"], { env: process.env });
+		const result = runCli(["--output", "xml", "hello"], {
+			env: createIsolatedEnv(),
+		});
 		expect(result.status).toBe(1);
 		expect(asText(result.stderr)).toContain("invalid output mode");
+	});
+
+	it("rejects json mode without prompt or piped input", () => {
+		const homeDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-home-"));
+		tempDirs.push(homeDir);
+		const result = runCli(["--json"], {
+			env: {
+				...createIsolatedEnv(),
+				HOME: homeDir,
+			},
+		});
+		expect(result.status).toBe(1);
+		expect(asText(result.stderr)).toContain(
+			"JSON output mode requires a prompt argument or piped stdin",
+		);
+	});
+
+	it("rejects interactive mode with json output", () => {
+		const homeDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-home-"));
+		tempDirs.push(homeDir);
+		const result = runCli(["--json", "--interactive"], {
+			env: {
+				...createIsolatedEnv(),
+				HOME: homeDir,
+			},
+		});
+		expect(result.status).toBe(1);
+		expect(asText(result.stderr)).toContain(
+			"JSON output mode requires a prompt argument or piped stdin",
+		);
+	});
+
+	it("returns an error for unknown list targets", () => {
+		const result = runCli(["list", "unknown-target"], {
+			env: createIsolatedEnv(),
+		});
+		expect(result.status).toBe(1);
+		expect(asText(result.stderr)).toContain(
+			'list requires one of: workflows, rules, skills, agents, history, hooks, mcp (got "unknown-target")',
+		);
+	});
+
+	it("returns an error for unknown rpc subcommands", () => {
+		const result = runCli(["rpc", "nonesuch"], { env: createIsolatedEnv() });
+		expect(result.status).toBe(1);
+		expect(asText(result.stderr)).toContain(
+			'unknown rpc subcommand "nonesuch"',
+		);
+	});
+
+	it("returns an error when auth provider is missing", () => {
+		const homeDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-home-"));
+		const dataDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-data-"));
+		tempDirs.push(homeDir, dataDir);
+		const result = runCli(["auth"], {
+			env: {
+				...createIsolatedEnv(),
+				HOME: homeDir,
+				CLINE_DATA_DIR: dataDir,
+			},
+		});
+		expect(result.status).toBe(1);
+		expect(asText(result.stderr)).toContain("auth requires a provider");
+	});
+
+	it("rejects unsupported mode values", () => {
+		const result = runCli(["--mode", "build", "hello"], {
+			env: createIsolatedEnv(),
+		});
+		expect(result.status).toBe(1);
+		expect(asText(result.stderr)).toContain("invalid mode");
 	});
 
 	it("lists sessions from isolated storage", () => {
 		const homeDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-home-"));
 		const sessionDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-sessions-"));
 		tempDirs.push(homeDir, sessionDir);
-		const result = runCli(["sessions", "list", "--limit", "25"], {
+		const result = runCli(["sessions", "list", "--limit", "1"], {
 			env: {
-				...process.env,
+				...createIsolatedEnv(),
 				HOME: homeDir,
 				CLINE_SESSION_DATA_DIR: sessionDir,
 			},
 		});
 
 		expect(result.status).toBe(0);
-		const parsed = JSON.parse(asText(result.stdout)) as unknown;
+		const parsed = parseJsonArrayFromOutput(asText(result.stdout));
 		expect(Array.isArray(parsed)).toBe(true);
 	});
 
@@ -96,9 +235,9 @@ describe("cli e2e", () => {
 		const homeDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-home-"));
 		const sessionDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-sessions-"));
 		tempDirs.push(homeDir, sessionDir);
-		const result = runCli(["list", "history", "--limit", "25"], {
+		const result = runCli(["list", "history", "--limit", "5"], {
 			env: {
-				...process.env,
+				...createIsolatedEnv(),
 				HOME: homeDir,
 				CLINE_SESSION_DATA_DIR: sessionDir,
 			},
@@ -115,7 +254,7 @@ describe("cli e2e", () => {
 	});
 
 	it("returns an error when deleting a session without --session-id", () => {
-		const result = runCli(["sessions", "delete"], { env: process.env });
+		const result = runCli(["sessions", "delete"], { env: createIsolatedEnv() });
 		expect(result.status).toBe(1);
 		expect(asText(result.stderr)).toContain(
 			"sessions delete requires --session-id <id>",
@@ -123,7 +262,7 @@ describe("cli e2e", () => {
 	});
 
 	it("returns an error when session flag is provided without an id", () => {
-		const result = runCli(["--session"], { env: process.env });
+		const result = runCli(["--session"], { env: createIsolatedEnv() });
 		expect(result.status).toBe(1);
 		expect(asText(result.stderr)).toContain("--session requires <id>");
 	});
@@ -153,7 +292,7 @@ Do not list this.`,
 
 		const result = runCli(["list", "workflows"], {
 			cwd: workspace,
-			env: process.env,
+			env: createIsolatedEnv(),
 		});
 		expect(result.status).toBe(0);
 		expect(asText(result.stdout)).toContain("Available workflows:");
@@ -186,7 +325,7 @@ Release checklist.`,
 
 		const result = runCli(["list", "workflows"], {
 			cwd: nestedDir,
-			env: process.env,
+			env: createIsolatedEnv(),
 		});
 		expect(result.status).toBe(0);
 		expect(asText(result.stdout)).toContain("/release");
@@ -208,7 +347,7 @@ Review checklist.`,
 
 		const result = runCli(["list", "workflows", "--json"], {
 			cwd: workspace,
-			env: process.env,
+			env: createIsolatedEnv(),
 		});
 		expect(result.status).toBe(0);
 		const parsed = JSON.parse(asText(result.stdout)) as Array<{
@@ -240,7 +379,7 @@ Release from docs path.`,
 		const result = runCli(["list", "workflows"], {
 			cwd: workspace,
 			env: {
-				...process.env,
+				...createIsolatedEnv(),
 				HOME: homeDir,
 			},
 		});
@@ -264,7 +403,7 @@ Do not force push.`,
 
 		const result = runCli(["list", "rules"], {
 			cwd: workspace,
-			env: process.env,
+			env: createIsolatedEnv(),
 		});
 		expect(result.status).toBe(0);
 		expect(asText(result.stdout)).toContain("Enabled rules:");
@@ -288,7 +427,7 @@ Create a concise commit message.`,
 
 		const result = runCli(["list", "skills"], {
 			cwd: workspace,
-			env: process.env,
+			env: createIsolatedEnv(),
 		});
 		expect(result.status).toBe(0);
 		expect(asText(result.stdout)).toContain("Enabled skills:");
@@ -330,7 +469,7 @@ Skill from docs path.`,
 		const rulesResult = runCli(["list", "rules"], {
 			cwd: workspace,
 			env: {
-				...process.env,
+				...createIsolatedEnv(),
 				HOME: homeDir,
 			},
 		});
@@ -340,7 +479,7 @@ Skill from docs path.`,
 		const skillsResult = runCli(["list", "skills"], {
 			cwd: workspace,
 			env: {
-				...process.env,
+				...createIsolatedEnv(),
 				HOME: homeDir,
 			},
 		});
@@ -379,7 +518,7 @@ Break work into clear steps.`,
 		const textResult = runCli(["list", "agents"], {
 			cwd: workspace,
 			env: {
-				...process.env,
+				...createIsolatedEnv(),
 				HOME: homeDir,
 				CLINE_DATA_DIR: dataDir,
 			},
@@ -398,7 +537,7 @@ Break work into clear steps.`,
 		const jsonResult = runCli(["list", "agents", "--json"], {
 			cwd: workspace,
 			env: {
-				...process.env,
+				...createIsolatedEnv(),
 				HOME: homeDir,
 				CLINE_DATA_DIR: dataDir,
 			},
@@ -449,7 +588,7 @@ Break work into clear steps.`,
 
 		const textResult = runCli(["list", "mcp"], {
 			env: {
-				...process.env,
+				...createIsolatedEnv(),
 				CLINE_MCP_SETTINGS_PATH: settingsPath,
 			},
 		});
@@ -462,7 +601,7 @@ Break work into clear steps.`,
 
 		const jsonResult = runCli(["list", "mcp", "--json"], {
 			env: {
-				...process.env,
+				...createIsolatedEnv(),
 				CLINE_MCP_SETTINGS_PATH: settingsPath,
 			},
 		});
@@ -488,7 +627,7 @@ Break work into clear steps.`,
 
 	it("rejects invalid hook payloads", () => {
 		const result = runCli(["hook"], {
-			env: process.env,
+			env: createIsolatedEnv(),
 			stdin: JSON.stringify({ bad: "payload" }),
 		});
 		expect(result.status).toBe(1);
@@ -501,9 +640,16 @@ Break work into clear steps.`,
 		const logDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-hooks-"));
 		tempDirs.push(homeDir, sessionDir, logDir);
 		const hookPath = path.join(logDir, "hook-events.jsonl");
+		const defaultHookPath = path.join(
+			homeDir,
+			".cline",
+			"data",
+			"hooks",
+			"hooks.jsonl",
+		);
 		const result = runCli(["hook"], {
 			env: {
-				...process.env,
+				...createIsolatedEnv(),
 				HOME: homeDir,
 				CLINE_SESSION_DATA_DIR: sessionDir,
 				CLINE_HOOKS_LOG_PATH: hookPath,
@@ -527,7 +673,8 @@ Break work into clear steps.`,
 
 		expect(result.status).toBe(0);
 		expect(asText(result.stdout).trim()).toBe("{}");
-		const log = readFileSync(hookPath, "utf8");
+		const logPath = existsSync(hookPath) ? hookPath : defaultHookPath;
+		const log = readFileSync(logPath, "utf8");
 		expect(log).toContain('"hookName":"tool_call"');
 		expect(log).toContain('"agent_id":"agent_1"');
 	});

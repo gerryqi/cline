@@ -78,6 +78,15 @@ For `oca` CLI login, default callback ports are `48801-48811` (`/auth/oca`) to m
 - `openUrl(url)` is optional and lets each client decide how to launch URLs (CLI, desktop, editor integrations, etc.)
 - `onOpenUrlError(...)` handles browser-launch failures without breaking login
 
+## Runtime OAuth Refresh
+
+`DefaultSessionManager` now owns OAuth access-token refresh for managed OAuth providers (`cline`, `oca`, `openai-codex`) so host clients do not need to call refresh helpers directly.
+
+- Before each turn, core resolves provider settings and refreshes tokens when they are expired or near expiry.
+- Refresh results are persisted back to provider settings (`auth.accessToken`, `auth.refreshToken`, `auth.accountId`, `auth.expiresAt`).
+- Refresh operations are single-flight per provider to avoid concurrent refresh storms in long-lived RPC runtimes.
+- When a turn fails with an auth-like error (for example HTTP 401/403), core force-refreshes once and retries the turn once.
+
 ## MCP Settings Compatibility
 
 `@cline/core` loads MCP registrations from `cline_mcp_settings.json` and supports both shapes:
@@ -107,6 +116,23 @@ Legacy `transportType: "http"` is normalized to `transport.type: "streamableHttp
 - Used by CLI and desktop app runner scripts to avoid duplicated approval protocol logic
 - `options.approvalDir` and `options.sessionId` are now explicit inputs (no env fallback in core runtime helper)
 
+## Fast File Indexing
+
+`@cline/core/input` now runs fast file indexing in a dedicated Node worker thread.
+
+- `getFileIndex(cwd, options?)` keeps the same API (`Promise<Set<string>>`) and TTL caching semantics.
+- Index builds (ripgrep scan + filesystem fallback walk) execute off the main thread to reduce prompt-path latency spikes.
+- `prewarmFileIndex(cwd, options?)` still forces a rebuild and refreshes the cached set for subsequent reads.
+- Unit tests for index consumption paths (`file-indexer`, `mention-enricher`) mock `node:worker_threads` and assert index behavior independent of worker scheduling.
+
 ## Type Validation Notes
 
 - Provider settings storage schemas use explicit Zod v4 record key/value signatures (`z.record(z.string(), valueSchema)`).
+
+## Testing
+
+Run tests from the workspace root:
+
+- Unit tests: `bun -F @cline/core test:unit`
+- E2E tests: `bun -F @cline/core test:e2e`
+- Full suite: `bun -F @cline/core test`

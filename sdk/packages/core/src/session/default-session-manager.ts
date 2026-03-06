@@ -20,11 +20,17 @@ import {
 } from "../default-tools";
 import { DefaultRuntimeBuilder } from "../runtime/runtime-builder";
 import type { BuiltRuntime, RuntimeBuilder } from "../runtime/session-runtime";
+import type { ProviderSettingsManager } from "../storage/provider-settings-manager";
 import { SessionSource, type SessionStatus } from "../types/common";
 import type { CoreSessionConfig } from "../types/config";
 import type { CoreSessionEvent } from "../types/events";
 import type { SessionRecord } from "../types/sessions";
 import type { RpcCoreSessionService } from "./rpc-session-service";
+import {
+	OAuthReauthRequiredError,
+	type RuntimeOAuthResolution,
+	RuntimeOAuthTokenManager,
+} from "./runtime-oauth-token-manager";
 import { nowIso } from "./session-artifacts";
 import type {
 	SendSessionInput,
@@ -57,6 +63,8 @@ export interface DefaultSessionManagerOptions {
 	createAgent?: (config: AgentConfig) => Agent;
 	defaultToolExecutors?: Partial<ToolExecutors>;
 	toolPolicies?: AgentConfig["toolPolicies"];
+	providerSettingsManager?: ProviderSettingsManager;
+	oauthTokenManager?: RuntimeOAuthTokenManager;
 	requestToolApproval?: (
 		request: ToolApprovalRequest,
 	) => Promise<ToolApprovalResult>;
@@ -114,6 +122,7 @@ export class DefaultSessionManager implements SessionManager {
 	private readonly createAgentInstance: (config: AgentConfig) => Agent;
 	private readonly defaultToolExecutors?: Partial<ToolExecutors>;
 	private readonly defaultToolPolicies?: AgentConfig["toolPolicies"];
+	private readonly oauthTokenManager: RuntimeOAuthTokenManager;
 	private readonly defaultRequestToolApproval?: (
 		request: ToolApprovalRequest,
 	) => Promise<ToolApprovalResult>;
@@ -129,6 +138,11 @@ export class DefaultSessionManager implements SessionManager {
 			options.createAgent ?? ((config) => new Agent(config));
 		this.defaultToolExecutors = options.defaultToolExecutors;
 		this.defaultToolPolicies = options.toolPolicies;
+		this.oauthTokenManager =
+			options.oauthTokenManager ??
+			new RuntimeOAuthTokenManager({
+				providerSettingsManager: options.providerSettingsManager,
+			});
 		this.defaultRequestToolApproval = options.requestToolApproval;
 	}
 
@@ -385,12 +399,23 @@ export class DefaultSessionManager implements SessionManager {
 		if (!prompt) {
 			throw new Error("prompt cannot be empty");
 		}
+		await this.syncOAuthCredentials(session);
 
 		const shouldContinue =
 			session.started || session.agent.getMessages().length > 0;
+		const baselineMessages = session.agent.getMessages();
 		const result = shouldContinue
-			? await session.agent.continue(prompt, input.userImages, input.userFiles)
-			: await session.agent.run(prompt, input.userImages, input.userFiles);
+			? await this.runWithAuthRetry(
+					session,
+					() =>
+						session.agent.continue(prompt, input.userImages, input.userFiles),
+					baselineMessages,
+				)
+			: await this.runWithAuthRetry(
+					session,
+					() => session.agent.run(prompt, input.userImages, input.userFiles),
+					baselineMessages,
+				);
 		session.started = true;
 
 		await this.invoke<void>(
@@ -606,5 +631,75 @@ export class DefaultSessionManager implements SessionManager {
 		}
 		const fn = callable as (...params: unknown[]) => unknown;
 		await Promise.resolve(fn.apply(this.sessionService, args));
+	}
+
+	private async runWithAuthRetry(
+		session: ActiveSession,
+		run: () => Promise<AgentResult>,
+		baselineMessages: LlmsProviders.Message[],
+	): Promise<AgentResult> {
+		try {
+			return await run();
+		} catch (error) {
+			if (!this.isLikelyAuthError(error, session.config.providerId)) {
+				throw error;
+			}
+
+			await this.syncOAuthCredentials(session, { forceRefresh: true });
+			session.agent.restore(baselineMessages);
+			return run();
+		}
+	}
+
+	private isLikelyAuthError(error: unknown, providerId: string): boolean {
+		if (
+			providerId !== "cline" &&
+			providerId !== "oca" &&
+			providerId !== "openai-codex"
+		) {
+			return false;
+		}
+		const message =
+			error instanceof Error ? error.message.toLowerCase() : String(error);
+		return (
+			message.includes("401") ||
+			message.includes("403") ||
+			message.includes("unauthorized") ||
+			message.includes("forbidden") ||
+			message.includes("invalid token") ||
+			message.includes("expired token") ||
+			message.includes("authentication")
+		);
+	}
+
+	private async syncOAuthCredentials(
+		session: ActiveSession,
+		options?: { forceRefresh?: boolean },
+	): Promise<void> {
+		let resolved: RuntimeOAuthResolution | null = null;
+		try {
+			resolved = await this.oauthTokenManager.resolveProviderApiKey({
+				providerId: session.config.providerId,
+				forceRefresh: options?.forceRefresh,
+			});
+		} catch (error) {
+			if (error instanceof OAuthReauthRequiredError) {
+				throw new Error(
+					`OAuth session for "${error.providerId}" requires re-authentication. Run "clite auth ${error.providerId}" and retry.`,
+				);
+			}
+			throw error;
+		}
+		if (!resolved?.apiKey) {
+			return;
+		}
+		if (session.config.apiKey === resolved.apiKey) {
+			return;
+		}
+		session.config.apiKey = resolved.apiKey;
+		const agentWithConnection = session.agent as Agent & {
+			updateConnection?: (overrides: { apiKey?: string }) => void;
+		};
+		agentWithConnection.updateConnection?.({ apiKey: resolved.apiKey });
 	}
 }

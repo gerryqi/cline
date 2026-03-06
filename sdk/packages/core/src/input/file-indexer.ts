@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
+import { isMainThread, parentPort, Worker } from "node:worker_threads";
 
 const DEFAULT_INDEX_TTL_MS = 15_000;
 const DEFAULT_EXCLUDE_DIRS = new Set([
@@ -24,6 +25,19 @@ interface CacheEntry {
 
 export interface FastFileIndexOptions {
 	ttlMs?: number;
+}
+
+interface IndexRequestMessage {
+	type: "index";
+	requestId: number;
+	cwd: string;
+}
+
+interface IndexResponseMessage {
+	type: "indexResult";
+	requestId: number;
+	files?: string[];
+	error?: string;
 }
 
 const CACHE = new Map<string, CacheEntry>();
@@ -102,6 +116,121 @@ async function buildIndex(cwd: string): Promise<Set<string>> {
 	}
 }
 
+function startWorkerServer(): void {
+	if (isMainThread || !parentPort) {
+		return;
+	}
+	const port = parentPort;
+
+	port.on("message", (message: IndexRequestMessage) => {
+		if (message.type !== "index") {
+			return;
+		}
+
+		void buildIndex(message.cwd)
+			.then((files) => {
+				const response: IndexResponseMessage = {
+					type: "indexResult",
+					requestId: message.requestId,
+					files: Array.from(files),
+				};
+				port.postMessage(response);
+			})
+			.catch((error: unknown) => {
+				const response: IndexResponseMessage = {
+					type: "indexResult",
+					requestId: message.requestId,
+					error:
+						error instanceof Error
+							? error.message
+							: "Failed to build file index",
+				};
+				port.postMessage(response);
+			});
+	});
+}
+
+class FileIndexWorkerClient {
+	private readonly worker = new Worker(new URL(import.meta.url));
+	private nextRequestId = 0;
+	private pending = new Map<
+		number,
+		{
+			resolve: (files: string[]) => void;
+			reject: (reason: Error) => void;
+		}
+	>();
+
+	constructor() {
+		this.worker.on("message", (message: IndexResponseMessage) => {
+			if (message.type !== "indexResult") {
+				return;
+			}
+			const request = this.pending.get(message.requestId);
+			if (!request) {
+				return;
+			}
+			this.pending.delete(message.requestId);
+			if (message.error) {
+				request.reject(new Error(message.error));
+				return;
+			}
+			request.resolve(message.files ?? []);
+		});
+
+		this.worker.on("error", (error) => {
+			this.flushPending(error);
+		});
+
+		this.worker.on("exit", (code) => {
+			if (code !== 0) {
+				this.flushPending(
+					new Error(`File index worker exited with code ${code}`),
+				);
+			}
+		});
+	}
+
+	requestIndex(cwd: string): Promise<string[]> {
+		const requestId = ++this.nextRequestId;
+		const result = new Promise<string[]>((resolve, reject) => {
+			this.pending.set(requestId, { resolve, reject });
+		});
+
+		const message: IndexRequestMessage = {
+			type: "index",
+			requestId,
+			cwd,
+		};
+		this.worker.postMessage(message);
+		return result;
+	}
+
+	private flushPending(error: Error): void {
+		for (const [requestId, request] of this.pending.entries()) {
+			request.reject(error);
+			this.pending.delete(requestId);
+		}
+	}
+}
+
+startWorkerServer();
+
+const workerClient = isMainThread ? new FileIndexWorkerClient() : null;
+
+async function buildIndexInBackground(cwd: string): Promise<Set<string>> {
+	if (!workerClient) {
+		return buildIndex(cwd);
+	}
+
+	try {
+		const files = await workerClient.requestIndex(cwd);
+		return new Set(files);
+	} catch {
+		return buildIndex(cwd);
+	}
+}
+
 export async function getFileIndex(
 	cwd: string,
 	options: FastFileIndexOptions = {},
@@ -112,6 +241,7 @@ export async function getFileIndex(
 
 	if (
 		existing &&
+		ttlMs > 0 &&
 		now - existing.lastBuiltAt <= ttlMs &&
 		existing.files.size > 0
 	) {
@@ -122,7 +252,7 @@ export async function getFileIndex(
 		return existing.pending;
 	}
 
-	const pending = buildIndex(cwd).then((files) => {
+	const pending = buildIndexInBackground(cwd).then((files) => {
 		CACHE.set(cwd, {
 			files,
 			lastBuiltAt: Date.now(),

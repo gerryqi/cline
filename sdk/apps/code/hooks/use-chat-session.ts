@@ -2,7 +2,6 @@
 
 import { models } from "@cline/llms";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	type ChatMessage,
@@ -10,6 +9,7 @@ import {
 	ChatSessionConfigSchema,
 	type ChatSessionStatus,
 } from "@/lib/chat-schema";
+import { readModelSelectionStorageFromWindow } from "@/lib/model-selection";
 import {
 	buildSessionDiffState,
 	EMPTY_DIFF_SUMMARY,
@@ -32,6 +32,22 @@ type AgentChunkEvent = {
 	stream: string;
 	chunk: string;
 	ts: number;
+};
+
+type ChatWsResponseEvent = {
+	type: "chat_response";
+	requestId: string;
+	response?: {
+		sessionId?: string;
+		result?: ChatApiResult;
+		ok?: boolean;
+	};
+	error?: string;
+};
+
+type ChatWsChunkEvent = {
+	type: "chat_event";
+	event: AgentChunkEvent;
 };
 
 type CoreLogChunk = {
@@ -83,6 +99,12 @@ type ChatApiResult = {
 		error?: string;
 		durationMs?: number;
 	}>;
+	messages?: unknown[];
+};
+
+type RpcMessageLike = {
+	role?: string;
+	content?: unknown;
 };
 
 type SerializedAttachmentFile = {
@@ -116,8 +138,82 @@ export const DEFAULT_CHAT_CONFIG: ChatSessionConfig = {
 	missionTimeIntervalMs: 120000,
 };
 
+function getInitialChatConfig(): ChatSessionConfig {
+	const selection = readModelSelectionStorageFromWindow();
+	const rememberedProvider = selection.lastProvider.trim();
+	const rememberedModelForProvider = rememberedProvider
+		? selection.lastModelByProvider[rememberedProvider]
+		: undefined;
+	const rememberedModelForDefaultProvider =
+		selection.lastModelByProvider[DEFAULT_CHAT_CONFIG.provider];
+	const provider = rememberedProvider || DEFAULT_CHAT_CONFIG.provider;
+	const model =
+		rememberedModelForProvider ||
+		(provider === DEFAULT_CHAT_CONFIG.provider
+			? rememberedModelForDefaultProvider
+			: undefined) ||
+		DEFAULT_CHAT_CONFIG.model;
+
+	return {
+		...DEFAULT_CHAT_CONFIG,
+		provider,
+		model,
+	};
+}
+
 function makeId(prefix: string): string {
 	return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function stringifyRpcMessageContent(content: unknown): string {
+	if (typeof content === "string") {
+		return content;
+	}
+	if (Array.isArray(content)) {
+		const parts: string[] = [];
+		for (const block of content) {
+			if (typeof block === "string") {
+				if (block.trim()) {
+					parts.push(block);
+				}
+				continue;
+			}
+			if (!block || typeof block !== "object") {
+				continue;
+			}
+			const obj = block as Record<string, unknown>;
+			const text = obj.text;
+			if (typeof text === "string" && text.trim()) {
+				parts.push(text);
+			}
+		}
+		return parts.join("\n");
+	}
+	if (content && typeof content === "object") {
+		const obj = content as Record<string, unknown>;
+		const text = obj.text;
+		if (typeof text === "string") {
+			return text;
+		}
+	}
+	return "";
+}
+
+function extractAssistantTextFromRpcMessages(messages: unknown): string {
+	if (!Array.isArray(messages)) {
+		return "";
+	}
+	for (let i = messages.length - 1; i >= 0; i -= 1) {
+		const message = messages[i] as RpcMessageLike;
+		if (message?.role !== "assistant") {
+			continue;
+		}
+		const text = stringifyRpcMessageContent(message.content).trim();
+		if (text) {
+			return text;
+		}
+	}
+	return "";
 }
 
 function normalizeRuntimeConfig(config: ChatSessionConfig): ChatSessionConfig {
@@ -150,35 +246,32 @@ type ChatSessionHookEvent = SessionHookEvent & {
 	outputTokens?: number;
 };
 
-async function postSession(body: Record<string, unknown>) {
-	const payload = (await invoke("chat_session_command", {
-		request: body,
-	})) as {
-		error?: string;
-		sessionId?: string;
-		result?: {
-			text: string;
-			usage?: {
-				inputTokens?: number;
-				outputTokens?: number;
-			};
-			inputTokens?: number;
-			outputTokens?: number;
-			iterations?: number;
-			finishReason?: "completed" | "max_iterations" | "aborted" | "error";
-			toolCalls?: Array<{
-				name: string;
-				input?: unknown;
-				output?: unknown;
-				error?: string;
-				durationMs?: number;
-			}>;
-		};
-	};
-	if (payload.error) {
-		throw new Error(payload.error);
+function inferHydratedChatStatus(
+	fallback: SessionHistoryStatus,
+	messages: ChatMessage[],
+): ChatSessionStatus {
+	if (fallback === "failed") {
+		return "failed";
 	}
-	return payload;
+	if (fallback === "cancelled") {
+		return "cancelled";
+	}
+	const meaningfulMessages = messages.filter((message) => {
+		if (message.role !== "user" && message.role !== "assistant") {
+			return false;
+		}
+		return message.content.trim().length > 0;
+	});
+	if (meaningfulMessages.length === 0) {
+		return mapHistoryStatusToChatStatus(fallback);
+	}
+	if (fallback === "running") {
+		const lastMeaningful = meaningfulMessages[meaningfulMessages.length - 1];
+		if (lastMeaningful?.role === "assistant") {
+			return "completed";
+		}
+	}
+	return mapHistoryStatusToChatStatus(fallback);
 }
 
 async function readFileAsDataUrl(file: File): Promise<string> {
@@ -224,7 +317,7 @@ export function useChatSession() {
 	const [sessionId, setSessionId] = useState<string | null>(null);
 	const [status, setStatus] = useState<ChatSessionStatus>("idle");
 	const [isHydratingSession, setIsHydratingSession] = useState(false);
-	const [config, setConfig] = useState<ChatSessionConfig>(DEFAULT_CHAT_CONFIG);
+	const [config, setConfig] = useState<ChatSessionConfig>(getInitialChatConfig);
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
 	const [rawTranscript, setRawTranscript] = useState("");
 	const [error, setError] = useState<string | null>(null);
@@ -247,6 +340,22 @@ export function useChatSession() {
 	const activeSessionIdRef = useRef<string | null>(null);
 	const activeAssistantMessageIdRef = useRef<string | null>(null);
 	const hydrationRequestIdRef = useRef(0);
+	const wsRef = useRef<WebSocket | null>(null);
+	const wsReadyResolveRef = useRef<(() => void) | null>(null);
+	const wsReadyPromiseRef = useRef<Promise<void> | null>(null);
+	const wsRequestResolversRef = useRef<
+		Map<
+			string,
+			{
+				resolve: (value: {
+					sessionId?: string;
+					result?: ChatApiResult;
+					ok?: boolean;
+				}) => void;
+				reject: (error: Error) => void;
+			}
+		>
+	>(new Map());
 
 	useEffect(() => {
 		activeSessionIdRef.current = sessionId;
@@ -288,6 +397,52 @@ export function useChatSession() {
 	const addMessage = useCallback((message: ChatMessage) => {
 		setMessages((prev) => [...prev, message].slice(-800));
 	}, []);
+
+	const materializeToolMessagesFromResult = useCallback(
+		(options: {
+			sessionId: string;
+			turnStartedAt: number;
+			toolCalls: NonNullable<ChatApiResult["toolCalls"]>;
+		}) => {
+			const { sessionId: targetSessionId, turnStartedAt, toolCalls } = options;
+			if (toolCalls.length === 0) {
+				return;
+			}
+			setMessages((prev) => {
+				const hasLiveToolMessagesForTurn = prev.some(
+					(message) =>
+						message.sessionId === targetSessionId &&
+						message.role === "tool" &&
+						message.createdAt >= turnStartedAt,
+				);
+				if (hasLiveToolMessagesForTurn) {
+					return prev;
+				}
+
+				const next = [...prev];
+				for (const call of toolCalls) {
+					next.push({
+						id: makeId("tool"),
+						sessionId: targetSessionId,
+						role: "tool",
+						content: JSON.stringify({
+							toolName: call.name,
+							input: call.input,
+							result: call.error ? call.error : call.output,
+							isError: Boolean(call.error),
+						}),
+						createdAt: turnStartedAt + next.length,
+						meta: {
+							toolName: call.name,
+							hookEventName: "tool_call_end",
+						},
+					});
+				}
+				return next.slice(-800);
+			});
+		},
+		[],
+	);
 
 	const replaceMessageContent = useCallback((id: string, content: string) => {
 		setMessages((prev) =>
@@ -387,18 +542,8 @@ export function useChatSession() {
 		};
 	}, [sessionId]);
 
-	useEffect(() => {
-		let disposed = false;
-		let unlisten: UnlistenFn | undefined;
-
-		void listen<AgentChunkEvent>("agent://chunk", (event) => {
-			if (disposed) {
-				return;
-			}
-			const payload = event.payload;
-			if (!payload) {
-				return;
-			}
+	const handleIncomingChunk = useCallback(
+		(payload: AgentChunkEvent) => {
 			if (
 				payload.stream !== "chat_text" &&
 				payload.stream !== "chat_tool_call_start" &&
@@ -429,7 +574,6 @@ export function useChatSession() {
 				setRawTranscript((prev) => `${prev}${payload.chunk}`);
 				return;
 			}
-
 			if (payload.stream === "chat_core_log") {
 				let parsed: CoreLogChunk | undefined;
 				try {
@@ -456,7 +600,6 @@ export function useChatSession() {
 				console.info("[core]", message, metadata);
 				return;
 			}
-
 			if (payload.stream === "chat_tool_call_start") {
 				let parsed: ToolCallStartEvent = {};
 				try {
@@ -482,76 +625,193 @@ export function useChatSession() {
 				setToolCalls((prev) => prev + 1);
 				return;
 			}
+			let parsed: ToolCallEndEvent = {};
+			try {
+				parsed = JSON.parse(payload.chunk) as ToolCallEndEvent;
+			} catch {
+				return;
+			}
+			const toolName = parsed.toolName ?? "unknown_tool";
+			const toolCallId = parsed.toolCallId;
+			const durationText =
+				typeof parsed.durationMs === "number"
+					? ` (${parsed.durationMs}ms)`
+					: "";
+			const content = parsed.error
+				? `[tool:end] ${toolName} failed${durationText}: ${parsed.error}`
+				: `[tool:end] ${toolName} completed${durationText}`;
+			const messageId = toolCallId
+				? liveToolMessageIdsRef.current[toolCallId]
+				: undefined;
+			if (messageId) {
+				replaceMessageContent(messageId, content);
+				setMessages((prev) =>
+					prev.map((message) => {
+						if (message.id !== messageId) {
+							return message;
+						}
+						return {
+							...message,
+							meta: {
+								...message.meta,
+								toolName,
+								hookEventName: "tool_call_end",
+							},
+						};
+					}),
+				);
+				return;
+			}
+			addMessage({
+				id: makeId("tool"),
+				sessionId: listeningSessionId,
+				role: "tool",
+				content,
+				createdAt: Date.now(),
+				meta: {
+					toolName,
+					hookEventName: "tool_call_end",
+				},
+			});
+		},
+		[addMessage, appendMessageContent, replaceMessageContent],
+	);
 
-			if (payload.stream === "chat_tool_call_end") {
-				let parsed: ToolCallEndEvent = {};
+	const postSession = useCallback(async (body: Record<string, unknown>) => {
+		if (!wsReadyPromiseRef.current) {
+			const fallback = (await invoke("chat_session_command", {
+				request: body,
+			})) as {
+				error?: string;
+				sessionId?: string;
+				result?: ChatApiResult;
+				ok?: boolean;
+			};
+			if (fallback.error) {
+				throw new Error(fallback.error);
+			}
+			return fallback;
+		}
+		await Promise.race([
+			wsReadyPromiseRef.current,
+			new Promise<void>((_resolve, reject) =>
+				setTimeout(
+					() => reject(new Error("chat websocket ready timeout")),
+					5000,
+				),
+			),
+		]);
+		const socket = wsRef.current;
+		if (!socket || socket.readyState !== WebSocket.OPEN) {
+			const fallback = (await invoke("chat_session_command", {
+				request: body,
+			})) as {
+				error?: string;
+				sessionId?: string;
+				result?: ChatApiResult;
+				ok?: boolean;
+			};
+			if (fallback.error) {
+				throw new Error(fallback.error);
+			}
+			return fallback;
+		}
+		const requestId = makeId("chat_req");
+		const response = await new Promise<{
+			sessionId?: string;
+			result?: ChatApiResult;
+			ok?: boolean;
+		}>((resolve, reject) => {
+			wsRequestResolversRef.current.set(requestId, { resolve, reject });
+			socket.send(
+				JSON.stringify({
+					requestId,
+					request: body,
+				}),
+			);
+		});
+		return response;
+	}, []);
+
+	useEffect(() => {
+		let disposed = false;
+		wsReadyPromiseRef.current = new Promise<void>((resolve) => {
+			wsReadyResolveRef.current = resolve;
+		});
+		const connect = async () => {
+			let endpoint = "";
+			for (let attempt = 0; attempt < 20; attempt += 1) {
 				try {
-					parsed = JSON.parse(payload.chunk) as ToolCallEndEvent;
+					endpoint = await invoke<string>("get_chat_ws_endpoint");
+					if (endpoint.trim()) {
+						break;
+					}
+				} catch {
+					// wait for bridge startup
+				}
+				await new Promise((resolve) => setTimeout(resolve, 100));
+			}
+			if (!endpoint.trim() || disposed) {
+				return;
+			}
+			const socket = new WebSocket(endpoint);
+			wsRef.current = socket;
+			socket.onopen = () => {
+				wsReadyResolveRef.current?.();
+				wsReadyResolveRef.current = null;
+			};
+			socket.onmessage = (message) => {
+				if (disposed) {
+					return;
+				}
+				let parsed: ChatWsResponseEvent | ChatWsChunkEvent;
+				try {
+					parsed = JSON.parse(message.data as string) as
+						| ChatWsResponseEvent
+						| ChatWsChunkEvent;
 				} catch {
 					return;
 				}
-				const toolName = parsed.toolName ?? "unknown_tool";
-				const toolCallId = parsed.toolCallId;
-				const durationText =
-					typeof parsed.durationMs === "number"
-						? ` (${parsed.durationMs}ms)`
-						: "";
-				const content = parsed.error
-					? `[tool:end] ${toolName} failed${durationText}: ${parsed.error}`
-					: `[tool:end] ${toolName} completed${durationText}`;
-				const messageId = toolCallId
-					? liveToolMessageIdsRef.current[toolCallId]
-					: undefined;
-				if (messageId) {
-					replaceMessageContent(messageId, content);
-					setMessages((prev) =>
-						prev.map((message) => {
-							if (message.id !== messageId) {
-								return message;
-							}
-							return {
-								...message,
-								meta: {
-									...message.meta,
-									toolName,
-									hookEventName: "tool_call_end",
-								},
-							};
-						}),
-					);
-				} else {
-					addMessage({
-						id: makeId("tool"),
-						sessionId: listeningSessionId,
-						role: "tool",
-						content,
-						createdAt: Date.now(),
-						meta: {
-							toolName,
-							hookEventName: "tool_call_end",
-						},
-					});
-				}
-			}
-		})
-			.then((fn) => {
-				if (disposed) {
-					fn();
+				if (parsed.type === "chat_event") {
+					handleIncomingChunk(parsed.event);
 					return;
 				}
-				unlisten = fn;
-			})
-			.catch(() => {
-				// Ignore in non-Tauri mode.
-			});
-
+				if (parsed.type === "chat_response") {
+					const resolver = wsRequestResolversRef.current.get(parsed.requestId);
+					if (!resolver) {
+						return;
+					}
+					wsRequestResolversRef.current.delete(parsed.requestId);
+					if (parsed.error) {
+						resolver.reject(new Error(parsed.error));
+						return;
+					}
+					resolver.resolve(parsed.response ?? {});
+				}
+			};
+			socket.onclose = () => {
+				if (disposed) {
+					return;
+				}
+				for (const pending of wsRequestResolversRef.current.values()) {
+					pending.reject(new Error("chat websocket disconnected"));
+				}
+				wsRequestResolversRef.current.clear();
+			};
+		};
+		void connect();
 		return () => {
 			disposed = true;
-			if (unlisten) {
-				unlisten();
+			for (const pending of wsRequestResolversRef.current.values()) {
+				pending.reject(new Error("chat websocket closed"));
 			}
+			wsRequestResolversRef.current.clear();
+			wsRef.current?.close();
+			wsRef.current = null;
+			wsReadyPromiseRef.current = null;
+			wsReadyResolveRef.current = null;
 		};
-	}, [addMessage, appendMessageContent, replaceMessageContent]);
+	}, [handleIncomingChunk]);
 
 	const start = useCallback(
 		async (nextConfig: ChatSessionConfig) => {
@@ -610,7 +870,7 @@ export function useChatSession() {
 				});
 			}
 		},
-		[addMessage],
+		[addMessage, postSession],
 	);
 
 	const sendPrompt = useCallback(
@@ -705,8 +965,37 @@ export function useChatSession() {
 				});
 
 				const result = payload.result as ChatApiResult | undefined;
-				const assistantText = result?.text ?? "";
-				replaceMessageContent(assistantId, assistantText);
+				const assistantText = (result?.text ?? "").trim();
+				const fallbackAssistantText = extractAssistantTextFromRpcMessages(
+					result?.messages,
+				);
+				const resolvedAssistantText = assistantText || fallbackAssistantText;
+				if (resolvedAssistantText) {
+					replaceMessageContent(assistantId, resolvedAssistantText);
+				} else {
+					// Recovery path: if transport missed result text, load canonical messages.
+					try {
+						const historyMessages = await invoke<ChatMessage[]>(
+							"read_session_messages",
+							{
+								sessionId: activeSessionId,
+								maxMessages: 800,
+							},
+						);
+						if (historyMessages.length > 0) {
+							setMessages(historyMessages);
+						}
+					} catch {
+						// Keep optimistic state if hydration read fails.
+					}
+				}
+				if (Array.isArray(result?.toolCalls) && result.toolCalls.length > 0) {
+					materializeToolMessagesFromResult({
+						sessionId: activeSessionId,
+						turnStartedAt: now,
+						toolCalls: result.toolCalls,
+					});
+				}
 
 				const inputTokens = result?.usage?.inputTokens ?? result?.inputTokens;
 				if (typeof inputTokens === "number") {
@@ -747,9 +1036,11 @@ export function useChatSession() {
 		[
 			addMessage,
 			config,
+			materializeToolMessagesFromResult,
 			refreshSessionDiffSummary,
 			replaceMessageContent,
 			sessionId,
+			postSession,
 		],
 	);
 
@@ -798,7 +1089,7 @@ export function useChatSession() {
 			// Best-effort abort path.
 		}
 		setStatus("cancelled");
-	}, [sessionId]);
+	}, [sessionId, postSession]);
 
 	const stop = useCallback(async () => {
 		await abort();
@@ -829,7 +1120,7 @@ export function useChatSession() {
 		setActiveAssistantMessageId(null);
 		setHydratedHistorySessionId(null);
 		setPendingToolApprovals([]);
-	}, [sessionId]);
+	}, [sessionId, postSession]);
 
 	const hydrateSession = useCallback(
 		async (session: SessionHistoryItem) => {
@@ -873,17 +1164,50 @@ export function useChatSession() {
 					setTokensIn(0);
 					setTokensOut(0);
 					setFileDiffs([]);
-					setStatus(mapHistoryStatusToChatStatus(session.status));
+					setStatus(inferHydratedChatStatus(session.status, historyMessages));
 					void refreshSessionDiffSummary(session.sessionId);
 					return;
 				}
-				setMessages([]);
-				setRawTranscript("");
+				let synthesizedMessages: ChatMessage[] = [];
+				if (session.prompt?.trim()) {
+					synthesizedMessages.push({
+						id: makeId("history_user"),
+						sessionId: session.sessionId,
+						role: "user",
+						content: session.prompt.trim(),
+						createdAt: Date.now(),
+					});
+				}
+				try {
+					const transcript = await invoke<string>("read_session_transcript", {
+						sessionId: session.sessionId,
+						maxChars: 20000,
+					});
+					const text = transcript.trim();
+					if (text) {
+						synthesizedMessages = [
+							...synthesizedMessages,
+							{
+								id: makeId("history_assistant"),
+								sessionId: session.sessionId,
+								role: "assistant",
+								content: text,
+								createdAt: Date.now(),
+							},
+						];
+					}
+				} catch {
+					// Ignore transcript fallback failures.
+				}
+				setMessages(synthesizedMessages);
+				setRawTranscript(
+					synthesizedMessages.map((message) => message.content).join("\n\n"),
+				);
 				setToolCalls(0);
 				setTokensIn(0);
 				setTokensOut(0);
 				setFileDiffs([]);
-				setStatus(mapHistoryStatusToChatStatus(session.status));
+				setStatus(inferHydratedChatStatus(session.status, synthesizedMessages));
 				void refreshSessionDiffSummary(session.sessionId);
 			} catch (err) {
 				if (hydrationRequestIdRef.current !== requestId) {

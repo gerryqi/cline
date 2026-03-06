@@ -1280,10 +1280,16 @@ async function main(): Promise<void> {
 	}
 	if (rawArgs[0] === "sessions" && rawArgs[1] === "list") {
 		const limitIndex = rawArgs.indexOf("--limit");
-		const limit =
-			limitIndex >= 0 && limitIndex + 1 < rawArgs.length
-				? Number.parseInt(rawArgs[limitIndex + 1] ?? "200", 10)
-				: 200;
+		let limit: number;
+		if (limitIndex >= 0 && limitIndex + 1 < rawArgs.length) {
+			limit = Number.parseInt(rawArgs[limitIndex + 1] ?? "200", 10);
+		} else {
+			// Support positional numeric argument: `sessions list <n>`
+			const positional = rawArgs[2];
+			const positionalNum =
+				positional !== undefined ? Number.parseInt(positional, 10) : Number.NaN;
+			limit = Number.isFinite(positionalNum) ? positionalNum : 200;
+		}
 		process.stdout.write(
 			JSON.stringify(await listSessions(Number.isFinite(limit) ? limit : 200)),
 		);

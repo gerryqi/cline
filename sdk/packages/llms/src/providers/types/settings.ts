@@ -41,6 +41,8 @@ export const AuthSettingsSchema = z.object({
 	accessToken: z.string().optional(),
 	/** OAuth refresh token */
 	refreshToken: z.string().optional(),
+	/** OAuth access token expiry (unix epoch ms) */
+	expiresAt: z.number().int().positive().optional(),
 	/** Account ID (for account-based auth) */
 	accountId: z.string().optional(),
 });

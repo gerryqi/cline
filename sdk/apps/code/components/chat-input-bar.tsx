@@ -21,6 +21,10 @@ import {
 	ComboboxList,
 } from "@/components/ui/combobox";
 import type { ChatSessionStatus } from "@/lib/chat-schema";
+import {
+	readModelSelectionStorageFromWindow,
+	writeModelSelectionStorageToWindow,
+} from "@/lib/model-selection";
 import { cn } from "@/lib/utils";
 
 const FALLBACK_PROVIDER_MODELS: Record<string, string[]> = {
@@ -38,8 +42,6 @@ const FALLBACK_PROVIDER_REASONING_MODELS: Record<string, string[]> = {
 	openrouter: ["anthropic/claude-sonnet-4.6"],
 	gemini: ["gemini-2.5-pro"],
 };
-
-const MODEL_SELECTION_STORAGE_KEY = "cline.code.model-selection.v1";
 
 function hasReasoningCapability(
 	providerReasoningModels: Record<string, string[]>,
@@ -491,32 +493,9 @@ function ModelSelector({
 		Record<string, string[]>
 	>(FALLBACK_PROVIDER_REASONING_MODELS);
 	const [enabledProviderIds, setEnabledProviderIds] = useState<string[]>([]);
-	const [lastModelByProvider, setLastModelByProvider] = useState<
-		Record<string, string>
-	>(() => {
-		if (typeof window === "undefined") {
-			return {};
-		}
-		try {
-			const raw = window.localStorage.getItem(MODEL_SELECTION_STORAGE_KEY);
-			if (!raw) {
-				return {};
-			}
-			const parsed = JSON.parse(raw) as unknown;
-			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-				return {};
-			}
-			const entries = Object.entries(parsed).filter(
-				([key, value]) =>
-					typeof key === "string" &&
-					typeof value === "string" &&
-					value.length > 0,
-			);
-			return Object.fromEntries(entries);
-		} catch {
-			return {};
-		}
-	});
+	const [lastSelection, setLastSelection] = useState(() =>
+		readModelSelectionStorageFromWindow(),
+	);
 	const visibleProviderModels = useMemo(() => {
 		const next: Record<string, string[]> = {};
 		for (const providerId of enabledProviderIds) {
@@ -597,33 +576,33 @@ function ModelSelector({
 	}, []);
 
 	useEffect(() => {
-		setLastModelByProvider((prev) => {
+		setLastSelection((prev) => {
 			if (!provider || !model) {
 				return prev;
 			}
-			if (prev[provider] === model) {
+			if (
+				prev.lastProvider === provider &&
+				prev.lastModelByProvider[provider] === model
+			) {
 				return prev;
 			}
 			return {
-				...prev,
-				[provider]: model,
+				lastProvider: provider,
+				lastModelByProvider: {
+					...prev.lastModelByProvider,
+					[provider]: model,
+				},
 			};
 		});
 	}, [model, provider]);
 
 	useEffect(() => {
-		if (typeof window === "undefined") {
-			return;
-		}
 		try {
-			window.localStorage.setItem(
-				MODEL_SELECTION_STORAGE_KEY,
-				JSON.stringify(lastModelByProvider),
-			);
+			writeModelSelectionStorageToWindow(lastSelection);
 		} catch {
 			// Ignore localStorage persistence failures.
 		}
-	}, [lastModelByProvider]);
+	}, [lastSelection]);
 
 	useEffect(() => {
 		if (providers.length === 0) {
@@ -670,7 +649,7 @@ function ModelSelector({
 						return;
 					}
 					onProviderChange(value);
-					const rememberedModel = lastModelByProvider[value];
+					const rememberedModel = lastSelection.lastModelByProvider[value];
 					const providerModelIds = visibleProviderModels[value] ?? [];
 					if (
 						rememberedModel &&

@@ -133,19 +133,7 @@ export class Agent {
 		registerLifecycleHandlers(this.hookEngine, this.config);
 
 		// Create handler
-		this.handler = providers.createHandler({
-			providerId: config.providerId,
-			modelId: config.modelId,
-			apiKey: config.apiKey,
-			baseUrl: config.baseUrl,
-			headers: config.headers,
-			knownModels: config.knownModels,
-			maxOutputTokens: config.maxTokensPerTurn,
-			reasoningEffort: config.reasoningEffort,
-			thinkingBudgetTokens: config.thinkingBudgetTokens,
-			thinking: config.thinking,
-			abortSignal: config.abortSignal,
-		});
+		this.handler = this.createHandlerFromConfig(this.config);
 
 		// Generate IDs
 		this.agentId = `agent_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -300,6 +288,34 @@ export class Agent {
 		return this.conversationId;
 	}
 
+	/**
+	 * Update provider connection details (e.g., rotated OAuth token)
+	 * without resetting conversation history.
+	 */
+	updateConnection(
+		overrides: Partial<
+			Pick<
+				AgentConfig,
+				| "providerId"
+				| "modelId"
+				| "apiKey"
+				| "baseUrl"
+				| "headers"
+				| "knownModels"
+				| "reasoningEffort"
+				| "thinkingBudgetTokens"
+				| "thinking"
+				| "abortSignal"
+			>
+		>,
+	): void {
+		this.config = {
+			...this.config,
+			...overrides,
+		};
+		this.handler = this.createHandlerFromConfig(this.config);
+	}
+
 	// ===========================================================================
 	// Private Methods
 	// ===========================================================================
@@ -322,6 +338,22 @@ export class Agent {
 			this.appendHookContext(source, dispatchResult.control.context);
 		}
 		return dispatchResult.control;
+	}
+
+	private createHandlerFromConfig(config: AgentConfig): providers.ApiHandler {
+		return providers.createHandler({
+			providerId: config.providerId,
+			modelId: config.modelId,
+			apiKey: config.apiKey,
+			baseUrl: config.baseUrl,
+			headers: config.headers,
+			knownModels: config.knownModels,
+			maxOutputTokens: config.maxTokensPerTurn,
+			reasoningEffort: config.reasoningEffort,
+			thinkingBudgetTokens: config.thinkingBudgetTokens,
+			thinking: config.thinking,
+			abortSignal: config.abortSignal,
+		});
 	}
 
 	/**

@@ -11,7 +11,7 @@ import {
 	Search,
 	Terminal,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ChatMessage, ChatSessionStatus } from "@/lib/chat-schema";
@@ -31,9 +31,6 @@ type ChatMessagesProps = {
 	pendingToolApprovals: ToolApprovalRequestItem[];
 	onApproveToolApproval: (requestId: string) => void;
 	onRejectToolApproval: (requestId: string) => void;
-	promptInput: string;
-	onPromptInputChange: (value: string) => void;
-	onSend: () => void;
 };
 
 type ToolApprovalRequestItem = {
@@ -50,7 +47,7 @@ type ToolApprovalRequestItem = {
 
 const IS_DEBUG = process.env.NODE_ENV === "test";
 
-export function ChatMessages({
+function ChatMessagesImpl({
 	sessionId,
 	status,
 	isSessionSwitching = false,
@@ -87,7 +84,7 @@ export function ChatMessages({
 	}, [isSessionSwitching]);
 
 	return (
-		<ScrollArea className="h-full min-h-0">
+		<ScrollArea className="h-full min-h-0 min-w-0">
 			<div className="relative mx-auto w-full px-6 py-6">
 				{showIdleDetails ? (
 					<div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
@@ -98,7 +95,7 @@ export function ChatMessages({
 						<div className="mt-1">Status: {status}</div>
 					</div>
 				) : (
-					<div className="flex flex-col gap-2 h-full">
+					<div className="flex flex-col gap-2 w-full h-full">
 						{pendingToolApprovals.length > 0 ? (
 							<div className="rounded-xl border border-border bg-card p-3">
 								<div className="text-sm font-medium text-foreground">
@@ -193,6 +190,8 @@ export function ChatMessages({
 	);
 }
 
+export const ChatMessages = memo(ChatMessagesImpl);
+
 function MessageBubble({
 	message,
 	isStreaming = false,
@@ -215,8 +214,8 @@ function MessageBubble({
 		>
 			<div
 				className={cn(
-					"rounded-xl pl-3 text-sm overflow-hidden",
-					isUser && "max-w-[85%] bg-card text-foreground/80 text-right",
+					"space-y-2 pl-3 text-sm",
+					isUser && "bg-card text-foreground/80 max-w-[50%]",
 					!isUser && !isError && "text-foreground w-full",
 					isError &&
 						"bg-destructive/10 border border-destructive/40 text-destructive",

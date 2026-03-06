@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { getClineDefaultSystemPrompt } from "@cline/agents";
+import { type AgentEvent, getClineDefaultSystemPrompt } from "@cline/agents";
 import {
 	CoreSessionService,
 	createOAuthClientCallbacks,
@@ -18,7 +18,7 @@ import {
 } from "@cline/core/server";
 import type { providers as LlmsProviders } from "@cline/llms";
 import { models, providers } from "@cline/llms";
-import type { RpcRuntimeHandlers } from "@cline/rpc";
+import { type RpcRuntimeHandlers, RpcSessionClient } from "@cline/rpc";
 import {
 	formatUserInputBlock,
 	type RpcChatMessage,
@@ -314,6 +314,7 @@ async function loginProvider(
 ): Promise<{
 	access: string;
 	refresh: string;
+	expires: number;
 	accountId?: string;
 }> {
 	const callbacks = createOAuthClientCallbacks({
@@ -343,19 +344,26 @@ function saveProviderOAuthCredentials(
 	manager: ProviderSettingsManager,
 	providerId: OAuthProviderId,
 	existing: LlmsProviders.ProviderSettings | undefined,
-	credentials: { access: string; refresh: string; accountId?: string },
+	credentials: {
+		access: string;
+		refresh: string;
+		expires: number;
+		accountId?: string;
+	},
 ): LlmsProviders.ProviderSettings {
+	const auth = {
+		...(existing?.auth ?? {}),
+		accessToken: toProviderApiKey(providerId, credentials),
+		refreshToken: credentials.refresh,
+		accountId: credentials.accountId,
+	} as LlmsProviders.ProviderSettings["auth"] & { expiresAt?: number };
+	auth.expiresAt = credentials.expires;
 	const merged: LlmsProviders.ProviderSettings = {
 		...(existing ?? {
 			provider: providerId as LlmsProviders.ProviderSettings["provider"],
 		}),
 		provider: providerId as LlmsProviders.ProviderSettings["provider"],
-		auth: {
-			...(existing?.auth ?? {}),
-			accessToken: toProviderApiKey(providerId, credentials),
-			refreshToken: credentials.refresh,
-			accountId: credentials.accountId,
-		},
+		auth,
 	};
 	manager.saveProviderSettings(merged, { tokenSource: "oauth" });
 	return merged;
@@ -366,6 +374,68 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 		sessionService: new CoreSessionService(new SqliteSessionStore()),
 	});
 	const sessionModes = new Map<string, "act" | "plan">();
+	const activeSessions = new Set<string>();
+	const rpcAddress = process.env.CLINE_RPC_ADDRESS?.trim() || "127.0.0.1:4317";
+	const eventClient = new RpcSessionClient({ address: rpcAddress });
+
+	const publishRuntimeEvent = (
+		sessionId: string,
+		eventType: string,
+		payload: unknown,
+	): void => {
+		const trimmedSessionId = sessionId.trim();
+		if (!trimmedSessionId) {
+			return;
+		}
+		void eventClient
+			.publishEvent({
+				sessionId: trimmedSessionId,
+				eventType,
+				payloadJson: JSON.stringify(payload),
+				sourceClientId: "cli-rpc-runtime",
+			})
+			.catch(() => {
+				// Best effort: runtime execution should not fail on event publish errors.
+			});
+	};
+
+	const publishFromAgentEvent = (
+		sessionId: string,
+		event: AgentEvent,
+	): void => {
+		if (event.type === "content_start" && event.contentType === "text") {
+			publishRuntimeEvent(sessionId, "runtime.chat.text_delta", {
+				text: event.text ?? "",
+				accumulated: event.accumulated,
+			});
+			return;
+		}
+		if (event.type === "content_start" && event.contentType === "tool") {
+			publishRuntimeEvent(sessionId, "runtime.chat.tool_call_start", {
+				toolCallId: event.toolCallId,
+				toolName: event.toolName,
+				input: event.input,
+			});
+			return;
+		}
+		if (event.type === "content_end" && event.contentType === "tool") {
+			publishRuntimeEvent(sessionId, "runtime.chat.tool_call_end", {
+				toolCallId: event.toolCallId,
+				toolName: event.toolName,
+				output: event.output,
+				error: event.error,
+				durationMs: event.durationMs,
+			});
+		}
+	};
+
+	sessionManager.subscribe((coreEvent) => {
+		if (coreEvent.type === "agent_event") {
+			const sessionId = coreEvent.payload.sessionId;
+			const event = coreEvent.payload.event;
+			publishFromAgentEvent(sessionId, event);
+		}
+	});
 
 	return {
 		startSession: async (requestJson) => {
@@ -378,6 +448,9 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 			const started = await sessionManager.start({
 				source: SessionSource.DESKTOP_CHAT,
 				interactive: true,
+				initialMessages: config.initialMessages as
+					| LlmsProviders.Message[]
+					| undefined,
 				config: {
 					providerId,
 					modelId: config.model,
@@ -394,14 +467,27 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 					missionLogIntervalSteps: config.missionStepInterval,
 					missionLogIntervalMs: config.missionTimeIntervalMs,
 				},
-				toolPolicies: {
-					"*": {
-						autoApprove: config.autoApproveTools !== false,
-					},
-				},
+				toolPolicies:
+					(
+						config as {
+							toolPolicies?: Record<
+								string,
+								{ enabled?: boolean; autoApprove?: boolean }
+							>;
+						}
+					).toolPolicies ??
+					({
+						"*": {
+							autoApprove: config.autoApproveTools !== false,
+						},
+					} as Record<string, { enabled?: boolean; autoApprove?: boolean }>),
 			});
 			sessionModes.set(started.sessionId, mode);
-			return { sessionId: started.sessionId };
+			activeSessions.add(started.sessionId);
+			return {
+				sessionId: started.sessionId,
+				startResultJson: JSON.stringify(started),
+			};
 		},
 		sendSession: async (sessionId, requestJson) => {
 			const request = parseSendPayload(requestJson);
@@ -411,8 +497,12 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 					? "plan"
 					: (sessionModes.get(sessionId) ?? "act");
 			const cwd = resolveSessionCwd(request.config);
-			const enriched = await enrichPromptWithMentions(request.prompt, cwd);
-			const input = toPromptMessage(enriched.prompt, mode);
+			const input = request.promptPreformatted
+				? request.prompt.trim()
+				: toPromptMessage(
+						(await enrichPromptWithMentions(request.prompt, cwd)).prompt,
+						mode,
+					);
 			const userImages = request.attachments?.userImages ?? [];
 			const fileMaterialized = await materializeUserFiles(
 				request.attachments?.userFiles,
@@ -481,13 +571,23 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 						missionLogIntervalSteps: request.config.missionStepInterval,
 						missionLogIntervalMs: request.config.missionTimeIntervalMs,
 					},
-					toolPolicies: {
-						"*": {
-							autoApprove: request.config.autoApproveTools !== false,
-						},
-					},
+					toolPolicies:
+						(
+							request.config as {
+								toolPolicies?: Record<
+									string,
+									{ enabled?: boolean; autoApprove?: boolean }
+								>;
+							}
+						).toolPolicies ??
+						({
+							"*": {
+								autoApprove: request.config.autoApproveTools !== false,
+							},
+						} as Record<string, { enabled?: boolean; autoApprove?: boolean }>),
 				});
 				sessionModes.set(sessionId, modeFromConfig);
+				activeSessions.add(sessionId);
 				const restoredResult = await sessionManager.send({
 					sessionId,
 					prompt: input,
@@ -526,6 +626,15 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 					}
 				}
 			}
+		},
+		abortSession: async (sessionId) => {
+			const id = sessionId.trim();
+			if (!id) {
+				return { applied: false };
+			}
+			const known = activeSessions.has(id);
+			await sessionManager.abort(id);
+			return { applied: known };
 		},
 		runProviderAction: async (requestJson) => {
 			const manager = new ProviderSettingsManager();

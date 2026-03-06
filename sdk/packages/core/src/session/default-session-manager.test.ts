@@ -248,4 +248,148 @@ describe("DefaultSessionManager", () => {
 		expect(agentShutdown).toHaveBeenCalledTimes(1);
 		expect(runtimeShutdown).toHaveBeenCalledTimes(1);
 	});
+
+	it("updates agent connection with refreshed OAuth key before turn", async () => {
+		const sessionId = "sess-oauth";
+		const manifest = createManifest(sessionId);
+		const sessionService = {
+			createRootSessionWithArtifacts: vi.fn().mockResolvedValue({
+				manifestPath: "/tmp/manifest-oauth.json",
+				transcriptPath: "/tmp/transcript-oauth.log",
+				hookPath: "/tmp/hook-oauth.log",
+				messagesPath: "/tmp/messages-oauth.json",
+				manifest,
+			}),
+			persistSessionMessages: vi.fn(),
+			updateSessionStatus: vi.fn().mockResolvedValue({ updated: true }),
+			writeSessionManifest: vi.fn(),
+			listSessions: vi.fn().mockResolvedValue([]),
+			deleteSession: vi.fn().mockResolvedValue({ deleted: true }),
+		};
+		const runtimeBuilder = {
+			build: vi.fn().mockReturnValue({
+				tools: [],
+				shutdown: vi.fn(),
+			}),
+		};
+		const run = vi.fn().mockResolvedValue(createResult({ text: "ok" }));
+		const updateConnection = vi.fn();
+		const manager = new DefaultSessionManager({
+			sessionService: sessionService as never,
+			runtimeBuilder,
+			oauthTokenManager: {
+				resolveProviderApiKey: vi.fn().mockResolvedValue({
+					providerId: "openai-codex",
+					apiKey: "oauth-access-new",
+					refreshed: true,
+				}),
+			} as never,
+			createAgent: () =>
+				({
+					run,
+					continue: vi.fn(),
+					abort: vi.fn(),
+					restore: vi.fn(),
+					updateConnection,
+					shutdown: vi.fn().mockResolvedValue(undefined),
+					getMessages: vi.fn().mockReturnValue([]),
+					messages: [],
+				}) as never,
+		});
+
+		await manager.start({
+			config: createConfig({
+				providerId: "openai-codex",
+				apiKey: "oauth-access-old",
+			}),
+			interactive: true,
+		});
+		await manager.send({ sessionId, prompt: "hello" });
+
+		expect(updateConnection).toHaveBeenCalledWith({
+			apiKey: "oauth-access-new",
+		});
+		expect(run).toHaveBeenCalledTimes(1);
+	});
+
+	it("force refreshes and retries once when turn fails with auth error", async () => {
+		const sessionId = "sess-oauth-retry";
+		const manifest = createManifest(sessionId);
+		const sessionService = {
+			createRootSessionWithArtifacts: vi.fn().mockResolvedValue({
+				manifestPath: "/tmp/manifest-oauth-retry.json",
+				transcriptPath: "/tmp/transcript-oauth-retry.log",
+				hookPath: "/tmp/hook-oauth-retry.log",
+				messagesPath: "/tmp/messages-oauth-retry.json",
+				manifest,
+			}),
+			persistSessionMessages: vi.fn(),
+			updateSessionStatus: vi.fn().mockResolvedValue({ updated: true }),
+			writeSessionManifest: vi.fn(),
+			listSessions: vi.fn().mockResolvedValue([]),
+			deleteSession: vi.fn().mockResolvedValue({ deleted: true }),
+		};
+		const runtimeBuilder = {
+			build: vi.fn().mockReturnValue({
+				tools: [],
+				shutdown: vi.fn(),
+			}),
+		};
+		const run = vi
+			.fn()
+			.mockRejectedValueOnce(new Error("401 Unauthorized"))
+			.mockResolvedValueOnce(createResult({ text: "retried" }));
+		const restore = vi.fn();
+		const updateConnection = vi.fn();
+		const resolveProviderApiKey = vi
+			.fn()
+			.mockResolvedValueOnce(null)
+			.mockResolvedValueOnce({
+				providerId: "openai-codex",
+				apiKey: "oauth-access-new",
+				refreshed: true,
+			});
+		const manager = new DefaultSessionManager({
+			sessionService: sessionService as never,
+			runtimeBuilder,
+			oauthTokenManager: {
+				resolveProviderApiKey,
+			} as never,
+			createAgent: () =>
+				({
+					run,
+					continue: vi.fn(),
+					abort: vi.fn(),
+					restore,
+					updateConnection,
+					shutdown: vi.fn().mockResolvedValue(undefined),
+					getMessages: vi.fn().mockReturnValue([]),
+					messages: [],
+				}) as never,
+		});
+
+		await manager.start({
+			config: createConfig({
+				providerId: "openai-codex",
+				apiKey: "oauth-access-old",
+			}),
+			interactive: true,
+		});
+		const result = await manager.send({ sessionId, prompt: "hello" });
+
+		expect(result?.text).toBe("retried");
+		expect(run).toHaveBeenCalledTimes(2);
+		expect(restore).toHaveBeenCalledTimes(1);
+		expect(resolveProviderApiKey).toHaveBeenNthCalledWith(1, {
+			providerId: "openai-codex",
+			forceRefresh: undefined,
+		});
+		expect(resolveProviderApiKey).toHaveBeenNthCalledWith(2, {
+			providerId: "openai-codex",
+			forceRefresh: true,
+		});
+		expect(updateConnection).toHaveBeenCalledWith({
+			apiKey: "oauth-access-new",
+		});
+	});
 });

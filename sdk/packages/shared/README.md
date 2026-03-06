@@ -23,3 +23,7 @@ outside transport wiring:
 
 - chat runtime payloads (`RpcChatStartSessionRequest`, `RpcChatRunTurnRequest`, `RpcChatTurnResult`)
 - provider runtime payloads (`RpcProviderActionRequest`, `RpcProviderCatalogResponse`, `RpcProviderOAuthLoginResponse`)
+
+Chat runtime payload notes:
+- `RpcChatStartSessionRequest` supports `initialMessages` and optional `toolPolicies`.
+- `RpcChatRunTurnRequest` supports `promptPreformatted` for callers that already built CLI-style user input envelopes.

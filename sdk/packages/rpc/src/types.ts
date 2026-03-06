@@ -24,11 +24,15 @@ export interface RpcClientRegistrationResult {
 }
 
 export interface RpcRuntimeHandlers {
-	startSession?: (requestJson: string) => Promise<{ sessionId: string }>;
+	startSession?: (requestJson: string) => Promise<{
+		sessionId: string;
+		startResultJson?: string;
+	}>;
 	sendSession?: (
 		sessionId: string,
 		requestJson: string,
 	) => Promise<{ resultJson: string }>;
+	abortSession?: (sessionId: string) => Promise<{ applied: boolean }>;
 	runProviderAction?: (requestJson: string) => Promise<{ resultJson: string }>;
 	runProviderOAuthLogin?: (provider: string) => Promise<{
 		provider: string;

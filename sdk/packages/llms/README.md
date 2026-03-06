@@ -58,4 +58,5 @@ This keeps provider default derivation and protocol filtering in one place.
 - `providerId: "claude-code"` uses `ai-sdk-provider-claude-code`, defaults to `sonnet`, and supports `sonnet`, `opus`, `haiku`.
 - Set `AI_SDK_LOG_WARNINGS=false` to suppress AI SDK warning logs.
 - Provider settings `headers` must be a string-to-string map (`Record<string, string>`).
+- Provider settings OAuth auth schema includes `auth.expiresAt` (epoch ms) for runtime token refresh orchestration in `@cline/core`.
 - Stream chunks are modeled as discriminated unions (`ApiStreamChunk`); tests should narrow by `type` instead of casting to generic records.

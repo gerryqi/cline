@@ -39,8 +39,10 @@
 		"build": "bun run ./build.ts && bun tsc --emitDeclarationOnly",
 		"clean": "rm -rf dist node_modules",
 		"typecheck": "bun tsc -p tsconfig.dev.json --noEmit",
-		"test": "vitest run",
-		"test:watch": "vitest"
+		"test": "bun run test:unit && bun run test:e2e",
+		"test:unit": "vitest run --config vitest.config.ts",
+		"test:e2e": "vitest run --config vitest.e2e.config.ts",
+		"test:watch": "vitest --config vitest.config.ts"
 	},
 	"dependencies": {
 		"@cline/agents": "workspace:*",

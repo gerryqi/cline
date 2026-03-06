@@ -25,7 +25,7 @@ import { RulesView } from "./rules-view";
 const navCategories = [
 	"General",
 	"Providers",
-	"Agents",
+	"Extensions",
 	"Features",
 	"MCP",
 	"Account",
@@ -351,7 +351,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 						)
 					) : activeNav === "MCP" ? (
 						<McpServersContent />
-					) : activeNav === "Agents" ? (
+					) : activeNav === "Extensions" ? (
 						<RulesView />
 					) : (
 						<div className="flex h-full items-center justify-center">

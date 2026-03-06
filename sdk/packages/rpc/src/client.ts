@@ -1,5 +1,6 @@
 import type * as grpc from "@grpc/grpc-js";
 import { createGatewayGenericClient } from "./gateway-client.js";
+import type { AbortRuntimeSessionResponse__Output } from "./proto/generated/cline/rpc/v1/AbortRuntimeSessionResponse.js";
 import type { ClaimSpawnRequestRequest } from "./proto/generated/cline/rpc/v1/ClaimSpawnRequestRequest.js";
 import type { ClaimSpawnRequestResponse__Output } from "./proto/generated/cline/rpc/v1/ClaimSpawnRequestResponse.js";
 import type { ClineGatewayClient } from "./proto/generated/cline/rpc/v1/ClineGateway.js";
@@ -7,6 +8,8 @@ import type { DeleteSessionResponse__Output } from "./proto/generated/cline/rpc/
 import type { EnqueueSpawnRequestResponse__Output } from "./proto/generated/cline/rpc/v1/EnqueueSpawnRequestResponse.js";
 import type { GetSessionResponse__Output } from "./proto/generated/cline/rpc/v1/GetSessionResponse.js";
 import type { ListSessionsResponse__Output } from "./proto/generated/cline/rpc/v1/ListSessionsResponse.js";
+import type { PublishEventResponse__Output } from "./proto/generated/cline/rpc/v1/PublishEventResponse.js";
+import type { RoutedEvent__Output } from "./proto/generated/cline/rpc/v1/RoutedEvent.js";
 import type { RunProviderActionResponse__Output } from "./proto/generated/cline/rpc/v1/RunProviderActionResponse.js";
 import type { RunProviderOAuthLoginResponse__Output } from "./proto/generated/cline/rpc/v1/RunProviderOAuthLoginResponse.js";
 import type { SendRuntimeSessionResponse__Output } from "./proto/generated/cline/rpc/v1/SendRuntimeSessionResponse.js";
@@ -86,6 +89,25 @@ function fromMessage(message: SessionRecord__Output): RpcSessionRow {
 
 export interface RpcSessionClientOptions {
 	address: string;
+}
+
+export interface RpcStreamEventsInput {
+	clientId?: string;
+	sessionIds?: string[];
+}
+
+export interface RpcStreamEventsHandlers {
+	onEvent?: (event: {
+		eventId: string;
+		sessionId: string;
+		taskId?: string;
+		eventType: string;
+		payloadJson: string;
+		sourceClientId?: string;
+		ts: string;
+	}) => void;
+	onError?: (error: Error) => void;
+	onEnd?: () => void;
 }
 
 export class RpcSessionClient {
@@ -223,13 +245,16 @@ export class RpcSessionClient {
 
 	public async startRuntimeSession(
 		requestJson: string,
-	): Promise<{ sessionId: string }> {
+	): Promise<{ sessionId: string; startResultJson: string }> {
 		const response = await this.unary<StartRuntimeSessionResponse__Output>(
 			(callback) => {
 				this.client.StartRuntimeSession({ requestJson }, callback);
 			},
 		);
-		return { sessionId: response.sessionId ?? "" };
+		return {
+			sessionId: response.sessionId ?? "",
+			startResultJson: response.startResultJson ?? "",
+		};
 	}
 
 	public async sendRuntimeSession(
@@ -242,6 +267,17 @@ export class RpcSessionClient {
 			},
 		);
 		return { resultJson: response.resultJson ?? "" };
+	}
+
+	public async abortRuntimeSession(
+		sessionId: string,
+	): Promise<{ applied: boolean }> {
+		const response = await this.unary<AbortRuntimeSessionResponse__Output>(
+			(callback) => {
+				this.client.AbortRuntimeSession({ sessionId }, callback);
+			},
+		);
+		return { applied: response.applied === true };
 	}
 
 	public async runProviderAction(
@@ -266,6 +302,70 @@ export class RpcSessionClient {
 		return {
 			provider: response.provider ?? "",
 			apiKey: response.apiKey ?? "",
+		};
+	}
+
+	public async publishEvent(input: {
+		eventId?: string;
+		sessionId: string;
+		taskId?: string;
+		eventType: string;
+		payloadJson: string;
+		sourceClientId?: string;
+	}): Promise<{ eventId: string; accepted: boolean }> {
+		const response = await this.unary<PublishEventResponse__Output>(
+			(callback) => {
+				this.client.PublishEvent(input, callback);
+			},
+		);
+		return {
+			eventId: response.eventId ?? "",
+			accepted: response.accepted === true,
+		};
+	}
+
+	public streamEvents(
+		input: RpcStreamEventsInput,
+		handlers: RpcStreamEventsHandlers = {},
+	): () => void {
+		let closing = false;
+		const stream = this.client.StreamEvents({
+			clientId: input.clientId ?? "",
+			sessionIds: input.sessionIds ?? [],
+		});
+		const onData = (event: RoutedEvent__Output) => {
+			handlers.onEvent?.({
+				eventId: event.eventId ?? "",
+				sessionId: event.sessionId ?? "",
+				taskId: event.taskId?.trim() ? event.taskId : undefined,
+				eventType: event.eventType ?? "",
+				payloadJson: event.payloadJson ?? "",
+				sourceClientId: event.sourceClientId?.trim()
+					? event.sourceClientId
+					: undefined,
+				ts: event.ts ?? "",
+			});
+		};
+		const onError = (error: Error) => {
+			const grpcCode =
+				typeof (error as { code?: unknown }).code === "number"
+					? Number((error as { code?: unknown }).code)
+					: undefined;
+			const isCancelled = grpcCode === 1 || error.message.includes("CANCELLED");
+			if (closing && isCancelled) {
+				return;
+			}
+			handlers.onError?.(error);
+		};
+		const onEnd = () => {
+			handlers.onEnd?.();
+		};
+		stream.on("data", onData);
+		stream.on("error", onError);
+		stream.on("end", onEnd);
+		return () => {
+			closing = true;
+			stream.cancel();
 		};
 	}
 

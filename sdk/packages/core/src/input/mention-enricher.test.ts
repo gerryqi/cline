@@ -1,8 +1,19 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { enrichPromptWithMentions } from "./mention-enricher";
+
+vi.mock("node:worker_threads", async () => {
+	const actual = await vi.importActual<typeof import("node:worker_threads")>(
+		"node:worker_threads",
+	);
+	return {
+		...actual,
+		isMainThread: false,
+		parentPort: null,
+	};
+});
 
 async function createTempWorkspace(): Promise<string> {
 	return mkdtemp(path.join(os.tmpdir(), "core-mentions-"));

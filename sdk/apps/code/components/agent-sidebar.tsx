@@ -2,19 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import {
-	AlertCircle,
-	CheckCircle2,
-	ChevronDown,
-	Clock,
-	Filter,
-	Loader2,
-	Pin,
-	Plus,
-	Search,
-	Settings,
-	XCircle,
-} from "lucide-react";
+import { ChevronDown, Filter, Pin, Plus, Search, Settings } from "lucide-react";
 import {
 	type ReactNode,
 	useCallback,
@@ -147,7 +135,7 @@ function basenamePath(input?: string): string {
 }
 
 function toTitle(session: SessionHistoryItem): string {
-	const line = session.prompt?.trim().split("\n")[0]?.trim();
+	const line = normalizeTitle(session.prompt).trim().split("\n")[0]?.trim();
 	if (line) return line.slice(0, 70);
 	return `Session ${session.sessionId.slice(-6)}`;
 }
@@ -213,9 +201,9 @@ function formatTokenCount(
 		return null;
 	}
 	if (total >= 1000) {
-		return `${(total / 1000).toFixed(total >= 10000 ? 0 : 1)}k tok`;
+		return `${(total / 1000).toFixed(total >= 10000 ? 0 : 1)}k`;
 	}
-	return `${total} tok`;
+	return `${total}`;
 }
 
 function formatCostUsd(value?: number): string | null {
@@ -231,6 +219,97 @@ function formatCostUsd(value?: number): string | null {
 	return `$${value.toFixed(2)}`;
 }
 
+function areSessionsEquivalent(
+	current: SessionHistoryItem[],
+	next: SessionHistoryItem[],
+): boolean {
+	if (current.length !== next.length) {
+		return false;
+	}
+	for (let i = 0; i < current.length; i += 1) {
+		const a = current[i];
+		const b = next[i];
+		if (
+			a.sessionId !== b.sessionId ||
+			a.status !== b.status ||
+			a.startedAt !== b.startedAt ||
+			a.endedAt !== b.endedAt ||
+			a.prompt !== b.prompt ||
+			a.workspaceRoot !== b.workspaceRoot ||
+			a.cwd !== b.cwd ||
+			a.provider !== b.provider ||
+			a.model !== b.model
+		) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function areThreadsEquivalent(current: Thread[], next: Thread[]): boolean {
+	if (current.length !== next.length) {
+		return false;
+	}
+	for (let i = 0; i < current.length; i += 1) {
+		const a = current[i];
+		const b = next[i];
+		if (
+			a.id !== b.id ||
+			a.title !== b.title ||
+			a.codebase !== b.codebase ||
+			a.time !== b.time ||
+			a.provider !== b.provider ||
+			a.model !== b.model ||
+			a.inputTokens !== b.inputTokens ||
+			a.outputTokens !== b.outputTokens ||
+			a.totalCostUsd !== b.totalCostUsd ||
+			a.status !== b.status ||
+			a.pinned !== b.pinned
+		) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function updateThreadById(
+	current: Thread[],
+	threadId: string,
+	updater: (thread: Thread) => Thread,
+): Thread[] {
+	let changed = false;
+	const next = current.map((thread) => {
+		if (thread.id !== threadId) {
+			return thread;
+		}
+		const updated = updater(thread);
+		if (updated !== thread) {
+			changed = true;
+		}
+		return updated;
+	});
+	return changed ? next : current;
+}
+
+function updateSessionById(
+	current: SessionHistoryItem[],
+	sessionId: string,
+	updater: (session: SessionHistoryItem) => SessionHistoryItem,
+): SessionHistoryItem[] {
+	let changed = false;
+	const next = current.map((session) => {
+		if (session.sessionId !== sessionId) {
+			return session;
+		}
+		const updated = updater(session);
+		if (updated !== session) {
+			changed = true;
+		}
+		return updated;
+	});
+	return changed ? next : current;
+}
+
 export function AgentSidebar({
 	onNewThread,
 	onOpenSession,
@@ -244,7 +323,7 @@ export function AgentSidebar({
 }) {
 	const [sessions, setSessions] = useState<SessionHistoryItem[]>([]);
 	const [threads, setThreads] = useState<Thread[]>([]);
-	const [activeThread, setActiveThread] = useState("");
+	const activeThread = activeSessionId ?? "";
 	const [filter, setFilter] = useState<FilterOption>("All");
 	const [searchOpen, setSearchOpen] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
@@ -258,6 +337,11 @@ export function AgentSidebar({
 	const messageHydratedStatusRef = useRef<Map<string, SessionHistoryStatus>>(
 		new Map(),
 	);
+	const threadsRef = useRef<Thread[]>([]);
+
+	useEffect(() => {
+		threadsRef.current = threads;
+	}, [threads]);
 
 	const refreshSessions = useCallback(async () => {
 		setIsLoadingHistory(true);
@@ -291,7 +375,11 @@ export function AgentSidebar({
 				.filter((session) => !session.isSubagent && !session.parentSessionId)
 				.sort(compareSessionsByStartedAtDesc);
 
-			setSessions(topLevelSessions);
+			setSessions((current) =>
+				areSessionsEquivalent(current, topLevelSessions)
+					? current
+					: topLevelSessions,
+			);
 			const mapped = topLevelSessions.map(toThread);
 			setThreads((current) => {
 				const existingById = new Map(
@@ -307,7 +395,7 @@ export function AgentSidebar({
 						},
 					]),
 				);
-				return mapped.map((thread) => {
+				const next = mapped.map((thread) => {
 					const existing = existingById.get(thread.id);
 					const keepExistingTitle =
 						Boolean(existing) &&
@@ -320,12 +408,7 @@ export function AgentSidebar({
 						...usageById.get(thread.id),
 					};
 				});
-			});
-			setActiveThread((current) => {
-				if (current && mapped.some((thread) => thread.id === current)) {
-					return current;
-				}
-				return mapped[0]?.id ?? "";
+				return areThreadsEquivalent(current, next) ? current : next;
 			});
 		} catch {
 			// Ignore in browser mode or when tauri command is unavailable.
@@ -346,11 +429,14 @@ export function AgentSidebar({
 
 		runRefresh();
 		const interval = window.setInterval(() => {
+			if (document.hidden) {
+				return;
+			}
 			void invoke("poll_sessions").catch(() => {
 				// Ignore when tauri command is unavailable.
 			});
 			runRefresh();
-		}, 3500);
+		}, 12000);
 
 		void listen<{ sessionId: string }>("agent://session-ended", () => {
 			runRefresh();
@@ -372,10 +458,6 @@ export function AgentSidebar({
 	}, [refreshSessions]);
 
 	useEffect(() => {
-		setActiveThread(activeSessionId ?? "");
-	}, [activeSessionId]);
-
-	useEffect(() => {
 		const recent = sessions.slice(0, 24);
 		for (const session of recent) {
 			const sessionId = session.sessionId;
@@ -385,7 +467,7 @@ export function AgentSidebar({
 			if (usageLoadingRef.current.has(sessionId)) {
 				continue;
 			}
-			const existing = threads.find((item) => item.id === sessionId);
+			const existing = threadsRef.current.find((item) => item.id === sessionId);
 			const hasUsage =
 				existing?.inputTokens !== undefined ||
 				existing?.outputTokens !== undefined;
@@ -416,22 +498,28 @@ export function AgentSidebar({
 						0,
 					);
 					setThreads((current) =>
-						current.map((thread) =>
-							thread.id === sessionId
-								? { ...thread, inputTokens, outputTokens, totalCostUsd }
-								: thread,
-						),
+						updateThreadById(current, sessionId, (thread) => {
+							if (
+								thread.inputTokens === inputTokens &&
+								thread.outputTokens === outputTokens &&
+								thread.totalCostUsd === totalCostUsd
+							) {
+								return thread;
+							}
+							return { ...thread, inputTokens, outputTokens, totalCostUsd };
+						}),
 					);
 				})
 				.catch(() => {
 					// Ignore sessions without hook logs.
 					if (!hasUsage) {
 						setThreads((current) =>
-							current.map((thread) =>
-								thread.id === sessionId
-									? { ...thread, inputTokens: 0, outputTokens: 0 }
-									: thread,
-							),
+							updateThreadById(current, sessionId, (thread) => {
+								if (thread.inputTokens === 0 && thread.outputTokens === 0) {
+									return thread;
+								}
+								return { ...thread, inputTokens: 0, outputTokens: 0 };
+							}),
 						);
 					}
 				})
@@ -440,7 +528,7 @@ export function AgentSidebar({
 					usageLoadingRef.current.delete(sessionId);
 				});
 		}
-	}, [sessions, threads]);
+	}, [sessions]);
 
 	useEffect(() => {
 		const recent = sessions.slice(0, 24);
@@ -452,7 +540,7 @@ export function AgentSidebar({
 			if (titleLoadingRef.current.has(sessionId)) {
 				continue;
 			}
-			const existing = threads.find((item) => item.id === sessionId);
+			const existing = threadsRef.current.find((item) => item.id === sessionId);
 			if (!existing) {
 				continue;
 			}
@@ -475,10 +563,7 @@ export function AgentSidebar({
 				.then((messages) => {
 					const nextTitle = titleFromMessages(messages);
 					setThreads((current) =>
-						current.map((thread) => {
-							if (thread.id !== sessionId) {
-								return thread;
-							}
+						updateThreadById(current, sessionId, (thread) => {
 							const nextStatus = inferStatusFromMessages(
 								thread.status,
 								messages,
@@ -491,10 +576,7 @@ export function AgentSidebar({
 						}),
 					);
 					setSessions((current) =>
-						current.map((item) => {
-							if (item.sessionId !== sessionId) {
-								return item;
-							}
+						updateSessionById(current, sessionId, (item) => {
 							const nextStatus = inferStatusFromMessages(item.status, messages);
 							if (nextStatus === item.status) {
 								return item;
@@ -511,7 +593,7 @@ export function AgentSidebar({
 					titleLoadingRef.current.delete(sessionId);
 				});
 		}
-	}, [sessions, threads]);
+	}, [sessions]);
 
 	const filteredThreads = useMemo(() => {
 		let filtered = threads;
@@ -558,7 +640,7 @@ export function AgentSidebar({
 					size="icon-sm"
 					variant="ghost"
 				>
-					<Filter className="h-2 w-2" />
+					<Filter className="size-3 stroke-2" />
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end" className="w-36">
@@ -580,22 +662,22 @@ export function AgentSidebar({
 	);
 
 	return (
-		<div className="flex h-full min-h-0 min-w-0 shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
-			<div className="flex flex-col gap-1 p-3 w-full">
+		<div className="flex h-full min-h-0 min-w-0 shrink-0 gap-1 flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
+			<div className="flex flex-col gap-1 w-full mt-2">
 				<Button
 					className="justify-start"
 					onClick={() => onNewThread?.()}
 					variant="sidebar"
 				>
-					<Plus className="h-4 w-4" />
+					<Plus className="size-4" />
 					New Session
 				</Button>
 			</div>
 
-			<div className="px-3 pb-2 w-full">
+			<div className="pb-2 w-full">
 				{searchOpen ? (
-					<div className="flex items-center gap-2 rounded-md bg-sidebar-accent px-2 py-1.5">
-						<Search className="h-3.5 w-3.5 text-muted-foreground" />
+					<div className="flex items-center gap-2 rounded-md bg-sidebar-accent py-1.5">
+						<Search className="size-3" />
 						<input
 							className="flex-1 bg-transparent text-sm text-sidebar-foreground outline-none placeholder:text-muted-foreground"
 							onBlur={() => {
@@ -608,7 +690,7 @@ export function AgentSidebar({
 					</div>
 				) : (
 					<Button
-						className="px-2 py-1.5"
+						className="py-1.5"
 						onClick={() => setSearchOpen(true)}
 						type="button"
 						variant="sidebarItem"
@@ -620,10 +702,10 @@ export function AgentSidebar({
 			</div>
 
 			<div className="min-h-0 flex-1 w-full">
-				<ScrollArea className="h-full min-h-0 w-full">
-					<div className="flex min-w-0 flex-col gap-0.5 overflow-x-hidden px-2 pb-3">
+				<ScrollArea className="h-full min-h-0 min-w-0 max-w-svw">
+					<div className="flex min-w-0 flex-col gap-0.5 overflow-x-hidden pb-3">
 						{isLoadingHistory && threads.length === 0 ? (
-							<div className="px-3 py-4 text-xs text-muted-foreground">
+							<div className="p-4 text-xs text-muted-foreground">
 								Loading session history...
 							</div>
 						) : filter === "All" ? (
@@ -635,7 +717,6 @@ export function AgentSidebar({
 												isActive={activeThread === thread.id}
 												key={thread.id}
 												onClick={() => {
-													setActiveThread(thread.id);
 													const session = sessions.find(
 														(item) => item.sessionId === thread.id,
 													);
@@ -656,7 +737,6 @@ export function AgentSidebar({
 												isActive={activeThread === thread.id}
 												key={thread.id}
 												onClick={() => {
-													setActiveThread(thread.id);
 													const session = sessions.find(
 														(item) => item.sessionId === thread.id,
 													);
@@ -677,7 +757,6 @@ export function AgentSidebar({
 												isActive={activeThread === thread.id}
 												key={thread.id}
 												onClick={() => {
-													setActiveThread(thread.id);
 													const session = sessions.find(
 														(item) => item.sessionId === thread.id,
 													);
@@ -688,21 +767,11 @@ export function AgentSidebar({
 												thread={thread}
 											/>
 										))}
-										{recentThreads.length > showMoreCount && (
-											<Button
-												onClick={() => setShowMoreCount((c) => c + 10)}
-												type="button"
-												variant="sidebarText"
-											>
-												<ChevronDown className="h-3 w-3" />
-												Show more
-											</Button>
-										)}
 									</ThreadSection>
 								)}
 
 								{filteredThreads.length === 0 && (
-									<div className="px-3 py-4 text-xs text-muted-foreground">
+									<div className="p-4 text-xs text-muted-foreground">
 										{searchQuery
 											? "No sessions match your search."
 											: "No sessions found in history."}
@@ -716,7 +785,6 @@ export function AgentSidebar({
 										isActive={activeThread === thread.id}
 										key={thread.id}
 										onClick={() => {
-											setActiveThread(thread.id);
 											const session = sessions.find(
 												(item) => item.sessionId === thread.id,
 											);
@@ -727,17 +795,17 @@ export function AgentSidebar({
 										thread={thread}
 									/>
 								))}
-								{filteredThreads.length > showMoreCount && (
-									<Button
-										onClick={() => setShowMoreCount((c) => c + 10)}
-										type="button"
-										variant="sidebarText"
-									>
-										<ChevronDown className="h-3 w-3" />
-										Show more
-									</Button>
-								)}
 							</ThreadSection>
+						)}
+						{recentThreads.length + filteredThreads.length > showMoreCount && (
+							<Button
+								onClick={() => setShowMoreCount((c) => c + 10)}
+								type="button"
+								variant="sidebarText"
+							>
+								Show more
+								<ChevronDown className="size-3" />
+							</Button>
 						)}
 					</div>
 				</ScrollArea>
@@ -767,8 +835,8 @@ function ThreadSection({
 	children: ReactNode;
 }) {
 	return (
-		<div className="mb-1 w-full min-w-0 max-w-full overflow-x-hidden">
-			<div className="flex w-full min-w-0 max-w-full items-center justify-between px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+		<div className="mb-1 w-full min-w-0 max-w-full overflow-x-hidden mx-3">
+			<div className="flex min-w-0 max-w-60 items-center justify-between py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 				<span>{label}</span>
 				{action}
 			</div>
@@ -792,7 +860,7 @@ function ThreadItem({
 	return (
 		<Button
 			className={cn(
-				"font-normal",
+				"font-normal justify-start px-1 flex col w-full items-center",
 				isActive
 					? "bg-sidebar-accent text-sidebar-accent-foreground"
 					: "text-sidebar-foreground/80 hover:bg-sidebar-accent/50",
@@ -801,48 +869,29 @@ function ThreadItem({
 			type="button"
 			variant="session"
 		>
-			<div className="mt-0.5 shrink-0">
-				{thread.status === "running" ? (
-					<Loader2 className="size-3 animate-spin text-primary" />
-				) : thread.status === "completed" ? (
-					<CheckCircle2 className="size-3 text-primary" />
-				) : thread.status === "failed" ? (
-					<XCircle className="size-3 text-destructive" />
-				) : thread.status === "cancelled" ? (
-					<AlertCircle className="size-3 text-warning" />
-				) : (
-					<Clock className="size-3 text-muted-foreground" />
-				)}
-			</div>
-			<div className="min-w-0 flex-1">
-				<div className="flex w-full min-w-0 max-w-full items-center gap-1.5 overflow-hidden">
-					<span className="block min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-tight">
-						{normalizeTitle(thread.title)}
-					</span>
+			<div className="flex flex-col w-[92%] min-w-0 items-center gap-1.5 overflow-hidden">
+				<div className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-tight justify-between w-full">
+					<span>{normalizeTitle(thread.title)}</span>
 					{thread.pinned && (
 						<Pin className="h-3 w-3 shrink-0 text-muted-foreground" />
 					)}
 				</div>
-				<div className="mt-0.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-					<span className="truncate rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px]">
+				<div className="mt-0.5 flex justify-between w-full items-center gap-2 text-xs text-muted-foreground">
+					<span className="truncate rounded bg-secondary py-0.5 font-mono text-xs">
 						{thread.codebase}
 					</span>
-					<span className="ml-auto">{thread.time}</span>
-				</div>
-				<div className="hidden mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden text-[10px] text-muted-foreground">
-					<span className="truncate">{thread.model}</span>
 					{tokenLabel && (
-						<>
-							<span>·</span>
-							<span className="shrink-0">{tokenLabel}</span>
-						</>
+						<span className="flex">
+							<span className="shrink-0 text-xs">{tokenLabel}</span>
+						</span>
 					)}
 					{costLabel && (
-						<>
+						<span className="flex">
 							<span>·</span>
-							<span className="shrink-0">{costLabel}</span>
-						</>
+							<span className="shrink-0 text-xs">{costLabel}</span>
+						</span>
 					)}
+					<span className="ml-auto">{thread.time}</span>
 				</div>
 			</div>
 		</Button>

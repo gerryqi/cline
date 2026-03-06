@@ -83,7 +83,32 @@ function isUnimplementedError(error: unknown): boolean {
 async function hasRuntimeMethods(address: string): Promise<boolean> {
 	const client = new RpcSessionClient({ address });
 	try {
-		await client.startRuntimeSession("{}");
+		const probeRequest = {
+			workspaceRoot: process.cwd(),
+			cwd: process.cwd(),
+			provider: "cline",
+			model: "openai/gpt-5.3-codex",
+			mode: "act",
+			apiKey: "",
+			enableTools: false,
+			enableSpawn: false,
+			enableTeams: false,
+			autoApproveTools: true,
+			teamName: "rpc-probe",
+			missionStepInterval: 3,
+			missionTimeIntervalMs: 120000,
+		};
+		const started = await client.startRuntimeSession(
+			JSON.stringify(probeRequest),
+		);
+		if (!started.sessionId.trim() || !started.startResultJson.trim()) {
+			return false;
+		}
+		try {
+			await client.deleteSession(started.sessionId, true);
+		} catch {
+			// best effort cleanup
+		}
 		return true;
 	} catch (error) {
 		return !isUnimplementedError(error);
@@ -281,6 +306,7 @@ export async function runRpcStartCommand(
 		return 0;
 	}
 
+	process.env.CLINE_RPC_ADDRESS = startAddress;
 	const handle = await startRpcServer({
 		address: startAddress,
 		sessionBackend: createSqliteRpcSessionBackend(),
