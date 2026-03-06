@@ -828,13 +828,28 @@ fn shared_session_messages_write_path(session_id: &str) -> Option<PathBuf> {
     shared_session_artifact_write_path(session_id, "messages.json")
 }
 
-fn append_chat_usage_hook_event(session_id: &str, result: &ChatTurnResult) {
-    let Some(path) = shared_session_artifact_write_path(session_id, "hooks.jsonl") else {
-        return;
+fn persist_usage_in_messages(
+    messages: &[Value],
+    config: &StartSessionRequest,
+    result: &ChatTurnResult,
+) -> Vec<Value> {
+    let mut next = messages.to_vec();
+    let assistant_index = next
+        .iter()
+        .rposition(|message| {
+            message
+                .get("role")
+                .and_then(|value| value.as_str())
+                .map(|role| role == "assistant")
+                .unwrap_or(false)
+        });
+
+    let Some(index) = assistant_index else {
+        return next;
     };
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
+    let Some(assistant_message) = next.get_mut(index).and_then(Value::as_object_mut) else {
+        return next;
+    };
 
     let input_tokens = result
         .usage
@@ -853,22 +868,51 @@ fn append_chat_usage_hook_event(session_id: &str, result: &ChatTurnResult) {
         .or(result.total_cost)
         .filter(|value| value.is_finite() && *value >= 0.0);
 
-    let payload = serde_json::json!({
-        "ts": now_ms().to_string(),
-        "hookName": "agent_end",
-        "taskId": session_id,
-        "usage": {
-            "inputTokens": input_tokens.unwrap_or(0),
-            "outputTokens": output_tokens.unwrap_or(0),
-            "totalCost": total_cost,
+    if let Some(metrics) = assistant_message
+        .entry("metrics")
+        .or_insert_with(|| Value::Object(serde_json::Map::new()))
+        .as_object_mut()
+    {
+        if let Some(value) = input_tokens {
+            metrics.insert("inputTokens".to_string(), Value::from(value));
         }
-    });
-
-    if let Ok(line) = serde_json::to_string(&payload) {
-        if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
-            let _ = file.write_all(format!("{line}\n").as_bytes());
+        if let Some(value) = output_tokens {
+            metrics.insert("outputTokens".to_string(), Value::from(value));
+        }
+        if let Some(value) = total_cost {
+            metrics.insert("cost".to_string(), Value::from(value));
         }
     }
+
+    let provider_id = config.provider.trim();
+    let model_id = config.model.trim();
+    if !provider_id.is_empty() {
+        assistant_message.insert("providerId".to_string(), Value::String(provider_id.to_string()));
+    }
+    if !model_id.is_empty() {
+        assistant_message.insert("modelId".to_string(), Value::String(model_id.to_string()));
+    }
+
+    let model_info_entry = assistant_message
+        .entry("modelInfo")
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if let Some(model_info) = model_info_entry.as_object_mut() {
+        if !model_id.is_empty() && !model_info.contains_key("id") {
+            model_info.insert("id".to_string(), Value::String(model_id.to_string()));
+        }
+        if !provider_id.is_empty() && !model_info.contains_key("provider") {
+            model_info.insert(
+                "provider".to_string(),
+                Value::String(provider_id.to_string()),
+            );
+        }
+    }
+
+    if !assistant_message.contains_key("ts") {
+        assistant_message.insert("ts".to_string(), Value::from(now_ms()));
+    }
+
+    next
 }
 
 fn read_persisted_chat_messages(session_id: &str) -> Result<Option<Vec<Value>>, String> {
@@ -3429,16 +3473,17 @@ async fn handle_chat_session_command(
             if let Some(session) = sessions.get_mut(&session_id) {
                 session.busy = false;
                 if let Ok(Ok(result)) = &turn_result {
-                    session.messages = result.messages.clone();
+                    let persisted_messages =
+                        persist_usage_in_messages(&result.messages, &config, result);
+                    session.messages = persisted_messages.clone();
                     session.status = normalize_chat_finish_status(result.finish_reason.as_deref());
                     session.ended_at = Some(now_ms());
-                    append_chat_usage_hook_event(&session_id, result);
                     if let Some(path) = shared_session_messages_write_path(&session_id) {
                         if let Some(parent) = path.parent() {
                             let _ = fs::create_dir_all(parent);
                         }
                         let body = serde_json::json!({
-                            "messages": result.messages,
+                            "messages": persisted_messages,
                             "ts": now_ms(),
                         });
                         if let Ok(encoded) = serde_json::to_vec(&body) {

@@ -719,11 +719,23 @@ export class CoreSessionService {
 		if (!event.parent_agent_id) {
 			return undefined;
 		}
+		const rootSessionId = resolveRootSessionId(event.sessionContext);
+		if (!rootSessionId) {
+			return undefined;
+		}
+		if (event.hookName === "session_shutdown") {
+			const sessionId = makeSubSessionId(rootSessionId, event.agent_id);
+			const existing = this.store.queryOne<{ session_id?: string }>(
+				`SELECT session_id FROM sessions WHERE session_id = ?`,
+				[sessionId],
+			);
+			return existing?.session_id ? sessionId : undefined;
+		}
 		return this.upsertSubagentSession({
 			agentId: event.agent_id,
 			parentAgentId: event.parent_agent_id,
 			conversationId: event.taskId,
-			rootSessionId: resolveRootSessionId(event.sessionContext),
+			rootSessionId,
 		});
 	}
 

@@ -50,6 +50,11 @@ class LocalFileSessionService {
 
 	constructor(private readonly sessionsDir: string) {}
 
+	ensureSessionsDir(): string {
+		mkdirSync(this.sessionsDir, { recursive: true });
+		return this.sessionsDir;
+	}
+
 	createRootSessionWithArtifacts(input: {
 		sessionId: string;
 		source: SessionSource;
@@ -71,10 +76,10 @@ class LocalFileSessionService {
 		const sessionPath = join(this.sessionsDir, sessionId);
 		mkdirSync(sessionPath, { recursive: true });
 
-		const manifestPath = join(sessionPath, "manifest.json");
-		const transcriptPath = join(sessionPath, "transcript.log");
-		const hookPath = join(sessionPath, "hook.jsonl");
-		const messagesPath = join(sessionPath, "messages.json");
+		const manifestPath = join(sessionPath, `${sessionId}.json`);
+		const transcriptPath = join(sessionPath, `${sessionId}.log`);
+		const hookPath = join(sessionPath, `${sessionId}.hooks.jsonl`);
+		const messagesPath = join(sessionPath, `${sessionId}.messages.json`);
 		const prompt = input.prompt?.trim() || undefined;
 		const manifest: SessionManifest = {
 			version: 1,
@@ -201,7 +206,7 @@ class LocalFileSessionService {
 		unlinkSync(row.transcript_path);
 		unlinkSync(row.hook_path);
 		unlinkSync(row.messages_path ?? "");
-		unlinkSync(join(this.sessionsDir, sessionId, "manifest.json"));
+		unlinkSync(join(this.sessionsDir, sessionId, `${sessionId}.json`));
 		return { deleted: true };
 	}
 }
@@ -301,8 +306,8 @@ describe("DefaultSessionManager e2e", () => {
 		});
 
 		expect(started.sessionId.length).toBeGreaterThan(0);
-		expect(existsSync(started.manifestPath)).toBe(true);
-		expect(existsSync(started.messagesPath)).toBe(true);
+		expect(existsSync(started.manifestPath)).toBe(false);
+		expect(existsSync(started.messagesPath)).toBe(false);
 
 		const first = await manager.send({
 			sessionId: started.sessionId,
@@ -312,6 +317,8 @@ describe("DefaultSessionManager e2e", () => {
 			sessionId: started.sessionId,
 			prompt: "second prompt",
 		});
+		expect(existsSync(started.manifestPath)).toBe(true);
+		expect(existsSync(started.messagesPath)).toBe(true);
 
 		expect(first?.text).toContain("first prompt");
 		expect(second?.text).toContain("second prompt");
@@ -333,10 +340,7 @@ describe("DefaultSessionManager e2e", () => {
 		expect(agentShutdown).toHaveBeenCalledTimes(1);
 		expect(runtimeShutdown).toHaveBeenCalledTimes(1);
 		const parsedManifest = JSON.parse(
-			readFileSync(
-				join(sessionsDir, started.sessionId, "manifest.json"),
-				"utf8",
-			),
+			readFileSync(started.manifestPath, "utf8"),
 		) as SessionManifest;
 		expect(parsedManifest.status).toBe("cancelled");
 

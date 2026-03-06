@@ -415,11 +415,20 @@ export class RpcCoreSessionService {
 		if (!event.parent_agent_id) {
 			return undefined;
 		}
+		const rootSessionId = resolveRootSessionId(event.sessionContext);
+		if (!rootSessionId) {
+			return undefined;
+		}
+		if (event.hookName === "session_shutdown") {
+			const sessionId = makeSubSessionId(rootSessionId, event.agent_id);
+			const existing = await this.client.getSession(sessionId);
+			return existing ? sessionId : undefined;
+		}
 		return await this.upsertSubagentSession({
 			agentId: event.agent_id,
 			parentAgentId: event.parent_agent_id,
 			conversationId: event.taskId,
-			rootSessionId: resolveRootSessionId(event.sessionContext),
+			rootSessionId,
 		});
 	}
 

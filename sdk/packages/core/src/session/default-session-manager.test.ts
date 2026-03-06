@@ -84,6 +84,7 @@ describe("DefaultSessionManager", () => {
 		const listSessions = vi.fn().mockResolvedValue([]);
 		const deleteSession = vi.fn().mockResolvedValue({ deleted: true });
 		const sessionService = {
+			ensureSessionsDir: vi.fn().mockReturnValue("/tmp/sessions"),
 			createRootSessionWithArtifacts,
 			persistSessionMessages,
 			updateSessionStatus,
@@ -123,7 +124,7 @@ describe("DefaultSessionManager", () => {
 		});
 
 		const started = await manager.start({
-			config: createConfig(),
+			config: createConfig({ sessionId }),
 			prompt: "hello",
 			interactive: false,
 		});
@@ -143,6 +144,7 @@ describe("DefaultSessionManager", () => {
 		const manifest = createManifest(sessionId);
 		const persistSessionMessages = vi.fn();
 		const sessionService = {
+			ensureSessionsDir: vi.fn().mockReturnValue("/tmp/sessions"),
 			createRootSessionWithArtifacts: vi.fn().mockResolvedValue({
 				manifestPath: "/tmp/manifest-meta.json",
 				transcriptPath: "/tmp/transcript-meta.log",
@@ -198,6 +200,7 @@ describe("DefaultSessionManager", () => {
 
 		await manager.start({
 			config: createConfig({
+				sessionId,
 				providerId: "anthropic",
 				modelId: "claude-sonnet-4-6",
 			}),
@@ -231,6 +234,7 @@ describe("DefaultSessionManager", () => {
 		const sessionId = "sess-2";
 		const manifest = createManifest(sessionId);
 		const sessionService = {
+			ensureSessionsDir: vi.fn().mockReturnValue("/tmp/sessions"),
 			createRootSessionWithArtifacts: vi.fn().mockResolvedValue({
 				manifestPath: "/tmp/manifest-2.json",
 				transcriptPath: "/tmp/transcript-2.log",
@@ -269,7 +273,7 @@ describe("DefaultSessionManager", () => {
 		});
 
 		await manager.start({
-			config: createConfig(),
+			config: createConfig({ sessionId }),
 			interactive: true,
 		});
 		const first = await manager.send({ sessionId, prompt: "first" });
@@ -286,6 +290,7 @@ describe("DefaultSessionManager", () => {
 		const sessionId = "sess-fail";
 		const manifest = createManifest(sessionId);
 		const sessionService = {
+			ensureSessionsDir: vi.fn().mockReturnValue("/tmp/sessions"),
 			createRootSessionWithArtifacts: vi.fn().mockResolvedValue({
 				manifestPath: "/tmp/manifest-fail.json",
 				transcriptPath: "/tmp/transcript-fail.log",
@@ -324,7 +329,7 @@ describe("DefaultSessionManager", () => {
 
 		await expect(
 			manager.start({
-				config: createConfig(),
+				config: createConfig({ sessionId }),
 				prompt: "hello",
 				interactive: false,
 			}),
@@ -338,10 +343,57 @@ describe("DefaultSessionManager", () => {
 		expect(runtimeShutdown).toHaveBeenCalledTimes(1);
 	});
 
+	it("does not persist or emit shutdown hooks when no prompt was submitted", async () => {
+		const sessionService = {
+			ensureSessionsDir: vi.fn().mockReturnValue("/tmp/sessions"),
+			createRootSessionWithArtifacts: vi.fn(),
+			persistSessionMessages: vi.fn(),
+			updateSessionStatus: vi.fn(),
+			writeSessionManifest: vi.fn(),
+			listSessions: vi.fn().mockResolvedValue([]),
+			deleteSession: vi.fn().mockResolvedValue({ deleted: true }),
+		};
+		const runtimeShutdown = vi.fn();
+		const runtimeBuilder = {
+			build: vi.fn().mockReturnValue({
+				tools: [],
+				shutdown: runtimeShutdown,
+			}),
+		};
+		const agentShutdown = vi.fn().mockResolvedValue(undefined);
+		const manager = new DefaultSessionManager({
+			sessionService: sessionService as never,
+			runtimeBuilder,
+			createAgent: () =>
+				({
+					run: vi.fn(),
+					continue: vi.fn(),
+					abort: vi.fn(),
+					shutdown: agentShutdown,
+					getMessages: vi.fn().mockReturnValue([]),
+					messages: [],
+				}) as never,
+		});
+
+		const started = await manager.start({
+			config: createConfig({ sessionId: "sess-no-prompt" }),
+			interactive: true,
+		});
+		await manager.stop(started.sessionId);
+
+		expect(
+			sessionService.createRootSessionWithArtifacts,
+		).not.toHaveBeenCalled();
+		expect(sessionService.updateSessionStatus).not.toHaveBeenCalled();
+		expect(agentShutdown).not.toHaveBeenCalled();
+		expect(runtimeShutdown).toHaveBeenCalledTimes(1);
+	});
+
 	it("updates agent connection with refreshed OAuth key before turn", async () => {
 		const sessionId = "sess-oauth";
 		const manifest = createManifest(sessionId);
 		const sessionService = {
+			ensureSessionsDir: vi.fn().mockReturnValue("/tmp/sessions"),
 			createRootSessionWithArtifacts: vi.fn().mockResolvedValue({
 				manifestPath: "/tmp/manifest-oauth.json",
 				transcriptPath: "/tmp/transcript-oauth.log",
@@ -388,6 +440,7 @@ describe("DefaultSessionManager", () => {
 
 		await manager.start({
 			config: createConfig({
+				sessionId,
 				providerId: "openai-codex",
 				apiKey: "oauth-access-old",
 			}),
@@ -405,6 +458,7 @@ describe("DefaultSessionManager", () => {
 		const sessionId = "sess-oauth-retry";
 		const manifest = createManifest(sessionId);
 		const sessionService = {
+			ensureSessionsDir: vi.fn().mockReturnValue("/tmp/sessions"),
 			createRootSessionWithArtifacts: vi.fn().mockResolvedValue({
 				manifestPath: "/tmp/manifest-oauth-retry.json",
 				transcriptPath: "/tmp/transcript-oauth-retry.log",
@@ -459,6 +513,7 @@ describe("DefaultSessionManager", () => {
 
 		await manager.start({
 			config: createConfig({
+				sessionId,
 				providerId: "openai-codex",
 				apiKey: "oauth-access-old",
 			}),

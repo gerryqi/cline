@@ -38,7 +38,7 @@ Use this backend when starting `@cline/rpc` servers so RPC remains transport-onl
 
 `@cline/core/server` now exposes `DefaultSessionManager`, a concrete runtime facade that owns:
 
-- root session creation + manifest/artifact wiring
+- root session lifecycle + manifest/artifact wiring
 - runtime/tool composition through `DefaultRuntimeBuilder`
 - agent lifecycle (run/continue/abort/stop/dispose)
 - session message persistence after each turn
@@ -47,6 +47,12 @@ Use this backend when starting `@cline/rpc` servers so RPC remains transport-onl
 `DefaultSessionManager.dispose(reason?)` now provides a manager-wide shutdown path that cancels and tears down all active sessions, ensuring tool/runtime resources are released on host shutdown.
 
 This is the primary API for host clients that should only consume runtime events and outputs without manually creating agents or persisting messages.
+
+Session persistence behavior:
+
+- Root sessions are now persisted lazily on first user prompt submission (not at `start()` time).
+- Calling `stop()`/`dispose()` before any user prompt no longer creates session records/artifacts or emits `session_shutdown` audit entries for that idle session.
+- Session artifacts are stored under a single folder per concrete session id (`~/.cline/data/sessions/<sessionId>/...`) with no extra nested directories for subagent/teamtask naming.
 
 Session message history persistence now enriches the latest assistant message of each turn with metadata before writing `messages.json`:
 

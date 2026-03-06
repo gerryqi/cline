@@ -160,7 +160,7 @@ Under:
   - if a session has no meaningful user/assistant message content, it is treated as `idle` (not `completed`)
 - Refined status is also propagated into in-memory `sessions` state so reopened history sessions keep header/sidebar status in sync.
 - Chat fallback history now hydrates provider/model/workspace metadata from each session manifest when available instead of defaulting to placeholders.
-- Chat usage hook persistence preserves `totalCost` as optional, so unknown pricing no longer gets recorded as an explicit zero.
+- Turn usage/cost is persisted in `messages.json` assistant metadata (`metrics`) and is no longer synthesized into `hooks.jsonl`.
 
 ### 7) Render in Chat UI
 

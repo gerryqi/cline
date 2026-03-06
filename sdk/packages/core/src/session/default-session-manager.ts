@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import {
 	Agent,
 	type AgentConfig,
@@ -14,6 +15,7 @@ import {
 } from "@cline/agents";
 import type { providers as LlmsProviders } from "@cline/llms";
 import { setHomeDirIfUnset } from "@cline/shared";
+import { nanoid } from "nanoid";
 import {
 	createBuiltinTools,
 	type ToolExecutors,
@@ -44,6 +46,7 @@ import type {
 	StartSessionInput,
 	StartSessionResult,
 } from "./session-manager";
+import { SessionManifestSchema } from "./session-manifest";
 import type {
 	CoreSessionService,
 	RootSessionArtifacts,
@@ -55,7 +58,10 @@ type SessionBackend = CoreSessionService | RpcCoreSessionService;
 type ActiveSession = {
 	sessionId: string;
 	config: CoreSessionConfig;
-	artifacts: RootSessionArtifacts;
+	artifacts?: RootSessionArtifacts;
+	source: SessionSource;
+	startedAt: string;
+	pendingPrompt?: string;
 	runtime: BuiltRuntime;
 	agent: Agent;
 	started: boolean;
@@ -219,36 +225,59 @@ export class DefaultSessionManager implements SessionManager {
 	}
 
 	async start(input: StartSessionInput): Promise<StartSessionResult> {
-		const sessionId = input.config.sessionId?.trim() ?? "";
-		const artifacts = (await this.invoke("createRootSessionWithArtifacts", {
-			sessionId,
-			source: input.source ?? SessionSource.CLI,
+		const source = input.source ?? SessionSource.CLI;
+		const startedAt = nowIso();
+		const requestedSessionId = input.config.sessionId?.trim() ?? "";
+		const sessionId =
+			requestedSessionId.length > 0
+				? requestedSessionId
+				: `${Date.now()}_${nanoid(5)}`;
+		const sessionsDir =
+			((await this.invokeOptionalValue("ensureSessionsDir")) as
+				| string
+				| undefined) ?? "";
+		if (!sessionsDir) {
+			throw new Error(
+				"session service method not available: ensureSessionsDir",
+			);
+		}
+		const sessionDir = join(sessionsDir, sessionId);
+		const transcriptPath = join(sessionDir, `${sessionId}.log`);
+		const hookPath = join(sessionDir, `${sessionId}.hooks.jsonl`);
+		const messagesPath = join(sessionDir, `${sessionId}.messages.json`);
+		const manifestPath = join(sessionDir, `${sessionId}.json`);
+		const manifest = SessionManifestSchema.parse({
+			version: 1,
+			session_id: sessionId,
+			source,
 			pid: process.pid,
+			started_at: startedAt,
+			status: "running",
 			interactive: input.interactive === true,
 			provider: input.config.providerId,
 			model: input.config.modelId,
 			cwd: input.config.cwd,
-			workspaceRoot: input.config.workspaceRoot ?? input.config.cwd,
-			teamName: input.config.teamName,
-			enableTools: input.config.enableTools,
-			enableSpawn: input.config.enableSpawnAgent,
-			enableTeams: input.config.enableAgentTeams,
+			workspace_root: input.config.workspaceRoot ?? input.config.cwd,
+			team_name: input.config.teamName,
+			enable_tools: input.config.enableTools,
+			enable_spawn: input.config.enableSpawnAgent,
+			enable_teams: input.config.enableAgentTeams,
 			prompt: input.prompt?.trim() || undefined,
-			startedAt: nowIso(),
-		})) as RootSessionArtifacts;
+			messages_path: messagesPath,
+		});
 
 		const fileHooks = createHookConfigFileHooks({
 			cwd: input.config.cwd,
 			workspacePath: input.config.workspaceRoot ?? input.config.cwd,
-			rootSessionId: artifacts.manifest.session_id,
-			hookLogPath: artifacts.hookPath,
+			rootSessionId: sessionId,
+			hookLogPath: hookPath,
 			logger: input.config.logger,
 		});
 		const auditHooks = hasRuntimeHooks(input.config.hooks)
 			? undefined
 			: createHookAuditHooks({
-					hookLogPath: artifacts.hookPath,
-					rootSessionId: artifacts.manifest.session_id,
+					hookLogPath: hookPath,
+					rootSessionId: sessionId,
 					workspacePath: input.config.workspaceRoot ?? input.config.cwd,
 				});
 		const effectiveHooks = mergeAgentHooks([
@@ -266,11 +295,10 @@ export class DefaultSessionManager implements SessionManager {
 			hooks: effectiveHooks,
 			logger: effectiveConfig.logger,
 			onTeamEvent: (event: TeamEvent) => {
-				void this.handleTeamEvent(artifacts.manifest.session_id, event);
+				void this.handleTeamEvent(sessionId, event);
 				effectiveConfig.onTeamEvent?.(event);
 			},
-			createSpawnTool: () =>
-				this.createSpawnTool(effectiveConfig, artifacts.manifest.session_id),
+			createSpawnTool: () => this.createSpawnTool(effectiveConfig, sessionId),
 			onTeamRestored: input.onTeamRestored,
 			userInstructionWatcher: input.userInstructionWatcher,
 			defaultToolExecutors:
@@ -299,14 +327,14 @@ export class DefaultSessionManager implements SessionManager {
 				this.emit({
 					type: "agent_event",
 					payload: {
-						sessionId: artifacts.manifest.session_id,
+						sessionId,
 						event,
 					},
 				});
 				this.emit({
 					type: "chunk",
 					payload: {
-						sessionId: artifacts.manifest.session_id,
+						sessionId,
 						stream: "agent",
 						chunk: serializeAgentEvent(event),
 						ts: Date.now(),
@@ -316,16 +344,17 @@ export class DefaultSessionManager implements SessionManager {
 		});
 
 		const active: ActiveSession = {
-			sessionId: artifacts.manifest.session_id,
+			sessionId,
 			config: effectiveConfig,
-			artifacts,
+			source,
+			startedAt,
+			pendingPrompt: manifest.prompt,
 			runtime,
 			agent,
 			started: false,
 			aborting: false,
 			interactive: input.interactive === true,
 		};
-		active.started = (input.initialMessages?.length ?? 0) > 0;
 		this.sessions.set(active.sessionId, active);
 		this.emitStatus(active.sessionId, "running");
 
@@ -347,12 +376,12 @@ export class DefaultSessionManager implements SessionManager {
 		}
 
 		return {
-			sessionId: active.sessionId,
-			manifest: artifacts.manifest,
-			manifestPath: artifacts.manifestPath,
-			transcriptPath: artifacts.transcriptPath,
-			hookPath: artifacts.hookPath,
-			messagesPath: artifacts.messagesPath,
+			sessionId,
+			manifest,
+			manifestPath,
+			transcriptPath,
+			hookPath,
+			messagesPath,
 			result,
 		};
 	}
@@ -507,6 +536,7 @@ export class DefaultSessionManager implements SessionManager {
 		if (!prompt) {
 			throw new Error("prompt cannot be empty");
 		}
+		await this.ensureSessionPersisted(session);
 		await this.syncOAuthCredentials(session);
 
 		const shouldContinue =
@@ -536,6 +566,28 @@ export class DefaultSessionManager implements SessionManager {
 			persistedMessages,
 		);
 		return result;
+	}
+
+	private async ensureSessionPersisted(session: ActiveSession): Promise<void> {
+		if (session.artifacts) {
+			return;
+		}
+		session.artifacts = (await this.invoke("createRootSessionWithArtifacts", {
+			sessionId: session.sessionId,
+			source: session.source,
+			pid: process.pid,
+			interactive: session.interactive,
+			provider: session.config.providerId,
+			model: session.config.modelId,
+			cwd: session.config.cwd,
+			workspaceRoot: session.config.workspaceRoot ?? session.config.cwd,
+			teamName: session.config.teamName,
+			enableTools: session.config.enableTools,
+			enableSpawn: session.config.enableSpawnAgent,
+			enableTeams: session.config.enableAgentTeams,
+			prompt: session.pendingPrompt,
+			startedAt: session.startedAt,
+		})) as RootSessionArtifacts;
 	}
 
 	private async finalizeSingleRun(
@@ -577,8 +629,12 @@ export class DefaultSessionManager implements SessionManager {
 			endReason: string;
 		},
 	): Promise<void> {
-		await this.updateStatus(session, input.status, input.exitCode);
-		await session.agent.shutdown(input.shutdownReason);
+		if (session.artifacts) {
+			await this.updateStatus(session, input.status, input.exitCode);
+		}
+		if (session.artifacts) {
+			await session.agent.shutdown(input.shutdownReason);
+		}
 		await Promise.resolve(session.runtime.shutdown(input.shutdownReason));
 		this.sessions.delete(session.sessionId);
 		this.emit({
@@ -596,6 +652,9 @@ export class DefaultSessionManager implements SessionManager {
 		status: SessionStatus,
 		exitCode?: number | null,
 	): Promise<void> {
+		if (!session.artifacts) {
+			return;
+		}
 		const result = await this.invoke<{ updated: boolean; endedAt?: string }>(
 			"updateSessionStatus",
 			session.sessionId,
@@ -759,6 +818,20 @@ export class DefaultSessionManager implements SessionManager {
 		}
 		const fn = callable as (...params: unknown[]) => unknown;
 		await Promise.resolve(fn.apply(this.sessionService, args));
+	}
+
+	private async invokeOptionalValue<T = unknown>(
+		method: string,
+		...args: unknown[]
+	): Promise<T | undefined> {
+		const callable = (
+			this.sessionService as unknown as Record<string, unknown>
+		)[method];
+		if (typeof callable !== "function") {
+			return undefined;
+		}
+		const fn = callable as (...params: unknown[]) => T | Promise<T>;
+		return await Promise.resolve(fn.apply(this.sessionService, args));
 	}
 
 	private async runWithAuthRetry(

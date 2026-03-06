@@ -6,11 +6,6 @@ import {
 	unlinkSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import {
-	parseSubSessionId,
-	parseTeamTaskSubSessionId,
-	sanitizeSessionToken,
-} from "./session-graph";
 
 export function nowIso(): string {
 	return new Date().toISOString();
@@ -37,23 +32,6 @@ export class SessionArtifacts {
 	constructor(private readonly ensureSessionsDir: () => string) {}
 
 	public sessionArtifactsDir(sessionId: string): string {
-		const teamTask = parseTeamTaskSubSessionId(sessionId);
-		if (teamTask) {
-			return join(
-				this.ensureSessionsDir(),
-				teamTask.rootSessionId,
-				`teamtask-${sanitizeSessionToken(teamTask.teamTaskId)}`,
-				sanitizeSessionToken(teamTask.agentId),
-			);
-		}
-		const subSession = parseSubSessionId(sessionId);
-		if (subSession) {
-			return join(
-				this.ensureSessionsDir(),
-				subSession.rootSessionId,
-				sanitizeSessionToken(subSession.agentId),
-			);
-		}
 		return join(this.ensureSessionsDir(), sessionId);
 	}
 
@@ -111,41 +89,14 @@ export class SessionArtifacts {
 		}
 	}
 
-	public teamTaskSubagentArtifactsDir(
-		teamTaskSessionId: string,
-		subAgentId: string,
-	): string {
-		const teamTask = parseTeamTaskSubSessionId(teamTaskSessionId);
-		if (!teamTask) {
-			return this.sessionArtifactsDir(teamTaskSessionId);
-		}
-		return join(
-			this.ensureSessionsDir(),
-			teamTask.rootSessionId,
-			`teamtask-${sanitizeSessionToken(teamTask.teamTaskId)}`,
-			sanitizeSessionToken(subAgentId),
-		);
-	}
-
 	public subagentArtifactPaths(
 		sessionId: string,
 		subAgentId: string,
 		activeTeamTaskSessionId?: string,
 	): SessionArtifactPaths {
-		if (!activeTeamTaskSessionId) {
-			return {
-				transcriptPath: this.sessionTranscriptPath(sessionId),
-				hookPath: this.sessionHookPath(sessionId),
-				messagesPath: this.sessionMessagesPath(sessionId),
-			};
-		}
-		const dir = this.teamTaskSubagentArtifactsDir(
-			activeTeamTaskSessionId,
-			subAgentId,
-		);
-		if (!existsSync(dir)) {
-			mkdirSync(dir, { recursive: true });
-		}
+		void subAgentId;
+		void activeTeamTaskSessionId;
+		const dir = this.ensureSessionArtifactsDir(sessionId);
 		return {
 			transcriptPath: join(dir, `${sessionId}.log`),
 			hookPath: join(dir, `${sessionId}.hooks.jsonl`),

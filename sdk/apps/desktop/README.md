@@ -65,16 +65,10 @@ The app resolves API keys from either:
 - Session hook logs: `~/.cline/apps/desktop/hooks/<session-id>.jsonl`
 - Shared CLI session data root: `~/.cline/data/sessions/`
 - Shared CLI DB: `~/.cline/data/sessions/sessions.db`
-- Root session artifacts:
-  - `~/.cline/data/sessions/<main-session-id>/<main-session-id>.log`
-  - `~/.cline/data/sessions/<main-session-id>/<main-session-id>.hooks.jsonl`
-  - `~/.cline/data/sessions/<main-session-id>/<main-session-id>.messages.json`
-  - `~/.cline/data/sessions/<main-session-id>/<main-session-id>.json`
-- Subagent artifacts (non-teamtask):
-  - `~/.cline/data/sessions/<main-session-id>/<subagent-name>/<sub-session-id>.log`
-  - `~/.cline/data/sessions/<main-session-id>/<subagent-name>/<sub-session-id>.hooks.jsonl`
-  - `~/.cline/data/sessions/<main-session-id>/<subagent-name>/<sub-session-id>.messages.json`
-- Teamtask session + nested subagents:
-  - teamtask session: `~/.cline/data/sessions/<main-session-id>/teamtask-<teamtask-id>/<teamtask-agent>/<teamtask-session-id>.log`
-  - teamtask subagent: `~/.cline/data/sessions/<main-session-id>/teamtask-<teamtask-id>/<subagent-name>/<sub-session-id>.log`
+- Session artifacts (root + subagent + teamtask sessions all use the same flat layout per concrete session id):
+  - `~/.cline/data/sessions/<session-id>/<session-id>.log`
+  - `~/.cline/data/sessions/<session-id>/<session-id>.hooks.jsonl`
+  - `~/.cline/data/sessions/<session-id>/<session-id>.messages.json`
+  - `~/.cline/data/sessions/<session-id>/<session-id>.json`
+- Root session folders are created only after the first user prompt is submitted.
 - Team state/history: `~/.cline/data/teams/<team-name>/...`
