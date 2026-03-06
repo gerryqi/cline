@@ -31,6 +31,16 @@ From `apps/code/`:
 - Chat config now hydrates `apiKey` from the provider catalog and re-syncs it whenever the selected provider changes, so OAuth-saved credentials (for example `cline`) are used automatically when starting a session.
 - The chat input bar now persists both the last selected provider and each provider's last selected model in local storage, and new chat threads restore that last provider/model pair on startup.
 
+## Workspace File Mentions (`@`)
+
+- Typing `@` in the chat input opens a workspace file suggestion popover.
+- Suggestions are resolved by the fast file indexer in `@cline/core/input` through a Tauri-hosted script:
+  - [`scripts/workspace-file-search.ts`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/scripts/workspace-file-search.ts)
+- Filtering is server-side before results are sent to the UI:
+  - empty mention (`@`) returns the first 10 indexed files for the active workspace
+  - non-empty mention (`@src/...`) filters and ranks indexed paths, returning up to 10 results
+- Choosing a suggestion inserts `@<relative/path>` into the prompt.
+
 ## Chat Message Exchange Lifecycle
 
 This section explains how one chat turn moves through the app and why messages can appear either live or after hydration.

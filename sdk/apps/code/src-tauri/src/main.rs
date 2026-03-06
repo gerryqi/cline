@@ -1414,6 +1414,28 @@ fn resolve_provider_settings_script_path(context: &AppContext) -> Option<PathBuf
     candidates.into_iter().find(|path| path.exists())
 }
 
+fn resolve_workspace_file_search_script_path(context: &AppContext) -> Option<PathBuf> {
+    let candidates = [
+        PathBuf::from(&context.workspace_root)
+            .join("apps")
+            .join("code")
+            .join("scripts")
+            .join("workspace-file-search.ts"),
+        PathBuf::from(&context.workspace_root)
+            .join("scripts")
+            .join("workspace-file-search.ts"),
+        PathBuf::from(&context.launch_cwd)
+            .join("scripts")
+            .join("workspace-file-search.ts"),
+        PathBuf::from(&context.launch_cwd)
+            .join("apps")
+            .join("code")
+            .join("scripts")
+            .join("workspace-file-search.ts"),
+    ];
+    candidates.into_iter().find(|path| path.exists())
+}
+
 fn run_bun_script_json(
     script_path: &Path,
     script_workdir: &Path,
@@ -3321,6 +3343,40 @@ fn save_provider_settings(
 }
 
 #[tauri::command]
+fn search_workspace_files(
+    context: State<'_, AppContext>,
+    workspace_root: Option<String>,
+    query: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<String>, String> {
+    let Some(script_path) = resolve_workspace_file_search_script_path(&context) else {
+        return Err(format!(
+            "workspace file search script not found. checked workspace_root={} and launch_cwd={}",
+            context.workspace_root, context.launch_cwd
+        ));
+    };
+    let script_workdir = script_path
+        .parent()
+        .and_then(|parent| parent.parent())
+        .map(|value| value.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from(&context.launch_cwd));
+
+    let response = run_bun_script_json(
+        &script_path,
+        &script_workdir,
+        serde_json::json!({
+            "workspaceRoot": workspace_root,
+            "query": query,
+            "limit": limit
+        })
+        .to_string(),
+        "workspace file search",
+    )?;
+    serde_json::from_value::<Vec<String>>(response)
+        .map_err(|e| format!("invalid workspace file search response: {e}"))
+}
+
+#[tauri::command]
 fn delete_cli_session(context: State<'_, AppContext>, session_id: String) -> Result<(), String> {
     let Some(cli_entrypoint) = resolve_cli_entrypoint_path(&context) else {
         return Err("CLI entrypoint not found".to_string());
@@ -4620,6 +4676,7 @@ fn main() {
             list_provider_catalog,
             list_provider_models,
             save_provider_settings,
+            search_workspace_files,
             delete_cli_session,
             read_session_hooks,
             read_team_state,
