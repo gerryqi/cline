@@ -30,18 +30,25 @@ export {
 // =============================================================================
 
 export {
+	type HookDispatchInput,
+	HookEngine,
+	type HookHandler,
+} from "./hooks/index.js";
+export type {
+	HookEventName,
+	HookEventPayload,
+	RunHookOptions,
+	RunHookResult,
+	SubprocessHookControl,
+	SubprocessHooksOptions,
+} from "./hooks/node.js";
+export {
 	createSubprocessHooks,
-	type HookEventName,
 	HookEventNameSchema,
-	type HookEventPayload,
 	HookEventPayloadSchema,
 	parseHookEventPayload,
-	type RunHookOptions,
-	type RunHookResult,
 	runHook,
-	type SubprocessHookControl,
-	type SubprocessHooksOptions,
-} from "./hooks/index.js";
+} from "./hooks/node.js";
 
 // =============================================================================
 // Prompts and formatting

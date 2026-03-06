@@ -11,6 +11,14 @@ const builds: Parameters<typeof Bun.build>[0][] = [
 		external: ["@cline/llms", "@cline/shared"],
 	},
 	{
+		entrypoints: ["./src/index.node.ts"],
+		outdir: "./dist",
+		target: "node",
+		minify: true,
+		sourcemap: "none",
+		external: ["@cline/llms", "@cline/shared"],
+	},
+	{
 		entrypoints: ["./src/index.browser.ts"],
 		outdir: "./dist",
 		target: "browser",

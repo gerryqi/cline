@@ -1,10 +1,10 @@
+import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
-import {
-	type AgentHooks,
-	type HookEventName,
-	type HookEventPayload,
-	runHook,
+import type {
+	AgentHooks,
+	HookEventName,
+	HookEventPayload,
 } from "@cline/agents";
 import type { BasicLogger, HookSessionContext } from "@cline/shared";
 import { listHookConfigFiles } from "../agents/hooks-config-loader";
@@ -164,6 +164,121 @@ function createPayloadBase(
 
 type HookCommandMap = Partial<Record<HookEventName, string[][]>>;
 
+interface HookCommandResult {
+	exitCode: number | null;
+	stdout: string;
+	stderr: string;
+	parsedJson?: unknown;
+	parseError?: string;
+	timedOut?: boolean;
+}
+
+function parseHookStdout(stdout: string): {
+	parsedJson?: unknown;
+	parseError?: string;
+} {
+	const trimmed = stdout.trim();
+	if (!trimmed) {
+		return {};
+	}
+	const lines = trimmed
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean);
+	const prefixed = lines
+		.filter((line) => line.startsWith("HOOK_CONTROL\t"))
+		.map((line) => line.slice("HOOK_CONTROL\t".length));
+	const candidate =
+		prefixed.length > 0 ? prefixed[prefixed.length - 1] : trimmed;
+	try {
+		return { parsedJson: JSON.parse(candidate) };
+	} catch (error) {
+		return {
+			parseError:
+				error instanceof Error
+					? error.message
+					: "Failed to parse hook stdout JSON",
+		};
+	}
+}
+
+async function runHookCommand(
+	payload: HookEventPayload,
+	options: {
+		command: string[];
+		cwd: string;
+		env?: NodeJS.ProcessEnv;
+		detached: boolean;
+		timeoutMs?: number;
+	},
+): Promise<HookCommandResult | undefined> {
+	if (options.command.length === 0) {
+		throw new Error("runHookCommand requires non-empty command");
+	}
+	const child = spawn(options.command[0], options.command.slice(1), {
+		cwd: options.cwd,
+		env: options.env,
+		stdio: options.detached
+			? ["pipe", "ignore", "ignore"]
+			: ["pipe", "pipe", "pipe"],
+		detached: options.detached,
+	});
+
+	const body = JSON.stringify(payload);
+	if (!child.stdin) {
+		throw new Error("hook command failed to create stdin");
+	}
+	child.stdin.write(body);
+	child.stdin.end();
+
+	if (options.detached) {
+		await new Promise<void>((resolve, reject) => {
+			child.once("error", reject);
+			child.once("spawn", () => resolve());
+		});
+		child.unref();
+		return;
+	}
+
+	if (!child.stdout || !child.stderr) {
+		throw new Error("hook command failed to create stdout/stderr");
+	}
+	let stdout = "";
+	let stderr = "";
+	let timedOut = false;
+	let timeoutId: NodeJS.Timeout | undefined;
+	child.stdout.on("data", (chunk: Buffer | string) => {
+		stdout += chunk.toString();
+	});
+	child.stderr.on("data", (chunk: Buffer | string) => {
+		stderr += chunk.toString();
+	});
+
+	return await new Promise<HookCommandResult>((resolve, reject) => {
+		child.once("error", reject);
+		if ((options.timeoutMs ?? 0) > 0) {
+			timeoutId = setTimeout(() => {
+				timedOut = true;
+				child.kill("SIGKILL");
+			}, options.timeoutMs);
+		}
+		child.once("close", (exitCode) => {
+			if (timeoutId) {
+				clearTimeout(timeoutId);
+			}
+			const { parsedJson, parseError } = parseHookStdout(stdout);
+			resolve({
+				exitCode,
+				stdout,
+				stderr,
+				parsedJson,
+				parseError,
+				timedOut,
+			});
+		});
+	});
+}
+
 function parseShebangCommand(path: string): string[] | undefined {
 	try {
 		const content = readFileSync(path, "utf8");
@@ -237,7 +352,7 @@ async function runBlockingHookCommands(options: {
 	for (const command of options.commands) {
 		const commandLabel = command.join(" ");
 		try {
-			const result = await runHook(options.payload, {
+			const result = await runHookCommand(options.payload, {
 				command,
 				cwd: options.cwd,
 				env: process.env,
@@ -275,7 +390,7 @@ function runAsyncHookCommands(options: {
 }): void {
 	for (const command of options.commands) {
 		const commandLabel = command.join(" ");
-		void runHook(options.payload, {
+		void runHookCommand(options.payload, {
 			command,
 			cwd: options.cwd,
 			env: process.env,

@@ -779,7 +779,12 @@ export class Agent {
 		userImages?: string[],
 		userFiles?: string[],
 	): Promise<string | providers.ContentBlock[]> {
-		return buildInitialUserContent(userMessage, userImages, userFiles);
+		return buildInitialUserContent(
+			userMessage,
+			userImages,
+			userFiles,
+			this.config.userFileContentLoader,
+		);
 	}
 
 	private buildAbortedResult(startedAt: Date, text: string): AgentResult {

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import {
 	Agent,
@@ -81,6 +82,22 @@ export interface DefaultSessionManagerOptions {
 }
 
 const MAX_SCAN_LIMIT = 5000;
+const MAX_USER_FILE_BYTES = 20 * 1_000 * 1_024;
+
+async function loadUserFileContent(path: string): Promise<string> {
+	const fileStat = await stat(path);
+	if (!fileStat.isFile()) {
+		throw new Error("Path is not a file");
+	}
+	if (fileStat.size > MAX_USER_FILE_BYTES) {
+		throw new Error("File is too large to read into context.");
+	}
+	const content = await readFile(path, "utf8");
+	if (content.includes("\u0000")) {
+		throw new Error("Cannot read binary file into context.");
+	}
+	return content;
+}
 
 function hasRuntimeHooks(hooks: AgentConfig["hooks"]): boolean {
 	if (!hooks) {
@@ -273,6 +290,7 @@ export class DefaultSessionManager implements SessionManager {
 			hooks: effectiveHooks,
 			hookErrorMode: effectiveConfig.hookErrorMode,
 			initialMessages: input.initialMessages,
+			userFileContentLoader: loadUserFileContent,
 			toolPolicies: input.toolPolicies ?? this.defaultToolPolicies,
 			requestToolApproval:
 				input.requestToolApproval ?? this.defaultRequestToolApproval,

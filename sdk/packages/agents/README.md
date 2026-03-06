@@ -103,6 +103,9 @@ Subprocess hook payloads now support `sessionContext` so hosts can pass root ses
 
 `runHook(...)` now surfaces clearer spawn errors (including `EACCES`) and recommends explicit interpreter command arrays for hook execution.
 
+Node-only subprocess hook helpers are exported from `@cline/agents/node`.
+The default `@cline/agents` entrypoint remains runtime-agnostic.
+
 ## Plugin Architecture
 
 `@cline/agents` now uses a single hook execution path: `HookEngine`.

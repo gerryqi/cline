@@ -1,16 +1,17 @@
-import { readFile, stat } from "node:fs/promises";
 import type { providers } from "@cline/llms";
 import { formatFileContentBlock } from "@cline/shared";
-
-const MAX_USER_FILE_BYTES = 20 * 1_000 * 1_024;
 
 export async function buildInitialUserContent(
 	userMessage: string,
 	userImages?: string[],
 	userFiles?: string[],
+	userFileContentLoader?: (path: string) => Promise<string>,
 ): Promise<string | providers.ContentBlock[]> {
 	const imageBlocks = buildImageBlocks(userImages);
-	const fileTextBlock = await buildUserFileTextBlock(userFiles);
+	const fileTextBlock = await buildUserFileTextBlock(
+		userFiles,
+		userFileContentLoader,
+	);
 
 	if (imageBlocks.length === 0 && !fileTextBlock) {
 		return userMessage;
@@ -77,27 +78,25 @@ function parseDataUrlImage(image: string): providers.ImageContent | undefined {
 
 async function buildUserFileTextBlock(
 	userFiles?: string[],
+	userFileContentLoader?: (path: string) => Promise<string>,
 ): Promise<string | undefined> {
 	if (!userFiles || userFiles.length === 0) {
 		return undefined;
 	}
 
+	const loader =
+		userFileContentLoader ??
+		(async () => {
+			throw new Error(
+				"File loading is not configured in this runtime. Provide userFileContentLoader to enable userFiles support.",
+			);
+		});
+
 	const contents = await Promise.all(
 		userFiles.map(async (filePath) => {
 			const normalizedPath = filePath.replace(/\\/g, "/");
 			try {
-				const fileStat = await stat(filePath);
-				if (!fileStat.isFile()) {
-					throw new Error("Path is not a file");
-				}
-				if (fileStat.size > MAX_USER_FILE_BYTES) {
-					throw new Error("File is too large to read into context.");
-				}
-
-				const content = await readFile(filePath, "utf8");
-				if (content.includes("\u0000")) {
-					throw new Error("Cannot read binary file into context.");
-				}
+				const content = await loader(filePath);
 				return formatFileContentBlock(normalizedPath, content);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);

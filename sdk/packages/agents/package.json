@@ -12,9 +12,9 @@
 			"import": "./dist/index.js"
 		},
 		"./node": {
-			"development": "./src/index.ts",
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js"
+			"development": "./src/index.node.ts",
+			"types": "./src/index.node.ts",
+			"import": "./dist/index.node.js"
 		},
 		"./browser": {
 			"development": "./src/index.browser.ts",

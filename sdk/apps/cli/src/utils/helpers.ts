@@ -300,13 +300,15 @@ function resolveClineDataDir(): string {
 
 export function appendHookAudit(event: HookEventPayload): void {
 	const payloadHookPath = resolveHookLogPath(event.sessionContext);
+	const envHookPath = process.env.CLINE_HOOKS_LOG_PATH?.trim() || undefined;
+	const targetHookPath = payloadHookPath ?? envHookPath;
 	const line = `${JSON.stringify({
 		ts: new Date().toISOString(),
 		...event,
 	})}\n`;
-	if (payloadHookPath) {
-		ensureHookLogDir(payloadHookPath);
-		appendFileSync(payloadHookPath, line, "utf-8");
+	if (targetHookPath) {
+		ensureHookLogDir(targetHookPath);
+		appendFileSync(targetHookPath, line, "utf-8");
 		return;
 	}
 	const dir = ensureHookLogDir();

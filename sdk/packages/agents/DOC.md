@@ -35,14 +35,16 @@ Workspace boundary note:
 
 ### Hooks
 
-- `createSubprocessHooks`
-- `runHook`
-- `HookEventName`
-- `HookEventPayload`
-- `ToolCallHookPayload`
-- `ToolResultHookPayload`
-- `AgentEndHookPayload`
-- `SessionShutdownHookPayload`
+- Core lifecycle engine exports (`HookEngine`, `HookHandler`) from `@cline/agents`
+- Node-only subprocess hook helpers from `@cline/agents/node`:
+  - `createSubprocessHooks`
+  - `runHook`
+  - `HookEventName`
+  - `HookEventPayload`
+  - `ToolCallHookPayload`
+  - `ToolResultHookPayload`
+  - `AgentEndHookPayload`
+  - `SessionShutdownHookPayload`
 
 ### Tools
 
@@ -105,7 +107,8 @@ Workspace boundary note:
 
 - `extensions` in `AgentConfig` handle policy/plugin composition
 - `setup(api)` registers runtime additions (tools, commands, shortcuts, flags, renderers, providers)
-- `hooks` in `AgentConfig` handle lifecycle callbacks and subprocess integrations
+- `hooks` in `AgentConfig` handle lifecycle callbacks
+- subprocess hook integrations are provided by `@cline/agents/node` or upstream runtime layers (for example `@cline/core`)
 
 Control fields returned by extension/hook handlers:
 

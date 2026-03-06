@@ -705,6 +705,11 @@ export interface AgentConfig {
 	 * @default 120000 (2 minutes)
 	 */
 	apiTimeoutMs?: number;
+	/**
+	 * Optional runtime file-content loader used when user files are attached.
+	 * When omitted, attached files will be represented as loader errors.
+	 */
+	userFileContentLoader?: (path: string) => Promise<string>;
 
 	// -------------------------------------------------------------------------
 	// Reasoning Settings (for capable models)
@@ -797,6 +802,11 @@ export const AgentConfigSchema = z.object({
 	maxParallelToolCalls: z.number().int().positive().default(8),
 	maxTokensPerTurn: z.number().positive().optional(),
 	apiTimeoutMs: z.number().positive().default(120000),
+	userFileContentLoader: z
+		.function()
+		.input([z.string()])
+		.output(z.promise(z.string()))
+		.optional(),
 	reminderAfterIterations: z.number().nonnegative().default(6),
 	reminderText: z.string().optional(),
 

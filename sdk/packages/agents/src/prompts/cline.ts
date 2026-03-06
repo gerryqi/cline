@@ -31,15 +31,16 @@ If user asked a simple question without any coding context, answer it directly w
 
 export function getClineDefaultSystemPrompt(
 	ide: string,
-	cwd = "",
+	cwd: string,
 	metadata = "",
 	rules = "",
 ) {
-	return DEFAULT_CLINE_SYSTEM_PROMPT.replace(
-		"{{PLATFORM_NAME}}",
-		process.platform,
-	)
-		.replace("{{CWD}}", cwd || process.cwd())
+	const platform =
+		typeof process !== "undefined" && process?.platform
+			? process.platform
+			: "unknown";
+	return DEFAULT_CLINE_SYSTEM_PROMPT.replace("{{PLATFORM_NAME}}", platform)
+		.replace("{{CWD}}", cwd)
 		.replace("{{CURRENT_DATE}}", new Date().toLocaleDateString())
 		.replace("{{IDE_NAME}}", ide)
 		.replace("{{CLINE_METADATA}}", metadata)

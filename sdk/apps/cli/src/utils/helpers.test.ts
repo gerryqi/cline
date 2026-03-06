@@ -317,6 +317,42 @@ describe("hook payload validation and audit logging", () => {
 		const content = readFileSync(expectedPath, "utf8");
 		expect(content).toContain('"hookName":"tool_result"');
 	});
+
+	it("writes hook audits to CLINE_HOOKS_LOG_PATH when payload context is missing", () => {
+		tempDir = mkdtempSync(path.join(os.tmpdir(), "cli-helper-env-audit-"));
+		const expectedPath = path.join(tempDir, "hooks", "from-env.jsonl");
+		const env = captureEnv();
+		process.env.CLINE_HOOKS_LOG_PATH = expectedPath;
+		delete process.env.CLINE_DATA_DIR;
+		delete process.env.CLINE_SESSION_ID;
+		delete process.env.CLINE_SESSION_DATA_DIR;
+
+		appendHookAudit({
+			clineVersion: "",
+			hookName: "tool_result",
+			timestamp: new Date().toISOString(),
+			taskId: "conv_3",
+			workspaceRoots: [],
+			userId: "agent_3",
+			iteration: 1,
+			agent_id: "agent_3",
+			parent_agent_id: null,
+			tool_result: {
+				id: "call_3",
+				name: "read_files",
+				input: { file_paths: ["README.md"] },
+				output: "ok",
+				durationMs: 5,
+				startedAt: new Date("2026-01-01T00:00:00.000Z"),
+				endedAt: new Date("2026-01-01T00:00:00.005Z"),
+			},
+		});
+		restoreEnv(env);
+
+		expect(existsSync(expectedPath)).toBe(true);
+		const content = readFileSync(expectedPath, "utf8");
+		expect(content).toContain('"hookName":"tool_result"');
+	});
 });
 
 describe("sandbox environment", () => {
