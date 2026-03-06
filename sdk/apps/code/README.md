@@ -135,6 +135,7 @@ Under:
 - [`chat-messages.tsx`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/components/chat-messages.tsx) renders:
   - user/assistant/system/status/error bubbles
   - tool messages via `ToolMessageBlock`
+  - scroll behavior that jumps to the latest content on initial mount and shows a floating "scroll to bottom" control when the viewport is away from the bottom
 - Tool bubbles display:
   - compact summary (action label)
   - expandable `Input` and `Result` payload sections

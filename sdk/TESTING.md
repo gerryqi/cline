@@ -1,12 +1,24 @@
 # Testing Plan
 
-This file tracks the test strategy and implementation progress for `@cline/cli` and `@cline/core`.
+This file tracks the test strategy and implementation progress for `@cline/cli`, `@cline/core`, and `@cline/llms`.
 
 ## Goals
 
 - Deterministic tests: no real network/OAuth, isolated filesystem/env per test.
 - Contract-focused coverage: exit codes, output shape, persisted artifacts, runtime/session behavior.
 - Clear layering: unit tests for logic seams, e2e tests for real process/runtime integration.
+- Explicit live smoke layer: opt-in real-provider checks that validate external integration wiring without making default test runs flaky.
+
+## Live Provider Testing Philosophy (`@cline/llms`)
+
+- Purpose: catch provider integration drift (auth, endpoint, model routing, stream completion semantics) against real configured providers.
+- Scope: one small prompt per configured provider; this is a health/smoke pass, not a quality benchmark.
+- Opt-in by design: live provider tests must stay disabled in default unit/e2e runs.
+- Failure model: collect and report all failing providers in one run so triage is fast.
+- Stability guardrails:
+  - per-provider timeout
+  - no requirement in normal CI gating unless explicitly enabled by environment
+  - keep deterministic tests as the primary reliability signal
 
 ## Phased Plan
 
@@ -52,6 +64,11 @@ This file tracks the test strategy and implementation progress for `@cline/cli` 
     - made hook-audit assertion tolerate current log-path behavior fallback
     - added a shared isolated env factory in CLI e2e tests to mock workspace/runtime context (`HOME`, `CLINE_DATA_DIR`, `CLINE_SESSION_DATA_DIR`, `CLINE_TEAM_DATA_DIR`, provider/hook paths)
   - Targeted CLI e2e validation for the new/updated cases is passing.
+- 2026-03-05: Added `@cline/llms` live provider smoke test.
+  - Added `packages/llms/src/live-providers.test.ts`.
+  - Test reads configured providers from a JSON file (`providers.json` style or direct provider-settings array).
+  - Test sends a minimal prompt to each provider and reports all providers that returned errors.
+  - Test is gated behind `LLMS_LIVE_TESTS=1` and `LLMS_LIVE_PROVIDERS_PATH=...` to keep default runs deterministic.
 
 ## Current Validation Snapshot
 
@@ -66,3 +83,7 @@ This file tracks the test strategy and implementation progress for `@cline/cli` 
 - Run core unit tests: `bun -F @cline/core test:unit`
 - Run core e2e tests: `bun -F @cline/core test:e2e`
 - Run core full tests: `bun -F @cline/core test`
+- Run llms live provider smoke test:
+  - `cd sdk-wip/packages/llms`
+  - `LLMS_LIVE_TESTS=1 LLMS_LIVE_PROVIDERS_PATH=/absolute/path/to/providers.json bun test src/live-providers.test.ts`
+  - Optional timeout override: `LLMS_LIVE_PROVIDER_TIMEOUT_MS=120000`

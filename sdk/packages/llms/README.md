@@ -60,3 +60,107 @@ This keeps provider default derivation and protocol filtering in one place.
 - Provider settings `headers` must be a string-to-string map (`Record<string, string>`).
 - Provider settings OAuth auth schema includes `auth.expiresAt` (epoch ms) for runtime token refresh orchestration in `@cline/core`.
 - Stream chunks are modeled as discriminated unions (`ApiStreamChunk`); tests should narrow by `type` instead of casting to generic records.
+
+## Legacy Provider Migration Status
+
+Source of truth for the legacy list: `src/core/api/index.ts`.
+
+| Provider | Old code | New package |
+| --- | --- | --- |
+| `aihubmix` | Yes | Yes |
+| `anthropic` | Yes | Yes |
+| `asksage` | Yes | Yes |
+| `baseten` | Yes | Yes |
+| `bedrock` | Yes | Yes |
+| `cerebras` | Yes | Yes |
+| `claude-code` | Yes | Yes |
+| `cline` | Yes | Yes |
+| `deepseek` | Yes | Yes |
+| `dify` | Yes | Yes |
+| `doubao` | Yes | Yes |
+| `fireworks` | Yes | Yes |
+| `gemini` | Yes | Yes |
+| `groq` | Yes | Yes |
+| `hicap` | Yes | Yes |
+| `huawei-cloud-maas` | Yes | Yes |
+| `huggingface` | Yes | Yes |
+| `litellm` | Yes | Yes |
+| `lmstudio` | Yes | Yes |
+| `minimax` | Yes | Yes |
+| `mistral` | Yes | Yes |
+| `moonshot` | Yes | Yes |
+| `nebius` | Yes | Yes |
+| `nousResearch` | Yes | Yes |
+| `oca` | Yes | Yes |
+| `ollama` | Yes | Yes |
+| `opencode` | No | Yes |
+| `openai` | Yes | Yes |
+| `openai-native` | Yes | Yes |
+| `openai-codex` | Yes | Yes |
+| `openrouter` | Yes | Yes |
+| `qwen` | Yes | Yes |
+| `qwen-code` | Yes | Yes |
+| `requesty` | Yes | Yes |
+| `sambanova` | Yes | Yes |
+| `sapaicore` | Yes | Yes |
+| `together` | Yes | Yes |
+| `vercel-ai-gateway` | Yes | Yes |
+| `vertex` | Yes | Yes |
+| `vscode-lm` | Yes | No |
+| `xai` | Yes | Yes |
+| `zai` | Yes | Yes |
+
+`vscode-lm` is client-hosted (VS Code LM/Copilot runtime), so it is not a built-in package provider. VS Code clients can add it via `registerHandler()` or `registerAsyncHandler()`.
+
+## Live Provider Smoke Test
+
+A live smoke test is available at `src/live-providers.test.ts`. It reads provider
+configurations from a JSON file, sends a simple prompt to each configured provider,
+and reports which providers returned errors.
+
+The test is opt-in and only runs when:
+
+- `LLMS_LIVE_TESTS=1`
+- `LLMS_LIVE_PROVIDERS_PATH=/absolute/path/to/providers.json`
+
+Optional:
+
+- `LLMS_LIVE_PROVIDER_TIMEOUT_MS=90000` (per-provider timeout; default `90000`)
+
+Run:
+
+```bash
+cd sdk-wip/packages/llms
+LLMS_LIVE_TESTS=1 LLMS_LIVE_PROVIDERS_PATH=/abs/path/providers.json bun test src/live-providers.test.ts
+```
+
+Supported JSON formats:
+
+1. Stored providers.json style:
+
+```json
+{
+  "version": 1,
+  "providers": {
+    "anthropic": {
+      "settings": {
+        "provider": "anthropic",
+        "apiKey": "sk-...",
+        "model": "claude-sonnet-4-20250514"
+      }
+    }
+  }
+}
+```
+
+2. Direct array of `ProviderSettings` entries:
+
+```json
+[
+  {
+    "provider": "openrouter",
+    "apiKey": "sk-...",
+    "model": "anthropic/claude-sonnet-4"
+  }
+]
+```

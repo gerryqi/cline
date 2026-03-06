@@ -13,20 +13,9 @@
  *   echo "prompt" | agent              # pipe input
  */
 
-import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
-import {
-	type AgentEvent,
-	type AgentHooks,
-	createSubprocessHooks,
-	type HookEventPayload,
-	type RunHookResult,
-	type TeamEvent,
-	type ToolApprovalRequest,
-	type ToolApprovalResult,
-	type ToolPolicy,
-} from "@cline/agents";
+import type { AgentEvent, ToolPolicy } from "@cline/agents";
 import {
 	ClineAccountService,
 	createTeamName,
@@ -39,8 +28,9 @@ import {
 	type UserInstructionConfigWatcher,
 } from "@cline/core/server";
 import { providers } from "@cline/llms";
-import { type HookSessionContext, setHomeDir } from "@cline/shared";
+import { setHomeDir } from "@cline/shared";
 import { version } from "../package.json";
+import { askQuestionInTerminal, requestToolApproval } from "./approval";
 import {
 	ensureOAuthProviderApiKey,
 	getPersistedProviderApiKey,
@@ -49,7 +39,7 @@ import {
 	normalizeProviderId,
 	runAuthProviderCommand,
 } from "./commands/auth";
-import { formatHookDispatchOutput, runHookCommand } from "./commands/hook";
+import { runHookCommand } from "./commands/hook";
 import { runHistoryListCommand, runListCommand } from "./commands/list";
 import {
 	runRpcEnsureCommand,
@@ -58,18 +48,29 @@ import {
 	runRpcStatusCommand,
 	runRpcStopCommand,
 } from "./commands/rpc";
+import { handleEvent, handleTeamEvent } from "./events";
+import { createRuntimeHooks } from "./hooks";
+import {
+	c,
+	emitJsonLine,
+	formatCreditBalance,
+	formatUsd,
+	getActiveCliSession,
+	installStreamErrorGuards,
+	normalizeCreditBalance,
+	setActiveCliSession,
+	setCurrentOutputMode,
+	writeErr,
+	writeln,
+} from "./output";
 import {
 	buildDefaultSystemPrompt,
 	buildUserInputMessage,
 } from "./runtime/prompt";
 import {
 	configureSandboxEnvironment,
-	formatToolInput,
-	formatToolOutput,
-	nowIso,
 	parseArgs,
 	resolveWorkspaceRoot,
-	truncate,
 } from "./utils/helpers";
 import { loadInteractiveResumeMessages } from "./utils/resume";
 import {
@@ -77,44 +78,9 @@ import {
 	deleteSession,
 	listSessions,
 } from "./utils/session";
-import type { ActiveCliSession, CliOutputMode, Config } from "./utils/types";
+import type { Config } from "./utils/types";
 
-let activeCliSession: ActiveCliSession | undefined;
 let activeRuntimeAbort: (() => void) | undefined;
-let streamErrorGuardsBound = false;
-let activeInlineStream: "text" | "reasoning" | undefined;
-let inlineStreamHasOutput = false;
-
-function isBrokenPipeError(error: unknown): boolean {
-	return Boolean(
-		error &&
-			typeof error === "object" &&
-			"code" in error &&
-			typeof (error as { code?: unknown }).code === "string" &&
-			(error as { code: string }).code === "EPIPE",
-	);
-}
-
-function installStreamErrorGuards(): void {
-	if (streamErrorGuardsBound) {
-		return;
-	}
-	streamErrorGuardsBound = true;
-
-	const onStdoutError = (error: unknown) => {
-		if (isBrokenPipeError(error)) {
-			process.exit(0);
-		}
-	};
-	const onStderrError = (error: unknown) => {
-		if (isBrokenPipeError(error)) {
-			process.exit(0);
-		}
-	};
-
-	process.stdout.on("error", onStdoutError);
-	process.stderr.on("error", onStderrError);
-}
 
 function setActiveRuntimeAbort(abortFn: (() => void) | undefined): void {
 	activeRuntimeAbort = abortFn;
@@ -125,81 +91,6 @@ function abortActiveRuntime(): void {
 		activeRuntimeAbort?.();
 	} catch {
 		// Best-effort abort path.
-	}
-}
-
-// =============================================================================
-// ANSI Colors (no dependencies for speed)
-// =============================================================================
-
-const c = {
-	reset: "\x1b[0m",
-	dim: "\x1b[2m",
-	bold: "\x1b[1m",
-	cyan: "\x1b[36m",
-	green: "\x1b[32m",
-	yellow: "\x1b[33m",
-	red: "\x1b[31m",
-	gray: "\x1b[90m",
-};
-
-let currentOutputMode: CliOutputMode = "text";
-
-function formatUsd(value: number): string {
-	if (!Number.isFinite(value)) {
-		return "$0.00";
-	}
-	if (value >= 1) {
-		return `$${value.toFixed(2)}`;
-	}
-	if (value >= 0.01) {
-		return `$${value.toFixed(4)}`;
-	}
-	return `$${value.toFixed(6)}`;
-}
-
-function jsonReplacer(_key: string, value: unknown): unknown {
-	if (value instanceof Error) {
-		return {
-			name: value.name,
-			message: value.message,
-			stack: value.stack,
-		};
-	}
-	if (typeof value === "bigint") {
-		return value.toString();
-	}
-	return value;
-}
-
-function emitJsonLine(
-	stream: "stdout" | "stderr",
-	record: Record<string, unknown>,
-): void {
-	const line = `${JSON.stringify(
-		{
-			ts: nowIso(),
-			...record,
-		},
-		jsonReplacer,
-	)}\n`;
-	try {
-		if (stream === "stdout") {
-			process.stdout.write(line);
-		} else {
-			process.stderr.write(line);
-		}
-	} catch (error) {
-		if (!isBrokenPipeError(error)) {
-			throw error;
-		}
-	}
-	if (activeCliSession) {
-		try {
-			appendFileSync(activeCliSession.transcriptPath, line, "utf8");
-		} catch {
-			// Best-effort transcript persistence for desktop discovery.
-		}
 	}
 }
 
@@ -214,262 +105,6 @@ function mergeToolPolicies(
 	return out;
 }
 
-let cachedDesktopApprovalRequester:
-	| Promise<
-			(
-				request: ToolApprovalRequest,
-				options?: {
-					approvalDir?: string;
-					sessionId?: string;
-				},
-			) => Promise<ToolApprovalResult>
-	  >
-	| undefined;
-
-async function requestDesktopToolApprovalFromCore(
-	request: ToolApprovalRequest,
-): Promise<ToolApprovalResult> {
-	if (!cachedDesktopApprovalRequester) {
-		cachedDesktopApprovalRequester = import("@cline/core/server")
-			.then((module) => {
-				const fn = (
-					module as {
-						requestDesktopToolApproval?: (
-							request: ToolApprovalRequest,
-							options?: {
-								approvalDir?: string;
-								sessionId?: string;
-							},
-						) => Promise<ToolApprovalResult>;
-					}
-				).requestDesktopToolApproval;
-				if (typeof fn !== "function") {
-					throw new Error(
-						"Installed @cline/core does not expose requestDesktopToolApproval",
-					);
-				}
-				return fn;
-			})
-			.catch(() => {
-				return async () => ({
-					approved: false,
-					reason: "Desktop tool approval IPC is not available",
-				});
-			});
-	}
-	const requester = await cachedDesktopApprovalRequester;
-	const sessionId = activeCliSession?.manifest.session_id;
-	const approvalDir = process.env.CLINE_TOOL_APPROVAL_DIR?.trim();
-	return requester(request, { approvalDir, sessionId });
-}
-
-async function requestTerminalToolApproval(
-	request: ToolApprovalRequest,
-): Promise<ToolApprovalResult> {
-	if (!process.stdin.isTTY || !process.stdout.isTTY) {
-		return {
-			approved: false,
-			reason: `Tool "${request.toolName}" requires approval in a TTY session`,
-		};
-	}
-	const preview = truncate(JSON.stringify(request.input), 160);
-	const answer = await new Promise<string>((resolve) => {
-		const rl = createInterface({
-			input: process.stdin,
-			output: process.stdout,
-		});
-		rl.question(
-			`\n${c.yellow}Approve ${c.green}"${request.toolName}" ${c.dim}${preview} ${c.reset}[y/N] `,
-			(value) => {
-				rl.close();
-				resolve(value);
-			},
-		);
-	});
-	const normalized = answer.trim().toLowerCase();
-	if (normalized === "y" || normalized === "yes") {
-		return { approved: true };
-	}
-	return {
-		approved: false,
-		reason: `Tool "${request.toolName}" was denied by user`,
-	};
-}
-
-async function requestToolApproval(
-	request: ToolApprovalRequest,
-): Promise<ToolApprovalResult> {
-	const mode = process.env.CLINE_TOOL_APPROVAL_MODE?.trim().toLowerCase();
-	if (mode === "desktop") {
-		return requestDesktopToolApprovalFromCore(request);
-	}
-	return requestTerminalToolApproval(request);
-}
-
-async function askQuestionInTerminal(
-	question: string,
-	options: string[],
-): Promise<string> {
-	if (!process.stdin.isTTY || !process.stdout.isTTY) {
-		return options[0] ?? "";
-	}
-
-	return new Promise<string>((resolve) => {
-		const rl = createInterface({
-			input: process.stdin,
-			output: process.stdout,
-		});
-
-		write(`\n${c.dim}[follow-up]${c.reset} ${question}\n`);
-		for (const [index, option] of options.entries()) {
-			write(`${c.dim}  ${index + 1}.${c.reset} ${option}\n`);
-		}
-
-		rl.question(
-			`${c.dim}Choose 1-${options.length} or type a custom answer:${c.reset} `,
-			(value) => {
-				rl.close();
-				const trimmed = value.trim();
-				const numeric = Number.parseInt(trimmed, 10);
-				if (
-					Number.isInteger(numeric) &&
-					numeric >= 1 &&
-					numeric <= options.length
-				) {
-					resolve(options[numeric - 1] ?? "");
-					return;
-				}
-				if (trimmed.length > 0) {
-					resolve(trimmed);
-					return;
-				}
-				resolve(options[0] ?? "");
-			},
-		);
-	});
-}
-
-function getHookCommand(): string[] | undefined {
-	if (!process.argv[1]) {
-		return undefined;
-	}
-	return [process.execPath, process.argv[1], "hook"];
-}
-
-function currentHookSessionContext(): HookSessionContext | undefined {
-	if (!activeCliSession) {
-		return undefined;
-	}
-	return {
-		rootSessionId: activeCliSession.manifest.session_id,
-		hookLogPath: activeCliSession.hookPath,
-	};
-}
-
-function writeHookInvocation(
-	payload: HookEventPayload,
-	result?: RunHookResult,
-): void {
-	if (currentOutputMode === "json") {
-		emitJsonLine("stdout", {
-			type: "hook_event",
-			hookEventName: payload.hookName,
-			hookOutput: result?.parsedJson,
-			agentId: payload.agent_id,
-			taskId: payload.taskId,
-			parentAgentId: payload.parent_agent_id,
-		});
-		return;
-	}
-	closeInlineStreamIfNeeded();
-	const hookName = payload.hookName;
-	const toolName =
-		payload.hookName === "tool_call"
-			? payload.tool_call.name
-			: payload.hookName === "tool_result"
-				? payload.tool_result.name
-				: undefined;
-	const details = toolName ? ` ${c.cyan}${toolName}${c.reset}` : "";
-	const output = formatHookDispatchOutput(result);
-	if (output) {
-		write(
-			`\n${c.dim}[hook:${hookName}]${c.reset}${details} ${c.dim}-> ${output}${c.reset}\n`,
-		);
-		return;
-	}
-	if (details) {
-		write(`\n${c.dim}[hook:${hookName}]${c.reset}${details}\n`);
-	}
-}
-
-function createRuntimeHooks(): AgentHooks | undefined {
-	const command = getHookCommand();
-	if (!command) {
-		return undefined;
-	}
-	return createSubprocessHooks({
-		command,
-		env: process.env,
-		cwd: process.cwd(),
-		sessionContext: currentHookSessionContext,
-		onDispatchError: (error: Error) => {
-			if (isDev) {
-				writeErr(`hook dispatch failed: ${error.message}`);
-			}
-		},
-		onDispatch: ({ payload, result }) => {
-			writeHookInvocation(payload, result);
-		},
-	}).hooks;
-}
-
-// =============================================================================
-// CLI Output
-// =============================================================================
-
-function write(text: string): void {
-	try {
-		process.stdout.write(text);
-	} catch (error) {
-		if (!isBrokenPipeError(error)) {
-			throw error;
-		}
-	}
-	if (activeCliSession) {
-		try {
-			appendFileSync(activeCliSession.transcriptPath, text, "utf8");
-		} catch {
-			// Best-effort transcript persistence for desktop discovery.
-		}
-	}
-}
-
-function writeln(text = ""): void {
-	if (currentOutputMode === "json" && text.length === 0) {
-		return;
-	}
-	write(`${text}\n`);
-}
-
-function writeErr(text: string): void {
-	if (currentOutputMode === "json") {
-		emitJsonLine("stderr", { type: "error", message: text });
-		return;
-	}
-	console.error(`${c.red}error:${c.reset} ${text}`);
-	if (activeCliSession) {
-		try {
-			appendFileSync(
-				activeCliSession.transcriptPath,
-				`error: ${text}\n`,
-				"utf8",
-			);
-		} catch {
-			// Best-effort transcript persistence for desktop discovery.
-		}
-	}
-}
-
 function printModelProviderInfo(config: Config): void {
 	const modelSource = config.knownModels ? "live" : "bundled";
 	const thinkingStatus = config.thinking ? "on" : "off";
@@ -482,34 +117,13 @@ function printModelProviderInfo(config: Config): void {
 			catalog: modelSource,
 			thinking: thinkingStatus,
 			mode,
-			sessionId: activeCliSession?.manifest.session_id,
+			sessionId: getActiveCliSession()?.manifest.session_id,
 		});
 		return;
 	}
 	writeln(
 		`${c.dim}[model] provider=${config.providerId} model=${config.modelId} catalog=${modelSource} thinking=${thinkingStatus} mode=${mode}${c.reset}\n`,
 	);
-}
-
-function formatCreditBalance(value: number): string {
-	if (!Number.isFinite(value)) {
-		return "$0";
-	}
-	if (Number.isInteger(value)) {
-		return `$${value}`;
-	}
-	return `$${value.toFixed(4).replace(/\.?0+$/, "")}`;
-}
-
-function normalizeCreditBalance(value: number): number {
-	if (!Number.isFinite(value)) {
-		return 0;
-	}
-	// Cline account APIs may return raw integer micro-credit units.
-	if (Number.isInteger(value) && Math.abs(value) >= 1_000_000) {
-		return value / 1_000_000;
-	}
-	return value;
 }
 
 async function resolveInteractiveClineWelcomeLine(input: {
@@ -564,15 +178,6 @@ async function resolveInteractiveClineWelcomeLine(input: {
 	} catch {
 		return undefined;
 	}
-}
-
-function closeInlineStreamIfNeeded(): void {
-	if (!inlineStreamHasOutput) {
-		return;
-	}
-	write("\n");
-	activeInlineStream = undefined;
-	inlineStreamHasOutput = false;
 }
 
 // =============================================================================
@@ -705,13 +310,13 @@ async function runAgent(
 			},
 		});
 		activeSessionId = started.sessionId;
-		activeCliSession = {
+		setActiveCliSession({
 			manifestPath: started.manifestPath,
 			transcriptPath: started.transcriptPath,
 			hookPath: started.hookPath,
 			messagesPath: started.messagesPath,
 			manifest: started.manifest,
-		};
+		});
 		const result = await sessionManager.send({
 			sessionId: started.sessionId,
 			prompt: userInput,
@@ -785,145 +390,6 @@ async function runAgent(
 		if (activeRuntimeAbort === abortAll) {
 			setActiveRuntimeAbort(undefined);
 		}
-	}
-}
-
-const isDev = process.env.NODE_ENV === "development";
-
-function handleEvent(event: AgentEvent, _config: Config): void {
-	if (currentOutputMode === "json") {
-		emitJsonLine("stdout", { type: "agent_event", event });
-		return;
-	}
-
-	switch (event.type) {
-		case "iteration_start":
-			closeInlineStreamIfNeeded();
-			if (isDev) {
-				write(`\n${c.yellow}── iteration ${event.iteration} ──${c.reset}\n`);
-			}
-			break;
-
-		case "iteration_end":
-			closeInlineStreamIfNeeded();
-			if (!event.hadToolCalls) {
-				// write(`\n\n${c.dim}(no tools called, done)${c.reset}\n`)
-			}
-			break;
-
-		case "content_start":
-			switch (event.contentType) {
-				case "text":
-					if (activeInlineStream !== "text") {
-						closeInlineStreamIfNeeded();
-						activeInlineStream = "text";
-					}
-					write(event.text ?? "");
-					inlineStreamHasOutput = true;
-					break;
-				case "reasoning":
-					if (activeInlineStream !== "reasoning") {
-						closeInlineStreamIfNeeded();
-						write(`${c.dim}[thinking] ${c.reset}`);
-						activeInlineStream = "reasoning";
-						inlineStreamHasOutput = true;
-					}
-					if (event.redacted && !event.reasoning) {
-						write(`${c.dim}[redacted]${c.reset}`);
-						inlineStreamHasOutput = true;
-						break;
-					}
-					write(`${c.dim}${event.reasoning ?? ""}${c.reset}`);
-					inlineStreamHasOutput = true;
-					break;
-				case "tool": {
-					closeInlineStreamIfNeeded();
-					const toolName = event.toolName ?? "unknown_tool";
-					const inputStr = formatToolInput(toolName, event.input);
-					write(
-						`\n${c.dim}[${toolName}]${c.reset} ${c.cyan}${inputStr}${c.reset}`,
-					);
-					break;
-				}
-			}
-			break;
-
-		case "content_end":
-			switch (event.contentType) {
-				case "text":
-				case "reasoning":
-					closeInlineStreamIfNeeded();
-					break;
-				case "tool":
-					closeInlineStreamIfNeeded();
-					if (event.error) {
-						write(` ${c.red}error: ${event.error}${c.reset}\n`);
-					} else {
-						const outputStr = formatToolOutput(event.output);
-						if (outputStr) {
-							write(`  ${c.dim}-> ${outputStr}${c.reset}\n`);
-						} else {
-							write(` ${c.green}ok${c.reset}\n`);
-						}
-					}
-					break;
-			}
-			break;
-
-		case "done":
-			closeInlineStreamIfNeeded();
-			write(
-				`\n${c.dim}── finished: ${event.reason} (${event.iterations} iterations) ──${c.reset}\n`,
-			);
-			activeInlineStream = undefined;
-			inlineStreamHasOutput = false;
-			break;
-
-		case "error":
-			closeInlineStreamIfNeeded();
-			writeErr(event.error.message);
-			break;
-	}
-}
-
-function handleTeamEvent(event: TeamEvent): void {
-	if (currentOutputMode === "json") {
-		emitJsonLine("stdout", { type: "team_event", event });
-		return;
-	}
-
-	switch (event.type) {
-		case "teammate_spawned":
-			write(
-				`\n${c.dim}[team] teammate spawned:${c.reset} ${c.cyan}${event.agentId}${c.reset}`,
-			);
-			break;
-		case "teammate_shutdown":
-			write(
-				`\n${c.dim}[team] teammate shutdown:${c.reset} ${c.cyan}${event.agentId}${c.reset}`,
-			);
-			break;
-		case "team_task_updated":
-			write(
-				`\n${c.dim}[team task]${c.reset} ${c.cyan}${event.task.id}${c.reset} -> ${event.task.status}`,
-			);
-			break;
-		case "team_message":
-			write(
-				`\n${c.dim}[mailbox]${c.reset} ${event.message.fromAgentId} -> ${event.message.toAgentId}: ${event.message.subject}`,
-			);
-			break;
-		case "team_mission_log":
-			write(
-				`\n${c.dim}[mission]${c.reset} ${event.entry.agentId}: ${truncate(event.entry.summary, 90)}`,
-			);
-			break;
-		case "task_start":
-			break;
-		case "task_end":
-			break;
-		case "agent_event":
-			break;
 	}
 }
 
@@ -1047,13 +513,13 @@ async function runInteractive(
 			);
 		},
 	});
-	activeCliSession = {
+	setActiveCliSession({
 		manifestPath: started.manifestPath,
 		transcriptPath: started.transcriptPath,
 		hookPath: started.hookPath,
 		messagesPath: started.messagesPath,
 		manifest: started.manifest,
-	};
+	});
 	const activeSessionId = started.sessionId;
 
 	let isRunning = false;
@@ -1175,7 +641,7 @@ async function runInteractive(
 }
 
 // =============================================================================
-// Argument Parsing (minimal, no dependencies)
+// Help & Version
 // =============================================================================
 
 function showHelp(): void {
@@ -1255,14 +721,14 @@ ${c.bold}EXAMPLES${c.reset}
   clite --tools --teams "Create teammates for planner/coder/reviewer and execute tasks"
   clite --no-tools "Answer from general knowledge only"
   cat file.txt | clite "Summarize this"
-  
+
 ${c.bold}INTERNAL${c.reset}
   clite rpc <start|status|stop|ensure> --address <host:port>
-							  RPC server commands with custom address
+						  RPC server commands with custom address
   clite rpc register --client-type <type> --client-id <id>
-							  Register a client with RPC server (e.g. --client-type desktop --client-id example)
+						  Register a client with RPC server (e.g. --client-type desktop --client-id example)
   clite rpc ensure --json
-							  Ensure compatible runtime server, auto-selecting a new port when needed
+						  Ensure compatible runtime server, auto-selecting a new port when needed
 `);
 }
 
@@ -1350,7 +816,7 @@ async function main(): Promise<void> {
 			writeErr(`invalid mode "${args.invalidMode}" (expected "act" or "plan")`);
 			process.exit(1);
 		}
-		currentOutputMode = args.outputMode;
+		setCurrentOutputMode(args.outputMode);
 		const listCwd = resolveWorkspaceRoot(cwd);
 		const listTarget = rawArgs[1]?.trim().toLowerCase();
 		if (listTarget === "history") {
@@ -1426,7 +892,7 @@ async function main(): Promise<void> {
 		writeErr(`invalid mode "${args.invalidMode}" (expected "act" or "plan")`);
 		process.exit(1);
 	}
-	currentOutputMode = args.outputMode;
+	setCurrentOutputMode(args.outputMode);
 	const defaultToolAutoApprove = args.defaultToolAutoApprove;
 	const mergedToolPolicies = mergeToolPolicies({}, args.toolPolicies);
 	const toolPolicies: Record<string, ToolPolicy> = {
