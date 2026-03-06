@@ -5,7 +5,7 @@
  */
 
 import type { Agent } from "./agent.js";
-import type { AgentConfig, AgentEvent, AgentResult } from "./types.js";
+import type { AgentEvent, AgentResult } from "./types.js";
 
 // =============================================================================
 // AgentStream
@@ -61,6 +61,7 @@ class AgentStreamImpl implements AgentStream {
 	private resolveResult!: (result: AgentResult) => void;
 	private rejectResult!: (error: Error) => void;
 	private abortController: AbortController;
+	private unsubscribeEvents: (() => void) | null = null;
 
 	constructor(
 		private agent: Agent,
@@ -80,29 +81,14 @@ class AgentStreamImpl implements AgentStream {
 	}
 
 	private async startRun(): Promise<void> {
+		this.unsubscribeEvents = this.agent.subscribeEvents((event: AgentEvent) => {
+			this.enqueueEvent(event);
+		});
 		try {
-			// Patch the agent's onEvent to capture events
-			const originalOnEvent = (this.agent as unknown as { config: AgentConfig })
-				.config.onEvent;
-
-			(this.agent as unknown as { config: AgentConfig }).config.onEvent = (
-				event: AgentEvent,
-			) => {
-				// Call original handler if exists
-				originalOnEvent?.(event);
-
-				// Enqueue the event
-				this.enqueueEvent(event);
-			};
-
 			// Run or continue
 			const result = this.isContinue
 				? await this.agent.continue(this.message)
 				: await this.agent.run(this.message);
-
-			// Restore original handler
-			(this.agent as unknown as { config: AgentConfig }).config.onEvent =
-				originalOnEvent;
 
 			// Mark as done
 			this.isDone = true;
@@ -113,6 +99,9 @@ class AgentStreamImpl implements AgentStream {
 			this.isDone = true;
 			this.flushWaiters();
 			this.rejectResult(err);
+		} finally {
+			this.unsubscribeEvents?.();
+			this.unsubscribeEvents = null;
 		}
 	}
 

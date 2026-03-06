@@ -5,36 +5,28 @@
  */
 
 import { providers } from "@cline/llms";
-import { parseJsonStream } from "@cline/shared";
 import { buildInitialUserContent } from "./agent-input.js";
 import {
 	type ContributionRegistry,
 	createContributionRegistry,
 } from "./extensions.js";
-import {
-	type HookDispatchInput,
-	HookEngine,
-	registerLifecycleHandlers,
-} from "./hooks/index.js";
+import { HookEngine, registerLifecycleHandlers } from "./hooks/index.js";
 import { MessageBuilder } from "./message-builder.js";
-import {
-	createToolRegistry,
-	executeToolsInParallel,
-	formatToolResult,
-	toToolDefinitions,
-	validateTools,
-} from "./tools/index.js";
+import { createAgentRuntimeBus } from "./runtime/agent-runtime-bus.js";
+import { ConversationStore } from "./runtime/conversation-store.js";
+import { LifecycleOrchestrator } from "./runtime/lifecycle-orchestrator.js";
+import { ToolOrchestrator } from "./runtime/tool-orchestrator.js";
+import { TurnProcessor } from "./runtime/turn-processor.js";
+import { createToolRegistry, validateTools } from "./tools/index.js";
 import type {
 	AgentConfig,
 	AgentEvent,
 	AgentExtensionRegistry,
 	AgentFinishReason,
-	AgentHookControl,
 	AgentResult,
 	AgentUsage,
 	BasicLogger,
 	PendingToolCall,
-	ProcessedTurn,
 	Tool,
 	ToolApprovalResult,
 	ToolCallRecord,
@@ -42,27 +34,6 @@ import type {
 	ToolPolicy,
 } from "./types.js";
 
-// =============================================================================
-// Agent Class
-// =============================================================================
-
-/**
- * Agent class for building and running agentic loops
- *
- * @example
- * ```typescript
- * const agent = new Agent({
- *   providerId: "anthropic",
- *   modelId: "claude-sonnet-4-5-20250929",
- *   apiKey: process.env.ANTHROPIC_API_KEY,
- *   systemPrompt: "You are a helpful coding assistant.",
- *   tools: [readFile, writeFile, runCommand],
- * })
- *
- * const result = await agent.run("Help me refactor this code")
- * console.log(result.text)
- * ```
- */
 const DEFAULT_REMINDER_TEXT =
 	"REMINDER: If you have gathered enough information to answer the user's question, please provide your final answer now without using any more tools.";
 
@@ -74,6 +45,7 @@ export class Agent {
 			| "modelId"
 			| "systemPrompt"
 			| "tools"
+			| "maxParallelToolCalls"
 			| "apiTimeoutMs"
 			| "maxTokensPerTurn"
 			| "reminderAfterIterations"
@@ -84,24 +56,27 @@ export class Agent {
 		AgentConfig;
 	private handler: providers.ApiHandler;
 	private toolRegistry: Map<string, Tool>;
-	private messages: providers.Message[] = [];
-	private conversationId: string;
-	private agentId: string;
-	private parentAgentId: string | null;
 	private abortController: AbortController | null = null;
 	private contributionRegistry: ContributionRegistry;
 	private readonly hookEngine: HookEngine;
 	private messageBuilder: MessageBuilder;
 	private readonly logger?: BasicLogger;
 	private extensionsInitialized = false;
-	private sessionStarted = false;
 	private activeRunId = "";
+	private runState: "idle" | "running" | "shutting_down" = "idle";
+	private readonly runtimeBus = createAgentRuntimeBus();
+	private readonly conversationStore: ConversationStore;
+	private readonly lifecycle: LifecycleOrchestrator;
+	private turnProcessor: TurnProcessor;
+	private readonly toolOrchestrator: ToolOrchestrator;
+	private readonly agentId: string;
+	private readonly parentAgentId: string | null;
 
 	constructor(config: AgentConfig) {
-		// Set defaults
 		this.config = {
 			...config,
 			maxIterations: config.maxIterations,
+			maxParallelToolCalls: config.maxParallelToolCalls ?? 8,
 			apiTimeoutMs: config.apiTimeoutMs ?? 120000,
 			maxTokensPerTurn: config.maxTokensPerTurn ?? 8192,
 			reminderAfterIterations: config.reminderAfterIterations ?? 50,
@@ -111,11 +86,19 @@ export class Agent {
 			toolPolicies: config.toolPolicies ?? {},
 		};
 
+		this.agentId = `agent_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+		this.parentAgentId = config.parentAgentId ?? null;
+		this.conversationStore = new ConversationStore(
+			config.initialMessages ?? [],
+		);
+		this.logger = config.logger;
+
 		this.contributionRegistry = createContributionRegistry({
 			extensions: this.config.extensions,
 		});
 		this.contributionRegistry.resolve();
 		this.contributionRegistry.validate();
+
 		const defaultFailureMode =
 			this.config.hookErrorMode === "throw" ? "fail_closed" : "fail_open";
 		this.hookEngine = new HookEngine({
@@ -129,56 +112,87 @@ export class Agent {
 				this.reportRecoverableError(error);
 			},
 		});
-		this.messageBuilder = new MessageBuilder();
-		this.toolRegistry = createToolRegistry([]);
-		this.logger = config.logger;
+
 		registerLifecycleHandlers(this.hookEngine, {
 			...this.config,
 			extensions: this.contributionRegistry.getValidatedExtensions(),
 		});
 
-		// Create handler
+		this.messageBuilder = new MessageBuilder();
+		this.toolRegistry = createToolRegistry([]);
 		this.handler = this.createHandlerFromConfig(this.config);
+		this.turnProcessor = new TurnProcessor({
+			handler: this.handler,
+			messageBuilder: this.messageBuilder,
+			emit: (event) => this.emit(event),
+		});
+		this.lifecycle = new LifecycleOrchestrator({
+			hookEngine: this.hookEngine,
+			runtimeBus: this.runtimeBus,
+			getRunId: () =>
+				this.activeRunId || this.conversationStore.getConversationId(),
+			getAgentId: () => this.agentId,
+			getConversationId: () => this.conversationStore.getConversationId(),
+			getParentAgentId: () => this.parentAgentId,
+			onHookContext: (source, context) =>
+				this.appendHookContext(source, context),
+			onDispatchError: (error) => this.reportRecoverableError(error),
+		});
+		this.toolOrchestrator = new ToolOrchestrator({
+			getAgentId: () => this.agentId,
+			getConversationId: () => this.conversationStore.getConversationId(),
+			getParentAgentId: () => this.parentAgentId,
+			emit: (event) => this.emit(event),
+			dispatchLifecycle: ({ source, iteration, stage, payload }) =>
+				this.lifecycle.dispatch(source, {
+					stage,
+					iteration,
+					payload,
+				}),
+			authorizeToolCall: (call, context) =>
+				this.authorizeToolCall(call, context),
+			onCancelRequested: () => {
+				this.abortController?.abort();
+			},
+			onLog: (level, message, metadata) => {
+				this.log(level, message, metadata);
+			},
+		});
 
-		// Generate IDs
-		this.agentId = `agent_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-		this.conversationId = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-		this.parentAgentId = config.parentAgentId ?? null;
-		if ((config.initialMessages?.length ?? 0) > 0) {
-			this.restore(config.initialMessages ?? []);
-		}
+		// onEvent callback and runtime hooks are both runtime-bus subscribers.
+		this.runtimeBus.subscribeRuntimeEvent((event) => {
+			try {
+				this.config.onEvent?.(event);
+			} catch {
+				// Ignore callback errors
+			}
+		});
+		this.runtimeBus.subscribeRuntimeEvent((event) => {
+			this.lifecycle.dispatchRuntimeEvent(event);
+		});
 	}
 
-	/**
-	 * Run the agent with a user message
-	 *
-	 * This starts a new conversation with the given message and runs the
-	 * agentic loop until completion, max iterations, or abort.
-	 */
 	async run(
 		userMessage: string,
 		userImages?: string[],
 		userFiles?: string[],
 	): Promise<AgentResult> {
+		this.assertCanStartRun();
 		this.log("info", "Agent run requested", {
 			agentId: this.agentId,
-			conversationId: this.conversationId,
+			conversationId: this.conversationStore.getConversationId(),
 			messageLength: userMessage.length,
 		});
 		await this.ensureExtensionsInitialized();
 
-		// Start fresh conversation
-		this.messages = [];
-		this.conversationId = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-		this.sessionStarted = false;
+		this.conversationStore.resetForRun();
 
 		const preparedInput = await this.prepareUserInput(userMessage, "run");
 		if (preparedInput.cancel) {
 			return this.buildAbortedResult(new Date(), "");
 		}
 
-		// Add user message
-		this.messages.push({
+		this.conversationStore.appendMessage({
 			role: "user",
 			content: await this.buildInitialUserContent(
 				preparedInput.input,
@@ -190,17 +204,15 @@ export class Agent {
 		return this.executeLoop(preparedInput.input);
 	}
 
-	/**
-	 * Continue an existing conversation with a new user message
-	 */
 	async continue(
 		userMessage: string,
 		userImages?: string[],
 		userFiles?: string[],
 	): Promise<AgentResult> {
+		this.assertCanStartRun();
 		this.log("info", "Agent continue requested", {
 			agentId: this.agentId,
-			conversationId: this.conversationId,
+			conversationId: this.conversationStore.getConversationId(),
 			messageLength: userMessage.length,
 		});
 		await this.ensureExtensionsInitialized();
@@ -210,8 +222,7 @@ export class Agent {
 			return this.buildAbortedResult(new Date(), "");
 		}
 
-		// Add user message to existing conversation
-		this.messages.push({
+		this.conversationStore.appendMessage({
 			role: "user",
 			content: await this.buildInitialUserContent(
 				preparedInput.input,
@@ -223,80 +234,62 @@ export class Agent {
 		return this.executeLoop(preparedInput.input);
 	}
 
-	/**
-	 * Get the current conversation messages
-	 */
 	getMessages(): providers.Message[] {
-		return [...this.messages];
+		return this.conversationStore.getMessages();
 	}
 
-	/**
-	 * Clear the conversation history
-	 */
 	clearHistory(): void {
-		this.messages = [];
-		this.conversationId = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-		this.sessionStarted = false;
+		this.conversationStore.clearHistory();
 	}
 
-	/**
-	 * Replace conversation history with preloaded messages for resume flows.
-	 */
 	restore(messages: providers.Message[]): void {
-		this.messages = [...messages];
-		this.conversationId = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-		this.sessionStarted = false;
+		this.conversationStore.restore(messages);
 	}
 
-	/**
-	 * Abort the current run
-	 */
 	abort(): void {
 		this.abortController?.abort();
 	}
 
-	/**
-	 * Trigger session shutdown hooks.
-	 * Use this when host applications terminate a session (for example Ctrl+D).
-	 */
-	async shutdown(reason?: string): Promise<void> {
-		await this.dispatchLifecycle("hook.session_shutdown", {
-			stage: "session_shutdown",
-			payload: {
-				agentId: this.agentId,
-				conversationId: this.conversationId,
-				parentAgentId: this.parentAgentId,
-				reason,
-			},
-		});
-		await this.hookEngine.shutdown();
+	subscribeEvents(listener: (event: AgentEvent) => void): () => void {
+		return this.runtimeBus.subscribeRuntimeEvent(listener);
 	}
 
-	/**
-	 * Inspect registered extension contributions.
-	 */
+	async shutdown(reason?: string): Promise<void> {
+		if (this.runState === "running") {
+			throw new Error("Cannot shutdown agent while a run is in progress");
+		}
+		if (this.runState === "shutting_down") {
+			return;
+		}
+		this.runState = "shutting_down";
+		try {
+			await this.lifecycle.dispatch("hook.session_shutdown", {
+				stage: "session_shutdown",
+				payload: {
+					agentId: this.agentId,
+					conversationId: this.conversationStore.getConversationId(),
+					parentAgentId: this.parentAgentId,
+					reason,
+				},
+			});
+			await this.lifecycle.shutdown();
+		} finally {
+			this.runState = "idle";
+		}
+	}
+
 	getExtensionRegistry(): AgentExtensionRegistry {
 		return this.contributionRegistry.getRegistrySnapshot();
 	}
 
-	/**
-	 * Get the agent ID
-	 */
 	getAgentId(): string {
 		return this.agentId;
 	}
 
-	/**
-	 * Get the conversation ID
-	 */
 	getConversationId(): string {
-		return this.conversationId;
+		return this.conversationStore.getConversationId();
 	}
 
-	/**
-	 * Update provider connection details (e.g., rotated OAuth token)
-	 * without resetting conversation history.
-	 */
 	updateConnection(
 		overrides: Partial<
 			Pick<
@@ -319,30 +312,22 @@ export class Agent {
 			...overrides,
 		};
 		this.handler = this.createHandlerFromConfig(this.config);
+		this.turnProcessor = new TurnProcessor({
+			handler: this.handler,
+			messageBuilder: this.messageBuilder,
+			emit: (event) => this.emit(event),
+		});
 	}
 
-	// ===========================================================================
-	// Private Methods
-	// ===========================================================================
-
-	private async dispatchLifecycle(
-		source: string,
-		input: Pick<
-			HookDispatchInput,
-			"stage" | "payload" | "iteration" | "parentEventId"
-		>,
-	): Promise<AgentHookControl | undefined> {
-		const dispatchResult = await this.hookEngine.dispatch({
-			...input,
-			runId: this.activeRunId || this.conversationId,
-			agentId: this.agentId,
-			conversationId: this.conversationId,
-			parentAgentId: this.parentAgentId,
-		});
-		if (dispatchResult.control?.context) {
-			this.appendHookContext(source, dispatchResult.control.context);
+	private assertCanStartRun(): void {
+		if (this.runState === "running") {
+			throw new Error(
+				"Cannot start a new run while another run is already in progress",
+			);
 		}
-		return dispatchResult.control;
+		if (this.runState === "shutting_down") {
+			throw new Error("Cannot start a run while agent is shutting down");
+		}
 	}
 
 	private createHandlerFromConfig(config: AgentConfig): providers.ApiHandler {
@@ -361,28 +346,29 @@ export class Agent {
 		});
 	}
 
-	/**
-	 * Execute the agentic loop
-	 */
 	private async executeLoop(triggerMessage: string): Promise<AgentResult> {
+		if (this.runState !== "idle") {
+			throw new Error(
+				`Cannot start agent run while state is "${this.runState}"`,
+			);
+		}
+		this.runState = "running";
 		const startedAt = new Date();
 		const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 		this.activeRunId = runId;
 		this.abortController = new AbortController();
 		this.log("info", "Agent loop started", {
 			agentId: this.agentId,
-			conversationId: this.conversationId,
+			conversationId: this.conversationStore.getConversationId(),
 			runId,
 			triggerLength: triggerMessage.length,
 		});
 
-		// Merge abort signals
 		const abortSignal = this.mergeAbortSignals(
 			this.config.abortSignal,
 			this.abortController.signal,
 		);
 
-		// Initialize tracking
 		let iteration = 0;
 		let finishReason: AgentFinishReason = "completed";
 		let finalText = "";
@@ -396,14 +382,14 @@ export class Agent {
 		};
 
 		try {
-			if (!this.sessionStarted) {
-				const sessionStartControl = await this.dispatchLifecycle(
+			if (!this.conversationStore.isSessionStarted()) {
+				const sessionStartControl = await this.lifecycle.dispatch(
 					"hook.session_start",
 					{
 						stage: "session_start",
 						payload: {
 							agentId: this.agentId,
-							conversationId: this.conversationId,
+							conversationId: this.conversationStore.getConversationId(),
 							parentAgentId: this.parentAgentId,
 						},
 					},
@@ -411,14 +397,14 @@ export class Agent {
 				if (sessionStartControl?.cancel) {
 					finishReason = "aborted";
 				}
-				this.sessionStarted = true;
+				this.conversationStore.markSessionStarted();
 			}
 
-			const runStartControl = await this.dispatchLifecycle("hook.run_start", {
+			const runStartControl = await this.lifecycle.dispatch("hook.run_start", {
 				stage: "run_start",
 				payload: {
 					agentId: this.agentId,
-					conversationId: this.conversationId,
+					conversationId: this.conversationStore.getConversationId(),
 					parentAgentId: this.parentAgentId,
 					userMessage: triggerMessage,
 				},
@@ -427,7 +413,6 @@ export class Agent {
 				finishReason = "aborted";
 			}
 
-			// Main loop
 			while (finishReason !== "aborted") {
 				if (
 					this.config.maxIterations !== undefined &&
@@ -436,8 +421,6 @@ export class Agent {
 					finishReason = "max_iterations";
 					break;
 				}
-
-				// Check for abort
 				if (abortSignal.aborted) {
 					finishReason = "aborted";
 					break;
@@ -446,18 +429,19 @@ export class Agent {
 				iteration++;
 				this.log("debug", "Agent iteration started", {
 					agentId: this.agentId,
-					conversationId: this.conversationId,
+					conversationId: this.conversationStore.getConversationId(),
 					runId,
 					iteration,
 				});
-				const iterationStartControl = await this.dispatchLifecycle(
+
+				const iterationStartControl = await this.lifecycle.dispatch(
 					"hook.iteration_start",
 					{
 						stage: "iteration_start",
 						iteration,
 						payload: {
 							agentId: this.agentId,
-							conversationId: this.conversationId,
+							conversationId: this.conversationStore.getConversationId(),
 							parentAgentId: this.parentAgentId,
 							iteration,
 						},
@@ -470,17 +454,17 @@ export class Agent {
 
 				this.emit({ type: "iteration_start", iteration });
 
-				const turnStartControl = await this.dispatchLifecycle(
+				const turnStartControl = await this.lifecycle.dispatch(
 					"hook.turn_start",
 					{
 						stage: "turn_start",
 						iteration,
 						payload: {
 							agentId: this.agentId,
-							conversationId: this.conversationId,
+							conversationId: this.conversationStore.getConversationId(),
 							parentAgentId: this.parentAgentId,
 							iteration,
-							messages: [...this.messages],
+							messages: this.conversationStore.getMessages(),
 						},
 					},
 				);
@@ -489,22 +473,22 @@ export class Agent {
 					break;
 				}
 
-				const beforeAgentStartControl = await this.dispatchLifecycle(
+				const beforeAgentStartControl = await this.lifecycle.dispatch(
 					"hook.before_agent_start",
 					{
 						stage: "before_agent_start",
 						iteration,
 						payload: {
 							agentId: this.agentId,
-							conversationId: this.conversationId,
+							conversationId: this.conversationStore.getConversationId(),
 							parentAgentId: this.parentAgentId,
 							iteration,
 							systemPrompt: this.config.systemPrompt,
-							messages: [...this.messages],
+							messages: this.conversationStore.getMessages(),
 						},
 					},
 				);
-				const beforeAgentStartSystemPrompt =
+				const turnSystemPrompt =
 					typeof beforeAgentStartControl?.systemPrompt === "string"
 						? beforeAgentStartControl.systemPrompt
 						: this.config.systemPrompt;
@@ -516,20 +500,27 @@ export class Agent {
 					beforeAgentStartControl?.appendMessages &&
 					beforeAgentStartControl.appendMessages.length > 0
 				) {
-					this.messages.push(...beforeAgentStartControl.appendMessages);
+					this.conversationStore.appendMessages(
+						beforeAgentStartControl.appendMessages,
+					);
 				}
 
-				// Process one turn
-				const turn = await this.processTurn(
+				const { turn, assistantMessage } = await this.turnProcessor.processTurn(
+					this.conversationStore.getMessages(),
+					turnSystemPrompt,
+					this.config.tools,
 					abortSignal,
-					beforeAgentStartSystemPrompt,
 				);
-				const turnEndControl = await this.dispatchLifecycle("hook.turn_end", {
+				if (assistantMessage) {
+					this.conversationStore.appendMessage(assistantMessage);
+				}
+
+				const turnEndControl = await this.lifecycle.dispatch("hook.turn_end", {
 					stage: "turn_end",
 					iteration,
 					payload: {
 						agentId: this.agentId,
-						conversationId: this.conversationId,
+						conversationId: this.conversationStore.getConversationId(),
 						parentAgentId: this.parentAgentId,
 						iteration,
 						turn,
@@ -540,7 +531,6 @@ export class Agent {
 					break;
 				}
 
-				// Accumulate text and usage
 				finalText = turn.text;
 				totalUsage.inputTokens += turn.usage.inputTokens;
 				totalUsage.outputTokens += turn.usage.outputTokens;
@@ -564,7 +554,6 @@ export class Agent {
 					totalCost: totalUsage.totalCost,
 				});
 
-				// If no tool calls, we're done
 				if (turn.toolCalls.length === 0) {
 					this.emit({
 						type: "iteration_end",
@@ -572,12 +561,12 @@ export class Agent {
 						hadToolCalls: false,
 						toolCallCount: 0,
 					});
-					await this.dispatchLifecycle("hook.iteration_end", {
+					await this.lifecycle.dispatch("hook.iteration_end", {
 						stage: "iteration_end",
 						iteration,
 						payload: {
 							agentId: this.agentId,
-							conversationId: this.conversationId,
+							conversationId: this.conversationStore.getConversationId(),
 							parentAgentId: this.parentAgentId,
 							iteration,
 							hadToolCalls: false,
@@ -588,117 +577,28 @@ export class Agent {
 					break;
 				}
 
-				// Execute tool calls
 				const context: ToolContext = {
 					agentId: this.agentId,
-					conversationId: this.conversationId,
+					conversationId: this.conversationStore.getConversationId(),
 					iteration,
 					abortSignal,
 				};
+				const { results: toolResults, cancelRequested } =
+					await this.toolOrchestrator.execute(
+						this.toolRegistry,
+						turn.toolCalls,
+						context,
+						{ iteration, runId },
+						{ maxConcurrency: this.config.maxParallelToolCalls },
+					);
 
-				// Execute tools in parallel
-				let toolCancelRequested = false;
-				const toolResults = await executeToolsInParallel(
-					this.toolRegistry,
-					turn.toolCalls,
-					context,
-					{
-						onToolCallStart: async (call) => {
-							this.log("debug", "Tool call started", {
-								agentId: this.agentId,
-								conversationId: this.conversationId,
-								runId,
-								iteration,
-								toolCallId: call.id,
-								toolName: call.name,
-							});
-							this.emit({
-								type: "content_start",
-								contentType: "tool",
-								toolName: call.name,
-								toolCallId: call.id,
-								input: call.input,
-							});
-							const mergedControl = await this.dispatchLifecycle(
-								"hook.tool_call_before",
-								{
-									stage: "tool_call_before",
-									iteration,
-									payload: {
-										agentId: this.agentId,
-										conversationId: this.conversationId,
-										parentAgentId: this.parentAgentId,
-										iteration,
-										call,
-									},
-								},
-							);
-							if (
-								mergedControl &&
-								Object.hasOwn(mergedControl, "overrideInput")
-							) {
-								call.input = mergedControl.overrideInput;
-							}
-							if (mergedControl?.cancel) {
-								toolCancelRequested = true;
-								this.abortController?.abort();
-							}
-						},
-						onToolCallEnd: async (record) => {
-							this.log("debug", "Tool call finished", {
-								agentId: this.agentId,
-								conversationId: this.conversationId,
-								runId,
-								iteration,
-								toolCallId: record.id,
-								toolName: record.name,
-								durationMs: record.durationMs,
-								error: record.error,
-							});
-							this.emit({
-								type: "content_end",
-								contentType: "tool",
-								toolName: record.name,
-								toolCallId: record.id,
-								output: record.output,
-								error: record.error,
-								durationMs: record.durationMs,
-							});
-							const mergedControl = await this.dispatchLifecycle(
-								"hook.tool_call_after",
-								{
-									stage: "tool_call_after",
-									iteration,
-									payload: {
-										agentId: this.agentId,
-										conversationId: this.conversationId,
-										parentAgentId: this.parentAgentId,
-										iteration,
-										record,
-									},
-								},
-							);
-							if (mergedControl?.cancel) {
-								toolCancelRequested = true;
-							}
-						},
-					},
-					{
-						authorize: async (call, toolContext) =>
-							this.authorizeToolCall(call, toolContext),
-					},
-				);
-
-				// Track tool calls
 				allToolCalls.push(...toolResults);
-
-				// Build tool result message (with reminder injection after configured iterations)
-				const toolResultMessage = this.buildToolResultMessage(
-					turn.toolCalls,
-					toolResults,
-					iteration,
+				this.conversationStore.appendMessage(
+					this.toolOrchestrator.buildToolResultMessage(toolResults, iteration, {
+						afterIterations: this.config.reminderAfterIterations,
+						text: this.config.reminderText,
+					}),
 				);
-				this.messages.push(toolResultMessage);
 
 				this.emit({
 					type: "iteration_end",
@@ -706,32 +606,31 @@ export class Agent {
 					hadToolCalls: true,
 					toolCallCount: turn.toolCalls.length,
 				});
-				await this.dispatchLifecycle("hook.iteration_end", {
+				await this.lifecycle.dispatch("hook.iteration_end", {
 					stage: "iteration_end",
 					iteration,
 					payload: {
 						agentId: this.agentId,
-						conversationId: this.conversationId,
+						conversationId: this.conversationStore.getConversationId(),
 						parentAgentId: this.parentAgentId,
 						iteration,
 						hadToolCalls: true,
 						toolCallCount: turn.toolCalls.length,
 					},
 				});
-				if (toolCancelRequested) {
+				if (cancelRequested) {
 					this.log("warn", "Agent iteration cancelled by tool lifecycle", {
 						agentId: this.agentId,
-						conversationId: this.conversationId,
+						conversationId: this.conversationStore.getConversationId(),
 						runId,
 						iteration,
 					});
 					finishReason = "aborted";
 					break;
 				}
-
 				this.log("debug", "Agent iteration finished", {
 					agentId: this.agentId,
-					conversationId: this.conversationId,
+					conversationId: this.conversationStore.getConversationId(),
 					runId,
 					iteration,
 					toolCalls: turn.toolCalls.length,
@@ -741,18 +640,18 @@ export class Agent {
 			finishReason = "error";
 			this.log("error", "Agent loop failed", {
 				agentId: this.agentId,
-				conversationId: this.conversationId,
+				conversationId: this.conversationStore.getConversationId(),
 				runId,
 				error,
 			});
 			const errorObj =
 				error instanceof Error ? error : new Error(String(error));
-			await this.dispatchLifecycle("hook.error", {
+			await this.lifecycle.dispatch("hook.error", {
 				stage: "error",
 				iteration,
 				payload: {
 					agentId: this.agentId,
-					conversationId: this.conversationId,
+					conversationId: this.conversationStore.getConversationId(),
 					parentAgentId: this.parentAgentId,
 					iteration,
 					error: errorObj,
@@ -768,15 +667,15 @@ export class Agent {
 		} finally {
 			this.abortController = null;
 			this.activeRunId = "";
+			if (this.runState === "running") {
+				this.runState = "idle";
+			}
 		}
 
 		const endedAt = new Date();
 		const durationMs = endedAt.getTime() - startedAt.getTime();
-
-		// Get model info
 		const modelInfo = this.handler.getModel();
 
-		// Emit done event
 		this.emit({
 			type: "done",
 			reason: finishReason,
@@ -785,7 +684,7 @@ export class Agent {
 		});
 		this.log("info", "Agent loop finished", {
 			agentId: this.agentId,
-			conversationId: this.conversationId,
+			conversationId: this.conversationStore.getConversationId(),
 			runId,
 			finishReason,
 			iterations: iteration,
@@ -795,7 +694,7 @@ export class Agent {
 		const result = {
 			text: finalText,
 			usage: totalUsage,
-			messages: [...this.messages],
+			messages: this.conversationStore.getMessages(),
 			toolCalls: allToolCalls,
 			iterations: iteration,
 			finishReason,
@@ -808,297 +707,18 @@ export class Agent {
 			endedAt,
 			durationMs,
 		};
-		await this.dispatchLifecycle("hook.run_end", {
+		await this.lifecycle.dispatch("hook.run_end", {
 			stage: "run_end",
 			iteration,
 			payload: {
 				agentId: this.agentId,
-				conversationId: this.conversationId,
+				conversationId: this.conversationStore.getConversationId(),
 				parentAgentId: this.parentAgentId,
 				result,
 			},
 		});
-		await this.hookEngine.shutdown();
+		await this.lifecycle.shutdown();
 		return result;
-	}
-
-	/**
-	 * Process one turn of the conversation
-	 */
-	private async processTurn(
-		abortSignal: AbortSignal,
-		systemPrompt: string,
-	): Promise<ProcessedTurn> {
-		// Get tool definitions
-		const toolDefinitions = toToolDefinitions(this.config.tools);
-
-		// Create the message stream
-		const requestMessages = this.messageBuilder.buildForApi(this.messages);
-		const stream = this.handler.createMessage(
-			systemPrompt,
-			requestMessages,
-			toolDefinitions,
-		);
-
-		// Process the stream
-		let text = "";
-		let textSignature: string | undefined;
-		let reasoning = "";
-		let reasoningSignature: string | undefined;
-		const redactedReasoningBlocks: string[] = [];
-		const usage = {
-			inputTokens: 0,
-			outputTokens: 0,
-			cacheReadTokens: undefined as number | undefined,
-			cacheWriteTokens: undefined as number | undefined,
-			cost: undefined as number | undefined,
-		};
-		let truncated = false;
-		let responseId: string | undefined;
-
-		// Track pending tool calls being streamed
-		const pendingToolCallsMap = new Map<
-			string,
-			{ name?: string; arguments: string; signature?: string }
-		>();
-
-		for await (const chunk of stream) {
-			// Check for abort
-			if (abortSignal.aborted) {
-				break;
-			}
-
-			responseId = chunk.id ?? responseId;
-
-			switch (chunk.type) {
-				case "text":
-					text += chunk.text;
-					if (chunk.signature) {
-						textSignature = chunk.signature;
-					}
-					this.emit({
-						type: "content_start",
-						contentType: "text",
-						text: chunk.text,
-						accumulated: text,
-					});
-					break;
-
-				case "reasoning":
-					reasoning += chunk.reasoning;
-					if (chunk.signature) {
-						reasoningSignature = chunk.signature;
-					}
-					if (chunk.redacted_data) {
-						redactedReasoningBlocks.push(chunk.redacted_data);
-					}
-					this.emit({
-						type: "content_start",
-						contentType: "reasoning",
-						reasoning: chunk.reasoning,
-						redacted: !!chunk.redacted_data,
-					});
-					break;
-
-				case "tool_calls":
-					this.processToolCallChunk(chunk, pendingToolCallsMap);
-					break;
-
-				case "usage":
-					usage.inputTokens = chunk.inputTokens;
-					usage.outputTokens = chunk.outputTokens;
-					usage.cacheReadTokens = chunk.cacheReadTokens;
-					usage.cacheWriteTokens = chunk.cacheWriteTokens;
-					usage.cost = chunk.totalCost;
-					break;
-
-				case "done":
-					truncated = chunk.incompleteReason === "max_tokens";
-					if (!chunk.success && chunk.error) {
-						throw new Error(chunk.error);
-					}
-					break;
-			}
-		}
-		const toolCalls = this.finalizePendingToolCalls(pendingToolCallsMap);
-
-		// Add assistant message to history
-		const assistantContent: providers.ContentBlock[] = [];
-		if (text) {
-			this.emit({
-				type: "content_end",
-				contentType: "text",
-				text,
-			});
-		}
-		if (reasoning || redactedReasoningBlocks.length > 0) {
-			this.emit({
-				type: "content_end",
-				contentType: "reasoning",
-				reasoning,
-			});
-			assistantContent.push({
-				type: "thinking",
-				thinking: reasoning,
-				signature: reasoningSignature,
-			});
-			for (const redactedData of redactedReasoningBlocks) {
-				assistantContent.push({
-					type: "redacted_thinking",
-					data: redactedData,
-				});
-			}
-		}
-		if (text) {
-			assistantContent.push({ type: "text", text, signature: textSignature });
-		}
-		for (const call of toolCalls) {
-			assistantContent.push({
-				type: "tool_use",
-				id: call.id,
-				name: call.name,
-				input: call.input as Record<string, unknown>,
-				signature: call.signature,
-			});
-		}
-
-		if (assistantContent.length > 0) {
-			this.messages.push({
-				role: "assistant",
-				content: assistantContent,
-			});
-		}
-
-		return {
-			text,
-			reasoning: reasoning || undefined,
-			toolCalls,
-			usage,
-			truncated,
-			responseId,
-		};
-	}
-
-	/**
-	 * Process a tool call streaming chunk
-	 */
-	private processToolCallChunk(
-		chunk: providers.ApiStreamChunk & { type: "tool_calls" },
-		pendingMap: Map<
-			string,
-			{ name?: string; arguments: string; signature?: string }
-		>,
-	): void {
-		const { tool_call } = chunk;
-		const callId =
-			tool_call.call_id ?? tool_call.function.id ?? `call_${Date.now()}`;
-
-		// Get or create pending entry
-		let pending = pendingMap.get(callId);
-		if (!pending) {
-			pending = { name: undefined, arguments: "" };
-			pendingMap.set(callId, pending);
-		}
-
-		// Update name if provided
-		if (tool_call.function.name) {
-			pending.name = tool_call.function.name;
-		}
-
-		// Accumulate arguments
-		if (tool_call.function.arguments) {
-			if (typeof tool_call.function.arguments === "string") {
-				const argsChunk = tool_call.function.arguments;
-				const trimmedChunk = argsChunk.trimStart();
-				// Some providers send cumulative argument snapshots instead of deltas.
-				// If we receive a complete JSON payload, replace prior buffered args.
-				if (
-					(trimmedChunk.startsWith("{") || trimmedChunk.startsWith("[")) &&
-					this.tryParseJson(argsChunk) !== undefined
-				) {
-					pending.arguments = argsChunk;
-				} else {
-					pending.arguments += argsChunk;
-				}
-			} else {
-				// Already parsed - serialize it
-				pending.arguments = JSON.stringify(tool_call.function.arguments);
-			}
-		}
-		if (chunk.signature) {
-			pending.signature = chunk.signature;
-		}
-	}
-
-	private finalizePendingToolCalls(
-		pendingMap: Map<
-			string,
-			{ name?: string; arguments: string; signature?: string }
-		>,
-	): PendingToolCall[] {
-		const toolCalls: PendingToolCall[] = [];
-		for (const [id, pending] of pendingMap.entries()) {
-			if (!pending.name || !pending.arguments) {
-				continue;
-			}
-			const input = this.tryParseJson(pending.arguments);
-			if (input === undefined) {
-				continue;
-			}
-			toolCalls.push({
-				id,
-				name: pending.name,
-				input,
-				signature: pending.signature,
-			});
-		}
-		return toolCalls;
-	}
-
-	private tryParseJson(value: string): unknown | undefined {
-		const parsed = parseJsonStream(value);
-		return parsed === value ? undefined : parsed;
-	}
-
-	/**
-	 * Build a message containing tool results
-	 *
-	 * After a certain number of iterations (configurable via reminderAfterIterations),
-	 * this will prepend a text block reminding the agent to answer if it has enough info.
-	 */
-	private buildToolResultMessage(
-		_calls: PendingToolCall[],
-		results: ToolCallRecord[],
-		iteration: number,
-	): providers.Message {
-		const content: providers.ContentBlock[] = [];
-
-		// Add tool results
-		for (const result of results) {
-			content.push({
-				type: "tool_result" as const,
-				tool_use_id: result.id,
-				content: formatToolResult(result.output, result.error),
-				is_error: !!result.error,
-			});
-		}
-
-		// Keep tool_result blocks first to satisfy providers that require
-		// immediate tool_result responses after tool_use.
-		if (
-			this.config.reminderAfterIterations > 0 &&
-			iteration >= this.config.reminderAfterIterations
-		) {
-			content.push({
-				type: "text" as const,
-				text: this.config.reminderText,
-			});
-		}
-
-		return {
-			role: "user",
-			content,
-		};
 	}
 
 	private async ensureExtensionsInitialized(): Promise<void> {
@@ -1133,11 +753,11 @@ export class Agent {
 		userMessage: string,
 		mode: "run" | "continue",
 	): Promise<{ input: string; cancel: boolean }> {
-		const control = await this.dispatchLifecycle("hook.input", {
+		const control = await this.lifecycle.dispatch("hook.input", {
 			stage: "input",
 			payload: {
 				agentId: this.agentId,
-				conversationId: this.conversationId,
+				conversationId: this.conversationStore.getConversationId(),
 				parentAgentId: this.parentAgentId,
 				mode,
 				input: userMessage,
@@ -1174,7 +794,7 @@ export class Agent {
 				cacheWriteTokens: 0,
 				totalCost: 0,
 			},
-			messages: [...this.messages],
+			messages: this.conversationStore.getMessages(),
 			toolCalls: [],
 			iterations: 0,
 			finishReason: "aborted",
@@ -1189,52 +809,23 @@ export class Agent {
 		};
 	}
 
-	/**
-	 * Emit an event through the callback
-	 */
 	private emit(event: AgentEvent): void {
-		try {
-			this.config.onEvent?.(event);
-		} catch {
-			// Ignore callback errors
-		}
-
-		void this.hookEngine
-			.dispatch({
-				stage: "runtime_event",
-				runId: this.activeRunId || this.conversationId,
-				agentId: this.agentId,
-				conversationId: this.conversationId,
-				parentAgentId: this.parentAgentId,
-				payload: {
-					agentId: this.agentId,
-					conversationId: this.conversationId,
-					parentAgentId: this.parentAgentId,
-					event,
-				},
-			})
-			.catch((error) => {
-				this.reportRecoverableError(error);
-			});
+		this.runtimeBus.emitRuntimeEvent(event);
 	}
 
 	private reportRecoverableError(error: unknown): void {
 		this.log("warn", "Recoverable agent error", {
 			agentId: this.agentId,
-			conversationId: this.conversationId,
-			runId: this.activeRunId || this.conversationId,
+			conversationId: this.conversationStore.getConversationId(),
+			runId: this.activeRunId || this.conversationStore.getConversationId(),
 			error,
 		});
-		try {
-			this.config.onEvent?.({
-				type: "error",
-				error: error instanceof Error ? error : new Error(String(error)),
-				recoverable: this.config.hookErrorMode !== "throw",
-				iteration: 0,
-			});
-		} catch {
-			// Ignore callback errors
-		}
+		this.emit({
+			type: "error",
+			error: error instanceof Error ? error : new Error(String(error)),
+			recoverable: this.config.hookErrorMode !== "throw",
+			iteration: 0,
+		});
 	}
 
 	private resolveToolPolicy(toolName: string): ToolPolicy {
@@ -1263,7 +854,7 @@ export class Agent {
 		try {
 			const result = await callback({
 				agentId: this.agentId,
-				conversationId: this.conversationId,
+				conversationId: this.conversationStore.getConversationId(),
 				iteration: context.iteration,
 				toolCallId,
 				toolName,
@@ -1324,7 +915,7 @@ export class Agent {
 			? trimmed
 			: `<hook_context source="${source}">\n${trimmed}\n</hook_context>`;
 
-		this.messages.push({
+		this.conversationStore.appendMessage({
 			role: "user",
 			content: [
 				{
@@ -1366,9 +957,6 @@ export class Agent {
 		}
 	}
 
-	/**
-	 * Merge multiple abort signals into one
-	 */
 	private mergeAbortSignals(
 		...signals: (AbortSignal | undefined)[]
 	): AbortSignal {
@@ -1390,7 +978,6 @@ export class Agent {
 		}
 
 		const controller = new AbortController();
-
 		for (const signal of activeSignals) {
 			if (signal.aborted) {
 				controller.abort();
@@ -1400,30 +987,10 @@ export class Agent {
 				once: true,
 			});
 		}
-
 		return controller.signal;
 	}
 }
 
-// =============================================================================
-// Factory Function
-// =============================================================================
-
-/**
- * Create a new Agent instance
- *
- * This is a convenience function that creates an Agent with the given config.
- *
- * @example
- * ```typescript
- * const agent = createAgent({
- *   providerId: "anthropic",
- *   modelId: "claude-sonnet-4-5-20250929"
- *   systemPrompt: "You are helpful.",
- *   tools: [],
- * })
- * ```
- */
 export function createAgent(config: AgentConfig): Agent {
 	return new Agent(config);
 }

@@ -288,6 +288,20 @@ export interface RunHookResult {
 
 const DEFAULT_HOOK_COMMAND = ["agent", "hook"];
 
+function formatSpawnError(error: unknown, command: string[]): Error {
+	const err = error instanceof Error ? error : new Error(String(error));
+	const withCode = err as Error & { code?: string };
+	const commandLabel = command.join(" ");
+	if (withCode.code === "EACCES") {
+		return new Error(
+			`Failed to execute hook command "${commandLabel}" (EACCES). Configure hooks with an explicit interpreter/command array (for example: ["bash", "/path/to/TaskComplete"]) or make the script executable with a valid shebang.`,
+		);
+	}
+	return new Error(
+		`Failed to execute hook command "${commandLabel}": ${err.message}`,
+	);
+}
+
 /**
  * Dispatch a single hook event to an external CLI.
  * Payload is serialized as JSON and piped via stdin.
@@ -318,7 +332,9 @@ export async function runHook(
 
 	if (detached) {
 		await new Promise<void>((resolve, reject) => {
-			child.once("error", reject);
+			child.once("error", (error) => {
+				reject(formatSpawnError(error, command));
+			});
 			child.once("spawn", () => resolve());
 		});
 		child.unref();
@@ -340,7 +356,9 @@ export async function runHook(
 	});
 
 	return await new Promise<RunHookResult>((resolve, reject) => {
-		child.once("error", reject);
+		child.once("error", (error) => {
+			reject(formatSpawnError(error, command));
+		});
 		if ((options.timeoutMs ?? 0) > 0) {
 			timeoutId = setTimeout(() => {
 				timedOut = true;

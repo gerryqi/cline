@@ -104,13 +104,20 @@ async function hasRuntimeMethods(address: string): Promise<boolean> {
 		if (!started.sessionId.trim() || !started.startResultJson.trim()) {
 			return false;
 		}
+		let stopSupported = true;
 		try {
 			await client.stopRuntimeSession(started.sessionId);
+		} catch (error) {
+			if (isUnimplementedError(error)) {
+				stopSupported = false;
+			}
+		}
+		try {
 			await client.deleteSession(started.sessionId, true);
 		} catch {
 			// best effort cleanup
 		}
-		return true;
+		return stopSupported;
 	} catch (error) {
 		return !isUnimplementedError(error);
 	} finally {

@@ -39,6 +39,9 @@ clite -s "You are a pirate" "Tell me about the sea"
 
 # Interactive mode
 clite -i
+# Running `clite` with no prompt also enters interactive mode.
+# For one-shot auto-exit behavior, pass a prompt argument.
+# Exit interactive mode with Ctrl+D (or Ctrl+C when idle).
 
 # Pipe input
 cat file.txt | clite "Summarize this"
@@ -216,6 +219,7 @@ In desktop mode, CLI writes a request JSON file and waits for a matching decisio
 - Status check: `clite rpc status` prints running/not-running and returns exit code `0` when healthy (`1` when not running)
 - Shutdown: `clite rpc stop` requests graceful shutdown for the target address; `clite rpc start` can also be stopped with Ctrl+C / `SIGTERM`
 - Ensure: `clite rpc ensure` reuses a compatible server when possible; if the listener is stale/incompatible it can launch a fresh server on a new available port and report that effective address
+- Compatibility check: `rpc ensure` requires runtime chat methods including `StartRuntimeSession`, `SendRuntimeSession`, `AbortRuntimeSession`, and `StopRuntimeSession`.
 - Client registration: `clite rpc register --client-type <type> [--client-id <id>] [--meta key=value]...` registers host identity for RPC clients
 - Runtime APIs: `clite rpc start` now wires server-side runtime handlers for `StartRuntimeSession`, `SendRuntimeSession`, and `AbortRuntimeSession` (used by `@cline/code` and CLI runtime actions)
 - Runtime event bridge: runtime handlers publish live `runtime.chat.*` events via RPC `PublishEvent`, so subscribed clients can consume real-time text/tool updates through `StreamEvents`

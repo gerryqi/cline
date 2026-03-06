@@ -22,6 +22,10 @@ export interface ToolExecutionAuthorizer {
 		| { allowed: false; reason: string };
 }
 
+export interface ToolExecutionOptions {
+	maxConcurrency?: number;
+}
+
 /**
  * Execute a single tool with error handling and timeout
  *
@@ -150,8 +154,11 @@ export async function executeToolsInParallel(
 	context: ToolContext,
 	observer?: ToolExecutionObserver,
 	authorizer?: ToolExecutionAuthorizer,
+	options?: ToolExecutionOptions,
 ): Promise<ToolCallRecord[]> {
-	const executions = calls.map(async (call): Promise<ToolCallRecord> => {
+	const executeCall = async (
+		call: PendingToolCall,
+	): Promise<ToolCallRecord> => {
 		const startedAt = new Date();
 		await observer?.onToolCallStart?.(call);
 		const tool = toolRegistry.get(call.name);
@@ -204,9 +211,26 @@ export async function executeToolsInParallel(
 		};
 		await observer?.onToolCallEnd?.(record);
 		return record;
-	});
+	};
 
-	return Promise.all(executions);
+	const maxConcurrency = Math.max(
+		1,
+		options?.maxConcurrency ?? (calls.length || 1),
+	);
+	const results = new Array<ToolCallRecord>(calls.length);
+	let nextIndex = 0;
+	const workerCount = Math.min(maxConcurrency, calls.length);
+	const workers = Array.from({ length: workerCount }, async () => {
+		while (true) {
+			const index = nextIndex++;
+			if (index >= calls.length) {
+				return;
+			}
+			results[index] = await executeCall(calls[index]);
+		}
+	});
+	await Promise.all(workers);
+	return results;
 }
 
 /**

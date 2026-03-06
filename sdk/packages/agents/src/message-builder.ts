@@ -20,22 +20,23 @@ interface ReadResultRecord {
  * Builds an API-safe message copy without mutating original conversation history.
  */
 export class MessageBuilder {
+	private indexedMessageCount = 0;
+	private indexedTailRef: LlmsProviders.Message | undefined;
+	private readonly toolNameByIdCache = new Map<string, string>();
+	private readonly readPathsByToolUseIdCache = new Map<string, string[]>();
+	private readonly latestReadToolUseByPathCache = new Map<string, string>();
+	private readResultPathCache = new WeakMap<object, string[]>();
+
 	constructor(
 		private readonly maxToolResultChars = DEFAULT_MAX_TOOL_RESULT_CHARS,
 		private readonly targetToolNames = TARGET_TOOL_NAMES,
 	) {}
 
 	buildForApi(messages: LlmsProviders.Message[]): LlmsProviders.Message[] {
-		const toolNameById = this.buildToolNameMap(messages);
-		const readPathsByToolUseId = this.buildReadPathsFromToolUseMap(
-			messages,
-			toolNameById,
-		);
-		const latestReadToolUseByPath = this.buildLatestReadToolUseByPath(
-			messages,
-			toolNameById,
-			readPathsByToolUseId,
-		);
+		this.reindex(messages);
+		const toolNameById = this.toolNameByIdCache;
+		const readPathsByToolUseId = this.readPathsByToolUseIdCache;
+		const latestReadToolUseByPath = this.latestReadToolUseByPathCache;
 
 		return messages.map((message) => {
 			if (!Array.isArray(message.content)) {
@@ -89,103 +90,80 @@ export class MessageBuilder {
 		});
 	}
 
-	private buildToolNameMap(
-		messages: LlmsProviders.Message[],
-	): Map<string, string> {
-		const toolNameById = new Map<string, string>();
+	private reindex(messages: LlmsProviders.Message[]): void {
+		if (messages.length < this.indexedMessageCount) {
+			this.resetIndexes();
+		}
+		if (
+			this.indexedMessageCount > 0 &&
+			messages.length >= this.indexedMessageCount &&
+			messages[this.indexedMessageCount - 1] !== this.indexedTailRef
+		) {
+			this.resetIndexes();
+		}
 
-		for (const message of messages) {
+		for (let i = this.indexedMessageCount; i < messages.length; i++) {
+			const message = messages[i];
 			if (!Array.isArray(message.content)) {
 				continue;
 			}
 
 			for (const block of message.content) {
-				if (block.type !== "tool_use") {
+				if (block.type === "tool_use") {
+					const normalizedName = block.name.toLowerCase();
+					this.toolNameByIdCache.set(block.id, normalizedName);
+					if (this.isReadTool(normalizedName)) {
+						const paths = this.extractPathsFromReadToolInput(block.input);
+						if (paths.length > 0) {
+							this.readPathsByToolUseIdCache.set(block.id, paths);
+						}
+					}
 					continue;
 				}
-				toolNameById.set(block.id, block.name.toLowerCase());
+				if (block.type === "tool_result") {
+					const toolName = this.toolNameByIdCache.get(block.tool_use_id);
+					if (!this.isReadTool(toolName)) {
+						continue;
+					}
+					const readRecord = this.getReadResultRecord(
+						block,
+						this.readPathsByToolUseIdCache.get(block.tool_use_id),
+					);
+					if (!readRecord) {
+						continue;
+					}
+					for (const path of readRecord.paths) {
+						this.latestReadToolUseByPathCache.set(path, readRecord.toolUseId);
+					}
+				}
 			}
 		}
-
-		return toolNameById;
+		this.indexedMessageCount = messages.length;
+		this.indexedTailRef =
+			messages.length > 0 ? messages[messages.length - 1] : undefined;
 	}
 
-	private buildReadPathsFromToolUseMap(
-		messages: LlmsProviders.Message[],
-		toolNameById: Map<string, string>,
-	): Map<string, string[]> {
-		const readPathsByToolUseId = new Map<string, string[]>();
-
-		for (const message of messages) {
-			if (!Array.isArray(message.content)) {
-				continue;
-			}
-
-			for (const block of message.content) {
-				if (block.type !== "tool_use") {
-					continue;
-				}
-
-				const toolName = toolNameById.get(block.id);
-				if (!this.isReadTool(toolName)) {
-					continue;
-				}
-
-				const paths = this.extractPathsFromReadToolInput(block.input);
-				if (paths.length > 0) {
-					readPathsByToolUseId.set(block.id, paths);
-				}
-			}
-		}
-
-		return readPathsByToolUseId;
-	}
-
-	private buildLatestReadToolUseByPath(
-		messages: LlmsProviders.Message[],
-		toolNameById: Map<string, string>,
-		readPathsByToolUseId: Map<string, string[]>,
-	): Map<string, string> {
-		const latestReadToolUseByPath = new Map<string, string>();
-
-		for (const message of messages) {
-			if (!Array.isArray(message.content)) {
-				continue;
-			}
-
-			for (const block of message.content) {
-				if (block.type !== "tool_result") {
-					continue;
-				}
-				const toolName = toolNameById.get(block.tool_use_id);
-				if (!this.isReadTool(toolName)) {
-					continue;
-				}
-
-				const readRecord = this.getReadResultRecord(
-					block,
-					readPathsByToolUseId.get(block.tool_use_id),
-				);
-				if (!readRecord) {
-					continue;
-				}
-
-				for (const path of readRecord.paths) {
-					latestReadToolUseByPath.set(path, readRecord.toolUseId);
-				}
-			}
-		}
-
-		return latestReadToolUseByPath;
+	private resetIndexes(): void {
+		this.indexedMessageCount = 0;
+		this.indexedTailRef = undefined;
+		this.toolNameByIdCache.clear();
+		this.readPathsByToolUseIdCache.clear();
+		this.latestReadToolUseByPathCache.clear();
+		this.readResultPathCache = new WeakMap<object, string[]>();
 	}
 
 	private getReadResultRecord(
 		block: LlmsProviders.ToolResultContent,
 		fallbackPaths: string[] | undefined,
 	): ReadResultRecord | undefined {
-		const parsedPaths = this.extractReadPathsFromToolResultContent(
-			block.content,
-		);
+		const blockRef = block as unknown as object;
+		const cachedParsedPaths = this.readResultPathCache.get(blockRef);
+		const parsedPaths =
+			cachedParsedPaths ??
+			this.extractReadPathsFromToolResultContent(block.content);
+		if (!cachedParsedPaths) {
+			this.readResultPathCache.set(blockRef, parsedPaths);
+		}
 		const paths = parsedPaths.length > 0 ? parsedPaths : (fallbackPaths ?? []);
 		if (paths.length === 0) {
 			return undefined;

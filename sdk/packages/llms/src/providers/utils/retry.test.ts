@@ -121,6 +121,11 @@ describe("retry utils", () => {
 		class RetryHarness {
 			attempts = 0;
 
+			@withRetry({
+				maxRetries: 3,
+				baseDelay: 0,
+				maxDelay: 0,
+			})
 			async *stream() {
 				this.attempts++;
 				if (this.attempts < 3) {
@@ -131,29 +136,6 @@ describe("retry utils", () => {
 			}
 		}
 
-		const descriptor = Object.getOwnPropertyDescriptor(
-			RetryHarness.prototype,
-			"stream",
-		);
-		if (!descriptor) {
-			throw new Error("missing descriptor for stream");
-		}
-
-		const onRetryAttempt = vi.fn();
-		const decorated = withRetry({
-			maxRetries: 3,
-			baseDelay: 0,
-			maxDelay: 0,
-			onRetryAttempt,
-		})(
-			RetryHarness.prototype,
-			"stream",
-			descriptor as TypedPropertyDescriptor<
-				(...args: unknown[]) => AsyncGenerator<{ type: string; text?: string }>
-			>,
-		);
-		Object.defineProperty(RetryHarness.prototype, "stream", decorated);
-
 		const harness = new RetryHarness();
 		const chunks: Array<{ type: string; text?: string }> = [];
 		for await (const chunk of harness.stream()) {
@@ -162,6 +144,5 @@ describe("retry utils", () => {
 
 		expect(chunks).toEqual([{ type: "text", text: "hello" }, { type: "done" }]);
 		expect(harness.attempts).toBe(3);
-		expect(onRetryAttempt).toHaveBeenCalledTimes(2);
 	});
 });

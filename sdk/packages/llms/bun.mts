@@ -10,6 +10,14 @@ const builds = [
 		minify: true,
 		sourcemap: "none",
 	},
+	{
+		entrypoints: ["./src/index.browser.ts"] as string[],
+		outdir: "./dist",
+		target: "browser" as const,
+		packages: "external" as const,
+		minify: true,
+		sourcemap: "none",
+	},
 ];
 
 for (const config of builds) {

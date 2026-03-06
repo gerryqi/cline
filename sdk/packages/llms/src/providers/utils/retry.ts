@@ -123,14 +123,10 @@ export function sleep(ms: number): Promise<void> {
  * ```
  */
 export function withRetry(options: RetryOptions = {}) {
-	return <T extends (...args: any[]) => AsyncGenerator<any, any, any>>(
-		_target: object,
-		_propertyKey: string,
-		descriptor: TypedPropertyDescriptor<T>,
-	): TypedPropertyDescriptor<T> => {
-		const originalMethod = descriptor.value!;
-
-		descriptor.value = async function* (this: any, ...args: Parameters<T>) {
+	const wrap = <T extends (...args: any[]) => AsyncGenerator<any, any, any>>(
+		originalMethod: T,
+	): T =>
+		async function* (this: any, ...args: Parameters<T>) {
 			const { maxRetries = DEFAULT_OPTIONS.maxRetries, onRetryAttempt } =
 				options;
 
@@ -146,7 +142,6 @@ export function withRetry(options: RetryOptions = {}) {
 						throw error;
 					}
 
-					// Calculate delay
 					let delay: number;
 					if (error instanceof RetriableError && error.retryAfterSeconds) {
 						delay = error.retryAfterSeconds * 1000;
@@ -154,19 +149,19 @@ export function withRetry(options: RetryOptions = {}) {
 						delay = calculateRetryDelay(attempt, options);
 					}
 
-					// Notify about retry
 					if (onRetryAttempt) {
 						onRetryAttempt(attempt + 1, maxRetries, delay, error);
 					}
 
-					// Wait before retry
 					await sleep(delay);
 				}
 			}
 		} as unknown as T;
 
-		return descriptor;
-	};
+	return <T extends (...args: any[]) => AsyncGenerator<any, any, any>>(
+		value: T,
+		_context: { kind: string },
+	): T => wrap(value);
 }
 
 /**

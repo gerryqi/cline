@@ -120,10 +120,7 @@ describe("tools utilities", () => {
 			retryable: true,
 		});
 
-		vi.useFakeTimers();
-		const retryPromise = executeToolWithRetry(retryTool, {}, baseContext);
-		await vi.advanceTimersByTimeAsync(1000);
-		const retryResult = await retryPromise;
+		const retryResult = await executeToolWithRetry(retryTool, {}, baseContext);
 		expect(retryResult.error).toBeUndefined();
 		expect(retryResult.output).toEqual({ ok: true });
 
@@ -137,9 +134,7 @@ describe("tools utilities", () => {
 				return "late";
 			},
 		});
-		const timeoutPromise = executeTool(timeoutTool, {}, baseContext);
-		await vi.advanceTimersByTimeAsync(10);
-		const timeoutResult = await timeoutPromise;
+		const timeoutResult = await executeTool(timeoutTool, {}, baseContext);
 		expect(timeoutResult.error).toContain("timed out");
 	});
 
@@ -232,6 +227,43 @@ describe("tools utilities", () => {
 		expect(sequential).toHaveLength(3);
 		expect(starts).toContain("success");
 		expect(ends).toContain("missing");
+	});
+
+	it("respects max concurrency in parallel tool execution", async () => {
+		let active = 0;
+		let maxActive = 0;
+		const slowTool = createTool({
+			name: "slow",
+			description: "slow",
+			inputSchema: { type: "object", properties: {} },
+			execute: async () => {
+				active += 1;
+				maxActive = Math.max(maxActive, active);
+				await new Promise((resolve) => setTimeout(resolve, 10));
+				active -= 1;
+				return { ok: true };
+			},
+			retryable: false,
+		});
+		const registry = createToolRegistry([slowTool]);
+		const calls: PendingToolCall[] = [
+			{ id: "1", name: "slow", input: {} },
+			{ id: "2", name: "slow", input: {} },
+			{ id: "3", name: "slow", input: {} },
+			{ id: "4", name: "slow", input: {} },
+		];
+
+		const result = await executeToolsInParallel(
+			registry,
+			calls,
+			baseContext,
+			undefined,
+			undefined,
+			{ maxConcurrency: 2 },
+		);
+
+		expect(result).toHaveLength(4);
+		expect(maxActive).toBeLessThanOrEqual(2);
 	});
 
 	it("formats tool output and summaries", () => {

@@ -236,6 +236,17 @@ type ListenerEvent = {
 	};
 };
 
+function isUnimplementedRpcMethodError(error: unknown): boolean {
+	if (error && typeof error === "object" && "code" in error) {
+		const code = Number((error as { code?: unknown }).code);
+		if (code === 12) {
+			return true;
+		}
+	}
+	const message = error instanceof Error ? error.message : String(error);
+	return message.toUpperCase().includes("UNIMPLEMENTED");
+}
+
 function emitAgentEvent(
 	listeners: Set<(event: unknown) => void>,
 	sessionId: string,
@@ -531,7 +542,13 @@ function createRpcRuntimeCliSessionManager(
 			await client.abortRuntimeSession(sessionId);
 		},
 		stop: async (sessionId) => {
-			await client.stopRuntimeSession(sessionId);
+			try {
+				await client.stopRuntimeSession(sessionId);
+			} catch (error) {
+				if (!isUnimplementedRpcMethodError(error)) {
+					throw error;
+				}
+			}
 			sessionConfigs.delete(sessionId);
 		},
 		dispose: async () => {

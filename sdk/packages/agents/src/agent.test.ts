@@ -472,6 +472,130 @@ describe("Agent", () => {
 		).toThrow(/declared but handler "onRuntimeEvent" is missing/i);
 	});
 
+	it("supports event subscriptions without mutating config callbacks", async () => {
+		const { Agent } = await import("./agent.js");
+		const handler = makeHandler([
+			[
+				{ type: "text", id: "r1", text: "ok" },
+				{ type: "usage", id: "r1", inputTokens: 1, outputTokens: 1 },
+				{ type: "done", id: "r1", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const onEvent = vi.fn();
+		const subscriberA = vi.fn();
+		const subscriberB = vi.fn();
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "events",
+			tools: [],
+			onEvent,
+		});
+
+		const unsubscribeA = agent.subscribeEvents(subscriberA);
+		const unsubscribeB = agent.subscribeEvents(subscriberB);
+		unsubscribeB();
+
+		await agent.run("hello");
+
+		expect(onEvent).toHaveBeenCalled();
+		expect(subscriberA).toHaveBeenCalled();
+		expect(subscriberB).not.toHaveBeenCalled();
+
+		unsubscribeA();
+	});
+
+	it("dispatches newly supported extension lifecycle stages", async () => {
+		const { Agent } = await import("./agent.js");
+		const handler = makeHandler([
+			[
+				{ type: "text", id: "r1", text: "done" },
+				{ type: "usage", id: "r1", inputTokens: 1, outputTokens: 1 },
+				{ type: "done", id: "r1", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const onRunStart = vi.fn(() => undefined);
+		const onIterationStart = vi.fn(() => undefined);
+		const onTurnStart = vi.fn(() => undefined);
+		const onIterationEnd = vi.fn(async () => undefined);
+		const onRunEnd = vi.fn(async () => undefined);
+		const extension: AgentExtension = {
+			name: "lifecycle-extension",
+			manifest: {
+				capabilities: ["hooks"],
+				hookStages: [
+					"run_start",
+					"iteration_start",
+					"turn_start",
+					"iteration_end",
+					"run_end",
+				],
+			},
+			onRunStart,
+			onIterationStart,
+			onTurnStart,
+			onIterationEnd,
+			onRunEnd,
+		};
+
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "hooks",
+			tools: [],
+			extensions: [extension],
+		});
+
+		await agent.run("hello");
+
+		expect(onRunStart).toHaveBeenCalledTimes(1);
+		expect(onIterationStart).toHaveBeenCalledTimes(1);
+		expect(onTurnStart).toHaveBeenCalledTimes(1);
+		expect(onIterationEnd).toHaveBeenCalledTimes(1);
+		expect(onRunEnd).toHaveBeenCalledTimes(1);
+	});
+
+	it("rejects overlapping runs on the same agent instance", async () => {
+		const { Agent } = await import("./agent.js");
+		let releaseFirstTurn: (() => void) | null = null;
+		const firstTurnBlocked = new Promise<void>((resolve) => {
+			releaseFirstTurn = resolve;
+		});
+
+		const handler = {
+			createMessage: vi.fn(async function* () {
+				yield { type: "text", id: "r1", text: "working" };
+				await firstTurnBlocked;
+				yield { type: "usage", id: "r1", inputTokens: 1, outputTokens: 1 };
+				yield { type: "done", id: "r1", success: true };
+			}),
+			getModel: vi.fn(() => ({ id: "mock-model", info: {} })),
+			getMessages: vi.fn(),
+		};
+		createHandlerMock.mockReturnValue(handler);
+
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "concurrency",
+			tools: [],
+		});
+
+		const firstRun = agent.run("first");
+		await Promise.resolve();
+
+		await expect(agent.continue("second")).rejects.toThrow(
+			/state is "running"/i,
+		);
+
+		releaseFirstTurn?.();
+		await firstRun;
+	});
+
 	it("adds image blocks to initial user content when provided", async () => {
 		const { Agent } = await import("./agent.js");
 		const handler = makeHandler([

@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import {
 	type AgentHooks,
@@ -162,7 +162,56 @@ function createPayloadBase(
 	} as Omit<HookEventPayload, "hookName">;
 }
 
-type HookCommandMap = Partial<Record<HookEventName, string[]>>;
+type HookCommandMap = Partial<Record<HookEventName, string[][]>>;
+
+function parseShebangCommand(path: string): string[] | undefined {
+	try {
+		const content = readFileSync(path, "utf8");
+		const firstLine = content.split(/\r?\n/, 1)[0]?.trim();
+		if (!firstLine?.startsWith("#!")) {
+			return undefined;
+		}
+		const shebang = firstLine.slice(2).trim();
+		if (!shebang) {
+			return undefined;
+		}
+		const tokens = shebang.split(/\s+/).filter(Boolean);
+		return tokens.length > 0 ? tokens : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function inferHookCommand(path: string): string[] {
+	const shebang = parseShebangCommand(path);
+	if (shebang && shebang.length > 0) {
+		return [...shebang, path];
+	}
+	const lowered = path.toLowerCase();
+	if (
+		lowered.endsWith(".sh") ||
+		lowered.endsWith(".bash") ||
+		lowered.endsWith(".zsh")
+	) {
+		return ["/bin/bash", path];
+	}
+	if (
+		lowered.endsWith(".js") ||
+		lowered.endsWith(".mjs") ||
+		lowered.endsWith(".cjs")
+	) {
+		return ["node", path];
+	}
+	if (
+		lowered.endsWith(".ts") ||
+		lowered.endsWith(".mts") ||
+		lowered.endsWith(".cts")
+	) {
+		return ["bun", "run", path];
+	}
+	// Default to bash for legacy hook files with no extension/shebang.
+	return ["/bin/bash", path];
+}
 
 function createHookCommandMap(workspacePath: string): HookCommandMap {
 	const map: HookCommandMap = {};
@@ -171,37 +220,38 @@ function createHookCommandMap(workspacePath: string): HookCommandMap {
 			continue;
 		}
 		const existing = map[file.hookEventName] ?? [];
-		existing.push(file.path);
+		existing.push(inferHookCommand(file.path));
 		map[file.hookEventName] = existing;
 	}
 	return map;
 }
 
 async function runBlockingHookCommands(options: {
-	commandPaths: string[];
+	commands: string[][];
 	payload: HookEventPayload;
 	cwd: string;
 	logger?: BasicLogger;
 	timeoutMs?: number;
 }): Promise<AgentHookControl | undefined> {
 	let merged: AgentHookControl | undefined;
-	for (const commandPath of options.commandPaths) {
+	for (const command of options.commands) {
+		const commandLabel = command.join(" ");
 		try {
 			const result = await runHook(options.payload, {
-				command: [commandPath],
+				command,
 				cwd: options.cwd,
 				env: process.env,
 				detached: false,
 				timeoutMs: options.timeoutMs,
 			});
 			if (result?.timedOut) {
-				logHookError(options.logger, `hook command timed out: ${commandPath}`);
+				logHookError(options.logger, `hook command timed out: ${commandLabel}`);
 				continue;
 			}
 			if (result?.parseError) {
 				logHookError(
 					options.logger,
-					`hook command returned invalid JSON control output: ${commandPath} (${result.parseError})`,
+					`hook command returned invalid JSON control output: ${commandLabel} (${result.parseError})`,
 				);
 				continue;
 			}
@@ -209,7 +259,7 @@ async function runBlockingHookCommands(options: {
 		} catch (error) {
 			logHookError(
 				options.logger,
-				`hook command failed: ${commandPath}`,
+				`hook command failed: ${commandLabel}`,
 				error,
 			);
 		}
@@ -218,21 +268,22 @@ async function runBlockingHookCommands(options: {
 }
 
 function runAsyncHookCommands(options: {
-	commandPaths: string[];
+	commands: string[][];
 	payload: HookEventPayload;
 	cwd: string;
 	logger?: BasicLogger;
 }): void {
-	for (const commandPath of options.commandPaths) {
+	for (const command of options.commands) {
+		const commandLabel = command.join(" ");
 		void runHook(options.payload, {
-			command: [commandPath],
+			command,
 			cwd: options.cwd,
 			env: process.env,
 			detached: true,
 		}).catch((error) => {
 			logHookError(
 				options.logger,
-				`hook command failed: ${commandPath}`,
+				`hook command failed: ${commandLabel}`,
 				error,
 			);
 		});
@@ -359,7 +410,7 @@ export function createHookConfigFileHooks(
 		const agentStart = commandMap.agent_start ?? [];
 		if (agentStart.length > 0) {
 			runAsyncHookCommands({
-				commandPaths: agentStart,
+				commands: agentStart,
 				cwd: options.cwd,
 				logger: options.logger,
 				payload: {
@@ -373,7 +424,7 @@ export function createHookConfigFileHooks(
 		const promptSubmit = commandMap.prompt_submit ?? [];
 		if (promptSubmit.length > 0) {
 			runAsyncHookCommands({
-				commandPaths: promptSubmit,
+				commands: promptSubmit,
 				cwd: options.cwd,
 				logger: options.logger,
 				payload: {
@@ -396,7 +447,7 @@ export function createHookConfigFileHooks(
 			return undefined;
 		}
 		return runBlockingHookCommands({
-			commandPaths,
+			commands: commandPaths,
 			cwd: options.cwd,
 			logger: options.logger,
 			timeoutMs: options.toolCallTimeoutMs ?? 120000,
@@ -425,7 +476,7 @@ export function createHookConfigFileHooks(
 			return;
 		}
 		runAsyncHookCommands({
-			commandPaths,
+			commands: commandPaths,
 			cwd: options.cwd,
 			logger: options.logger,
 			payload: {
@@ -453,7 +504,7 @@ export function createHookConfigFileHooks(
 			return;
 		}
 		runAsyncHookCommands({
-			commandPaths,
+			commands: commandPaths,
 			cwd: options.cwd,
 			logger: options.logger,
 			payload: {
@@ -473,7 +524,7 @@ export function createHookConfigFileHooks(
 			const abortCommands = commandMap.agent_abort ?? [];
 			if (abortCommands.length > 0) {
 				runAsyncHookCommands({
-					commandPaths: abortCommands,
+					commands: abortCommands,
 					cwd: options.cwd,
 					logger: options.logger,
 					payload: {
@@ -490,7 +541,7 @@ export function createHookConfigFileHooks(
 			return;
 		}
 		runAsyncHookCommands({
-			commandPaths: shutdownCommands,
+			commands: shutdownCommands,
 			cwd: options.cwd,
 			logger: options.logger,
 			payload: {

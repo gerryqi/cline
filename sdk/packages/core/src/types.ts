@@ -106,7 +106,7 @@ export type { WorkspaceInfo } from "./types/workspace";
 export interface StoredMessages {
 	version: 1;
 	updatedAt: string;
-	messages: LlmsProviders.Message[];
+	messages: LlmsProviders.MessageWithMetadata[];
 }
 
 // Backward-compat alias with previous event naming.

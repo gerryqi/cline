@@ -10,14 +10,17 @@
 		".": {
 			"browser": "./dist/index.browser.js",
 			"react-server": "./dist/index.browser.js",
+			"development": "./dist/index.js",
 			"import": "./dist/index.js",
 			"types": "./dist/index.d.ts"
 		},
 		"./node": {
+			"development": "./dist/index.js",
 			"import": "./dist/index.js",
 			"types": "./dist/index.d.ts"
 		},
 		"./browser": {
+			"development": "./dist/index.browser.js",
 			"import": "./dist/index.browser.js",
 			"types": "./dist/index.browser.d.ts"
 		}
@@ -28,7 +31,7 @@
 	],
 	"scripts": {
 		"build": "bun run bun.mts && bun tsc --emitDeclarationOnly --declarationMap false --incremental false",
-		"typecheck": "bun tsc --noEmit",
+		"typecheck": "bun tsc -p tsconfig.dev.json --noEmit",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"clean": "rm -rf dist node_modules",

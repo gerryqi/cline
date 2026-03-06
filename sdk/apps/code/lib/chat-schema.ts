@@ -54,6 +54,9 @@ export const ChatMessageSchema = z.object({
 			hookEventName: z.string().optional(),
 			inputTokens: z.number().int().nonnegative().optional(),
 			outputTokens: z.number().int().nonnegative().optional(),
+			totalCost: z.number().nonnegative().optional(),
+			providerId: z.string().optional(),
+			modelId: z.string().optional(),
 		})
 		.optional(),
 });

@@ -1,0 +1,11 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"baseUrl": ".",
+		"rootDir": "..",
+		"paths": {
+			"@cline/shared": ["../shared/src/index.ts"],
+			"@cline/shared/*": ["../shared/src/*", "../shared/src/*/index.ts"]
+		}
+	}
+}

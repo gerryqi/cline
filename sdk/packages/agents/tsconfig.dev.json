@@ -6,12 +6,8 @@
 		"noUnusedLocals": false,
 		"noUnusedParameters": false,
 		"paths": {
-			"@cline/agents": ["../agents/src/index.ts"],
-			"@cline/agents/*": ["../agents/src/*", "../agents/src/*/index.ts"],
 			"@cline/llms": ["../llms/src/index.ts"],
 			"@cline/llms/*": ["../llms/src/*", "../llms/src/*/index.ts"],
-			"@cline/rpc": ["../rpc/src/index.ts"],
-			"@cline/rpc/*": ["../rpc/src/*", "../rpc/src/*/index.ts"],
 			"@cline/shared": ["../shared/src/index.ts"],
 			"@cline/shared/*": ["../shared/src/*", "../shared/src/*/index.ts"]
 		}

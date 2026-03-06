@@ -13,6 +13,8 @@ import type { AgentEvent, AgentResult } from "./types.js";
 class FakeAgent {
 	config: { onEvent?: (event: AgentEvent) => void } = {};
 	abort = vi.fn();
+	private subscriberSeq = 0;
+	private subscribers = new Map<number, (event: AgentEvent) => void>();
 	private eventSequence: AgentEvent[];
 	private result: AgentResult;
 
@@ -21,18 +23,43 @@ class FakeAgent {
 		this.result = result;
 	}
 
+	getSubscriberCount(): number {
+		return this.subscribers.size;
+	}
+
+	subscribeEvents(listener: (event: AgentEvent) => void): () => void {
+		const id = ++this.subscriberSeq;
+		this.subscribers.set(id, listener);
+		return () => {
+			this.subscribers.delete(id);
+		};
+	}
+
+	private emit(event: AgentEvent): void {
+		this.config.onEvent?.(event);
+		for (const subscriber of this.subscribers.values()) {
+			subscriber(event);
+		}
+	}
+
 	async run(_message: string): Promise<AgentResult> {
 		for (const event of this.eventSequence) {
-			this.config.onEvent?.(event);
+			this.emit(event);
 		}
 		return this.result;
 	}
 
 	async continue(_message: string): Promise<AgentResult> {
 		for (const event of this.eventSequence) {
-			this.config.onEvent?.(event);
+			this.emit(event);
 		}
 		return this.result;
+	}
+}
+
+class ErrorAgent extends FakeAgent {
+	async run(_message: string): Promise<AgentResult> {
+		throw new Error("run failed");
 	}
 }
 
@@ -158,5 +185,13 @@ describe("streaming utilities", () => {
 		}
 
 		expect(parts).toEqual(["hello ", "world"]);
+	});
+
+	it("cleans up event subscription after stream failure", async () => {
+		const agent = new ErrorAgent([], baseResult);
+		const stream = streamRun(agent as never, "boom");
+
+		await expect(stream.getResult()).rejects.toThrow("run failed");
+		expect(agent.getSubscriberCount()).toBe(0);
 	});
 });

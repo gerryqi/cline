@@ -14,12 +14,18 @@ Stateful concerns (plugin discovery/loading, trust/sandbox policy, persistence) 
 ```mermaid
 flowchart TD
   Host["Host App / @cline/core"] --> Agent["Agent"]
+  Agent --> Bus["AgentRuntimeBus"]
+  Agent --> Conversation["ConversationStore"]
+  Agent --> LifecycleOrchestrator["LifecycleOrchestrator"]
+  Agent --> TurnProcessor["TurnProcessor"]
+  Agent --> ToolOrchestrator["ToolOrchestrator"]
   Agent --> Registry["ContributionRegistry"]
   Agent --> Hooks["HookEngine"]
-  Agent --> Tools["Tool Registry + Dispatcher"]
+  ToolOrchestrator --> Tools["Tool Registry + Dispatcher"]
 
   Registry --> Contributions["Tools / Commands / Shortcuts / Flags / Renderers / Providers"]
   Hooks --> Lifecycle["Lifecycle + Runtime Event Handlers"]
+  Bus --> Lifecycle
 ```
 
 ## Execution Model: Flow + State
@@ -30,6 +36,7 @@ iterates until it can return a final answer.
 ### Conversation state buckets
 
 - Persistent per conversation:
+  - managed by `ConversationStore`
   - `messages`: full conversation history used for future turns
   - `conversationId`: reset by `run()`, `clearHistory()`, and `restore()`
   - `sessionStarted`: ensures `session_start` runs once per conversation
@@ -136,6 +143,8 @@ Additional stages:
 - `session_shutdown` when host calls `agent.shutdown(...)`
 - `runtime_event` for extension-level observation of emitted runtime events
 
+Lifecycle transitions are emitted through `AgentRuntimeBus`, and lifecycle dispatch is owned by `LifecycleOrchestrator`.
+
 ## Hook System
 
 `HookEngine` is the only runtime hook execution path.
@@ -154,6 +163,25 @@ Additional stages:
 - `iteration_end`
 - `run_end`
 - `runtime_event`
+- `session_shutdown`
+- `error`
+
+### Extension hook stages
+
+Extension manifests can subscribe to:
+
+- `input`
+- `runtime_event`
+- `session_start`
+- `run_start`
+- `iteration_start`
+- `turn_start`
+- `before_agent_start`
+- `tool_call_before`
+- `tool_call_after`
+- `turn_end`
+- `iteration_end`
+- `run_end`
 - `session_shutdown`
 - `error`
 
@@ -322,6 +350,7 @@ console.log(result.text);
 - Hook stage defaults include bounded timeout/retry behavior.
 - Async stages use bounded queue limits.
 - Per-stage concurrency budgets are enforced.
+- Tool execution fan-out is bounded by `AgentConfig.maxParallelToolCalls` (default `8`).
 - Hook routing is stage-indexed; dispatch does not scan unrelated handlers.
 - Extension contribution setup runs once per agent lifecycle.
 

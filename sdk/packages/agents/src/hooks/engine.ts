@@ -50,6 +50,14 @@ interface StageQueueState {
 	items: QueueItem[];
 }
 
+function compareHandlers(a: HookHandler, b: HookHandler): number {
+	const priorityDiff = (b.priority ?? 0) - (a.priority ?? 0);
+	if (priorityDiff !== 0) {
+		return priorityDiff;
+	}
+	return a.name.localeCompare(b.name);
+}
+
 const STAGE_DEFAULTS: Record<HookStage, HookStagePolicy> = {
 	input: {
 		mode: "blocking",
@@ -283,6 +291,7 @@ export class HookEngine {
 	register(handler: HookHandler): void {
 		const list = this.handlers.get(handler.stage) ?? [];
 		list.push(handler);
+		list.sort(compareHandlers);
 		this.handlers.set(handler.stage, list);
 	}
 
@@ -361,13 +370,7 @@ export class HookEngine {
 
 	private getHandlers(stage: HookStage): HookHandler[] {
 		const handlers = this.handlers.get(stage) ?? [];
-		return [...handlers].sort((a, b) => {
-			const priorityDiff = (b.priority ?? 0) - (a.priority ?? 0);
-			if (priorityDiff !== 0) {
-				return priorityDiff;
-			}
-			return a.name.localeCompare(b.name);
-		});
+		return [...handlers];
 	}
 
 	private getStageQueueState(stage: HookStage): StageQueueState {

@@ -118,6 +118,40 @@ For `apps/code` and `apps/desktop`:
 
 Guideline: reuse existing `components/ui` primitives and tokenized styles before adding new visual patterns.
 
+## Storage
+
+### Path resolution (`@cline/shared` → `packages/shared/src/storage/paths.ts`)
+
+All filesystem paths are derived from a mutable `HOME_DIR` (defaults to `$HOME`). Apps call `setHomeDir()` / `setHomeDirIfUnset()` early at startup (CLI, RPC runtime, bridge scripts) to anchor everything.
+
+Base data directory: `~/.cline/data` (override: `CLINE_DATA_DIR`).
+
+| Resolver | Default path | Env override |
+|---|---|---|
+| `resolveClineDataDir()` | `~/.cline/data` | `CLINE_DATA_DIR` |
+| `resolveSessionDataDir()` | `~/.cline/data/sessions` | `CLINE_SESSION_DATA_DIR` |
+| `resolveTeamDataDir()` | `~/.cline/data/teams` | `CLINE_TEAM_DATA_DIR` |
+| `resolveProviderSettingsPath()` | `~/.cline/data/settings/providers.json` | `CLINE_PROVIDER_SETTINGS_PATH` |
+| `resolveMcpSettingsPath()` | `~/.cline/data/settings/cline_mcp_settings.json` | `CLINE_MCP_SETTINGS_PATH` |
+
+User-facing config directories live under `~/Documents/Cline/` (`Agents/`, `Hooks/`, `Rules/`, `Workflows/`). Workspace-scoped config is loaded from `.clinerules/`, `.cline/`, `.claude/`, or `.agents/` inside the workspace root. Config search-path helpers (`resolveAgentConfigSearchPaths`, `resolveSkillsConfigSearchPaths`, etc.) combine workspace + user-global + data-dir locations and deduplicate.
+
+### Storage interfaces (`@cline/core` → `packages/core/src/types/storage.ts`)
+
+Three interfaces define the storage contract consumed by session management:
+
+- **`SessionStore`** — CRUD for `SessionRecord` rows (create, get, list, update, updateStatus, delete). The concrete implementation is `SqliteSessionStore` (`packages/core/src/storage/sqlite-session-store.ts`), which opens a `sessions.db` SQLite file inside `resolveSessionDataDir()`.
+- **`ArtifactStore`** — append-only writes for session artifacts (transcript log, hook JSONL, messages JSON). Consumed via `SessionArtifacts` (`packages/core/src/session/session-artifacts.ts`), which creates per-session subdirectories under the sessions dir with files named `<sessionId>.log`, `<sessionId>.hooks.jsonl`, `<sessionId>.messages.json`. Sub-agent and team-task artifacts nest into subdirectories by agent/task ID.
+- **`TeamStore`** — read-only access to team state and history (team names, state snapshots, history entries) from `resolveTeamDataDir()`.
+
+### Provider settings (`@cline/core` → `packages/core/src/storage/provider-settings-manager.ts`)
+
+`ProviderSettingsManager` reads/writes a JSON file at `resolveProviderSettingsPath()`. It stores per-provider settings keyed by provider ID, tracks `lastUsedProvider`, and validates with Zod schemas.
+
+### Session lifecycle through storage
+
+`CoreSessionService` (`packages/core/src/session/session-service.ts`) wires `SqliteSessionStore` + `SessionArtifacts` together. `DefaultSessionManager` (`packages/core/src/session/default-session-manager.ts`) consumes a `SessionBackend` (either local `CoreSessionService` or remote `RpcCoreSessionService`) and exposes the high-level `SessionManager` interface (start, send, abort, stop, dispose, read artifacts).
+
 ## Tooling and Standards
 
 - Runtime/tooling: Bun workspaces/scripts.

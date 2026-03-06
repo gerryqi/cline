@@ -62,6 +62,11 @@ type ActiveSession = {
 	interactive: boolean;
 };
 
+type StoredMessageWithMetadata = LlmsProviders.MessageWithMetadata & {
+	providerId?: string;
+	modelId?: string;
+};
+
 export interface DefaultSessionManagerOptions {
 	sessionService: SessionBackend;
 	runtimeBuilder?: RuntimeBuilder;
@@ -95,6 +100,44 @@ function serializeAgentEvent(event: AgentEvent): string {
 		}
 		return value;
 	});
+}
+
+function withLatestAssistantTurnMetadata(
+	messages: LlmsProviders.Message[],
+	result: AgentResult,
+): StoredMessageWithMetadata[] {
+	const next = messages.map((message) => ({
+		...message,
+	})) as StoredMessageWithMetadata[];
+	const assistantIndex = [...next]
+		.reverse()
+		.findIndex((message) => message.role === "assistant");
+	if (assistantIndex === -1) {
+		return next;
+	}
+
+	const targetIndex = next.length - 1 - assistantIndex;
+	const target = next[targetIndex];
+	const usage = result.usage;
+	next[targetIndex] = {
+		...target,
+		providerId: target.providerId ?? result.model.provider,
+		modelId: target.modelId ?? result.model.id,
+		modelInfo: target.modelInfo ?? {
+			id: result.model.id,
+			provider: result.model.provider,
+		},
+		metrics: {
+			...(target.metrics ?? {}),
+			inputTokens: usage.inputTokens,
+			outputTokens: usage.outputTokens,
+			cacheReadTokens: usage.cacheReadTokens,
+			cacheWriteTokens: usage.cacheWriteTokens,
+			cost: usage.totalCost,
+		},
+		ts: target.ts ?? result.endedAt.getTime(),
+	};
+	return next;
 }
 
 function toSessionRecord(row: SessionRowShape): SessionRecord {
@@ -464,11 +507,15 @@ export class DefaultSessionManager implements SessionManager {
 					baselineMessages,
 				);
 		session.started = true;
+		const persistedMessages = withLatestAssistantTurnMetadata(
+			result.messages,
+			result,
+		);
 
 		await this.invoke<void>(
 			"persistSessionMessages",
 			session.sessionId,
-			result.messages,
+			persistedMessages,
 		);
 		return result;
 	}

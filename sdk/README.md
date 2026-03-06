@@ -102,7 +102,10 @@ Useful workspace scripts (root `package.json`):
 - `bun run clean` - remove build outputs across packages
 
 Development note:
-- `@cline/core` and `@cline/code` `typecheck` scripts now use `tsconfig.dev.json` source-path aliases for `@cline/shared` (`packages/shared/src`) so local shared API changes are picked up without rebuilding `dist` types first.
+- SDK packages now support source-first development resolution without rebuilding `dist`:
+  - `@cline/core`, `@cline/agents`, and `@cline/llms` `typecheck` scripts use `tsconfig.dev.json` path aliases to sibling `packages/*/src`.
+  - SDK package `exports` now include a `development` condition that points to `src` entrypoints.
+  - Root dev scripts run Bun with `--conditions=development` (`dev:cli`, `dev:code`, `dev:desktop`) so runtime imports pick up live workspace source changes.
 
 ## Linting and Formatting (Biome)
 

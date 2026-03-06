@@ -13,6 +13,8 @@ Package-level docs are centralized:
 - Node/runtime explicit entrypoint: `@cline/llms/node`
 
 The default export map resolves to a browser-safe bundle under browser/react-server conditions, and to the Node runtime bundle under standard Node import conditions.
+The package `development` export conditions also resolve to `dist/*` to avoid Turbopack source-resolution issues with `.js` specifiers in workspace TypeScript sources.
+The build emits both `dist/index.js` (Node/default) and `dist/index.browser.js` (browser/react-server) to match this export map.
 
 Vertex Claude routing in the Node runtime uses `@ai-sdk/google-vertex/anthropic`.
 
@@ -62,6 +64,7 @@ This keeps provider default derivation and protocol filtering in one place.
 - Provider settings OAuth auth schema includes `auth.expiresAt` (epoch ms) for runtime token refresh orchestration in `@cline/core`.
 - Stream chunks are modeled as discriminated unions (`ApiStreamChunk`); tests should narrow by `type` instead of casting to generic records.
 - OpenAI-compatible tool schemas default to strict mode; `openrouter` requests disable tool strictness for broader routed-model compatibility.
+- Retry decorator utility (`withRetry`) uses stage-3 decorators (no legacy decorator mode).
 
 ## Legacy Provider Migration Status
 

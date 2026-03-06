@@ -90,6 +90,7 @@ type ChatApiResult = {
 	usage?: {
 		inputTokens?: number;
 		outputTokens?: number;
+		totalCost?: number;
 	};
 	iterations?: number;
 	finishReason?: "completed" | "max_iterations" | "aborted" | "error";
@@ -1137,6 +1138,45 @@ export function useChatSession() {
 					result?.usage?.outputTokens ?? result?.outputTokens;
 				if (typeof outputTokens === "number") {
 					setTokensOut((prev) => prev + outputTokens);
+				}
+				const totalCost =
+					typeof result?.usage?.totalCost === "number"
+						? result.usage.totalCost
+						: undefined;
+				const assistantMessageId = activeAssistantMessageIdRef.current;
+				if (
+					assistantMessageId &&
+					(typeof inputTokens === "number" ||
+						typeof outputTokens === "number" ||
+						typeof totalCost === "number")
+				) {
+					setMessages((prev) =>
+						prev.map((message) => {
+							if (message.id !== assistantMessageId) {
+								return message;
+							}
+							return {
+								...message,
+								meta: {
+									...(message.meta ?? {}),
+									inputTokens:
+										typeof inputTokens === "number"
+											? inputTokens
+											: message.meta?.inputTokens,
+									outputTokens:
+										typeof outputTokens === "number"
+											? outputTokens
+											: message.meta?.outputTokens,
+									totalCost:
+										typeof totalCost === "number"
+											? totalCost
+											: message.meta?.totalCost,
+									providerId: config.provider,
+									modelId: config.model,
+								},
+							};
+						}),
+					);
 				}
 
 				if (result?.finishReason === "error") {

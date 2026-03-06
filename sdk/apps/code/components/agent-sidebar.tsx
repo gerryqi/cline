@@ -57,9 +57,19 @@ type SessionHookEvent = {
 	totalCost?: number;
 };
 
+type SessionMessageMeta = {
+	inputTokens?: number;
+	outputTokens?: number;
+	totalCost?: number;
+	providerId?: string;
+	modelId?: string;
+};
+
 type SessionMessage = {
+	id?: string;
 	role?: string;
 	content?: string;
+	meta?: SessionMessageMeta;
 };
 
 const filterOptions = ["All", "Running", "Recent", "Pinned"] as const;
@@ -196,7 +206,7 @@ function toThread(session: SessionHistoryItem): Thread {
 	};
 }
 
-function _formatTokenCount(
+function formatTokenCount(
 	inputTokens?: number,
 	outputTokens?: number,
 ): string | null {
@@ -212,7 +222,7 @@ function _formatTokenCount(
 	return `${total}`;
 }
 
-function _formatCostUsd(value?: number): string | null {
+function formatCostUsd(value?: number): string | null {
 	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
 		return null;
 	}
@@ -223,6 +233,41 @@ function _formatCostUsd(value?: number): string | null {
 		return `$${value.toFixed(3)}`;
 	}
 	return `$${value.toFixed(2)}`;
+}
+
+function summarizeUsageFromMessages(messages: SessionMessage[]): {
+	inputTokens: number;
+	outputTokens: number;
+	totalCostUsd: number;
+} | null {
+	let inputTokens = 0;
+	let outputTokens = 0;
+	let totalCostUsd = 0;
+	let hasUsage = false;
+
+	for (const message of messages) {
+		const meta = message.meta;
+		if (!meta) {
+			continue;
+		}
+		if (typeof meta.inputTokens === "number") {
+			inputTokens += meta.inputTokens;
+			hasUsage = true;
+		}
+		if (typeof meta.outputTokens === "number") {
+			outputTokens += meta.outputTokens;
+			hasUsage = true;
+		}
+		if (typeof meta.totalCost === "number") {
+			totalCostUsd += meta.totalCost;
+			hasUsage = true;
+		}
+	}
+
+	if (!hasUsage) {
+		return null;
+	}
+	return { inputTokens, outputTokens, totalCostUsd };
 }
 
 function areSessionsEquivalent(
@@ -472,23 +517,38 @@ export function AgentSidebar({
 				continue;
 			}
 			usageLoadingRef.current.add(sessionId);
-			void invoke<SessionHookEvent[]>("read_session_hooks", {
+			void invoke<SessionMessage[]>("read_session_messages", {
 				sessionId,
-				limit: 1200,
+				maxMessages: 1200,
 			})
-				.then((events) => {
-					const inputTokens = events.reduce(
-						(sum, event) => sum + (event.inputTokens ?? 0),
-						0,
-					);
-					const outputTokens = events.reduce(
-						(sum, event) => sum + (event.outputTokens ?? 0),
-						0,
-					);
-					const totalCostUsd = events.reduce(
-						(sum, event) => sum + (event.totalCost ?? 0),
-						0,
-					);
+				.then(async (sessionMessages) => {
+					const usage = summarizeUsageFromMessages(sessionMessages);
+					if (!usage) {
+						const events = await invoke<SessionHookEvent[]>(
+							"read_session_hooks",
+							{
+								sessionId,
+								limit: 1200,
+							},
+						);
+						return {
+							inputTokens: events.reduce(
+								(sum, event) => sum + (event.inputTokens ?? 0),
+								0,
+							),
+							outputTokens: events.reduce(
+								(sum, event) => sum + (event.outputTokens ?? 0),
+								0,
+							),
+							totalCostUsd: events.reduce(
+								(sum, event) => sum + (event.totalCost ?? 0),
+								0,
+							),
+						};
+					}
+					return usage;
+				})
+				.then(({ inputTokens, outputTokens, totalCostUsd }) => {
 					setThreads((current) =>
 						updateThreadById(current, sessionId, (thread) => {
 							if (
@@ -503,14 +563,22 @@ export function AgentSidebar({
 					);
 				})
 				.catch(() => {
-					// Ignore sessions without hook logs.
 					if (!hasUsage) {
 						setThreads((current) =>
 							updateThreadById(current, sessionId, (thread) => {
-								if (thread.inputTokens === 0 && thread.outputTokens === 0) {
+								if (
+									thread.inputTokens === 0 &&
+									thread.outputTokens === 0 &&
+									(thread.totalCostUsd ?? 0) === 0
+								) {
 									return thread;
 								}
-								return { ...thread, inputTokens: 0, outputTokens: 0 };
+								return {
+									...thread,
+									inputTokens: 0,
+									outputTokens: 0,
+									totalCostUsd: 0,
+								};
 							}),
 						);
 					}
@@ -872,6 +940,9 @@ function ThreadItem({
 	isActive: boolean;
 	onClick: () => void;
 }) {
+	const tokenLabel = formatTokenCount(thread.inputTokens, thread.outputTokens);
+	const costLabel = formatCostUsd(thread.totalCostUsd);
+
 	return (
 		<Button
 			className={cn(
@@ -900,6 +971,16 @@ function ThreadItem({
 							{thread.model}
 						</span>
 					)}
+					{tokenLabel ? (
+						<span className="rounded border border-sidebar-border px-1 py-0.5 font-mono text-[10px]">
+							{tokenLabel}
+						</span>
+					) : null}
+					{costLabel ? (
+						<span className="rounded border border-sidebar-border px-1 py-0.5 font-mono text-[10px]">
+							{costLabel}
+						</span>
+					) : null}
 				</div>
 			</div>
 		</Button>

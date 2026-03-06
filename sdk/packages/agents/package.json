@@ -7,14 +7,17 @@
 	"types": "dist/index.d.ts",
 	"exports": {
 		".": {
+			"development": "./src/index.ts",
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
 		"./node": {
+			"development": "./src/index.ts",
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
 		"./browser": {
+			"development": "./src/index.browser.ts",
 			"types": "./dist/index.browser.d.ts",
 			"import": "./dist/index.browser.js"
 		}
@@ -27,7 +30,7 @@
 		"build": "bun run bun.mts && bun tsc --emitDeclarationOnly",
 		"dev": "bun build ./src/index.ts --outdir ./dist --target node --format esm --watch",
 		"clean": "rm -rf dist node_modules",
-		"typecheck": "bun tsc --noEmit",
+		"typecheck": "bun tsc -p tsconfig.dev.json --noEmit",
 		"test": "vitest run",
 		"test:watch": "vitest"
 	},

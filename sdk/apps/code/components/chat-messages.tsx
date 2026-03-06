@@ -51,7 +51,7 @@ type ToolApprovalRequestItem = {
 const IS_DEBUG = process.env.NODE_ENV === "test";
 
 function ChatMessagesImpl({
-	sessionId,
+	sessionId: _sessionId,
 	status,
 	chatTransportState = "connecting",
 	isSessionSwitching = false,
@@ -159,6 +159,7 @@ function ChatMessagesImpl({
 							provider={provider}
 							model={model}
 							onStartChat={onStartChat ?? (() => {})}
+							quickActions={[]}
 						/>
 					) : (
 						<div className="flex flex-col gap-2 w-full h-full">

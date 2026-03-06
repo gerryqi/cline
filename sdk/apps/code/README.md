@@ -141,6 +141,7 @@ Under:
 - Tauri hydrates stored content blocks into UI-friendly `ChatMessage[]`:
   - text blocks -> `role: "user" | "assistant"` messages
   - `tool_use`/`tool_result` blocks -> `role: "tool"` messages
+- Hydrated assistant/user messages now carry persisted usage/model metadata from `messages.json` (`inputTokens`, `outputTokens`, `totalCost`, `providerId`, `modelId`) when available.
 - Tool use/result are correlated by `tool_use_id` where available.
 - Running-session resilience: when persisted messages are not yet available mid-turn, the frontend synthesizes hydration state from session prompt + transcript so switching sessions does not blank the active prompt/output.
 
@@ -148,6 +149,7 @@ Under:
 
 - [`agent-sidebar.tsx`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/components/agent-sidebar.tsx) does a second-pass hydration for recent sessions by reading session messages.
 - Sidebar polling is throttled and skips background-tab refreshes to reduce UI main-thread churn while turns are streaming.
+- Sidebar usage badges (tokens/cost) now hydrate from persisted message metadata first, with hook-log aggregation as legacy fallback.
 - Sidebar history is deduplicated by `sessionId` across CLI/chat discovery results before rendering.
 - Session discovery normalizes both snake_case and camelCase fields from CLI history payloads so `model`, `workspaceRoot`, and timestamps hydrate reliably.
 - Sidebar ordering is deterministic: newest session first, sorted by `startedAt` descending (not by last update time).
@@ -167,6 +169,7 @@ Under:
   - tool messages via `ToolMessageBlock`
   - lightweight transport-state indicator (`Connecting chat...` / `Reconnecting chat...`) while websocket recovery is in progress
   - scroll behavior that jumps to the latest content on initial mount and shows a floating "scroll to bottom" control when the viewport is away from the bottom
+- Token usage is shown in [`chat-input-bar.tsx`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/components/chat-input-bar.tsx) only, using the runtime turn usage returned by LLM/agent results (`summary.tokensIn/tokensOut`).
 - Tool bubbles display:
   - compact summary (action label)
   - expandable `Input` and `Result` payload sections

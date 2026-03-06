@@ -528,6 +528,11 @@ struct HydratedChatMessage {
 struct HydratedChatMessageMeta {
     tool_name: Option<String>,
     hook_event_name: Option<String>,
+    input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
+    total_cost: Option<f64>,
+    provider_id: Option<String>,
+    model_id: Option<String>,
 }
 
 fn resolve_api_key(provider: &str, explicit_api_key: &str) -> Option<String> {
@@ -996,6 +1001,119 @@ fn build_tool_payload_json(tool_name: &str, input: Value, result: Value, is_erro
     })
 }
 
+fn parse_u64_value(value: &Value) -> Option<u64> {
+    value
+        .as_u64()
+        .or_else(|| value.as_f64().map(|n| n.max(0.0) as u64))
+        .or_else(|| value.as_str().and_then(|s| s.parse::<u64>().ok()))
+}
+
+fn parse_f64_value(value: &Value) -> Option<f64> {
+    value
+        .as_f64()
+        .or_else(|| value.as_u64().map(|n| n as f64))
+        .or_else(|| value.as_str().and_then(|s| s.parse::<f64>().ok()))
+        .filter(|n| n.is_finite() && *n >= 0.0)
+}
+
+fn extract_message_usage_meta(message: &Value) -> Option<HydratedChatMessageMeta> {
+    let metrics = message
+        .get("metrics")
+        .and_then(|v| v.as_object())
+        .map(|obj| Value::Object(obj.clone()));
+    let model_info = message
+        .get("modelInfo")
+        .and_then(|v| v.as_object())
+        .map(|obj| Value::Object(obj.clone()));
+
+    let input_tokens = metrics
+        .as_ref()
+        .and_then(|m| m.get("inputTokens"))
+        .and_then(parse_u64_value);
+    let output_tokens = metrics
+        .as_ref()
+        .and_then(|m| m.get("outputTokens"))
+        .and_then(parse_u64_value);
+    let total_cost = metrics
+        .as_ref()
+        .and_then(|m| m.get("cost"))
+        .and_then(parse_f64_value);
+    let provider_id = message
+        .get("providerId")
+        .and_then(|v| v.as_str())
+        .map(|v| v.to_string())
+        .or_else(|| {
+            model_info
+                .as_ref()
+                .and_then(|info| info.get("provider"))
+                .and_then(|v| v.as_str())
+                .map(|v| v.to_string())
+        });
+    let model_id = message
+        .get("modelId")
+        .and_then(|v| v.as_str())
+        .map(|v| v.to_string())
+        .or_else(|| {
+            model_info
+                .as_ref()
+                .and_then(|info| info.get("id"))
+                .and_then(|v| v.as_str())
+                .map(|v| v.to_string())
+        });
+
+    if input_tokens.is_none()
+        && output_tokens.is_none()
+        && total_cost.is_none()
+        && provider_id.is_none()
+        && model_id.is_none()
+    {
+        return None;
+    }
+
+    Some(HydratedChatMessageMeta {
+        tool_name: None,
+        hook_event_name: None,
+        input_tokens,
+        output_tokens,
+        total_cost,
+        provider_id,
+        model_id,
+    })
+}
+
+fn merge_hydrated_message_meta(
+    target: &mut Option<HydratedChatMessageMeta>,
+    extra: HydratedChatMessageMeta,
+) {
+    if target.is_none() {
+        *target = Some(extra);
+        return;
+    }
+    if let Some(current) = target.as_mut() {
+        if current.tool_name.is_none() {
+            current.tool_name = extra.tool_name;
+        }
+        if current.hook_event_name.is_none() {
+            current.hook_event_name = extra.hook_event_name;
+        }
+        if current.input_tokens.is_none() {
+            current.input_tokens = extra.input_tokens;
+        }
+        if current.output_tokens.is_none() {
+            current.output_tokens = extra.output_tokens;
+        }
+        if current.total_cost.is_none() {
+            current.total_cost = extra.total_cost;
+        }
+        if current.provider_id.is_none() {
+            current.provider_id = extra.provider_id;
+        }
+        if current.model_id.is_none() {
+            current.model_id = extra.model_id;
+        }
+    }
+}
+
 fn flush_hydrated_text_parts(
     out: &mut Vec<HydratedChatMessage>,
     text_parts: &mut Vec<String>,
@@ -1004,6 +1122,7 @@ fn flush_hydrated_text_parts(
     message_id_base: &str,
     text_segment_index: &mut usize,
     ts: u64,
+    text_meta: &mut Option<HydratedChatMessageMeta>,
 ) {
     if text_parts.is_empty() {
         return;
@@ -1019,7 +1138,7 @@ fn flush_hydrated_text_parts(
         role: role.to_string(),
         content: joined,
         created_at: ts,
-        meta: None,
+        meta: text_meta.take(),
     });
     *text_segment_index += 1;
 }
@@ -3467,6 +3586,7 @@ fn read_session_messages(
     let mut pending_tool_messages: HashMap<String, (usize, String, Value)> = HashMap::new();
 
     for (idx, message) in messages.iter().enumerate().skip(start) {
+        let mut text_meta = extract_message_usage_meta(message);
         let role_raw = message
             .get("role")
             .and_then(|v| v.as_str())
@@ -3497,13 +3617,14 @@ fn read_session_messages(
                 role: role.to_string(),
                 content,
                 created_at: created_at_base,
-                meta: None,
+                meta: text_meta.take(),
             });
             continue;
         };
 
         let mut text_parts: Vec<String> = Vec::new();
         let mut text_segment_index: usize = 0;
+        let out_start_index = out.len();
 
         for (block_idx, block) in content_blocks.iter().enumerate() {
             let block_ts = created_at_base.saturating_add(block_idx as u64);
@@ -3526,6 +3647,7 @@ fn read_session_messages(
                         &message_id_base,
                         &mut text_segment_index,
                         block_ts,
+                        &mut text_meta,
                     );
                     let tool_name = obj
                         .get("name")
@@ -3550,6 +3672,11 @@ fn read_session_messages(
                         meta: Some(HydratedChatMessageMeta {
                             tool_name: Some(tool_name.clone()),
                             hook_event_name: Some("history_tool_use".to_string()),
+                            input_tokens: None,
+                            output_tokens: None,
+                            total_cost: None,
+                            provider_id: None,
+                            model_id: None,
                         }),
                     });
                     if !tool_use_id.trim().is_empty() {
@@ -3565,6 +3692,7 @@ fn read_session_messages(
                         &message_id_base,
                         &mut text_segment_index,
                         block_ts,
+                        &mut text_meta,
                     );
                     let tool_use_id = obj
                         .get("tool_use_id")
@@ -3586,6 +3714,11 @@ fn read_session_messages(
                             existing.meta = Some(HydratedChatMessageMeta {
                                 tool_name: Some(tool_name),
                                 hook_event_name: Some("history_tool_result".to_string()),
+                                input_tokens: None,
+                                output_tokens: None,
+                                total_cost: None,
+                                provider_id: None,
+                                model_id: None,
                             });
                         }
                     } else {
@@ -3603,6 +3736,11 @@ fn read_session_messages(
                             meta: Some(HydratedChatMessageMeta {
                                 tool_name: Some("tool_result".to_string()),
                                 hook_event_name: Some("history_tool_result".to_string()),
+                                input_tokens: None,
+                                output_tokens: None,
+                                total_cost: None,
+                                provider_id: None,
+                                model_id: None,
                             }),
                         });
                     }
@@ -3624,7 +3762,14 @@ fn read_session_messages(
             &message_id_base,
             &mut text_segment_index,
             created_at_base.saturating_add(content_blocks.len() as u64),
+            &mut text_meta,
         );
+
+        if let Some(extra_meta) = text_meta.take() {
+            if let Some(first_block_message) = out.get_mut(out_start_index) {
+                merge_hydrated_message_meta(&mut first_block_message.meta, extra_meta);
+            }
+        }
     }
 
     Ok(out)

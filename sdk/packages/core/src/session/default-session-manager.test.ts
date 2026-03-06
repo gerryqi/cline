@@ -138,6 +138,95 @@ describe("DefaultSessionManager", () => {
 		expect(shutdown).toHaveBeenCalledTimes(1);
 	});
 
+	it("persists assistant message metadata for usage and model identity", async () => {
+		const sessionId = "sess-meta";
+		const manifest = createManifest(sessionId);
+		const persistSessionMessages = vi.fn();
+		const sessionService = {
+			createRootSessionWithArtifacts: vi.fn().mockResolvedValue({
+				manifestPath: "/tmp/manifest-meta.json",
+				transcriptPath: "/tmp/transcript-meta.log",
+				hookPath: "/tmp/hook-meta.log",
+				messagesPath: "/tmp/messages-meta.json",
+				manifest,
+			}),
+			persistSessionMessages,
+			updateSessionStatus: vi.fn().mockResolvedValue({ updated: true }),
+			writeSessionManifest: vi.fn(),
+			listSessions: vi.fn().mockResolvedValue([]),
+			deleteSession: vi.fn().mockResolvedValue({ deleted: true }),
+		};
+		const runtimeBuilder = {
+			build: vi.fn().mockReturnValue({
+				tools: [],
+				shutdown: vi.fn(),
+			}),
+		};
+		const run = vi.fn().mockResolvedValue(
+			createResult({
+				usage: {
+					inputTokens: 33,
+					outputTokens: 12,
+					cacheReadTokens: 4,
+					cacheWriteTokens: 1,
+					totalCost: 0.42,
+				},
+				model: {
+					id: "claude-sonnet-4-6",
+					provider: "anthropic",
+				},
+				endedAt: new Date("2026-01-01T00:00:02.000Z"),
+				messages: [
+					{ role: "user", content: [{ type: "text", text: "hello" }] },
+					{ role: "assistant", content: [{ type: "text", text: "world" }] },
+				],
+			}),
+		);
+		const manager = new DefaultSessionManager({
+			sessionService: sessionService as never,
+			runtimeBuilder,
+			createAgent: () =>
+				({
+					run,
+					continue: vi.fn(),
+					abort: vi.fn(),
+					shutdown: vi.fn().mockResolvedValue(undefined),
+					getMessages: vi.fn().mockReturnValue([]),
+					messages: [],
+				}) as never,
+		});
+
+		await manager.start({
+			config: createConfig({
+				providerId: "anthropic",
+				modelId: "claude-sonnet-4-6",
+			}),
+			prompt: "hello",
+			interactive: false,
+		});
+
+		expect(persistSessionMessages).toHaveBeenCalledTimes(1);
+		const persisted = persistSessionMessages.mock.calls[0]?.[1];
+		expect(Array.isArray(persisted)).toBe(true);
+		expect(persisted?.[1]).toMatchObject({
+			role: "assistant",
+			providerId: "anthropic",
+			modelId: "claude-sonnet-4-6",
+			modelInfo: {
+				id: "claude-sonnet-4-6",
+				provider: "anthropic",
+			},
+			metrics: {
+				inputTokens: 33,
+				outputTokens: 12,
+				cacheReadTokens: 4,
+				cacheWriteTokens: 1,
+				cost: 0.42,
+			},
+			ts: new Date("2026-01-01T00:00:02.000Z").getTime(),
+		});
+	});
+
 	it("uses run for first send then continue for subsequent sends", async () => {
 		const sessionId = "sess-2";
 		const manifest = createManifest(sessionId);

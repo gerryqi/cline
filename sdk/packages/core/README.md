@@ -48,6 +48,13 @@ Use this backend when starting `@cline/rpc` servers so RPC remains transport-onl
 
 This is the primary API for host clients that should only consume runtime events and outputs without manually creating agents or persisting messages.
 
+Session message history persistence now enriches the latest assistant message of each turn with metadata before writing `messages.json`:
+
+- `providerId` and `modelId`
+- `modelInfo` (`id`, `provider`)
+- `metrics` (`inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `cost`)
+- `ts` (turn completion timestamp in epoch milliseconds)
+
 ## Session Host Factory
 
 `@cline/core/server` also exposes `createSessionHost(options?)`, a higher-level host entrypoint that builds a ready-to-use session manager with backend resolution:
@@ -70,6 +77,10 @@ This is intended to be the portable client integration API for CLI/desktop/edito
 
 - Hook config files are discovered from configured hook search paths and mapped to lifecycle events (`tool_call`, `tool_result`, `agent_end`, `agent_abort`, `session_shutdown`, etc.).
 - Hook files execute as external commands during agent lifecycle dispatch (`tool_call` remains blocking to allow hook control responses; other events dispatch asynchronously).
+- Hook execution now resolves explicit command arrays per hook file:
+  - shebang present: uses shebang interpreter + script path
+  - no shebang: uses interpreter fallback by extension (`.sh` -> `bash`, `.js` -> `node`, `.ts` -> `bun run`) and defaults to `bash` for legacy extensionless files
+- This avoids direct file spawning failures like `EACCES` on non-executable hook files.
 - When no explicit host-provided runtime hooks are configured, core now writes baseline hook lifecycle audit entries to the session `*.hooks.jsonl` artifact so hosts can display real execution status.
 
 ## Runtime Logger Forwarding

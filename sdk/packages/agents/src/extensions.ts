@@ -36,10 +36,15 @@ const ALLOWED_HOOK_STAGES = new Set<AgentExtensionHookStage>([
 	"input",
 	"runtime_event",
 	"session_start",
+	"run_start",
+	"iteration_start",
+	"turn_start",
 	"before_agent_start",
 	"tool_call_before",
 	"tool_call_after",
 	"turn_end",
+	"iteration_end",
+	"run_end",
 	"session_shutdown",
 	"error",
 ]);
@@ -51,10 +56,15 @@ const STAGE_TO_HANDLER: Record<
 		| "onInput"
 		| "onRuntimeEvent"
 		| "onSessionStart"
+		| "onRunStart"
+		| "onIterationStart"
+		| "onTurnStart"
 		| "onBeforeAgentStart"
 		| "onToolCall"
 		| "onToolResult"
 		| "onAgentEnd"
+		| "onIterationEnd"
+		| "onRunEnd"
 		| "onSessionShutdown"
 		| "onError"
 	>
@@ -62,10 +72,15 @@ const STAGE_TO_HANDLER: Record<
 	input: "onInput",
 	runtime_event: "onRuntimeEvent",
 	session_start: "onSessionStart",
+	run_start: "onRunStart",
+	iteration_start: "onIterationStart",
+	turn_start: "onTurnStart",
 	before_agent_start: "onBeforeAgentStart",
 	tool_call_before: "onToolCall",
 	tool_call_after: "onToolResult",
 	turn_end: "onAgentEnd",
+	iteration_end: "onIterationEnd",
+	run_end: "onRunEnd",
 	session_shutdown: "onSessionShutdown",
 	error: "onError",
 };
@@ -79,10 +94,15 @@ function hasHookHandlers(extension: AgentExtension): boolean {
 		typeof extension.onInput === "function" ||
 		typeof extension.onRuntimeEvent === "function" ||
 		typeof extension.onSessionStart === "function" ||
+		typeof extension.onRunStart === "function" ||
+		typeof extension.onIterationStart === "function" ||
+		typeof extension.onTurnStart === "function" ||
 		typeof extension.onBeforeAgentStart === "function" ||
 		typeof extension.onToolCall === "function" ||
 		typeof extension.onToolResult === "function" ||
 		typeof extension.onAgentEnd === "function" ||
+		typeof extension.onIterationEnd === "function" ||
+		typeof extension.onRunEnd === "function" ||
 		typeof extension.onSessionShutdown === "function" ||
 		typeof extension.onError === "function"
 	);

@@ -33,6 +33,30 @@ const EXTENSION_STAGE_HANDLERS: ReadonlyArray<{
 				| undefined,
 	},
 	{
+		stage: "run_start",
+		name: "onRunStart",
+		handler: (extension, event) =>
+			extension.onRunStart?.(event.payload as never) as
+				| AgentHookControl
+				| undefined,
+	},
+	{
+		stage: "iteration_start",
+		name: "onIterationStart",
+		handler: (extension, event) =>
+			extension.onIterationStart?.(event.payload as never) as
+				| AgentHookControl
+				| undefined,
+	},
+	{
+		stage: "turn_start",
+		name: "onTurnStart",
+		handler: (extension, event) =>
+			extension.onTurnStart?.(event.payload as never) as
+				| AgentHookControl
+				| undefined,
+	},
+	{
 		stage: "before_agent_start",
 		name: "onBeforeAgentStart",
 		handler: (extension, event) =>
@@ -63,6 +87,22 @@ const EXTENSION_STAGE_HANDLERS: ReadonlyArray<{
 			extension.onAgentEnd?.(event.payload as never) as
 				| AgentHookControl
 				| undefined,
+	},
+	{
+		stage: "iteration_end",
+		name: "onIterationEnd",
+		handler: async (extension, event) => {
+			await extension.onIterationEnd?.(event.payload as never);
+			return undefined;
+		},
+	},
+	{
+		stage: "run_end",
+		name: "onRunEnd",
+		handler: async (extension, event) => {
+			await extension.onRunEnd?.(event.payload as never);
+			return undefined;
+		},
 	},
 	{
 		stage: "session_shutdown",

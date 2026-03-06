@@ -1136,7 +1136,7 @@ export const GENERATED_PROVIDER_MODELS: Record<
 		"anthropic.claude-opus-4-6-v1": {
 			id: "anthropic.claude-opus-4-6-v1",
 			name: "Claude Opus 4.6",
-			contextWindow: 1000000,
+			contextWindow: 200000,
 			maxTokens: 128000,
 			capabilities: ["images", "files", "tools", "reasoning", "temperature"],
 			pricing: {
@@ -1150,7 +1150,7 @@ export const GENERATED_PROVIDER_MODELS: Record<
 		"eu.anthropic.claude-opus-4-6-v1": {
 			id: "eu.anthropic.claude-opus-4-6-v1",
 			name: "Claude Opus 4.6 (EU)",
-			contextWindow: 1000000,
+			contextWindow: 200000,
 			maxTokens: 128000,
 			capabilities: ["images", "files", "tools", "reasoning", "temperature"],
 			pricing: {
@@ -1164,7 +1164,7 @@ export const GENERATED_PROVIDER_MODELS: Record<
 		"global.anthropic.claude-opus-4-6-v1": {
 			id: "global.anthropic.claude-opus-4-6-v1",
 			name: "Claude Opus 4.6 (Global)",
-			contextWindow: 1000000,
+			contextWindow: 200000,
 			maxTokens: 128000,
 			capabilities: ["images", "files", "tools", "reasoning", "temperature"],
 			pricing: {
@@ -1178,7 +1178,7 @@ export const GENERATED_PROVIDER_MODELS: Record<
 		"us.anthropic.claude-opus-4-6-v1": {
 			id: "us.anthropic.claude-opus-4-6-v1",
 			name: "Claude Opus 4.6 (US)",
-			contextWindow: 1000000,
+			contextWindow: 200000,
 			maxTokens: 128000,
 			capabilities: ["images", "files", "tools", "reasoning", "temperature"],
 			pricing: {

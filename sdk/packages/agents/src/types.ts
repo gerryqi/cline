@@ -429,10 +429,15 @@ export type AgentExtensionHookStage =
 	| "input"
 	| "runtime_event"
 	| "session_start"
+	| "run_start"
+	| "iteration_start"
+	| "turn_start"
 	| "before_agent_start"
 	| "tool_call_before"
 	| "tool_call_after"
 	| "turn_end"
+	| "iteration_end"
+	| "run_end"
 	| "session_shutdown"
 	| "error";
 
@@ -447,6 +452,15 @@ export interface AgentExtension {
 	setup?: (api: AgentExtensionApi) => void | Promise<void>;
 	onSessionStart?: (
 		ctx: AgentExtensionSessionStartContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onRunStart?: (
+		ctx: AgentHookRunStartContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onIterationStart?: (
+		ctx: AgentHookIterationStartContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onTurnStart?: (
+		ctx: AgentHookTurnStartContext,
 	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
 	onInput?: (
 		ctx: AgentExtensionInputContext,
@@ -466,6 +480,8 @@ export interface AgentExtension {
 	onAgentEnd?: (
 		ctx: AgentHookTurnEndContext,
 	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onIterationEnd?: (ctx: AgentHookIterationEndContext) => void | Promise<void>;
+	onRunEnd?: (ctx: AgentHookRunEndContext) => void | Promise<void>;
 	onSessionShutdown?: (
 		ctx: AgentExtensionSessionShutdownContext,
 	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
@@ -664,6 +680,11 @@ export interface AgentConfig {
 	 */
 	maxIterations?: number;
 	/**
+	 * Maximum number of tool calls to execute concurrently in a single iteration.
+	 * @default 8
+	 */
+	maxParallelToolCalls?: number;
+	/**
 	 * Maximum output tokens per API call
 	 */
 	maxTokensPerTurn?: number;
@@ -773,6 +794,7 @@ export const AgentConfigSchema = z.object({
 	systemPrompt: z.string(),
 	tools: z.array(z.custom<Tool>()),
 	maxIterations: z.number().positive().optional(),
+	maxParallelToolCalls: z.number().int().positive().default(8),
 	maxTokensPerTurn: z.number().positive().optional(),
 	apiTimeoutMs: z.number().positive().default(120000),
 	reminderAfterIterations: z.number().nonnegative().default(6),
