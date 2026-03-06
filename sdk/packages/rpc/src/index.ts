@@ -1,5 +1,22 @@
 export { RpcSessionClient } from "./client.js";
 export {
+	RpcRuntimeChatClient,
+	type RpcRuntimeEvent,
+	type RpcRuntimeStreamStop,
+} from "./runtime-chat-client.js";
+export {
+	type RpcRuntimeBridgeCommand,
+	type RpcRuntimeBridgeCommandOutputLine,
+	type RpcRuntimeBridgeRequestEnvelope,
+	type RpcRuntimeBridgeResponseEnvelope,
+	runRpcRuntimeCommandBridge,
+} from "./runtime-chat-command-bridge.js";
+export {
+	type RpcRuntimeBridgeControlLine,
+	type RpcRuntimeBridgeOutputLine,
+	runRpcRuntimeEventBridge,
+} from "./runtime-chat-stream-bridge.js";
+export {
 	getRpcServerHandle,
 	getRpcServerHealth,
 	registerRpcClient,

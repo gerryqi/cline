@@ -1,59 +1,184 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import type {
 	AgentExtension,
 	AgentExtensionApi,
-	AgentExtensionBeforeAgentStartContext,
-	AgentExtensionBeforeAgentStartControl,
-	AgentExtensionCommand,
-	AgentExtensionFlag,
-	AgentExtensionInputContext,
-	AgentExtensionMessageRenderer,
-	AgentExtensionProvider,
+	AgentExtensionCapability,
+	AgentExtensionHookStage,
 	AgentExtensionRegistry,
-	AgentExtensionRuntimeEventContext,
-	AgentExtensionSessionShutdownContext,
-	AgentExtensionSessionStartContext,
-	AgentExtensionShortcut,
-	AgentHookControl,
-	AgentHookErrorContext,
-	AgentHookToolCallEndContext,
-	AgentHookToolCallStartContext,
-	AgentHookTurnEndContext,
+	PluginManifest,
 	Tool,
 } from "./types.js";
 
-export interface AgentExtensionRunnerOptions {
+export interface ContributionRegistryOptions {
 	extensions?: AgentExtension[];
 }
 
-export interface LoadExtensionModuleOptions {
-	exportName?: string;
-}
-
-function mergeHookControl(
-	base: AgentHookControl,
-	next: AgentHookControl | undefined,
-): AgentHookControl {
-	if (!next) {
-		return base;
-	}
-
-	return {
-		cancel: base.cancel || next.cancel,
-		context: [base.context, next.context]
-			.filter((value): value is string => typeof value === "string" && !!value)
-			.join("\n"),
-		overrideInput: Object.hasOwn(next, "overrideInput")
-			? next.overrideInput
-			: base.overrideInput,
+interface NormalizedExtension {
+	extension: AgentExtension;
+	order: number;
+	manifest: {
+		capabilities: Set<AgentExtensionCapability>;
+		hookStages: Set<AgentExtensionHookStage>;
+		raw: PluginManifest;
 	};
 }
 
-export class AgentExtensionRunner {
+const ALLOWED_CAPABILITIES = new Set<AgentExtensionCapability>([
+	"hooks",
+	"tools",
+	"commands",
+	"shortcuts",
+	"flags",
+	"message_renderers",
+	"providers",
+]);
+
+const ALLOWED_HOOK_STAGES = new Set<AgentExtensionHookStage>([
+	"input",
+	"runtime_event",
+	"session_start",
+	"before_agent_start",
+	"tool_call_before",
+	"tool_call_after",
+	"turn_end",
+	"session_shutdown",
+	"error",
+]);
+
+const STAGE_TO_HANDLER: Record<
+	AgentExtensionHookStage,
+	keyof Pick<
+		AgentExtension,
+		| "onInput"
+		| "onRuntimeEvent"
+		| "onSessionStart"
+		| "onBeforeAgentStart"
+		| "onToolCall"
+		| "onToolResult"
+		| "onAgentEnd"
+		| "onSessionShutdown"
+		| "onError"
+	>
+> = {
+	input: "onInput",
+	runtime_event: "onRuntimeEvent",
+	session_start: "onSessionStart",
+	before_agent_start: "onBeforeAgentStart",
+	tool_call_before: "onToolCall",
+	tool_call_after: "onToolResult",
+	turn_end: "onAgentEnd",
+	session_shutdown: "onSessionShutdown",
+	error: "onError",
+};
+
+function asExtensionName(extension: AgentExtension, order: number): string {
+	return extension.name || `extension_${String(order).padStart(4, "0")}`;
+}
+
+function hasHookHandlers(extension: AgentExtension): boolean {
+	return (
+		typeof extension.onInput === "function" ||
+		typeof extension.onRuntimeEvent === "function" ||
+		typeof extension.onSessionStart === "function" ||
+		typeof extension.onBeforeAgentStart === "function" ||
+		typeof extension.onToolCall === "function" ||
+		typeof extension.onToolResult === "function" ||
+		typeof extension.onAgentEnd === "function" ||
+		typeof extension.onSessionShutdown === "function" ||
+		typeof extension.onError === "function"
+	);
+}
+
+function normalizeManifest(
+	extension: AgentExtension,
+	order: number,
+): NormalizedExtension["manifest"] {
+	const extensionName = asExtensionName(extension, order);
+	const manifest = extension.manifest;
+	if (!manifest || typeof manifest !== "object") {
+		throw new Error(
+			`Invalid manifest for extension "${extensionName}": manifest is required`,
+		);
+	}
+
+	if (
+		!Array.isArray(manifest.capabilities) ||
+		manifest.capabilities.length === 0
+	) {
+		throw new Error(
+			`Invalid manifest for extension "${extensionName}": capabilities must be a non-empty array`,
+		);
+	}
+
+	const capabilities = new Set<AgentExtensionCapability>();
+	for (const capability of manifest.capabilities) {
+		if (!ALLOWED_CAPABILITIES.has(capability)) {
+			throw new Error(
+				`Invalid manifest for extension "${extensionName}": unsupported capability "${String(capability)}"`,
+			);
+		}
+		capabilities.add(capability);
+	}
+
+	const rawStages = manifest.hookStages ?? [];
+	if (!Array.isArray(rawStages)) {
+		throw new Error(
+			`Invalid manifest for extension "${extensionName}": hookStages must be an array when provided`,
+		);
+	}
+	const hookStages = new Set<AgentExtensionHookStage>();
+	for (const stage of rawStages) {
+		if (!ALLOWED_HOOK_STAGES.has(stage)) {
+			throw new Error(
+				`Invalid manifest for extension "${extensionName}": unsupported hook stage "${String(stage)}"`,
+			);
+		}
+		hookStages.add(stage);
+	}
+
+	const hookCapabilityEnabled = capabilities.has("hooks");
+	const extensionDefinesHooks = hasHookHandlers(extension);
+	if (extensionDefinesHooks && !hookCapabilityEnabled) {
+		throw new Error(
+			`Invalid manifest for extension "${extensionName}": hook handlers require the "hooks" capability`,
+		);
+	}
+	if (hookCapabilityEnabled && hookStages.size === 0) {
+		throw new Error(
+			`Invalid manifest for extension "${extensionName}": hooks capability requires at least one hook stage`,
+		);
+	}
+
+	for (const stage of hookStages) {
+		const handler = STAGE_TO_HANDLER[stage];
+		if (typeof extension[handler] !== "function") {
+			throw new Error(
+				`Invalid manifest for extension "${extensionName}": stage "${stage}" is declared but handler "${handler}" is missing`,
+			);
+		}
+	}
+
+	for (const [stage, handler] of Object.entries(STAGE_TO_HANDLER) as Array<
+		[
+			AgentExtensionHookStage,
+			(typeof STAGE_TO_HANDLER)[AgentExtensionHookStage],
+		]
+	>) {
+		if (typeof extension[handler] === "function" && !hookStages.has(stage)) {
+			throw new Error(
+				`Invalid manifest for extension "${extensionName}": handler "${handler}" must declare stage "${stage}"`,
+			);
+		}
+	}
+
+	return {
+		capabilities,
+		hookStages,
+		raw: manifest,
+	};
+}
+
+export class ContributionRegistry {
 	private readonly extensions: AgentExtension[];
-	private initialized = false;
 	private readonly registry: AgentExtensionRegistry = {
 		tools: [],
 		commands: [],
@@ -62,13 +187,52 @@ export class AgentExtensionRunner {
 		messageRenderers: [],
 		providers: [],
 	};
+	private normalized: NormalizedExtension[] = [];
+	private phase: "resolve" | "validate" | "setup" | "activate" | "run" =
+		"resolve";
 
-	constructor(options: AgentExtensionRunnerOptions = {}) {
+	constructor(options: ContributionRegistryOptions = {}) {
 		this.extensions = options.extensions ?? [];
 	}
 
-	async initialize(): Promise<void> {
-		if (this.initialized) {
+	resolve(): void {
+		if (this.phase !== "resolve") {
+			return;
+		}
+		this.normalized = this.extensions.map((extension, order) => ({
+			extension,
+			order,
+			manifest: {
+				capabilities: new Set(),
+				hookStages: new Set(),
+				raw: extension.manifest,
+			},
+		}));
+		this.phase = "validate";
+	}
+
+	validate(): void {
+		if (this.phase === "resolve") {
+			this.resolve();
+		}
+		if (this.phase !== "validate") {
+			return;
+		}
+		this.normalized = this.normalized.map((entry) => ({
+			...entry,
+			manifest: normalizeManifest(entry.extension, entry.order),
+		}));
+		this.phase = "setup";
+	}
+
+	async setup(): Promise<void> {
+		if (this.phase === "resolve") {
+			this.resolve();
+		}
+		if (this.phase === "validate") {
+			this.validate();
+		}
+		if (this.phase !== "setup") {
 			return;
 		}
 
@@ -82,15 +246,39 @@ export class AgentExtensionRunner {
 			registerProvider: (provider) => this.registry.providers.push(provider),
 		};
 
-		for (const extension of this.extensions) {
+		for (const { extension } of this.normalized) {
 			await extension.setup?.(api);
 		}
-
-		this.initialized = true;
+		this.phase = "activate";
 	}
 
-	getRegisteredTools(): Tool[] {
-		return [...this.registry.tools];
+	activate(): void {
+		if (this.phase === "resolve") {
+			this.resolve();
+		}
+		if (this.phase === "validate") {
+			this.validate();
+		}
+		if (this.phase === "setup") {
+			throw new Error(
+				"Contribution registry setup must complete before activation",
+			);
+		}
+		if (this.phase !== "activate") {
+			return;
+		}
+		this.phase = "run";
+	}
+
+	async initialize(): Promise<void> {
+		this.resolve();
+		this.validate();
+		await this.setup();
+		this.activate();
+	}
+
+	isActivated(): boolean {
+		return this.phase === "run";
 	}
 
 	getRegistrySnapshot(): AgentExtensionRegistry {
@@ -104,267 +292,26 @@ export class AgentExtensionRunner {
 		};
 	}
 
-	getRegisteredCommands(): AgentExtensionCommand[] {
-		return [...this.registry.commands];
+	getRegisteredTools(): Tool[] {
+		return [...this.registry.tools];
 	}
 
-	getRegisteredShortcuts(): AgentExtensionShortcut[] {
-		return [...this.registry.shortcuts];
-	}
-
-	getRegisteredFlags(): AgentExtensionFlag[] {
-		return [...this.registry.flags];
-	}
-
-	getRegisteredMessageRenderers(): AgentExtensionMessageRenderer[] {
-		return [...this.registry.messageRenderers];
-	}
-
-	getRegisteredProviders(): AgentExtensionProvider[] {
-		return [...this.registry.providers];
-	}
-
-	async onSessionStart(
-		ctx: AgentExtensionSessionStartContext,
-	): Promise<AgentHookControl | undefined> {
-		let merged: AgentHookControl = {};
-		for (const extension of this.extensions) {
-			const result = await extension.onSessionStart?.(ctx);
-			const control =
-				result && typeof result === "object"
-					? (result as AgentHookControl)
-					: undefined;
-			merged = mergeHookControl(merged, control);
+	getValidatedExtensions(): AgentExtension[] {
+		if (this.phase === "resolve") {
+			this.resolve();
 		}
-		return Object.keys(merged).length > 0 ? merged : undefined;
-	}
-
-	async onInput(
-		ctx: AgentExtensionInputContext,
-	): Promise<{ input: string; control?: AgentHookControl }> {
-		let input = ctx.input;
-		let merged: AgentHookControl = {};
-
-		for (const extension of this.extensions) {
-			const result = await extension.onInput?.({ ...ctx, input });
-			const control =
-				result && typeof result === "object"
-					? (result as AgentHookControl)
-					: undefined;
-			merged = mergeHookControl(merged, control);
-			if (control?.context) {
-				// context merge handled in merged; no-op here
-			}
+		if (this.phase === "validate") {
+			this.validate();
 		}
-
-		if (
-			Object.hasOwn(merged, "overrideInput") &&
-			typeof merged.overrideInput === "string"
-		) {
-			input = merged.overrideInput;
-		}
-
-		return {
-			input,
-			control: Object.keys(merged).length > 0 ? merged : undefined,
-		};
-	}
-
-	async onBeforeAgentStart(
-		ctx: AgentExtensionBeforeAgentStartContext,
-	): Promise<{
-		systemPrompt: string;
-		appendMessages: NonNullable<
-			AgentExtensionBeforeAgentStartControl["appendMessages"]
-		>;
-		control?: AgentHookControl;
-	}> {
-		let systemPrompt = ctx.systemPrompt;
-		const appendMessages: NonNullable<
-			AgentExtensionBeforeAgentStartControl["appendMessages"]
-		> = [];
-		let mergedControl: AgentHookControl = {};
-
-		for (const extension of this.extensions) {
-			const control = await extension.onBeforeAgentStart?.({
-				...ctx,
-				systemPrompt,
-			});
-			if (!control) {
-				continue;
-			}
-
-			mergedControl = mergeHookControl(mergedControl, control);
-			if (typeof control.systemPrompt === "string") {
-				systemPrompt = control.systemPrompt;
-			}
-			if (Array.isArray(control.appendMessages)) {
-				appendMessages.push(...control.appendMessages);
-			}
-		}
-
-		return {
-			systemPrompt,
-			appendMessages,
-			control:
-				Object.keys(mergedControl).length > 0 ? mergedControl : undefined,
-		};
-	}
-
-	async onToolCall(
-		ctx: AgentHookToolCallStartContext,
-	): Promise<AgentHookControl | undefined> {
-		let merged: AgentHookControl = {};
-		for (const extension of this.extensions) {
-			const result = await extension.onToolCall?.(ctx);
-			const control =
-				result && typeof result === "object"
-					? (result as AgentHookControl)
-					: undefined;
-			merged = mergeHookControl(merged, control);
-		}
-		return Object.keys(merged).length > 0 ? merged : undefined;
-	}
-
-	async onToolResult(
-		ctx: AgentHookToolCallEndContext,
-	): Promise<AgentHookControl | undefined> {
-		let merged: AgentHookControl = {};
-		for (const extension of this.extensions) {
-			const result = await extension.onToolResult?.(ctx);
-			const control =
-				result && typeof result === "object"
-					? (result as AgentHookControl)
-					: undefined;
-			merged = mergeHookControl(merged, control);
-		}
-		return Object.keys(merged).length > 0 ? merged : undefined;
-	}
-
-	async onAgentEnd(
-		ctx: AgentHookTurnEndContext,
-	): Promise<AgentHookControl | undefined> {
-		let merged: AgentHookControl = {};
-		for (const extension of this.extensions) {
-			const result = await extension.onAgentEnd?.(ctx);
-			const control =
-				result && typeof result === "object"
-					? (result as AgentHookControl)
-					: undefined;
-			merged = mergeHookControl(merged, control);
-		}
-		return Object.keys(merged).length > 0 ? merged : undefined;
-	}
-
-	async onSessionShutdown(
-		ctx: AgentExtensionSessionShutdownContext,
-	): Promise<AgentHookControl | undefined> {
-		let merged: AgentHookControl = {};
-		for (const extension of this.extensions) {
-			const result = await extension.onSessionShutdown?.(ctx);
-			const control =
-				result && typeof result === "object"
-					? (result as AgentHookControl)
-					: undefined;
-			merged = mergeHookControl(merged, control);
-		}
-		return Object.keys(merged).length > 0 ? merged : undefined;
-	}
-
-	async onRuntimeEvent(ctx: AgentExtensionRuntimeEventContext): Promise<void> {
-		for (const extension of this.extensions) {
-			await extension.onRuntimeEvent?.(ctx);
-		}
-	}
-
-	async onError(ctx: AgentHookErrorContext): Promise<void> {
-		for (const extension of this.extensions) {
-			await extension.onError?.(ctx);
-		}
+		return this.normalized
+			.slice()
+			.sort((a, b) => a.order - b.order)
+			.map(({ extension }) => extension);
 	}
 }
 
-export function createExtensionRunner(
-	options: AgentExtensionRunnerOptions = {},
-): AgentExtensionRunner {
-	return new AgentExtensionRunner(options);
-}
-
-/**
- * Load a single extension module from disk.
- * Supports default export and named export (`extension` by default).
- */
-export async function loadExtensionModule(
-	modulePath: string,
-	options: LoadExtensionModuleOptions = {},
-): Promise<AgentExtension> {
-	const absolutePath = resolve(modulePath);
-	const mod = (await import(pathToFileURL(absolutePath).href)) as Record<
-		string,
-		unknown
-	>;
-	const exportName = options.exportName ?? "extension";
-	const extension = (mod.default ?? mod[exportName]) as
-		| AgentExtension
-		| undefined;
-
-	if (
-		!extension ||
-		typeof extension !== "object" ||
-		typeof extension.name !== "string"
-	) {
-		throw new Error(`Invalid extension module at ${absolutePath}`);
-	}
-
-	return extension;
-}
-
-/**
- * Load multiple extension modules from absolute or relative paths.
- */
-export async function loadExtensionsFromPaths(
-	modulePaths: string[],
-	options: LoadExtensionModuleOptions = {},
-): Promise<AgentExtension[]> {
-	const loaded: AgentExtension[] = [];
-	for (const modulePath of modulePaths) {
-		loaded.push(await loadExtensionModule(modulePath, options));
-	}
-	return loaded;
-}
-
-/**
- * Discover extension module files recursively from a directory.
- * Matching files: `.js`, `.mjs`, `.cjs`, `.ts`.
- */
-export function discoverExtensionModules(directory: string): string[] {
-	const root = resolve(directory);
-	if (!existsSync(root)) {
-		return [];
-	}
-
-	const discovered: string[] = [];
-	const stack = [root];
-	const allowed = new Set([".js", ".mjs", ".cjs", ".ts"]);
-
-	while (stack.length > 0) {
-		const current = stack.pop();
-		if (!current) {
-			continue;
-		}
-		for (const entry of readdirSync(current)) {
-			const path = join(current, entry);
-			const stats = statSync(path);
-			if (stats.isDirectory()) {
-				stack.push(path);
-				continue;
-			}
-			const extension = path.slice(path.lastIndexOf("."));
-			if (allowed.has(extension)) {
-				discovered.push(path);
-			}
-		}
-	}
-
-	return discovered.sort();
+export function createContributionRegistry(
+	options: ContributionRegistryOptions = {},
+): ContributionRegistry {
+	return new ContributionRegistry(options);
 }

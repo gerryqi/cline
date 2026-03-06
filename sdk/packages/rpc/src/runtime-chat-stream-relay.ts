@@ -1,19 +1,10 @@
-import { createInterface } from "node:readline";
-import { RpcSessionClient } from "@cline/rpc";
+import type {
+	RpcRuntimeChatClient,
+	RpcRuntimeEvent,
+	RpcRuntimeStreamStop,
+} from "./runtime-chat-client.js";
 
-type BridgeControlLine =
-	| {
-			type: "set_sessions";
-			sessionIds: string[];
-	  }
-	| {
-			type: "shutdown";
-	  };
-
-type BridgeOutputLine =
-	| {
-			type: "ready";
-	  }
+export type RpcRuntimeBridgeStreamLine =
 	| {
 			type: "chat_text";
 			sessionId: string;
@@ -40,9 +31,11 @@ type BridgeOutputLine =
 			message: string;
 	  };
 
-function writeLine(line: BridgeOutputLine): void {
-	process.stdout.write(`${JSON.stringify(line)}\n`);
-}
+export type RpcRuntimeStreamRelay = {
+	applySessions: (sessionIds: string[]) => void;
+	resetSession: (sessionId?: string) => void;
+	stop: () => void;
+};
 
 function parsePayload(payloadJson: string): Record<string, unknown> {
 	if (!payloadJson.trim()) {
@@ -111,30 +104,30 @@ function resolveTextDelta(
 	};
 }
 
-async function main() {
-	const address = process.env.CLINE_RPC_ADDRESS?.trim() || "127.0.0.1:4317";
-	const clientId =
-		process.env.CLINE_RPC_CLIENT_ID?.trim() ||
-		`code-chat-stream-${process.pid}`;
-	const client = new RpcSessionClient({ address });
-
-	let stopStreaming: (() => void) | undefined;
+export function createRpcRuntimeStreamRelay(options: {
+	client: RpcRuntimeChatClient;
+	clientId: string;
+	writeLine: (line: RpcRuntimeBridgeStreamLine) => void;
+}): RpcRuntimeStreamRelay {
+	let stopStreaming: RpcRuntimeStreamStop | undefined;
 	let activeSessionIds: string[] = [];
 	const accumulatedBySession = new Map<string, string>();
 
-	const restartStream = () => {
+	const stop = () => {
 		stopStreaming?.();
 		stopStreaming = undefined;
+	};
+
+	const restartStream = () => {
+		stop();
 		if (activeSessionIds.length === 0) {
 			return;
 		}
-		stopStreaming = client.streamEvents(
+		stopStreaming = options.client.streamEvents(
+			options.clientId,
+			activeSessionIds,
 			{
-				clientId,
-				sessionIds: activeSessionIds,
-			},
-			{
-				onEvent: (event) => {
+				onEvent: (event: RpcRuntimeEvent) => {
 					const payload = parsePayload(event.payloadJson);
 					if (event.eventType === "runtime.chat.text_delta") {
 						const prev = accumulatedBySession.get(event.sessionId) ?? "";
@@ -143,7 +136,7 @@ async function main() {
 						if (!resolved.delta) {
 							return;
 						}
-						writeLine({
+						options.writeLine({
 							type: "chat_text",
 							sessionId: event.sessionId,
 							chunk: resolved.delta,
@@ -151,7 +144,7 @@ async function main() {
 						return;
 					}
 					if (event.eventType === "runtime.chat.tool_call_start") {
-						writeLine({
+						options.writeLine({
 							type: "tool_call_start",
 							sessionId: event.sessionId,
 							toolCallId:
@@ -167,7 +160,7 @@ async function main() {
 						return;
 					}
 					if (event.eventType === "runtime.chat.tool_call_end") {
-						writeLine({
+						options.writeLine({
 							type: "tool_call_end",
 							sessionId: event.sessionId,
 							toolCallId:
@@ -188,8 +181,8 @@ async function main() {
 						});
 					}
 				},
-				onError: (error) => {
-					writeLine({
+				onError: (error: Error) => {
+					options.writeLine({
 						type: "error",
 						message: error.message,
 					});
@@ -198,60 +191,28 @@ async function main() {
 		);
 	};
 
-	const applySessions = (nextSessionIds: string[]) => {
-		const normalized = normalizeSessionIds(nextSessionIds).sort();
-		if (areSessionListsEqual(activeSessionIds, normalized)) {
-			return;
-		}
-		activeSessionIds = normalized;
-		for (const key of Array.from(accumulatedBySession.keys())) {
-			if (!normalized.includes(key)) {
-				accumulatedBySession.delete(key);
+	return {
+		applySessions: (nextSessionIds: string[]) => {
+			const normalized = normalizeSessionIds(nextSessionIds).sort();
+			if (areSessionListsEqual(activeSessionIds, normalized)) {
+				return;
 			}
-		}
-		restartStream();
+			activeSessionIds = normalized;
+			for (const key of Array.from(accumulatedBySession.keys())) {
+				if (!normalized.includes(key)) {
+					accumulatedBySession.delete(key);
+				}
+			}
+			restartStream();
+		},
+		resetSession: (sessionId?: string) => {
+			const normalized = sessionId?.trim();
+			if (normalized) {
+				accumulatedBySession.delete(normalized);
+				return;
+			}
+			accumulatedBySession.clear();
+		},
+		stop,
 	};
-
-	writeLine({ type: "ready" });
-
-	const rl = createInterface({
-		input: process.stdin,
-		output: process.stderr,
-		terminal: false,
-	});
-
-	rl.on("line", (line) => {
-		const trimmed = line.trim();
-		if (!trimmed) {
-			return;
-		}
-		let parsed: BridgeControlLine;
-		try {
-			parsed = JSON.parse(trimmed) as BridgeControlLine;
-		} catch {
-			writeLine({ type: "error", message: "invalid bridge control json" });
-			return;
-		}
-		if (parsed.type === "set_sessions") {
-			applySessions(parsed.sessionIds ?? []);
-			return;
-		}
-		if (parsed.type === "shutdown") {
-			stopStreaming?.();
-			client.close();
-			process.exit(0);
-		}
-	});
-
-	rl.on("close", () => {
-		stopStreaming?.();
-		client.close();
-		process.exit(0);
-	});
 }
-
-main().catch((error) => {
-	const message = error instanceof Error ? error.message : String(error);
-	writeLine({ type: "error", message });
-	process.exit(1);
-});

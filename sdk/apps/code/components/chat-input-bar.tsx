@@ -16,10 +16,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	Combobox,
 	ComboboxContent,
+	ComboboxEmpty,
 	ComboboxInput,
 	ComboboxItem,
 	ComboboxList,
 } from "@/components/ui/combobox";
+import { useWorkspace } from "@/contexts/workspace-context";
 import type { ChatSessionStatus } from "@/lib/chat-schema";
 import {
 	readModelSelectionStorageFromWindow,
@@ -87,7 +89,6 @@ type ChatInputBarProps = {
 	model: string;
 	mode: "act" | "plan";
 	gitBranch: string;
-	workspaceRoot: string;
 	promptInput: string;
 	onPromptInputChange: (value: string) => void;
 	onProviderChange: (provider: string) => void;
@@ -95,9 +96,7 @@ type ChatInputBarProps = {
 	onModeToggle: () => void;
 	onRefreshGitBranch: () => void;
 	onListGitBranches: () => Promise<{ current: string; branches: string[] }>;
-	onListWorkspaces: () => Promise<string[]>;
 	onSwitchGitBranch: (branch: string) => Promise<boolean>;
-	onSwitchWorkspace: (workspacePath: string) => Promise<boolean>;
 	onSend: () => void;
 	onAbort: () => void;
 	onReset: () => void;
@@ -124,9 +123,7 @@ export function ChatInputBar({
 	onModeToggle,
 	onRefreshGitBranch,
 	onListGitBranches,
-	onListWorkspaces,
 	onSwitchGitBranch,
-	onSwitchWorkspace,
 	onSend,
 	onAbort,
 	onReset,
@@ -134,14 +131,18 @@ export function ChatInputBar({
 	onAttachFiles,
 	onRemoveAttachment,
 	summary,
-	workspaceRoot,
 }: ChatInputBarProps) {
+	const {
+		workspaceRoot,
+		listWorkspaces: onListWorkspaces,
+		switchWorkspace: onSwitchWorkspace,
+	} = useWorkspace();
 	const isBusy =
 		status === "starting" || status === "running" || status === "stopping";
+	const canAbort = isBusy;
 	const [modelSupportsReasoning, setModelSupportsReasoning] = useState(() =>
 		hasReasoningCapability(FALLBACK_PROVIDER_REASONING_MODELS, provider, model),
 	);
-	const _actionLabel = status === "running" ? "Stop" : "Send";
 	const canSend =
 		(promptInput.trim().length > 0 || attachments.length > 0) && !isBusy;
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -338,7 +339,7 @@ export function ChatInputBar({
 								}
 								if (e.key === "Enter" && !e.shiftKey) {
 									e.preventDefault();
-									if (status === "running") {
+									if (canAbort) {
 										onAbort();
 									} else if (canSend) {
 										onSend();
@@ -425,11 +426,11 @@ export function ChatInputBar({
 					</button>
 					<button
 						className="rounded-full bg-foreground p-1.5 text-background hover:bg-foreground/80 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-						disabled={!canSend && status !== "running"}
-						onClick={status === "running" ? onAbort : onSend}
+						disabled={!canSend && !canAbort}
+						onClick={canAbort ? onAbort : onSend}
 						type="button"
 					>
-						{status === "running" ? (
+						{canAbort ? (
 							<CircleStop className="h-4 w-4" />
 						) : (
 							<ArrowUp className="h-4 w-4" />
@@ -495,7 +496,7 @@ function GitBranchSelector({
 	const [open, setOpen] = useState(false);
 	const [branches, setBranches] = useState<string[]>([]);
 	const [workspaces, setWorkspaces] = useState<string[]>([]);
-	const [loading, setLoading] = useState(false);
+	const [loadingBranches, setLoadingBranches] = useState(false);
 	const [switching, setSwitching] = useState(false);
 	const [switchingWorkspace, setSwitchingWorkspace] = useState(false);
 
@@ -529,18 +530,27 @@ function GitBranchSelector({
 		return workspacePath;
 	}, []);
 
+	// Preload workspaces on mount so the dropdown is instant
+	useEffect(() => {
+		let cancelled = false;
+		onListWorkspaces()
+			.then((results) => {
+				if (!cancelled) setWorkspaces(results);
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	}, [onListWorkspaces]);
+
 	const openMenu = async () => {
 		setOpen(true);
-		setLoading(true);
+		setLoadingBranches(true);
 		try {
-			const [branchPayload, workspacePayload] = await Promise.all([
-				onListGitBranches(),
-				onListWorkspaces(),
-			]);
+			const branchPayload = await onListGitBranches();
 			setBranches(branchPayload.branches);
-			setWorkspaces(workspacePayload);
 		} finally {
-			setLoading(false);
+			setLoadingBranches(false);
 		}
 	};
 
@@ -593,7 +603,7 @@ function GitBranchSelector({
 			</button>
 			{open && (
 				<div className="absolute bottom-full right-0 z-50 mb-1 w-56 rounded-lg border border-border bg-popover p-1 shadow-xl">
-					{loading ? (
+					{loadingBranches ? (
 						<div className="px-3 py-2 text-xs text-muted-foreground">
 							Loading branches...
 						</div>
@@ -852,7 +862,7 @@ function ModelSelector({
 	]);
 
 	return (
-		<div className="flex items-center gap-1">
+		<div className="flex items-center gap-1 text-xxs">
 			<Combobox
 				items={providers}
 				onValueChange={(value) => {
@@ -878,19 +888,20 @@ function ModelSelector({
 				value={provider}
 			>
 				<ComboboxInput
-					className="h-7"
+					className="h-7 text-xxs"
 					disabled={isBusy || providers.length === 0}
 					readOnly
 					showClear={false}
 					showTrigger
 				/>
 				<ComboboxContent>
+					<ComboboxEmpty>No providers found.</ComboboxEmpty>
 					<ComboboxList>
-						{providers.map((value) => (
-							<ComboboxItem className="text-xs" key={value} value={value}>
-								{value}
+						{(item) => (
+							<ComboboxItem className="text-xxs" key={item} value={item}>
+								{item}
 							</ComboboxItem>
-						))}
+						)}
 					</ComboboxList>
 				</ComboboxContent>
 			</Combobox>
@@ -913,16 +924,13 @@ function ModelSelector({
 					showTrigger
 				/>
 				<ComboboxContent>
+					<ComboboxEmpty>No models found.</ComboboxEmpty>
 					<ComboboxList>
-						{modelsForProvider.map((value) => (
-							<ComboboxItem
-								className="font-mono text-xs"
-								key={value}
-								value={value}
-							>
-								{value}
+						{(item) => (
+							<ComboboxItem className="text-xxs" key={item} value={item}>
+								{item}
 							</ComboboxItem>
-						))}
+						)}
 					</ComboboxList>
 				</ComboboxContent>
 			</Combobox>
@@ -953,12 +961,13 @@ function EffortSelector({ disabled }: { disabled: boolean }) {
 				showTrigger
 			/>
 			<ComboboxContent>
+				<ComboboxEmpty>No options found.</ComboboxEmpty>
 				<ComboboxList>
-					{effortLevels.map((level) => (
-						<ComboboxItem className="text-xs" key={level} value={level}>
-							{level}
+					{(item) => (
+						<ComboboxItem className="text-xxs" key={item} value={item}>
+							{item}
 						</ComboboxItem>
-					))}
+					)}
 				</ComboboxList>
 			</ComboboxContent>
 		</Combobox>

@@ -18,6 +18,7 @@ import type {
 	SessionRecord__Output,
 } from "./proto/generated/cline/rpc/v1/SessionRecord.js";
 import type { StartRuntimeSessionResponse__Output } from "./proto/generated/cline/rpc/v1/StartRuntimeSessionResponse.js";
+import type { StopRuntimeSessionResponse__Output } from "./proto/generated/cline/rpc/v1/StopRuntimeSessionResponse.js";
 import type { UpdateSessionRequest } from "./proto/generated/cline/rpc/v1/UpdateSessionRequest.js";
 import type { UpdateSessionResponse__Output } from "./proto/generated/cline/rpc/v1/UpdateSessionResponse.js";
 import type { UpsertSessionRequest } from "./proto/generated/cline/rpc/v1/UpsertSessionRequest.js";
@@ -275,6 +276,17 @@ export class RpcSessionClient {
 		const response = await this.unary<AbortRuntimeSessionResponse__Output>(
 			(callback) => {
 				this.client.AbortRuntimeSession({ sessionId }, callback);
+			},
+		);
+		return { applied: response.applied === true };
+	}
+
+	public async stopRuntimeSession(
+		sessionId: string,
+	): Promise<{ applied: boolean }> {
+		const response = await this.unary<StopRuntimeSessionResponse__Output>(
+			(callback) => {
+				this.client.StopRuntimeSession({ sessionId }, callback);
 			},
 		);
 		return { applied: response.applied === true };

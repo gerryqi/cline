@@ -199,7 +199,9 @@ function normalizeForStrictMode(schema: unknown): unknown {
  */
 export function convertToolsToOpenAI(
 	tools: Array<{ name: string; description: string; inputSchema: unknown }>,
+	options?: { strict?: boolean },
 ): OpenAI.Chat.ChatCompletionTool[] {
+	const strict = options?.strict ?? true;
 	return tools.map((tool) => ({
 		type: "function" as const,
 		function: {
@@ -208,7 +210,7 @@ export function convertToolsToOpenAI(
 			parameters: normalizeForStrictMode(
 				tool.inputSchema,
 			) as OpenAI.FunctionParameters,
-			strict: true,
+			strict,
 		},
 	}));
 }
@@ -218,6 +220,7 @@ export function convertToolsToOpenAI(
  */
 export function getOpenAIToolParams(
 	tools?: Array<{ name: string; description: string; inputSchema: unknown }>,
+	options?: { strict?: boolean },
 ): {
 	tools?: OpenAI.Chat.ChatCompletionTool[];
 	tool_choice?: OpenAI.Chat.ChatCompletionToolChoiceOption;
@@ -227,7 +230,7 @@ export function getOpenAIToolParams(
 	}
 
 	return {
-		tools: convertToolsToOpenAI(tools),
+		tools: convertToolsToOpenAI(tools, options),
 		tool_choice: "auto",
 	};
 }

@@ -10,6 +10,34 @@ export class RpcSessionClient {
 	}
 }
 
+export class RpcRuntimeChatClient {
+	constructor() {
+		throw browserOnlyError();
+	}
+}
+
+export async function runRpcRuntimeEventBridge(): Promise<never> {
+	throw browserOnlyError();
+}
+export async function runRpcRuntimeCommandBridge(): Promise<never> {
+	throw browserOnlyError();
+}
+
+export type {
+	RpcRuntimeEvent,
+	RpcRuntimeStreamStop,
+} from "./runtime-chat-client.js";
+export type {
+	RpcRuntimeBridgeCommand,
+	RpcRuntimeBridgeCommandOutputLine,
+	RpcRuntimeBridgeRequestEnvelope,
+	RpcRuntimeBridgeResponseEnvelope,
+} from "./runtime-chat-command-bridge.js";
+export type {
+	RpcRuntimeBridgeControlLine,
+	RpcRuntimeBridgeOutputLine,
+} from "./runtime-chat-stream-bridge.js";
+
 export function getRpcServerHandle(): never {
 	throw browserOnlyError();
 }

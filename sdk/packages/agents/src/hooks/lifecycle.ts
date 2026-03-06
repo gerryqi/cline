@@ -1,7 +1,94 @@
-import type { AgentConfig } from "../types.js";
+import type {
+	AgentConfig,
+	AgentExtension,
+	AgentExtensionHookStage,
+	AgentHookControl,
+} from "../types.js";
 import type { HookEngine, HookHandler } from "./engine.js";
 
 type LifecycleConfig = Pick<AgentConfig, "hooks" | "extensions">;
+
+const EXTENSION_STAGE_HANDLERS: ReadonlyArray<{
+	stage: AgentExtensionHookStage;
+	handler: (
+		extension: AgentExtension,
+		event: { payload: unknown },
+	) => Promise<AgentHookControl | undefined> | AgentHookControl | undefined;
+	name: string;
+}> = [
+	{
+		stage: "input",
+		name: "onInput",
+		handler: (extension, event) =>
+			extension.onInput?.(event.payload as never) as
+				| AgentHookControl
+				| undefined,
+	},
+	{
+		stage: "session_start",
+		name: "onSessionStart",
+		handler: (extension, event) =>
+			extension.onSessionStart?.(event.payload as never) as
+				| AgentHookControl
+				| undefined,
+	},
+	{
+		stage: "before_agent_start",
+		name: "onBeforeAgentStart",
+		handler: (extension, event) =>
+			extension.onBeforeAgentStart?.(event.payload as never) as
+				| AgentHookControl
+				| undefined,
+	},
+	{
+		stage: "tool_call_before",
+		name: "onToolCall",
+		handler: (extension, event) =>
+			extension.onToolCall?.(event.payload as never) as
+				| AgentHookControl
+				| undefined,
+	},
+	{
+		stage: "tool_call_after",
+		name: "onToolResult",
+		handler: (extension, event) =>
+			extension.onToolResult?.(event.payload as never) as
+				| AgentHookControl
+				| undefined,
+	},
+	{
+		stage: "turn_end",
+		name: "onAgentEnd",
+		handler: (extension, event) =>
+			extension.onAgentEnd?.(event.payload as never) as
+				| AgentHookControl
+				| undefined,
+	},
+	{
+		stage: "session_shutdown",
+		name: "onSessionShutdown",
+		handler: (extension, event) =>
+			extension.onSessionShutdown?.(event.payload as never) as
+				| AgentHookControl
+				| undefined,
+	},
+	{
+		stage: "error",
+		name: "onError",
+		handler: async (extension, event) => {
+			await extension.onError?.(event.payload as never);
+			return undefined;
+		},
+	},
+	{
+		stage: "runtime_event",
+		name: "onRuntimeEvent",
+		handler: async (extension, event) => {
+			await extension.onRuntimeEvent?.(event.payload as never);
+			return undefined;
+		},
+	},
+];
 
 export function registerLifecycleHandlers(
 	hookEngine: HookEngine,
@@ -93,78 +180,21 @@ export function registerLifecycleHandlers(
 	}
 
 	for (const [index, extension] of (config.extensions ?? []).entries()) {
+		if (!extension.manifest.capabilities.includes("hooks")) {
+			continue;
+		}
 		const order = String(index).padStart(4, "0");
 		const extensionName = extension.name || `extension_${order}`;
 		const base = `${order}:${extensionName}`;
-		if (extension.onInput) {
+		const subscribedStages = new Set(extension.manifest.hookStages ?? []);
+		for (const stageHandler of EXTENSION_STAGE_HANDLERS) {
+			if (!subscribedStages.has(stageHandler.stage)) {
+				continue;
+			}
 			register({
-				name: `${base}.onInput`,
-				stage: "input",
-				handle: (event) => extension.onInput?.(event.payload as never),
-			});
-		}
-		if (extension.onSessionStart) {
-			register({
-				name: `${base}.onSessionStart`,
-				stage: "session_start",
-				handle: (event) => extension.onSessionStart?.(event.payload as never),
-			});
-		}
-		if (extension.onBeforeAgentStart) {
-			register({
-				name: `${base}.onBeforeAgentStart`,
-				stage: "before_agent_start",
-				handle: (event) =>
-					extension.onBeforeAgentStart?.(event.payload as never),
-			});
-		}
-		if (extension.onToolCall) {
-			register({
-				name: `${base}.onToolCall`,
-				stage: "tool_call_before",
-				handle: (event) => extension.onToolCall?.(event.payload as never),
-			});
-		}
-		if (extension.onToolResult) {
-			register({
-				name: `${base}.onToolResult`,
-				stage: "tool_call_after",
-				handle: (event) => extension.onToolResult?.(event.payload as never),
-			});
-		}
-		if (extension.onAgentEnd) {
-			register({
-				name: `${base}.onAgentEnd`,
-				stage: "turn_end",
-				handle: (event) => extension.onAgentEnd?.(event.payload as never),
-			});
-		}
-		if (extension.onSessionShutdown) {
-			register({
-				name: `${base}.onSessionShutdown`,
-				stage: "session_shutdown",
-				handle: (event) =>
-					extension.onSessionShutdown?.(event.payload as never),
-			});
-		}
-		if (extension.onError) {
-			register({
-				name: `${base}.onError`,
-				stage: "error",
-				handle: async (event) => {
-					await extension.onError?.(event.payload as never);
-					return undefined;
-				},
-			});
-		}
-		if (extension.onRuntimeEvent) {
-			register({
-				name: `${base}.onRuntimeEvent`,
-				stage: "runtime_event",
-				handle: async (event) => {
-					await extension.onRuntimeEvent?.(event.payload as never);
-					return undefined;
-				},
+				name: `${base}.${stageHandler.name}`,
+				stage: stageHandler.stage,
+				handle: (event) => stageHandler.handler(extension, event),
 			});
 		}
 	}

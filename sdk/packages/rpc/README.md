@@ -25,6 +25,21 @@ It also exposes server lifecycle helpers:
 - `requestRpcServerShutdown(address)` for remote graceful shutdown
 - `registerRpcClient(address, input)` for client registration (`clientId`, `clientType`, optional metadata)
 - `RpcSessionClient.publishEvent(...)` / `RpcSessionClient.streamEvents(...)` for client-side event routing
+- On graceful shutdown, the server broadcasts `eventType: "rpc.server.shutting_down"` to current stream subscribers before transport teardown.
+
+## Runtime Chat Client Helpers
+
+`@cline/rpc` also exports reusable runtime chat client helpers used by app bridge scripts:
+
+- `RpcRuntimeChatClient` (`packages/rpc/src/runtime-chat-client.ts`)
+- `runRpcRuntimeEventBridge(...)` (`packages/rpc/src/runtime-chat-stream-bridge.ts`)
+- `runRpcRuntimeCommandBridge(...)` (`packages/rpc/src/runtime-chat-command-bridge.ts`)
+
+These allow host clients (for example code/desktop apps) to share one implementation for:
+
+- runtime chat start/send/abort calls
+- session-subscription control loop for streamed chat events
+- request/response envelope handling for persistent stdio runtime bridges
 
 ## Session Backend Injection
 
@@ -33,6 +48,7 @@ It also exposes server lifecycle helpers:
 - `startRpcServer(...)` now requires a `sessionBackend` implementation via `RpcServerOptions`.
 - Session persistence contracts live in `RpcSessionBackend` / `RpcSessionRow` / `RpcSessionUpdateInput`.
 - `@cline/core/server` provides a ready-to-use SQLite backend (`createSqliteRpcSessionBackend`).
+- Runtime shutdown can now include host cleanup via optional `RpcRuntimeHandlers.dispose()`, which `startRpcServer(...)/stopRpcServer()` invokes during server stop.
 
 ## Build note
 

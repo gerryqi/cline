@@ -3,6 +3,8 @@
 	"compilerOptions": {
 		"paths": {
 			"@/*": ["./*"],
+			"@cline/rpc": ["../../packages/rpc/src/index.ts"],
+			"@cline/rpc/*": ["../../packages/rpc/src/*"],
 			"@cline/shared": ["../../packages/shared/src/index.ts"],
 			"@cline/shared/*": [
 				"../../packages/shared/src/*",

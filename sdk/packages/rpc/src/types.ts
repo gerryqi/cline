@@ -32,12 +32,14 @@ export interface RpcRuntimeHandlers {
 		sessionId: string,
 		requestJson: string,
 	) => Promise<{ resultJson: string }>;
+	stopSession?: (sessionId: string) => Promise<{ applied: boolean }>;
 	abortSession?: (sessionId: string) => Promise<{ applied: boolean }>;
 	runProviderAction?: (requestJson: string) => Promise<{ resultJson: string }>;
 	runProviderOAuthLogin?: (provider: string) => Promise<{
 		provider: string;
 		apiKey: string;
 	}>;
+	dispose?: () => Promise<void>;
 }
 
 export interface RoutedEvent {

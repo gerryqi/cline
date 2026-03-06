@@ -16,6 +16,7 @@ service ClineGateway {
   rpc ClaimSpawnRequest(ClaimSpawnRequestRequest) returns (ClaimSpawnRequestResponse);
   rpc StartRuntimeSession(StartRuntimeSessionRequest) returns (StartRuntimeSessionResponse);
   rpc SendRuntimeSession(SendRuntimeSessionRequest) returns (SendRuntimeSessionResponse);
+  rpc StopRuntimeSession(StopRuntimeSessionRequest) returns (StopRuntimeSessionResponse);
   rpc AbortRuntimeSession(AbortRuntimeSessionRequest) returns (AbortRuntimeSessionResponse);
   rpc RunProviderAction(RunProviderActionRequest) returns (RunProviderActionResponse);
   rpc RunProviderOAuthLogin(RunProviderOAuthLoginRequest) returns (RunProviderOAuthLoginResponse);
@@ -205,6 +206,14 @@ message SendRuntimeSessionRequest {
 
 message SendRuntimeSessionResponse {
   string result_json = 1;
+}
+
+message StopRuntimeSessionRequest {
+  string session_id = 1;
+}
+
+message StopRuntimeSessionResponse {
+  bool applied = 1;
 }
 
 message AbortRuntimeSessionRequest {

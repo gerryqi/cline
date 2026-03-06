@@ -8,8 +8,8 @@ import { providers } from "@cline/llms";
 import { parseJsonStream } from "@cline/shared";
 import { buildInitialUserContent } from "./agent-input.js";
 import {
-	type AgentExtensionRunner,
-	createExtensionRunner,
+	type ContributionRegistry,
+	createContributionRegistry,
 } from "./extensions.js";
 import {
 	type HookDispatchInput,
@@ -89,7 +89,7 @@ export class Agent {
 	private agentId: string;
 	private parentAgentId: string | null;
 	private abortController: AbortController | null = null;
-	private extensionRunner: AgentExtensionRunner;
+	private contributionRegistry: ContributionRegistry;
 	private readonly hookEngine: HookEngine;
 	private messageBuilder: MessageBuilder;
 	private readonly logger?: BasicLogger;
@@ -111,9 +111,11 @@ export class Agent {
 			toolPolicies: config.toolPolicies ?? {},
 		};
 
-		this.extensionRunner = createExtensionRunner({
+		this.contributionRegistry = createContributionRegistry({
 			extensions: this.config.extensions,
 		});
+		this.contributionRegistry.resolve();
+		this.contributionRegistry.validate();
 		const defaultFailureMode =
 			this.config.hookErrorMode === "throw" ? "fail_closed" : "fail_open";
 		this.hookEngine = new HookEngine({
@@ -130,7 +132,10 @@ export class Agent {
 		this.messageBuilder = new MessageBuilder();
 		this.toolRegistry = createToolRegistry([]);
 		this.logger = config.logger;
-		registerLifecycleHandlers(this.hookEngine, this.config);
+		registerLifecycleHandlers(this.hookEngine, {
+			...this.config,
+			extensions: this.contributionRegistry.getValidatedExtensions(),
+		});
 
 		// Create handler
 		this.handler = this.createHandlerFromConfig(this.config);
@@ -271,7 +276,7 @@ export class Agent {
 	 * Inspect registered extension contributions.
 	 */
 	getExtensionRegistry(): AgentExtensionRegistry {
-		return this.extensionRunner.getRegistrySnapshot();
+		return this.contributionRegistry.getRegistrySnapshot();
 	}
 
 	/**
@@ -1102,7 +1107,7 @@ export class Agent {
 		}
 
 		try {
-			await this.extensionRunner.initialize();
+			await this.contributionRegistry.initialize();
 		} catch (error) {
 			if (this.config.hookErrorMode === "throw") {
 				throw error;
@@ -1116,7 +1121,7 @@ export class Agent {
 		}
 		const mergedTools = [
 			...this.config.tools,
-			...this.extensionRunner.getRegisteredTools(),
+			...this.contributionRegistry.getRegisteredTools(),
 		];
 		validateTools(mergedTools);
 		this.config.tools = mergedTools;

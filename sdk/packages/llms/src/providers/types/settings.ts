@@ -11,12 +11,7 @@ import {
 	DEFAULT_INTERNAL_OCA_BASE_URL,
 } from "../../models/providers/oca";
 import { OPENAI_COMPATIBLE_PROVIDERS } from "../handlers/providers";
-import {
-	BUILT_IN_PROVIDER_IDS,
-	type ProviderCapability,
-	type ProviderConfig,
-	type ProviderId,
-} from "./config";
+import type { ProviderCapability, ProviderConfig, ProviderId } from "./config";
 
 // =============================================================================
 // Provider ID Schema
@@ -25,7 +20,10 @@ import {
 /**
  * All supported provider IDs as a Zod enum
  */
-export const ProviderIdSchema = z.enum(BUILT_IN_PROVIDER_IDS);
+export const ProviderIdSchema = z
+	.string()
+	.min(1)
+	.regex(/^[a-z0-9][a-z0-9-]*$/i);
 
 // =============================================================================
 // Authentication Schema

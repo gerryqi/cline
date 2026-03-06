@@ -17,6 +17,10 @@ import {
 	ProviderListContent,
 } from "./provider-list-view";
 import { RulesView } from "./rules-view";
+import {
+	AddProviderContent,
+	type AddProviderPayload,
+} from "./views/settings/add-provider";
 
 // -----------------------------------------------------------
 // Settings nav categories
@@ -57,6 +61,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 	const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
 		null,
 	);
+	const [addingProvider, setAddingProvider] = useState(false);
 
 	const loadProviderCatalog = useCallback(async () => {
 		setProvidersLoading(true);
@@ -214,6 +219,33 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 
 	const backToProviderList = () => {
 		setSelectedProviderId(null);
+		setAddingProvider(false);
+	};
+
+	const saveNewProvider = useCallback(
+		async (payload: AddProviderPayload) => {
+			await invoke("add_provider", {
+				provider_id: payload.providerId,
+				name: payload.name,
+				base_url: payload.baseUrl,
+				api_key: payload.apiKey,
+				headers: payload.headers,
+				timeout_ms: payload.timeoutMs,
+				models: payload.models,
+				default_model_id: payload.defaultModelId,
+				models_source_url: payload.modelsSourceUrl,
+				capabilities: payload.capabilities,
+			});
+			await loadProviderCatalog();
+			setAddingProvider(false);
+			setSelectedProviderId(payload.providerId);
+		},
+		[loadProviderCatalog],
+	);
+
+	const openAddProvider = () => {
+		setSelectedProviderId(null);
+		setAddingProvider(true);
 	};
 
 	return (
@@ -251,6 +283,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 												onClick={() => {
 													setActiveNav("Providers");
 													setSelectedProviderId(null);
+													setAddingProvider(false);
 													setProvidersExpanded((p) => !p);
 												}}
 												variant="ghost"
@@ -297,6 +330,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 										onClick={() => {
 											setActiveNav(cat);
 											setSelectedProviderId(null);
+											setAddingProvider(false);
 										}}
 										variant="ghost"
 									>
@@ -330,7 +364,13 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 							provider={selectedProvider}
 						/>
 					) : activeNav === "Providers" ? (
-						providersLoading ? (
+						addingProvider ? (
+							<AddProviderContent
+								existingProviderIds={providers.map((provider) => provider.id)}
+								onBack={backToProviderList}
+								onSave={saveNewProvider}
+							/>
+						) : providersLoading ? (
 							<div className="flex h-full items-center justify-center">
 								<p className="text-sm text-muted-foreground">
 									Loading providers...
@@ -344,6 +384,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 							</div>
 						) : (
 							<ProviderListContent
+								onAddProvider={openAddProvider}
 								onConfigure={openProviderDetail}
 								onToggle={toggleProvider}
 								providers={providers}

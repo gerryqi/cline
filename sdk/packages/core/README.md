@@ -40,9 +40,11 @@ Use this backend when starting `@cline/rpc` servers so RPC remains transport-onl
 
 - root session creation + manifest/artifact wiring
 - runtime/tool composition through `DefaultRuntimeBuilder`
-- agent lifecycle (run/continue/abort/stop)
+- agent lifecycle (run/continue/abort/stop/dispose)
 - session message persistence after each turn
 - session status transitions and event fanout via `CoreSessionEvent`
+
+`DefaultSessionManager.dispose(reason?)` now provides a manager-wide shutdown path that cancels and tears down all active sessions, ensuring tool/runtime resources are released on host shutdown.
 
 This is the primary API for host clients that should only consume runtime events and outputs without manually creating agents or persisting messages.
 
@@ -61,6 +63,14 @@ This is intended to be the portable client integration API for CLI/desktop/edito
 ## Session Context Propagation
 
 `@cline/core` runtime/session flows now consume explicit hook payload session context (`sessionContext.rootSessionId`) for subagent/session linkage, instead of relying on process-global `CLINE_SESSION_ID` mutation in `DefaultSessionManager`.
+
+## Hook Config Runtime Wiring
+
+`DefaultSessionManager` now wires discovered hook config files (for example `PostToolUse`, `TaskComplete`, `TaskCancel`) into live runtime sessions.
+
+- Hook config files are discovered from configured hook search paths and mapped to lifecycle events (`tool_call`, `tool_result`, `agent_end`, `agent_abort`, `session_shutdown`, etc.).
+- Hook files execute as external commands during agent lifecycle dispatch (`tool_call` remains blocking to allow hook control responses; other events dispatch asynchronously).
+- When no explicit host-provided runtime hooks are configured, core now writes baseline hook lifecycle audit entries to the session `*.hooks.jsonl` artifact so hosts can display real execution status.
 
 ## Runtime Logger Forwarding
 

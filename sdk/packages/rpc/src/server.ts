@@ -45,6 +45,8 @@ import type { ShutdownResponse } from "./proto/generated/cline/rpc/v1/ShutdownRe
 import type { StartRuntimeSessionRequest__Output } from "./proto/generated/cline/rpc/v1/StartRuntimeSessionRequest.js";
 import type { StartRuntimeSessionResponse } from "./proto/generated/cline/rpc/v1/StartRuntimeSessionResponse.js";
 import type { StartTaskRequest__Output } from "./proto/generated/cline/rpc/v1/StartTaskRequest.js";
+import type { StopRuntimeSessionRequest__Output } from "./proto/generated/cline/rpc/v1/StopRuntimeSessionRequest.js";
+import type { StopRuntimeSessionResponse } from "./proto/generated/cline/rpc/v1/StopRuntimeSessionResponse.js";
 import type { StreamEventsRequest__Output } from "./proto/generated/cline/rpc/v1/StreamEventsRequest.js";
 import type { TaskResponse } from "./proto/generated/cline/rpc/v1/TaskResponse.js";
 import type { UpdateSessionRequest__Output } from "./proto/generated/cline/rpc/v1/UpdateSessionRequest.js";
@@ -113,6 +115,7 @@ type ClaimSpawnRequestRequest = ClaimSpawnRequestRequest__Output;
 type StartTaskRequest = StartTaskRequest__Output;
 type StartRuntimeSessionRequest = StartRuntimeSessionRequest__Output;
 type SendRuntimeSessionRequest = SendRuntimeSessionRequest__Output;
+type StopRuntimeSessionRequest = StopRuntimeSessionRequest__Output;
 type AbortRuntimeSessionRequest = AbortRuntimeSessionRequest__Output;
 type RunProviderActionRequest = RunProviderActionRequest__Output;
 type RunProviderOAuthLoginRequest = RunProviderOAuthLoginRequest__Output;
@@ -519,6 +522,21 @@ class ClineGatewayRuntime {
 		return { resultJson: safeString(result.resultJson) };
 	}
 
+	public async stopRuntimeSession(
+		request: StopRuntimeSessionRequest,
+	): Promise<StopRuntimeSessionResponse> {
+		const handler = this.runtimeHandlers?.stopSession;
+		if (!handler) {
+			throw new Error("runtime stop handler is not configured");
+		}
+		const sessionId = safeString(request.sessionId).trim();
+		if (!sessionId) {
+			throw new Error("sessionId is required");
+		}
+		const result = await handler(sessionId);
+		return { applied: result.applied === true };
+	}
+
 	public async abortRuntimeSession(
 		request: AbortRuntimeSessionRequest,
 	): Promise<AbortRuntimeSessionResponse> {
@@ -820,6 +838,23 @@ class ClineGatewayRuntime {
 			});
 		}
 	}
+
+	public broadcastServerEvent(eventType: string, payload: unknown): void {
+		const eventId = `evt_${randomUUID()}`;
+		const payloadJson = JSON.stringify(payload);
+		const ts = nowIso();
+		for (const subscriber of this.subscribers.values()) {
+			subscriber.call.write({
+				eventId,
+				sessionId: "__rpc__",
+				taskId: "",
+				eventType,
+				payloadJson,
+				sourceClientId: "rpc-server",
+				ts,
+			});
+		}
+	}
 }
 
 let singletonHandle: RpcServerHandle | undefined;
@@ -980,6 +1015,20 @@ export async function startRpcServer(
 				return;
 			}
 			stopRequested = true;
+			try {
+				runtime.broadcastServerEvent("rpc.server.shutting_down", {
+					serverId: runtime.health().serverId,
+					address,
+					reason: "shutdown_requested",
+				});
+			} catch {
+				// Best-effort control event broadcast.
+			}
+			try {
+				await options.runtimeHandlers?.dispose?.();
+			} catch {
+				// Best-effort runtime cleanup before server shutdown.
+			}
 			await new Promise<void>((resolveShutdown) => {
 				server.tryShutdown(() => {
 					resolveShutdown();
@@ -1160,6 +1209,25 @@ export async function startRpcServer(
 			) => {
 				void runtime
 					.sendRuntimeSession(call.request)
+					.then((result) => {
+						callback(null, result);
+					})
+					.catch((error) => {
+						callback(
+							{ code: grpc.status.INVALID_ARGUMENT, message: String(error) },
+							null,
+						);
+					});
+			},
+			StopRuntimeSession: (
+				call: grpc.ServerUnaryCall<
+					StopRuntimeSessionRequest,
+					StopRuntimeSessionResponse
+				>,
+				callback: grpc.sendUnaryData<StopRuntimeSessionResponse>,
+			) => {
+				void runtime
+					.stopRuntimeSession(call.request)
 					.then((result) => {
 						callback(null, result);
 					})

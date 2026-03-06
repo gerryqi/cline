@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { type AgentEvent, getClineDefaultSystemPrompt } from "@cline/agents";
 import {
 	ClineAccountService,
@@ -11,7 +11,6 @@ import {
 	enrichPromptWithMentions,
 	executeRpcClineAccountAction,
 	generateWorkspaceInfo,
-	isRpcClineAccountActionRequest,
 	loginClineOAuth,
 	loginOcaOAuth,
 	loginOpenAICodex,
@@ -28,6 +27,7 @@ import {
 	type RpcChatRunTurnRequest,
 	type RpcChatStartSessionRequest,
 	type RpcChatTurnResult,
+	type RpcClineAccountActionRequest,
 	type RpcProviderActionRequest,
 	type RpcProviderListItem,
 	type RpcProviderModel,
@@ -37,6 +37,52 @@ import {
 } from "@cline/shared";
 
 type OAuthProviderId = "cline" | "oca" | "openai-codex";
+type ProviderCapabilityInput =
+	| "reasoning"
+	| "prompt-cache"
+	| "streaming"
+	| "tools"
+	| "vision";
+interface AddProviderRequest {
+	action: "addProvider";
+	providerId: string;
+	name: string;
+	baseUrl: string;
+	apiKey?: string;
+	headers?: Record<string, string>;
+	timeoutMs?: number;
+	models?: string[];
+	defaultModelId?: string;
+	modelsSourceUrl?: string;
+	capabilities?: ProviderCapabilityInput[];
+}
+type RpcExtendedProviderActionRequest =
+	| RpcProviderActionRequest
+	| AddProviderRequest;
+type StoredModelsFile = {
+	version: 1;
+	providers: Record<
+		string,
+		{
+			provider: {
+				name: string;
+				baseUrl: string;
+				defaultModelId: string;
+				capabilities?: ProviderCapabilityInput[];
+				modelsSourceUrl?: string;
+			};
+			models: Record<
+				string,
+				{
+					id: string;
+					name?: string;
+					supportsVision?: boolean;
+					supportsAttachments?: boolean;
+				}
+			>;
+		}
+	>;
+};
 
 function toPromptMessage(
 	message: string,
@@ -161,6 +207,317 @@ function stableColor(id: string): string {
 		hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
 	}
 	return palette[hash % palette.length];
+}
+
+function resolveModelsRegistryPath(manager: ProviderSettingsManager): string {
+	return join(dirname(manager.getFilePath()), "models.json");
+}
+
+function emptyModelsFile(): StoredModelsFile {
+	return { version: 1, providers: {} };
+}
+
+async function readModelsFile(filePath: string): Promise<StoredModelsFile> {
+	try {
+		const raw = await readFile(filePath, "utf8");
+		const parsed = JSON.parse(raw) as Partial<StoredModelsFile>;
+		if (
+			parsed &&
+			parsed.version === 1 &&
+			parsed.providers &&
+			typeof parsed.providers === "object"
+		) {
+			return { version: 1, providers: parsed.providers };
+		}
+	} catch {
+		// Invalid or missing files fall back to an empty registry.
+	}
+	return emptyModelsFile();
+}
+
+async function writeModelsFile(
+	filePath: string,
+	state: StoredModelsFile,
+): Promise<void> {
+	await mkdir(dirname(filePath), { recursive: true });
+	await writeFile(filePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+}
+
+function toProviderCapabilities(
+	capabilities: ProviderCapabilityInput[] | undefined,
+): Array<"reasoning" | "prompt-cache" | "tools"> | undefined {
+	if (!capabilities || capabilities.length === 0) {
+		return undefined;
+	}
+	const next = new Set<"reasoning" | "prompt-cache" | "tools">();
+	if (capabilities.includes("reasoning")) {
+		next.add("reasoning");
+	}
+	if (capabilities.includes("prompt-cache")) {
+		next.add("prompt-cache");
+	}
+	if (capabilities.includes("tools")) {
+		next.add("tools");
+	}
+	return next.size > 0 ? [...next] : undefined;
+}
+
+function toModelCapabilities(
+	capabilities: ProviderCapabilityInput[] | undefined,
+): Array<
+	"streaming" | "tools" | "reasoning" | "prompt-cache" | "images" | "files"
+> {
+	const next = new Set<
+		"streaming" | "tools" | "reasoning" | "prompt-cache" | "images" | "files"
+	>();
+	if (!capabilities || capabilities.length === 0) {
+		return [...next];
+	}
+	if (capabilities.includes("streaming")) {
+		next.add("streaming");
+	}
+	if (capabilities.includes("tools")) {
+		next.add("tools");
+	}
+	if (capabilities.includes("reasoning")) {
+		next.add("reasoning");
+	}
+	if (capabilities.includes("prompt-cache")) {
+		next.add("prompt-cache");
+	}
+	if (capabilities.includes("vision")) {
+		next.add("images");
+		next.add("files");
+	}
+	return [...next];
+}
+
+function registerCustomProvider(
+	providerId: string,
+	entry: StoredModelsFile["providers"][string],
+): void {
+	const modelCapabilities = toModelCapabilities(entry.provider.capabilities);
+	const modelEntries = Object.values(entry.models)
+		.map((model) => model.id.trim())
+		.filter((modelId) => modelId.length > 0);
+	const defaultModelId =
+		entry.provider.defaultModelId?.trim() || modelEntries[0] || "default";
+	const normalizedModels = Object.fromEntries(
+		modelEntries.map((modelId) => [
+			modelId,
+			{
+				id: modelId,
+				name: entry.models[modelId]?.name ?? modelId,
+				capabilities:
+					modelCapabilities.length > 0 ? modelCapabilities : undefined,
+				status: "active" as const,
+			},
+		]),
+	);
+
+	models.registerProvider({
+		provider: {
+			id: providerId,
+			name: entry.provider.name.trim() || titleCaseFromId(providerId),
+			protocol: "openai-chat",
+			baseUrl: entry.provider.baseUrl,
+			defaultModelId,
+			capabilities: toProviderCapabilities(entry.provider.capabilities),
+		},
+		models: normalizedModels,
+	});
+}
+
+let customProvidersLoaded = false;
+
+async function ensureCustomProvidersLoaded(
+	manager: ProviderSettingsManager,
+): Promise<void> {
+	if (customProvidersLoaded) {
+		return;
+	}
+	const modelsPath = resolveModelsRegistryPath(manager);
+	const state = await readModelsFile(modelsPath);
+	for (const [providerId, entry] of Object.entries(state.providers)) {
+		registerCustomProvider(providerId, entry);
+	}
+	customProvidersLoaded = true;
+}
+
+function parseModelIdList(input: unknown): string[] {
+	if (Array.isArray(input)) {
+		return input
+			.map((item) => {
+				if (typeof item === "string") {
+					return item.trim();
+				}
+				if (item && typeof item === "object" && "id" in item) {
+					const id = (item as { id?: unknown }).id;
+					return typeof id === "string" ? id.trim() : "";
+				}
+				return "";
+			})
+			.filter((id) => id.length > 0);
+	}
+	return [];
+}
+
+function extractModelIdsFromPayload(
+	payload: unknown,
+	providerId: string,
+): string[] {
+	const rootArray = parseModelIdList(payload);
+	if (rootArray.length > 0) {
+		return rootArray;
+	}
+	if (!payload || typeof payload !== "object") {
+		return [];
+	}
+	const data = payload as {
+		data?: unknown;
+		models?: unknown;
+		providers?: Record<string, unknown>;
+	};
+	const direct = parseModelIdList(data.data ?? data.models);
+	if (direct.length > 0) {
+		return direct;
+	}
+	if (
+		data.models &&
+		typeof data.models === "object" &&
+		!Array.isArray(data.models)
+	) {
+		const modelKeys = Object.keys(data.models).filter(
+			(key) => key.trim().length > 0,
+		);
+		if (modelKeys.length > 0) {
+			return modelKeys;
+		}
+	}
+	const providerScoped = data.providers?.[providerId];
+	if (providerScoped && typeof providerScoped === "object") {
+		const nested = providerScoped as { models?: unknown };
+		const nestedList = parseModelIdList(nested.models ?? providerScoped);
+		if (nestedList.length > 0) {
+			return nestedList;
+		}
+	}
+	return [];
+}
+
+async function fetchModelIdsFromSource(
+	url: string,
+	providerId: string,
+): Promise<string[]> {
+	const response = await fetch(url, { method: "GET" });
+	if (!response.ok) {
+		throw new Error(
+			`failed to fetch models from ${url}: HTTP ${response.status}`,
+		);
+	}
+	const payload = (await response.json()) as unknown;
+	return extractModelIdsFromPayload(payload, providerId);
+}
+
+async function addProvider(
+	manager: ProviderSettingsManager,
+	request: AddProviderRequest,
+): Promise<{
+	providerId: string;
+	settingsPath: string;
+	modelsPath: string;
+	modelsCount: number;
+}> {
+	const providerId = request.providerId.trim().toLowerCase();
+	if (!providerId) {
+		throw new Error("providerId is required");
+	}
+	if (models.hasProvider(providerId)) {
+		throw new Error(`provider "${providerId}" already exists`);
+	}
+	const providerName = request.name.trim();
+	if (!providerName) {
+		throw new Error("name is required");
+	}
+	const baseUrl = request.baseUrl.trim();
+	if (!baseUrl) {
+		throw new Error("baseUrl is required");
+	}
+
+	const typedModels = (request.models ?? [])
+		.map((model) => model.trim())
+		.filter((model) => model.length > 0);
+	const sourceUrl = request.modelsSourceUrl?.trim();
+	const fetchedModels = sourceUrl
+		? await fetchModelIdsFromSource(sourceUrl, providerId)
+		: [];
+	const modelIds = [...new Set([...typedModels, ...fetchedModels])];
+	if (modelIds.length === 0) {
+		throw new Error(
+			"at least one model is required (manual or via modelsSourceUrl)",
+		);
+	}
+
+	const defaultModelId =
+		request.defaultModelId?.trim() &&
+		modelIds.includes(request.defaultModelId.trim())
+			? request.defaultModelId.trim()
+			: modelIds[0];
+	const capabilities = request.capabilities?.length
+		? [...new Set(request.capabilities)]
+		: undefined;
+	const headerEntries = Object.entries(request.headers ?? {}).filter(
+		([key]) => key.trim().length > 0,
+	);
+
+	manager.saveProviderSettings(
+		{
+			provider: providerId,
+			apiKey: request.apiKey?.trim() ? request.apiKey : undefined,
+			baseUrl,
+			headers:
+				headerEntries.length > 0
+					? Object.fromEntries(headerEntries)
+					: undefined,
+			timeout: request.timeoutMs,
+			model: defaultModelId,
+		},
+		{ setLastUsed: false },
+	);
+
+	const modelsPath = resolveModelsRegistryPath(manager);
+	const modelsState = await readModelsFile(modelsPath);
+	const supportsVision = capabilities?.includes("vision") ?? false;
+	const supportsAttachments = supportsVision;
+	modelsState.providers[providerId] = {
+		provider: {
+			name: providerName,
+			baseUrl,
+			defaultModelId,
+			capabilities,
+			modelsSourceUrl: sourceUrl,
+		},
+		models: Object.fromEntries(
+			modelIds.map((modelId) => [
+				modelId,
+				{
+					id: modelId,
+					name: modelId,
+					supportsVision,
+					supportsAttachments,
+				},
+			]),
+		),
+	};
+	await writeModelsFile(modelsPath, modelsState);
+	registerCustomProvider(providerId, modelsState.providers[providerId]);
+
+	return {
+		providerId,
+		settingsPath: manager.getFilePath(),
+		modelsPath,
+		modelsCount: modelIds.length,
+	};
 }
 
 async function listProviders(manager: ProviderSettingsManager): Promise<{
@@ -647,10 +1004,24 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 			await sessionManager.abort(id);
 			return { applied: known };
 		},
+		stopSession: async (sessionId) => {
+			const id = sessionId.trim();
+			if (!id) {
+				return { applied: false };
+			}
+			const known = activeSessions.has(id);
+			await sessionManager.stop(id);
+			activeSessions.delete(id);
+			sessionModes.delete(id);
+			return { applied: known };
+		},
 		runProviderAction: async (requestJson) => {
 			const manager = new ProviderSettingsManager();
-			const parsed = JSON.parse(requestJson) as RpcProviderActionRequest;
-			if (isRpcClineAccountActionRequest(parsed)) {
+			await ensureCustomProvidersLoaded(manager);
+			const parsed = JSON.parse(
+				requestJson,
+			) as RpcExtendedProviderActionRequest;
+			if (parsed.action === "clineAccount") {
 				const settings = manager.getProviderSettings("cline");
 				const accountService = new ClineAccountService({
 					apiBaseUrl: settings?.baseUrl?.trim() || "https://api.cline.bot",
@@ -658,7 +1029,10 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 				});
 				return {
 					resultJson: JSON.stringify(
-						await executeRpcClineAccountAction(parsed, accountService),
+						await executeRpcClineAccountAction(
+							parsed as RpcClineAccountActionRequest,
+							accountService,
+						),
 					),
 				};
 			}
@@ -672,9 +1046,17 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 					),
 				};
 			}
-			return {
-				resultJson: JSON.stringify(saveProviderSettings(manager, parsed)),
-			};
+			if (parsed.action === "addProvider") {
+				return {
+					resultJson: JSON.stringify(await addProvider(manager, parsed)),
+				};
+			}
+			if (parsed.action === "saveProviderSettings") {
+				return {
+					resultJson: JSON.stringify(saveProviderSettings(manager, parsed)),
+				};
+			}
+			throw new Error(`unsupported provider action: ${String(parsed)}`);
 		},
 		runProviderOAuthLogin: async (provider) => {
 			const providerId = normalizeOAuthProvider(provider);
@@ -692,6 +1074,12 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 				provider: providerId,
 				apiKey: resolvedKey,
 			};
+		},
+		dispose: async () => {
+			await sessionManager.dispose("rpc_runtime_shutdown");
+			activeSessions.clear();
+			sessionModes.clear();
+			eventClient.close();
 		},
 	};
 }

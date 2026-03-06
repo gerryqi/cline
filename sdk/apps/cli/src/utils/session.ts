@@ -68,6 +68,7 @@ export interface CliSessionManager {
 	): Promise<import("@cline/llms").providers.Message[]>;
 	abort(sessionId: string): Promise<void>;
 	stop(sessionId: string): Promise<void>;
+	dispose(reason?: string): Promise<void>;
 	subscribe(listener: (event: unknown) => void): () => void;
 }
 
@@ -530,8 +531,27 @@ function createRpcRuntimeCliSessionManager(
 			await client.abortRuntimeSession(sessionId);
 		},
 		stop: async (sessionId) => {
-			await rpcSessions.updateSessionStatus(sessionId, "cancelled", null);
+			await client.stopRuntimeSession(sessionId);
 			sessionConfigs.delete(sessionId);
+		},
+		dispose: async () => {
+			const sessionIds = [...sessionConfigs.keys()];
+			await Promise.allSettled(
+				sessionIds.map(async (sessionId) => {
+					try {
+						await client.stopRuntimeSession(sessionId);
+					} catch {
+						// Best-effort cleanup.
+					}
+					try {
+						await rpcSessions.updateSessionStatus(sessionId, "cancelled", null);
+					} catch {
+						// Best-effort cleanup.
+					}
+					sessionConfigs.delete(sessionId);
+				}),
+			);
+			client.close();
 		},
 		subscribe: (listener) => {
 			listeners.add(listener);

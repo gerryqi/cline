@@ -11,7 +11,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_tungstenite::{accept_async, tungstenite::Message, WebSocketStream};
@@ -23,26 +23,6 @@ struct StreamChunkEvent {
     stream: String,
     chunk: String,
     ts: u64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SessionEndedEvent {
-    session_id: String,
-    reason: String,
-    ts: u64,
-}
-
-#[derive(Debug)]
-struct SessionProcess {
-    child: Child,
-    stdin: Option<ChildStdin>,
-}
-
-#[derive(Default)]
-struct SessionStore {
-    counter: AtomicU64,
-    sessions: Mutex<HashMap<String, SessionProcess>>,
 }
 
 #[derive(Default)]
@@ -199,17 +179,12 @@ struct ChatToolCallResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ChatTurnScriptLine {
+struct ChatRuntimeBridgeLine {
     #[serde(rename = "type")]
     line_type: String,
+    request_id: Option<String>,
+    response: Option<Value>,
     result: Option<ChatTurnResult>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ChatStreamBridgeLine {
-    #[serde(rename = "type")]
-    line_type: String,
     session_id: Option<String>,
     chunk: Option<String>,
     tool_call_id: Option<String>,
@@ -223,8 +198,11 @@ struct ChatStreamBridgeLine {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ChatCreateSessionResponse {
-    session_id: String,
+struct ChatRuntimeBridgeCommandEnvelope {
+    #[serde(rename = "type")]
+    message_type: String,
+    request_id: String,
+    command: Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -441,13 +419,15 @@ struct UserInstructionListsResponse {
 #[derive(Default)]
 struct ChatSessionStore {
     sessions: Mutex<HashMap<String, ChatRuntimeSession>>,
-    stream_bridge: Mutex<Option<ChatStreamBridge>>,
+    runtime_bridge: Mutex<Option<ChatRuntimeBridge>>,
     stream_subscriptions: Mutex<HashSet<String>>,
 }
 
-struct ChatStreamBridge {
+struct ChatRuntimeBridge {
     child: Child,
     stdin: ChildStdin,
+    next_request_id: u64,
+    pending: Arc<Mutex<HashMap<String, std::sync::mpsc::Sender<Result<Value, String>>>>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -696,66 +676,6 @@ fn run_checkout_git_branch(cwd: &str, branch: &str) -> Result<(), String> {
     } else {
         Err(stderr)
     }
-}
-
-fn send_abort_signal(child: &mut Child) -> Result<(), String> {
-    #[cfg(unix)]
-    {
-        let pid = child.id() as i32;
-        let rc = unsafe { libc::kill(pid, libc::SIGINT) };
-        if rc == 0 {
-            return Ok(());
-        }
-        return Err(format!(
-            "failed to send SIGINT: {}",
-            std::io::Error::last_os_error()
-        ));
-    }
-
-    #[cfg(not(unix))]
-    {
-        child
-            .kill()
-            .map_err(|e| format!("failed to abort process: {e}"))?;
-        Ok(())
-    }
-}
-
-fn send_terminate_signal(child: &mut Child) -> Result<(), String> {
-    #[cfg(unix)]
-    {
-        let pid = child.id() as i32;
-        let rc = unsafe { libc::kill(pid, libc::SIGTERM) };
-        if rc == 0 {
-            return Ok(());
-        }
-        return Err(format!(
-            "failed to send SIGTERM: {}",
-            std::io::Error::last_os_error()
-        ));
-    }
-
-    #[cfg(not(unix))]
-    {
-        child
-            .kill()
-            .map_err(|e| format!("failed to terminate process: {e}"))?;
-        Ok(())
-    }
-}
-
-fn wait_for_exit(child: &mut Child, attempts: usize, sleep_ms: u64) -> Result<bool, String> {
-    for _ in 0..attempts {
-        if child
-            .try_wait()
-            .map_err(|e| format!("failed checking session status: {e}"))?
-            .is_some()
-        {
-            return Ok(true);
-        }
-        thread::sleep(std::time::Duration::from_millis(sleep_ms));
-    }
-    Ok(false)
 }
 
 fn now_ms() -> u64 {
@@ -2006,208 +1926,47 @@ fn open_path_with_default_app(path: &Path) -> Result<(), String> {
     Err("opening files is not supported on this platform".to_string())
 }
 
-fn resolve_chat_turn_script_path(context: &AppContext) -> Option<PathBuf> {
+fn resolve_chat_runtime_bridge_script_path(context: &AppContext) -> Option<PathBuf> {
     let candidates = [
         PathBuf::from(&context.workspace_root)
             .join("apps")
             .join("code")
             .join("scripts")
-            .join("chat-agent-turn.ts"),
+            .join("chat-runtime-bridge.ts"),
         PathBuf::from(&context.workspace_root)
             .join("packages")
             .join("app")
             .join("scripts")
-            .join("chat-agent-turn.ts"),
+            .join("chat-runtime-bridge.ts"),
         PathBuf::from(&context.workspace_root)
             .join("app")
             .join("scripts")
-            .join("chat-agent-turn.ts"),
+            .join("chat-runtime-bridge.ts"),
         PathBuf::from(&context.launch_cwd)
             .join("app")
             .join("scripts")
-            .join("chat-agent-turn.ts"),
+            .join("chat-runtime-bridge.ts"),
         PathBuf::from(&context.launch_cwd)
             .join("..")
             .join("scripts")
-            .join("chat-agent-turn.ts"),
+            .join("chat-runtime-bridge.ts"),
         PathBuf::from(&context.launch_cwd)
             .join("scripts")
-            .join("chat-agent-turn.ts"),
+            .join("chat-runtime-bridge.ts"),
     ];
     candidates.into_iter().find(|path| path.exists())
 }
 
-fn resolve_chat_stream_events_script_path(context: &AppContext) -> Option<PathBuf> {
-    let candidates = [
-        PathBuf::from(&context.workspace_root)
-            .join("apps")
-            .join("code")
-            .join("scripts")
-            .join("chat-stream-events.ts"),
-        PathBuf::from(&context.workspace_root)
-            .join("packages")
-            .join("app")
-            .join("scripts")
-            .join("chat-stream-events.ts"),
-        PathBuf::from(&context.workspace_root)
-            .join("app")
-            .join("scripts")
-            .join("chat-stream-events.ts"),
-        PathBuf::from(&context.launch_cwd)
-            .join("app")
-            .join("scripts")
-            .join("chat-stream-events.ts"),
-        PathBuf::from(&context.launch_cwd)
-            .join("..")
-            .join("scripts")
-            .join("chat-stream-events.ts"),
-        PathBuf::from(&context.launch_cwd)
-            .join("scripts")
-            .join("chat-stream-events.ts"),
-    ];
-    candidates.into_iter().find(|path| path.exists())
-}
-
-fn resolve_chat_create_session_script_path(context: &AppContext) -> Option<PathBuf> {
-    let candidates = [
-        PathBuf::from(&context.workspace_root)
-            .join("apps")
-            .join("code")
-            .join("scripts")
-            .join("chat-create-session.ts"),
-        PathBuf::from(&context.workspace_root)
-            .join("packages")
-            .join("app")
-            .join("scripts")
-            .join("chat-create-session.ts"),
-        PathBuf::from(&context.workspace_root)
-            .join("app")
-            .join("scripts")
-            .join("chat-create-session.ts"),
-        PathBuf::from(&context.launch_cwd)
-            .join("app")
-            .join("scripts")
-            .join("chat-create-session.ts"),
-        PathBuf::from(&context.launch_cwd)
-            .join("..")
-            .join("scripts")
-            .join("chat-create-session.ts"),
-        PathBuf::from(&context.launch_cwd)
-            .join("scripts")
-            .join("chat-create-session.ts"),
-    ];
-    candidates.into_iter().find(|path| path.exists())
-}
-
-fn resolve_chat_abort_session_script_path(context: &AppContext) -> Option<PathBuf> {
-    let candidates = [
-        PathBuf::from(&context.workspace_root)
-            .join("apps")
-            .join("code")
-            .join("scripts")
-            .join("chat-abort-session.ts"),
-        PathBuf::from(&context.workspace_root)
-            .join("packages")
-            .join("app")
-            .join("scripts")
-            .join("chat-abort-session.ts"),
-        PathBuf::from(&context.workspace_root)
-            .join("app")
-            .join("scripts")
-            .join("chat-abort-session.ts"),
-        PathBuf::from(&context.launch_cwd)
-            .join("app")
-            .join("scripts")
-            .join("chat-abort-session.ts"),
-        PathBuf::from(&context.launch_cwd)
-            .join("..")
-            .join("scripts")
-            .join("chat-abort-session.ts"),
-        PathBuf::from(&context.launch_cwd)
-            .join("scripts")
-            .join("chat-abort-session.ts"),
-    ];
-    candidates.into_iter().find(|path| path.exists())
-}
-
-fn create_chat_session_via_rpc_runtime(
-    context: &AppContext,
-    config: &StartSessionRequest,
-) -> Result<String, String> {
-    let Some(script_path) = resolve_chat_create_session_script_path(context) else {
-        return Err(format!(
-            "chat RPC start-session script not found. checked workspace_root={} and launch_cwd={}",
-            context.workspace_root, context.launch_cwd
-        ));
-    };
-
-    let stdin_body = serde_json::to_string(config)
-        .map_err(|e| format!("failed serializing create chat session request: {e}"))?;
-
-    let mut child = Command::new("bun")
-        .arg("run")
-        .arg(script_path.to_string_lossy().to_string())
-        .current_dir(&config.workspace_root)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("failed to start RPC start-session script: {e}"))?;
-
-    if let Some(stdin) = child.stdin.as_mut() {
-        stdin
-            .write_all(stdin_body.as_bytes())
-            .map_err(|e| format!("failed writing create-session stdin: {e}"))?;
-        stdin
-            .flush()
-            .map_err(|e| format!("failed flushing create-session stdin: {e}"))?;
-    }
-    let _ = child.stdin.take();
-
-    let mut stdout = String::new();
-    if let Some(mut handle) = child.stdout.take() {
-        handle
-            .read_to_string(&mut stdout)
-            .map_err(|e| format!("failed reading create-session output: {e}"))?;
-    }
-
-    let mut stderr = String::new();
-    if let Some(mut handle) = child.stderr.take() {
-        handle
-            .read_to_string(&mut stderr)
-            .map_err(|e| format!("failed reading create-session stderr: {e}"))?;
-    }
-
-    let status = child
-        .wait()
-        .map_err(|e| format!("failed waiting for RPC start-session script: {e}"))?;
-    if !status.success() {
-        let stderr_trimmed = stderr.trim();
-        return Err(if stderr_trimmed.is_empty() {
-            format!("RPC start-session script exited with {status}")
-        } else {
-            stderr_trimmed.to_string()
-        });
-    }
-
-    let response = serde_json::from_str::<ChatCreateSessionResponse>(stdout.trim())
-        .map_err(|e| format!("invalid create-session response: {e}"))?;
-    if response.session_id.trim().is_empty() {
-        return Err("create-session response missing session id".to_string());
-    }
-    Ok(response.session_id)
-}
-
-fn ensure_chat_stream_bridge_started(
+fn ensure_chat_runtime_bridge_started(
     app: &AppHandle,
     state: &Arc<ChatSessionStore>,
     context: &AppContext,
 ) -> Result<(), String> {
     {
         let mut bridge_guard = state
-            .stream_bridge
+            .runtime_bridge
             .lock()
-            .map_err(|_| "failed to lock chat stream bridge state")?;
+            .map_err(|_| "failed to lock chat runtime bridge state")?;
         if let Some(existing) = bridge_guard.as_mut() {
             match existing.child.try_wait() {
                 Ok(None) => {
@@ -2220,12 +1979,16 @@ fn ensure_chat_stream_bridge_started(
         }
     }
 
-    let Some(script_path) = resolve_chat_stream_events_script_path(context) else {
+    let Some(script_path) = resolve_chat_runtime_bridge_script_path(context) else {
         return Err(format!(
-            "chat stream bridge script not found. checked workspace_root={} and launch_cwd={}",
+            "chat runtime bridge script not found. checked workspace_root={} and launch_cwd={}",
             context.workspace_root, context.launch_cwd
         ));
     };
+
+    let approval_dir = tool_approval_dir()
+        .unwrap_or_else(|| PathBuf::from(".").join(".cline").join("tool-approvals"));
+    let _ = fs::create_dir_all(&approval_dir);
 
     let mut child = Command::new("bun")
         .arg(script_path.to_string_lossy().to_string())
@@ -2233,23 +1996,33 @@ fn ensure_chat_stream_bridge_started(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .env("CLINE_TOOL_APPROVAL_MODE", "desktop")
+        .env(
+            "CLINE_TOOL_APPROVAL_DIR",
+            approval_dir.to_string_lossy().to_string(),
+        )
         .spawn()
-        .map_err(|e| format!("failed to start chat stream bridge script: {e}"))?;
+        .map_err(|e| format!("failed to start chat runtime bridge script: {e}"))?;
 
     let stdin = child
         .stdin
         .take()
-        .ok_or_else(|| "failed to capture chat stream bridge stdin".to_string())?;
+        .ok_or_else(|| "failed to capture chat runtime bridge stdin".to_string())?;
     let stdout = child
         .stdout
         .take()
-        .ok_or_else(|| "failed to capture chat stream bridge stdout".to_string())?;
+        .ok_or_else(|| "failed to capture chat runtime bridge stdout".to_string())?;
     let stderr = child
         .stderr
         .take()
-        .ok_or_else(|| "failed to capture chat stream bridge stderr".to_string())?;
+        .ok_or_else(|| "failed to capture chat runtime bridge stderr".to_string())?;
 
+    let pending = Arc::new(Mutex::new(HashMap::<
+        String,
+        std::sync::mpsc::Sender<Result<Value, String>>,
+    >::new()));
     let stdout_app = app.clone();
+    let stdout_pending = pending.clone();
     thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
         let mut line = String::new();
@@ -2265,10 +2038,28 @@ fn ensure_chat_stream_bridge_started(
             if trimmed.is_empty() {
                 continue;
             }
-            let Ok(parsed) = serde_json::from_str::<ChatStreamBridgeLine>(trimmed) else {
+            let Ok(parsed) = serde_json::from_str::<ChatRuntimeBridgeLine>(trimmed) else {
                 continue;
             };
             match parsed.line_type.as_str() {
+                "ready" => {}
+                "response" => {
+                    let Some(request_id) = parsed.request_id.as_deref() else {
+                        continue;
+                    };
+                    let pending_sender = stdout_pending
+                        .lock()
+                        .ok()
+                        .and_then(|mut pending_map| pending_map.remove(request_id));
+                    let Some(sender) = pending_sender else {
+                        continue;
+                    };
+                    if let Some(error) = parsed.error {
+                        let _ = sender.send(Err(error));
+                    } else {
+                        let _ = sender.send(Ok(parsed.response.unwrap_or(Value::Null)));
+                    }
+                }
                 "chat_text" => {
                     let Some(session_id) = parsed.session_id.as_deref() else {
                         continue;
@@ -2316,12 +2107,19 @@ fn ensure_chat_stream_bridge_started(
                     if let Some(session_id) = parsed.session_id.as_deref() {
                         let payload = serde_json::json!({
                             "level": "error",
-                            "message": parsed.message.unwrap_or_else(|| "chat stream bridge error".to_string()),
+                            "message": parsed.message.unwrap_or_else(|| "chat runtime bridge error".to_string()),
                         });
                         emit_chunk(&stdout_app, session_id, "chat_core_log", payload.to_string());
+                    } else if let Some(message) = parsed.message {
+                        eprintln!("[chat-runtime-bridge] {message}");
                     }
                 }
                 _ => {}
+            }
+        }
+        if let Ok(mut pending_map) = stdout_pending.lock() {
+            for (_, sender) in pending_map.drain() {
+                let _ = sender.send(Err("chat runtime bridge exited".to_string()));
             }
         }
     });
@@ -2332,16 +2130,113 @@ fn ensure_chat_stream_bridge_started(
         let _ = reader.read_to_string(&mut buf);
         let trimmed = buf.trim();
         if !trimmed.is_empty() {
-            eprintln!("[chat-stream-bridge] {trimmed}");
+            eprintln!("[chat-runtime-bridge] {trimmed}");
         }
     });
 
     let mut bridge_guard = state
-        .stream_bridge
+        .runtime_bridge
         .lock()
-        .map_err(|_| "failed to lock chat stream bridge state")?;
-    *bridge_guard = Some(ChatStreamBridge { child, stdin });
+        .map_err(|_| "failed to lock chat runtime bridge state")?;
+    *bridge_guard = Some(ChatRuntimeBridge {
+        child,
+        stdin,
+        next_request_id: 0,
+        pending,
+    });
     Ok(())
+}
+
+fn run_chat_runtime_bridge_command(
+    app: &AppHandle,
+    state: &Arc<ChatSessionStore>,
+    context: &AppContext,
+    command: Value,
+) -> Result<Value, String> {
+    ensure_chat_runtime_bridge_started(app, state, context)?;
+
+    let (tx, rx) = std::sync::mpsc::channel::<Result<Value, String>>();
+    let request_id = {
+        let mut bridge_guard = state
+            .runtime_bridge
+            .lock()
+            .map_err(|_| "failed to lock chat runtime bridge state")?;
+        let Some(bridge) = bridge_guard.as_mut() else {
+            return Err("chat runtime bridge not available".to_string());
+        };
+        bridge.next_request_id += 1;
+        let request_id = format!("runtime_bridge_req_{}", bridge.next_request_id);
+        bridge
+            .pending
+            .lock()
+            .map_err(|_| "failed to lock chat runtime bridge pending responses")?
+            .insert(request_id.clone(), tx);
+        let envelope = ChatRuntimeBridgeCommandEnvelope {
+            message_type: "request".to_string(),
+            request_id: request_id.clone(),
+            command,
+        };
+        let payload = serde_json::to_string(&envelope)
+            .map_err(|e| format!("failed serializing chat runtime bridge command: {e}"))?;
+        let write_result = bridge.stdin.write_all(payload.as_bytes());
+        let newline_result = bridge.stdin.write_all(b"\n");
+        let flush_result = bridge.stdin.flush();
+        if let Err(error) = write_result.and(newline_result).and(flush_result) {
+            let _ = bridge
+                .pending
+                .lock()
+                .ok()
+                .and_then(|mut pending_map| pending_map.remove(&request_id));
+            return Err(format!("failed writing chat runtime bridge command: {error}"));
+        }
+        request_id
+    };
+
+    match rx.recv() {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(error),
+        Err(_) => {
+            let _ = state
+                .runtime_bridge
+                .lock()
+                .ok()
+                .and_then(|mut guard| guard.as_mut().and_then(|bridge| {
+                    bridge
+                        .pending
+                        .lock()
+                        .ok()
+                        .and_then(|mut pending_map| pending_map.remove(&request_id))
+                }));
+            Err("chat runtime bridge response channel closed".to_string())
+        }
+    }
+}
+
+fn create_chat_session_via_rpc_runtime(
+    app: &AppHandle,
+    state: &Arc<ChatSessionStore>,
+    context: &AppContext,
+    config: &StartSessionRequest,
+) -> Result<String, String> {
+    let response = run_chat_runtime_bridge_command(
+        app,
+        state,
+        context,
+        serde_json::json!({
+            "action": "start",
+            "config": config,
+        }),
+    )?;
+    let session_id = response
+        .get("sessionId")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if session_id.is_empty() {
+        return Err("chat runtime bridge start response missing session id".to_string());
+    }
+    Ok(session_id)
 }
 
 fn sync_chat_stream_subscriptions(
@@ -2358,34 +2253,15 @@ fn sync_chat_stream_subscriptions(
         ids.sort();
         ids
     };
-    if !session_ids.is_empty() {
-        ensure_chat_stream_bridge_started(app, state, context)?;
-    }
-    let line = serde_json::json!({
-        "type": "set_sessions",
-        "sessionIds": session_ids,
-    })
-    .to_string();
-
-    let mut bridge_guard = state
-        .stream_bridge
-        .lock()
-        .map_err(|_| "failed to lock chat stream bridge state")?;
-    let Some(bridge) = bridge_guard.as_mut() else {
-        return Ok(());
-    };
-    bridge
-        .stdin
-        .write_all(line.as_bytes())
-        .map_err(|e| format!("failed writing chat stream bridge control line: {e}"))?;
-    bridge
-        .stdin
-        .write_all(b"\n")
-        .map_err(|e| format!("failed writing chat stream bridge newline: {e}"))?;
-    bridge
-        .stdin
-        .flush()
-        .map_err(|e| format!("failed flushing chat stream bridge control line: {e}"))?;
+    let _ = run_chat_runtime_bridge_command(
+        app,
+        state,
+        context,
+        serde_json::json!({
+            "action": "set_sessions",
+            "sessionIds": session_ids,
+        }),
+    )?;
     Ok(())
 }
 
@@ -2425,161 +2301,63 @@ fn remove_chat_stream_subscription(
 }
 
 fn run_chat_turn_via_rpc_runtime(
-    session_id: &str,
+    app: &AppHandle,
+    state: &Arc<ChatSessionStore>,
     context: &AppContext,
+    session_id: &str,
     request: &ChatRunTurnRequest,
 ) -> Result<ChatTurnResult, String> {
-    let Some(script_path) = resolve_chat_turn_script_path(context) else {
-        return Err(format!(
-            "chat RPC turn script not found. checked workspace_root={} and launch_cwd={}",
-            context.workspace_root, context.launch_cwd
-        ));
-    };
-
-    let stdin_body = serde_json::to_string(request)
-        .map_err(|e| format!("failed serializing chat turn request: {e}"))?;
-
-    let approval_dir = tool_approval_dir()
-        .unwrap_or_else(|| PathBuf::from(".").join(".cline").join("tool-approvals"));
-    let _ = fs::create_dir_all(&approval_dir);
-
-    let mut child = Command::new("bun")
-        .arg(script_path.to_string_lossy().to_string())
-        .current_dir(&request.config.workspace_root)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .env("CLINE_SESSION_ID", session_id)
-        .env("CLINE_TOOL_APPROVAL_MODE", "desktop")
-        .env("CLINE_TOOL_APPROVAL_SESSION_ID", session_id)
-        .env(
-            "CLINE_TOOL_APPROVAL_DIR",
-            approval_dir.to_string_lossy().to_string(),
-        )
-        .spawn()
-        .map_err(|e| format!("failed to start chat RPC turn script: {e}"))?;
-
-    if let Some(stdin) = child.stdin.as_mut() {
-        stdin
-            .write_all(stdin_body.as_bytes())
-            .map_err(|e| format!("failed writing chat RPC turn stdin: {e}"))?;
-        stdin
-            .flush()
-            .map_err(|e| format!("failed flushing chat RPC turn stdin: {e}"))?;
-    }
-    let _ = child.stdin.take();
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "failed to capture chat RPC turn stdout".to_string())?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| "failed to capture chat RPC turn stderr".to_string())?;
-    let stderr_handle = thread::spawn(move || {
-        let mut reader = BufReader::new(stderr);
-        let mut stderr_buf = String::new();
-        let _ = reader.read_to_string(&mut stderr_buf);
-        stderr_buf
-    });
-
-    let mut final_result: Option<ChatTurnResult> = None;
-    let mut stdout_reader = BufReader::new(stdout);
-    let mut line = String::new();
-
-    loop {
-        line.clear();
-        let bytes = stdout_reader
-            .read_line(&mut line)
-            .map_err(|e| format!("failed reading chat RPC turn output: {e}"))?;
-        if bytes == 0 {
-            break;
-        }
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let parsed = serde_json::from_str::<ChatTurnScriptLine>(trimmed);
-        let Ok(stream_line) = parsed else {
-            continue;
-        };
-        if stream_line.line_type == "result" {
-            final_result = stream_line.result;
-        }
-    }
-
-    let status = child
-        .wait()
-        .map_err(|e| format!("failed waiting for chat RPC turn script: {e}"))?;
-    let stderr_output = stderr_handle.join().unwrap_or_default();
-
-    if !status.success() {
-        let stderr = stderr_output.trim().to_string();
-        return Err(if stderr.is_empty() {
-            format!("chat RPC turn script exited with {status}")
-        } else {
-            stderr
-        });
-    }
-
-    final_result.ok_or_else(|| "chat RPC turn returned no result".to_string())
+    let response = run_chat_runtime_bridge_command(
+        app,
+        state,
+        context,
+        serde_json::json!({
+            "action": "send",
+            "sessionId": session_id,
+            "request": request,
+        }),
+    )?;
+    let result_value = response
+        .get("result")
+        .cloned()
+        .ok_or_else(|| "chat runtime bridge send response missing result".to_string())?;
+    serde_json::from_value::<ChatTurnResult>(result_value)
+        .map_err(|e| format!("invalid chat runtime bridge result: {e}"))
 }
 
 fn abort_chat_session_via_rpc_runtime(
+    app: &AppHandle,
+    state: &Arc<ChatSessionStore>,
     context: &AppContext,
     session_id: &str,
 ) -> Result<(), String> {
-    let Some(script_path) = resolve_chat_abort_session_script_path(context) else {
-        return Err(format!(
-            "chat RPC abort script not found. checked workspace_root={} and launch_cwd={}",
-            context.workspace_root, context.launch_cwd
-        ));
-    };
+    let _ = run_chat_runtime_bridge_command(
+        app,
+        state,
+        context,
+        serde_json::json!({
+            "action": "abort",
+            "sessionId": session_id,
+        }),
+    )?;
+    Ok(())
+}
 
-    let stdin_body = serde_json::json!({
-        "sessionId": session_id,
-    })
-    .to_string();
-
-    let mut child = Command::new("bun")
-        .arg("run")
-        .arg(script_path.to_string_lossy().to_string())
-        .current_dir(&context.workspace_root)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("failed to start chat RPC abort script: {e}"))?;
-
-    if let Some(stdin) = child.stdin.as_mut() {
-        stdin
-            .write_all(stdin_body.as_bytes())
-            .map_err(|e| format!("failed writing chat RPC abort stdin: {e}"))?;
-        stdin
-            .flush()
-            .map_err(|e| format!("failed flushing chat RPC abort stdin: {e}"))?;
-    }
-    let _ = child.stdin.take();
-
-    let mut stderr = String::new();
-    if let Some(mut handle) = child.stderr.take() {
-        handle
-            .read_to_string(&mut stderr)
-            .map_err(|e| format!("failed reading chat RPC abort stderr: {e}"))?;
-    }
-
-    let abort_status = child
-        .wait()
-        .map_err(|e| format!("failed waiting for chat RPC abort script: {e}"))?;
-    if !abort_status.success() {
-        let stderr_trimmed = stderr.trim();
-        return Err(if stderr_trimmed.is_empty() {
-            format!("chat RPC abort script exited with {}", abort_status)
-        } else {
-            stderr_trimmed.to_string()
-        });
-    }
+fn reset_chat_session_via_rpc_runtime(
+    app: &AppHandle,
+    state: &Arc<ChatSessionStore>,
+    context: &AppContext,
+    session_id: Option<&str>,
+) -> Result<(), String> {
+    let _ = run_chat_runtime_bridge_command(
+        app,
+        state,
+        context,
+        serde_json::json!({
+            "action": "reset",
+            "sessionId": session_id,
+        }),
+    )?;
     Ok(())
 }
 
@@ -2616,22 +2394,12 @@ fn emit_chunk(app: &AppHandle, session_id: &str, stream: &str, chunk: String) {
     let payload = StreamChunkEvent {
         session_id: session_id.to_string(),
         stream: stream.to_string(),
-        chunk: chunk.clone(),
+        chunk,
         ts,
     };
     if let Some(ws_bridge) = app.try_state::<Arc<ChatWsBridgeState>>() {
-        ws_bridge.broadcast_chunk_event(payload.clone());
+        ws_bridge.broadcast_chunk_event(payload);
     }
-    let _ = app.emit("agent://chunk", payload);
-}
-
-fn emit_session_ended(app: &AppHandle, session_id: &str, reason: String) {
-    let payload = SessionEndedEvent {
-        session_id: session_id.to_string(),
-        reason,
-        ts: now_ms(),
-    };
-    let _ = app.emit("agent://session-ended", payload);
 }
 
 async fn chat_ws_writer_task(
@@ -2806,346 +2574,6 @@ fn team_history_path(team_name: &str) -> Option<PathBuf> {
         return None;
     }
     Some(base.join(safe).join("task-history.jsonl"))
-}
-
-fn spawn_reader<R: Read + Send + 'static>(
-    app: AppHandle,
-    session_id: String,
-    stream: &'static str,
-    mut reader: R,
-) {
-    thread::spawn(move || {
-        let mut buf = [0_u8; 1024];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let chunk = String::from_utf8_lossy(&buf[..n]).to_string();
-                    emit_chunk(&app, &session_id, stream, chunk);
-                }
-                Err(_) => break,
-            }
-        }
-    });
-}
-
-#[tauri::command]
-fn start_session(
-    app: AppHandle,
-    state: State<'_, Arc<SessionStore>>,
-    context: State<'_, AppContext>,
-    request: StartSessionRequest,
-) -> Result<String, String> {
-    let effective_api_key = resolve_api_key(&request.provider, &request.api_key).ok_or_else(|| {
-        format!(
-            "Missing API key for provider '{}'. Provide one in the UI or set the required env var before launching Tauri.",
-            request.provider
-        )
-    })?;
-
-    let id = format!("sess_{}", state.counter.fetch_add(1, Ordering::Relaxed) + 1);
-
-    let Some(cli_entrypoint) = resolve_cli_entrypoint_path(&context) else {
-        return Err(format!(
-            "CLI entrypoint not found. Checked relative to workspace_root={} and launch_cwd={}.",
-            context.workspace_root, context.launch_cwd
-        ));
-    };
-
-    let prompt = request.prompt.clone().unwrap_or_default();
-    let interactive = prompt.trim().is_empty();
-
-    let mut args: Vec<String> = vec![
-        "run".into(),
-        cli_entrypoint.to_string_lossy().to_string(),
-        "-p".into(),
-        request.provider.clone(),
-        "-m".into(),
-        request.model.clone(),
-        "--mode".into(),
-        if request.mode.trim().eq_ignore_ascii_case("plan") {
-            "plan".into()
-        } else {
-            "act".into()
-        },
-        "--mission-step-interval".into(),
-        request.mission_step_interval.to_string(),
-        "--mission-time-interval-ms".into(),
-        request.mission_time_interval_ms.to_string(),
-    ];
-
-    if interactive {
-        args.push("-i".into());
-    }
-
-    let auto_approve_tools = request.auto_approve_tools.unwrap_or(true);
-    if request.enable_tools {
-        args.push("--tools".into());
-        if !auto_approve_tools {
-            args.push("--require-tool-approval".into());
-        }
-    }
-    if request.enable_spawn {
-        args.push("--spawn".into());
-    }
-    if request.enable_teams {
-        args.push("--teams".into());
-        args.push("--team-name".into());
-        args.push(request.team_name.clone());
-    }
-    if let Some(cwd) = &request.cwd {
-        if !cwd.trim().is_empty() {
-            args.push("--cwd".into());
-            args.push(cwd.clone());
-        }
-    }
-    if let Some(system_prompt) = &request.system_prompt {
-        if !system_prompt.trim().is_empty() {
-            args.push("-s".into());
-            args.push(system_prompt.clone());
-        }
-    }
-    if !request.enable_teams {
-        if let Some(max_iterations) = request.max_iterations {
-            args.push("-n".into());
-            args.push(max_iterations.to_string());
-        }
-    }
-    if !interactive {
-        args.push(prompt);
-    }
-
-    let hook_log_path = session_hook_log_path(&id).unwrap_or_else(|| PathBuf::from("."));
-    if let Some(parent) = hook_log_path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    let approval_dir = tool_approval_dir()
-        .unwrap_or_else(|| PathBuf::from(".").join(".cline").join("tool-approvals"));
-    let _ = fs::create_dir_all(&approval_dir);
-
-    let mut command = Command::new("bun");
-    command
-        .current_dir(&request.workspace_root)
-        .args(args)
-        .stdin(if interactive {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .env("NO_COLOR", "1")
-        .env("FORCE_COLOR", "0")
-        .env("CLINE_ENABLE_SUBPROCESS_HOOKS", "1")
-        .env("CLINE_SESSION_ID", id.clone())
-        .env("CLINE_TOOL_APPROVAL_MODE", "desktop")
-        .env("CLINE_TOOL_APPROVAL_SESSION_ID", id.clone())
-        .env(
-            "CLINE_TOOL_APPROVAL_DIR",
-            approval_dir.to_string_lossy().to_string(),
-        )
-        .env(
-            "CLINE_HOOKS_LOG_PATH",
-            hook_log_path.to_string_lossy().to_string(),
-        )
-        .env(
-            "CLINE_SESSION_DATA_DIR",
-            shared_session_data_dir()
-                .unwrap_or_else(|| {
-                    PathBuf::from(".")
-                        .join(".cline")
-                        .join("data")
-                        .join("sessions")
-                })
-                .to_string_lossy()
-                .to_string(),
-        )
-        .env(
-            "CLINE_TEAM_DATA_DIR",
-            std::env::var("CLINE_TEAM_DATA_DIR").unwrap_or_else(|_| {
-                team_base_dir()
-                    .unwrap_or_else(|| PathBuf::from(".").join(".cline").join("data").join("teams"))
-                    .to_string_lossy()
-                    .to_string()
-            }),
-        )
-        .env("ANTHROPIC_API_KEY", &effective_api_key)
-        .env("OPENAI_API_KEY", &effective_api_key);
-
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("failed to start session process: {e}"))?;
-
-    let stdin = child.stdin.take();
-    let stdout = child.stdout.take().ok_or("failed to capture stdout")?;
-    let stderr = child.stderr.take().ok_or("failed to capture stderr")?;
-
-    spawn_reader(app.clone(), id.clone(), "stdout", stdout);
-    spawn_reader(app, id.clone(), "stderr", stderr);
-
-    let mut sessions = state
-        .sessions
-        .lock()
-        .map_err(|_| "failed to lock session store")?;
-    sessions.insert(id.clone(), SessionProcess { child, stdin });
-
-    Ok(id)
-}
-
-#[tauri::command]
-fn send_prompt(
-    app: AppHandle,
-    state: State<'_, Arc<SessionStore>>,
-    session_id: String,
-    prompt: String,
-) -> Result<(), String> {
-    let mut sessions = state
-        .sessions
-        .lock()
-        .map_err(|_| "failed to lock session store")?;
-
-    let mut should_remove = false;
-    let mut ended_reason: Option<String> = None;
-    {
-        let session = sessions
-            .get_mut(&session_id)
-            .ok_or_else(|| format!("session not found: {session_id}"))?;
-
-        if let Some(status) = session
-            .child
-            .try_wait()
-            .map_err(|e| format!("failed checking session status: {e}"))?
-        {
-            should_remove = true;
-            ended_reason = Some(format!("session process exited ({status})"));
-        } else {
-            let Some(stdin) = session.stdin.as_mut() else {
-                return Err("session is not interactive".to_string());
-            };
-            let write_result = stdin.write_all(format!("{prompt}\n").as_bytes());
-            let flush_result = stdin.flush();
-
-            if let Err(e) = write_result.or(flush_result) {
-                should_remove = true;
-                ended_reason = Some(format!("failed writing prompt: {e}"));
-            }
-        }
-    }
-
-    if should_remove {
-        sessions.remove(&session_id);
-        let reason = ended_reason.unwrap_or_else(|| "session ended".to_string());
-        emit_session_ended(&app, &session_id, reason.clone());
-        return Err(format!(
-            "{reason}. The agent session is no longer running. Start a new session."
-        ));
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
-fn stop_session(
-    app: AppHandle,
-    state: State<'_, Arc<SessionStore>>,
-    session_id: String,
-) -> Result<(), String> {
-    let mut sessions = state
-        .sessions
-        .lock()
-        .map_err(|_| "failed to lock session store")?;
-
-    if let Some(mut session) = sessions.remove(&session_id) {
-        if let Some(stdin) = session.stdin.as_mut() {
-            let _ = stdin.write_all(&[3]);
-            let _ = stdin.flush();
-        }
-        let _ = session.child.kill();
-        let _ = session.child.wait();
-        emit_session_ended(&app, &session_id, "session stopped".to_string());
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
-fn abort_session(
-    app: AppHandle,
-    state: State<'_, Arc<SessionStore>>,
-    session_id: String,
-) -> Result<(), String> {
-    let mut sessions = state
-        .sessions
-        .lock()
-        .map_err(|_| "failed to lock session store")?;
-
-    let mut session = sessions
-        .remove(&session_id)
-        .ok_or_else(|| format!("session not found: {session_id}"))?;
-
-    if let Some(stdin) = session.stdin.as_mut() {
-        let _ = stdin.write_all(&[3]);
-        let _ = stdin.flush();
-    }
-
-    let _ = send_abort_signal(&mut session.child);
-    let exited_after_int = wait_for_exit(&mut session.child, 8, 75)?;
-    if !exited_after_int {
-        let _ = send_terminate_signal(&mut session.child);
-    }
-    let exited_after_term = if exited_after_int {
-        true
-    } else {
-        wait_for_exit(&mut session.child, 8, 75)?
-    };
-    if !exited_after_term {
-        let _ = session.child.kill();
-        let _ = session.child.wait();
-    }
-
-    emit_session_ended(&app, &session_id, "session cancelled".to_string());
-    Ok(())
-}
-
-#[tauri::command]
-fn poll_sessions(
-    app: AppHandle,
-    state: State<'_, Arc<SessionStore>>,
-) -> Result<Vec<String>, String> {
-    let mut sessions = state
-        .sessions
-        .lock()
-        .map_err(|_| "failed to lock session store")?;
-
-    let ids: Vec<String> = sessions.keys().cloned().collect();
-    let mut ended: Vec<(String, String)> = Vec::new();
-
-    for session_id in ids {
-        if let Some(session) = sessions.get_mut(&session_id) {
-            if let Some(status) = session
-                .child
-                .try_wait()
-                .map_err(|e| format!("failed checking session status: {e}"))?
-            {
-                let reason = if status.success() {
-                    "session completed".to_string()
-                } else {
-                    format!("session exited ({status})")
-                };
-                ended.push((session_id.clone(), reason));
-            }
-        }
-    }
-
-    for (session_id, reason) in &ended {
-        sessions.remove(session_id);
-        emit_session_ended(&app, session_id, reason.clone());
-    }
-
-    Ok(ended
-        .into_iter()
-        .map(|(session_id, _)| session_id)
-        .collect())
 }
 
 #[tauri::command]
@@ -3336,6 +2764,53 @@ fn save_provider_settings(
             "enabled": enabled,
             "apiKey": api_key,
             "baseUrl": base_url
+        })
+        .to_string(),
+        "provider settings",
+    )
+}
+
+#[tauri::command]
+fn add_provider(
+    context: State<'_, AppContext>,
+    provider_id: String,
+    name: String,
+    base_url: String,
+    api_key: Option<String>,
+    headers: Option<Value>,
+    timeout_ms: Option<u64>,
+    models: Option<Vec<String>>,
+    default_model_id: Option<String>,
+    models_source_url: Option<String>,
+    capabilities: Option<Vec<String>>,
+) -> Result<Value, String> {
+    let Some(script_path) = resolve_provider_settings_script_path(&context) else {
+        return Err(format!(
+            "provider settings script not found. checked workspace_root={} and launch_cwd={}",
+            context.workspace_root, context.launch_cwd
+        ));
+    };
+    let script_workdir = script_path
+        .parent()
+        .and_then(|parent| parent.parent())
+        .map(|value| value.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from(&context.launch_cwd));
+
+    run_bun_script_json(
+        &script_path,
+        &script_workdir,
+        serde_json::json!({
+            "action": "addProvider",
+            "providerId": provider_id,
+            "name": name,
+            "baseUrl": base_url,
+            "apiKey": api_key,
+            "headers": headers,
+            "timeoutMs": timeout_ms,
+            "models": models,
+            "defaultModelId": default_model_id,
+            "modelsSourceUrl": models_source_url,
+            "capabilities": capabilities
         })
         .to_string(),
         "provider settings",
@@ -3702,7 +3177,7 @@ async fn handle_chat_session_command(
             };
             resolve_chat_config_api_key(&mut config)?;
             ensure_start_session_home_dir(&mut config);
-            let session_id = create_chat_session_via_rpc_runtime(context, &config)?;
+            let session_id = create_chat_session_via_rpc_runtime(app, state, context, &config)?;
             ensure_chat_stream_subscription(app, state, context, &session_id)?;
             let mut sessions = state
                 .sessions
@@ -3800,6 +3275,8 @@ async fn handle_chat_session_command(
             };
 
             let session_id_for_turn = session_id.clone();
+            let app_for_turn = app.clone();
+            let state_for_turn = state.clone();
             let context_for_turn = context.clone();
             ensure_chat_stream_subscription(
                 app,
@@ -3816,8 +3293,10 @@ async fn handle_chat_session_command(
 
             let turn_result = tauri::async_runtime::spawn_blocking(move || {
                 run_chat_turn_via_rpc_runtime(
-                    &session_id_for_turn,
+                    &app_for_turn,
+                    &state_for_turn,
                     &context_for_turn,
+                    &session_id_for_turn,
                     &turn_request,
                 )
             })
@@ -3864,7 +3343,7 @@ async fn handle_chat_session_command(
         "abort" => Ok(ChatSessionCommandResponse {
             session_id: {
                 if let Some(session_id) = request.session_id.clone() {
-                    abort_chat_session_via_rpc_runtime(context, &session_id)?;
+                    abort_chat_session_via_rpc_runtime(app, state, context, &session_id)?;
                     let mut sessions = state
                         .sessions
                         .lock()
@@ -3887,6 +3366,12 @@ async fn handle_chat_session_command(
                     .lock()
                     .map_err(|_| "failed to lock chat session store")?;
                 sessions.remove(&session_id);
+                let _ = reset_chat_session_via_rpc_runtime(
+                    app,
+                    state,
+                    context,
+                    Some(session_id.as_str()),
+                );
                 let _ = remove_chat_stream_subscription(app, state, context, &session_id);
             }
             Ok(ChatSessionCommandResponse {
@@ -3897,16 +3382,6 @@ async fn handle_chat_session_command(
         }
         _ => Err("unsupported action".to_string()),
     }
-}
-
-#[tauri::command]
-async fn chat_session_command(
-    app: AppHandle,
-    state: State<'_, Arc<ChatSessionStore>>,
-    context: State<'_, AppContext>,
-    request: ChatSessionCommandRequest,
-) -> Result<ChatSessionCommandResponse, String> {
-    handle_chat_session_command(&app, state.inner(), context.inner(), request).await
 }
 
 #[tauri::command]
@@ -4631,7 +4106,6 @@ fn open_mcp_settings_file() -> Result<String, String> {
 }
 
 fn main() {
-    let store = Arc::new(SessionStore::default());
     let chat_store = Arc::new(ChatSessionStore::default());
     let chat_ws_bridge = Arc::new(ChatWsBridgeState::default());
     let launch_cwd = std::env::current_dir()
@@ -4647,7 +4121,6 @@ fn main() {
     }
 
     tauri::Builder::default()
-        .manage(store)
         .manage(chat_store)
         .manage(chat_ws_bridge)
         .manage(app_context)
@@ -4666,16 +4139,12 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            start_session,
-            send_prompt,
-            abort_session,
-            stop_session,
-            poll_sessions,
             list_cli_sessions,
             run_provider_oauth_login,
             list_provider_catalog,
             list_provider_models,
             save_provider_settings,
+            add_provider,
             search_workspace_files,
             delete_cli_session,
             read_session_hooks,
@@ -4693,7 +4162,6 @@ fn main() {
             delete_mcp_server,
             open_mcp_settings_file,
             get_chat_ws_endpoint,
-            chat_session_command,
             read_session_transcript,
             read_session_messages,
             list_chat_sessions,

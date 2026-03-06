@@ -61,6 +61,7 @@ This keeps provider default derivation and protocol filtering in one place.
 - Provider settings `headers` must be a string-to-string map (`Record<string, string>`).
 - Provider settings OAuth auth schema includes `auth.expiresAt` (epoch ms) for runtime token refresh orchestration in `@cline/core`.
 - Stream chunks are modeled as discriminated unions (`ApiStreamChunk`); tests should narrow by `type` instead of casting to generic records.
+- OpenAI-compatible tool schemas default to strict mode; `openrouter` requests disable tool strictness for broader routed-model compatibility.
 
 ## Legacy Provider Migration Status
 

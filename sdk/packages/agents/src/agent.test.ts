@@ -377,6 +377,10 @@ describe("Agent", () => {
 		const onRuntimeEvent = vi.fn().mockResolvedValue(undefined);
 		const extension: AgentExtension = {
 			name: "runtime-ext",
+			manifest: {
+				capabilities: ["hooks"],
+				hookStages: ["runtime_event"],
+			},
 			onRuntimeEvent,
 		};
 
@@ -394,6 +398,78 @@ describe("Agent", () => {
 		expect(
 			onRuntimeEvent.mock.calls.some((args) => args[0]?.event?.type === "done"),
 		).toBe(true);
+	});
+
+	it("registers extension contributions through ContributionRegistry setup", async () => {
+		const { Agent } = await import("./agent.js");
+		const handler = makeHandler([
+			[
+				{ type: "text", id: "r1", text: "ok" },
+				{ type: "usage", id: "r1", inputTokens: 1, outputTokens: 1 },
+				{ type: "done", id: "r1", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const extensionTool = createTool({
+			name: "ext_echo",
+			description: "Echo back text",
+			inputSchema: {
+				type: "object",
+				properties: { value: { type: "string" } },
+				required: ["value"],
+			},
+			execute: async ({ value }: { value: string }) => ({ value }),
+		}) as Tool;
+		const extension: AgentExtension = {
+			name: "contrib-ext",
+			manifest: {
+				capabilities: ["tools", "commands"],
+			},
+			setup: (api) => {
+				api.registerTool(extensionTool);
+				api.registerCommand({ name: "ext:hello", description: "hello cmd" });
+			},
+		};
+
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "contrib events",
+			tools: [],
+			extensions: [extension],
+		});
+
+		await agent.run("trigger");
+		const registry = agent.getExtensionRegistry();
+		expect(registry.tools.map((tool) => tool.name)).toContain("ext_echo");
+		expect(registry.commands.map((command) => command.name)).toContain(
+			"ext:hello",
+		);
+	});
+
+	it("validates extension manifest hook stage declarations", async () => {
+		const { Agent } = await import("./agent.js");
+
+		const invalidExtension: AgentExtension = {
+			name: "invalid-ext",
+			manifest: {
+				capabilities: ["hooks"],
+				hookStages: ["runtime_event"],
+			},
+			onInput: () => undefined,
+		};
+
+		expect(
+			() =>
+				new Agent({
+					providerId: "anthropic",
+					modelId: "mock-model",
+					systemPrompt: "invalid",
+					tools: [],
+					extensions: [invalidExtension],
+				}),
+		).toThrow(/declared but handler "onRuntimeEvent" is missing/i);
 	});
 
 	it("adds image blocks to initial user content when provided", async () => {

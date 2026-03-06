@@ -178,7 +178,11 @@ describe("format conversion", () => {
 
 		expect(convertToolsToOpenAI(tools)[0]).toMatchObject({
 			type: "function",
-			function: { name: "read_file" },
+			function: { name: "read_file", strict: true },
+		});
+		expect(convertToolsToOpenAI(tools, { strict: false })[0]).toMatchObject({
+			type: "function",
+			function: { name: "read_file", strict: false },
 		});
 		expect(convertToolsToAnthropic(tools)[0]).toMatchObject({
 			name: "read_file",

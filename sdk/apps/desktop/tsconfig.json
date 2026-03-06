@@ -19,7 +19,9 @@
 			}
 		],
 		"paths": {
-			"@/*": ["./*"]
+			"@/*": ["./*"],
+			"@cline/rpc": ["../../packages/rpc/src/index.ts"],
+			"@cline/rpc/*": ["../../packages/rpc/src/*"]
 		}
 	},
 	"include": [

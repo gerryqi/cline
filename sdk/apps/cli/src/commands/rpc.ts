@@ -105,6 +105,7 @@ async function hasRuntimeMethods(address: string): Promise<boolean> {
 			return false;
 		}
 		try {
+			await client.stopRuntimeSession(started.sessionId);
 			await client.deleteSession(started.sessionId, true);
 		} catch {
 			// best effort cleanup

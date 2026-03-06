@@ -7,18 +7,14 @@
 		"clite": "dist/index.js"
 	},
 	"main": "dist/index.js",
-	"types": "dist/index.d.ts",
 	"exports": {
-		".": {
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js"
-		}
+		".": "./dist/index.js"
 	},
 	"files": [
 		"dist"
 	],
 	"scripts": {
-		"build": "bun run bun.mts && bun tsc --emitDeclarationOnly --declarationMap false",
+		"build": "rm -rf dist && bun run bun.mts",
 		"build:binary": "bun build ./src/index.ts --compile --outfile ./dist/clite --external @anthropic-ai/vertex-sdk",
 		"dev": "bun ./src/index.ts",
 		"clean": "rm -rf dist node_modules",
@@ -35,6 +31,7 @@
 		"@cline/core": "workspace:*",
 		"@cline/llms": "workspace:*",
 		"@cline/rpc": "workspace:*",
+		"@cline/shared": "workspace:*",
 		"better-sqlite3": "^11.10.0",
 		"nanoid": "^5.1.6",
 		"open": "^10.2.0"

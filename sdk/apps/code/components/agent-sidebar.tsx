@@ -1,8 +1,14 @@
 "use client";
 
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { ChevronDown, Filter, Plus, Search, Settings } from "lucide-react";
+import {
+	ChevronDown,
+	Filter,
+	Loader2,
+	Plus,
+	Search,
+	Settings,
+} from "lucide-react";
 import {
 	type ReactNode,
 	useCallback,
@@ -329,6 +335,8 @@ export function AgentSidebar({
 	const [searchQuery, setSearchQuery] = useState("");
 	const [showMoreCount, setShowMoreCount] = useState(10);
 	const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+	const [isLoadingMore, setIsLoadingMore] = useState(false);
+	const fetchLimitRef = useRef(10);
 	const usageLoadingRef = useRef<Set<string>>(new Set());
 	const usageHydratedStatusRef = useRef<Map<string, SessionHistoryStatus>>(
 		new Map(),
@@ -344,14 +352,15 @@ export function AgentSidebar({
 	}, [threads]);
 
 	const refreshSessions = useCallback(async () => {
+		const limit = fetchLimitRef.current;
 		setIsLoadingHistory(true);
 		try {
 			const [cliDiscovered, chatDiscovered] = await Promise.all([
 				invoke<CliDiscoveredSession[]>("list_cli_sessions", {
-					limit: 300,
+					limit,
 				}).catch(() => []),
 				invoke<CliDiscoveredSession[]>("list_chat_sessions", {
-					limit: 300,
+					limit,
 				}).catch(() => []),
 			]);
 			const discovered = [...chatDiscovered, ...cliDiscovered];
@@ -419,7 +428,6 @@ export function AgentSidebar({
 
 	useEffect(() => {
 		let disposed = false;
-		let unlistenEnded: UnlistenFn | undefined;
 
 		const runRefresh = () => {
 			if (!disposed) {
@@ -432,28 +440,12 @@ export function AgentSidebar({
 			if (document.hidden) {
 				return;
 			}
-			void invoke("poll_sessions").catch(() => {
-				// Ignore when tauri command is unavailable.
-			});
 			runRefresh();
 		}, 12000);
-
-		void listen<{ sessionId: string }>("agent://session-ended", () => {
-			runRefresh();
-		}).then((unlisten) => {
-			if (disposed) {
-				unlisten();
-			} else {
-				unlistenEnded = unlisten;
-			}
-		});
 
 		return () => {
 			disposed = true;
 			window.clearInterval(interval);
-			if (unlistenEnded) {
-				unlistenEnded();
-			}
 		};
 	}, [refreshSessions]);
 
@@ -631,6 +623,12 @@ export function AgentSidebar({
 	);
 	const displayedThreads =
 		filter === "All" ? null : filteredThreads.slice(0, showMoreCount);
+	// Show "Show more" if there are more to display locally, or if the backend
+	// might have more (total fetched sessions reached the fetch limit).
+	const mayHaveMoreSessions = sessions.length >= fetchLimitRef.current;
+	const showShowMore =
+		recentThreads.length + filteredThreads.length > showMoreCount ||
+		mayHaveMoreSessions;
 	const filterMenu = (
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>
@@ -797,14 +795,34 @@ export function AgentSidebar({
 								))}
 							</ThreadSection>
 						)}
-						{recentThreads.length + filteredThreads.length > showMoreCount && (
+						{showShowMore && (
 							<Button
-								onClick={() => setShowMoreCount((c) => c + 10)}
+								disabled={isLoadingMore}
+								onClick={() => {
+									const nextCount = showMoreCount + 10;
+									setShowMoreCount(nextCount);
+									if (fetchLimitRef.current < nextCount) {
+										fetchLimitRef.current = nextCount;
+										setIsLoadingMore(true);
+										void refreshSessions().finally(() =>
+											setIsLoadingMore(false),
+										);
+									}
+								}}
 								type="button"
 								variant="sidebarText"
 							>
-								Show more
-								<ChevronDown className="size-3" />
+								{isLoadingMore ? (
+									<>
+										<Loader2 className="size-3 animate-spin" />
+										Loading...
+									</>
+								) : (
+									<>
+										Show more
+										<ChevronDown className="size-3" />
+									</>
+								)}
 							</Button>
 						)}
 					</div>

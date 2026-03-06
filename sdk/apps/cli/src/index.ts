@@ -277,8 +277,18 @@ async function runAgent(
 			writeln(`\n${c.dim}[abort] requested${c.reset}`);
 		}
 	};
+	const handleSigterm = () => {
+		if (abortAll() && config.outputMode === "json") {
+			emitJsonLine("stdout", {
+				type: "run_abort_requested",
+				reason: "sigterm",
+			});
+		}
+	};
 	process.on("SIGINT", handleSigint);
+	process.on("SIGTERM", handleSigterm);
 
+	let runFailed = false;
 	try {
 		printModelProviderInfo(config);
 		const userInput = await buildUserInputMessage(
@@ -374,22 +384,31 @@ async function runAgent(
 			);
 		}
 	} catch (err) {
+		runFailed = true;
 		if (config.outputMode === "text") {
 			writeln();
 		}
 		if (!errorAlreadyReported) {
 			writeErr(err instanceof Error ? err.message : String(err));
 		}
-		process.exit(1);
+		process.exitCode = 1;
 	} finally {
 		process.off("SIGINT", handleSigint);
+		process.off("SIGTERM", handleSigterm);
 		unsubscribe();
-		if (activeSessionId) {
-			await sessionManager.stop(activeSessionId);
+		try {
+			if (activeSessionId) {
+				await sessionManager.stop(activeSessionId);
+			}
+		} finally {
+			await sessionManager.dispose("cli_run_shutdown");
 		}
 		if (activeRuntimeAbort === abortAll) {
 			setActiveRuntimeAbort(undefined);
 		}
+	}
+	if (runFailed) {
+		return;
 	}
 }
 
@@ -554,8 +573,21 @@ async function runInteractive(
 		writeln(`\n${c.dim}[abort] no active run${c.reset}`);
 		rl.prompt();
 	};
+	const handleSigterm = () => {
+		if (isRunning) {
+			if (abortAll() && config.outputMode === "json") {
+				emitJsonLine("stdout", {
+					type: "run_abort_requested",
+					reason: "sigterm",
+				});
+			}
+			return;
+		}
+		rl.close();
+	};
 
 	process.on("SIGINT", handleSigint);
+	process.on("SIGTERM", handleSigterm);
 
 	rl.prompt();
 
@@ -629,14 +661,21 @@ async function runInteractive(
 	});
 
 	rl.on("close", () => {
-		process.off("SIGINT", handleSigint);
-		void sessionManager.stop(activeSessionId);
-		unsubscribe();
-		if (activeRuntimeAbort === abortAll) {
-			setActiveRuntimeAbort(undefined);
-		}
-		writeln();
-		process.exit(0);
+		void (async () => {
+			process.off("SIGINT", handleSigint);
+			process.off("SIGTERM", handleSigterm);
+			unsubscribe();
+			try {
+				await sessionManager.stop(activeSessionId);
+			} finally {
+				await sessionManager.dispose("cli_interactive_shutdown");
+			}
+			if (activeRuntimeAbort === abortAll) {
+				setActiveRuntimeAbort(undefined);
+			}
+			writeln();
+			process.exit(0);
+		})();
 	});
 }
 
@@ -909,12 +948,12 @@ async function main(): Promise<void> {
 
 	if (args.showHelp) {
 		showHelp();
-		return;
+		process.exit(0);
 	}
 
 	if (args.showVersion) {
 		showVersion();
-		return;
+		process.exit(0);
 	}
 
 	const userInstructionWatcher = createUserInstructionConfigWatcher({

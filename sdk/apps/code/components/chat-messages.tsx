@@ -18,10 +18,12 @@ import type { ChatMessage, ChatSessionStatus } from "@/lib/chat-schema";
 import { cn } from "@/lib/utils";
 import { MemoizedMarkdown } from "./ui/markdown";
 import { normalizeTitle } from "./utils";
+import { WelcomeScreen } from "./views/chat/welcome-chat";
 
 type ChatMessagesProps = {
 	sessionId: string | null;
 	status: ChatSessionStatus;
+	chatTransportState?: "connecting" | "reconnecting" | "connected";
 	isSessionSwitching?: boolean;
 	provider: string;
 	model: string;
@@ -31,6 +33,7 @@ type ChatMessagesProps = {
 	pendingToolApprovals: ToolApprovalRequestItem[];
 	onApproveToolApproval: (requestId: string) => void;
 	onRejectToolApproval: (requestId: string) => void;
+	onStartChat?: (prompt: string) => void;
 };
 
 type ToolApprovalRequestItem = {
@@ -50,6 +53,7 @@ const IS_DEBUG = process.env.NODE_ENV === "test";
 function ChatMessagesImpl({
 	sessionId,
 	status,
+	chatTransportState = "connecting",
 	isSessionSwitching = false,
 	provider,
 	model,
@@ -59,6 +63,7 @@ function ChatMessagesImpl({
 	pendingToolApprovals,
 	onApproveToolApproval,
 	onRejectToolApproval,
+	onStartChat,
 }: ChatMessagesProps) {
 	const scrollAreaRef = useRef<HTMLDivElement | null>(null);
 	const hasAppliedInitialScrollRef = useRef(false);
@@ -150,13 +155,11 @@ function ChatMessagesImpl({
 			<ScrollArea className="h-full min-h-0 min-w-0" ref={scrollAreaRef}>
 				<div className="relative mx-auto w-full px-6 py-6">
 					{showIdleDetails ? (
-						<div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
-							<div>
-								{provider} / {model}
-							</div>
-							<div className="mt-1">Session: {sessionId ?? "not started"}</div>
-							<div className="mt-1">Status: {status}</div>
-						</div>
+						<WelcomeScreen
+							provider={provider}
+							model={model}
+							onStartChat={onStartChat ?? (() => {})}
+						/>
 					) : (
 						<div className="flex flex-col gap-2 w-full h-full">
 							{pendingToolApprovals.length > 0 ? (
@@ -243,6 +246,14 @@ function ChatMessagesImpl({
 						<div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
 							<Loader2 className="h-4 w-4 animate-spin" />
 							Thinking...
+						</div>
+					) : null}
+					{chatTransportState !== "connected" && !shouldShowErrorBanner ? (
+						<div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+							<Loader2 className="h-3.5 w-3.5 animate-spin" />
+							{chatTransportState === "reconnecting"
+								? "Reconnecting chat..."
+								: "Connecting chat..."}
 						</div>
 					) : null}
 					{shouldShowErrorBanner ? (

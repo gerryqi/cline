@@ -201,6 +201,21 @@ export type RpcProviderSettingsActionRequest =
 			enabled?: boolean;
 			apiKey?: string;
 			baseUrl?: string;
+	  }
+	| {
+			action: "addProvider";
+			providerId: string;
+			name: string;
+			baseUrl: string;
+			apiKey?: string;
+			headers?: Record<string, string>;
+			timeoutMs?: number;
+			models?: string[];
+			defaultModelId?: string;
+			modelsSourceUrl?: string;
+			capabilities?: Array<
+				"reasoning" | "prompt-cache" | "streaming" | "tools" | "vision"
+			>;
 	  };
 
 export type RpcClineAccountActionRequest =

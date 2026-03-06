@@ -32,7 +32,7 @@ Apps built with the Cline SDK (`apps/`):
 - Chat model selection now remembers the last selected `modelId` per `providerId` in local app storage and restores it when switching providers or starting a new chat session.
 - Chat provider/model selectors now prioritize providers enabled in settings (`list_provider_catalog`) and show models for those enabled providers; if provider settings are unavailable, selectors fall back to the full local catalog.
 - Chat transcript tool entries now show expandable `Input` and `Result` payload sections in `apps/code/components/chat-messages.tsx`, including persisted `tool_result` payloads stored as JSON strings.
-- Hydrated/reopened chat sessions now continue applying live `agent://chunk` updates (assistant text + tool events) even when no pre-seeded `activeAssistantMessageId` exists.
+- Hydrated/reopened chat sessions continue applying live websocket `chat_event` updates (assistant text + tool events) even when no pre-seeded `activeAssistantMessageId` exists.
 
 `@cline/code` MCP server settings:
 
@@ -50,10 +50,15 @@ Apps built with the Cline SDK (`apps/`):
 
 `@cline/code` core logger streaming:
 
-- `apps/code/scripts/chat-agent-turn.ts` passes a `logger` in `sessionManager.start({ config })` so `@cline/core` session/runtime logs can flow back to the app.
-- Core logs are emitted as JSON lines with `type: "chunk"` and `stream: "chat_core_log"` (stdout protocol stream).
+- `apps/code/scripts/chat-runtime-bridge.ts` forwards runtime log/error chunks to Tauri as `chat_core_log` stream events.
 - `apps/code/hooks/use-chat-session.ts` listens for `chat_core_log` and prints them with `console.debug|info|warn|error`.
-- Keep regular `stdout` output in `chat-agent-turn.ts` JSON-only; emitting plain `console.log` there can corrupt stream parsing.
+- Keep regular `stdout` output in `chat-runtime-bridge.ts` JSON-only; emitting plain `console.log` there can corrupt stream parsing.
+
+`@cline/code` + `@cline/desktop` shared chat runtime bridge design:
+
+- Both app hosts use one persistent `chat-runtime-bridge.ts` process per app (`apps/code/scripts/chat-runtime-bridge.ts`, `apps/desktop/scripts/chat-runtime-bridge.ts`).
+- Bridge command/control is shared via `@cline/rpc` `runRpcRuntimeCommandBridge(...)`.
+- Bridge stream subscription handling remains shared via `@cline/rpc` runtime chat helpers.
 
 ## Prerequisites
 
@@ -118,6 +123,8 @@ SDK/CLI packages in this workspace use Vitest for testing (`llms`, `agents`, `co
 - `bun run test:llms|test:agents|test:core|test:cli` - run tests for one package
 
 Package-level scripts also expose Vitest directly (for example `test:watch`, and in `cli`, `test:unit` and `test:e2e`).
+
+Detailed testing strategy (including CLI e2e execution flow, current e2e coverage, and e2e-vs-unit guidance) is documented in `TESTING.md`.
 
 ## Workspace Import Boundaries
 

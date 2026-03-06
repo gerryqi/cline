@@ -23,6 +23,9 @@ From `apps/code/`:
 - Provider flows also use RPC bridge scripts:
   - [`scripts/provider-settings.ts`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/scripts/provider-settings.ts) -> `RunProviderAction`
   - [`scripts/provider-oauth-login.ts`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/scripts/provider-oauth-login.ts) -> `RunProviderOAuthLogin`
+- Provider settings now includes an **Add Provider** flow for custom OpenAI-compatible providers.
+- The add flow persists provider credentials/settings to `providers.json` and provider-scoped model catalogs to `models.json` in the same settings directory.
+- Add Provider supports both manual model entry and model import from a user-supplied URL.
 
 ## Provider Selector Behavior
 
@@ -41,6 +44,14 @@ From `apps/code/`:
   - non-empty mention (`@src/...`) filters and ranks indexed paths, returning up to 10 results
 - Choosing a suggestion inserts `@<relative/path>` into the prompt.
 
+## Hooks Visibility (Settings -> Extensions -> Hooks)
+
+- The Hooks list still shows discovered hook config files from workspace/global hook directories.
+- Each hook row now also shows runtime execution status derived from session hook events:
+  - execution count for the mapped hook event
+  - last observed execution timestamp
+- Status is computed from `read_session_hooks(...)` for the latest discovered session and is intended to answer whether mapped hook events were actually executed (not just discovered on disk).
+
 ## Chat Message Exchange Lifecycle
 
 This section explains how one chat turn moves through the app and why messages can appear either live or after hydration.
@@ -49,34 +60,43 @@ This section explains how one chat turn moves through the app and why messages c
 
 - UI state lives in [`use-chat-session.ts`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/hooks/use-chat-session.ts).
 - On mount, UI asks Tauri for `get_chat_ws_endpoint` and opens one persistent websocket to host.
+- If bridge startup is delayed, the hook keeps retrying endpoint discovery and reconnects automatically after websocket close/error.
 - Starting a session sends a websocket command envelope (`requestId` + `request`) with `action: "start"`.
 - Tauri creates a runtime session in memory and returns `sessionId`.
 - Tauri now ensures `config.sessions.homeDir` is present (derived from the host home dir when missing). Both session runners use it to call `setHomeDir(...)` before creating stores/artifacts, so session history resolves under the intended home directory.
 
 Key path:
 - [`use-chat-session.ts`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/hooks/use-chat-session.ts)
-- [`main.rs`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/src-tauri/src/main.rs) (`chat_session_command`)
+- [`main.rs`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/src-tauri/src/main.rs) (`handle_chat_session_command` via websocket bridge)
 
 ### 2) Send Prompt (Frontend -> Host WS)
 
 - `sendPrompt(...)` appends a local user message immediately for optimistic UI.
-- It also creates an assistant placeholder message for streaming text.
+- The assistant message is created lazily on first incoming `chat_text` chunk.
+- Input action toggles to Stop while a request is in flight (`starting` / `running` / `stopping`) and triggers `abort` when pressed.
 - Then it sends websocket command `action: "send"` over the existing connection.
+- Chat command transport is websocket-only (`start/send/abort/reset`); there is no invoke fallback for these actions.
+- If the websocket bridge is unavailable during an active/in-flight session operation, the UI moves to an explicit transport error state with a deterministic message.
 - Tauri updates the in-memory session `prompt` as soon as send starts (before turn completion), so sidebar titles can reflect the latest submitted prompt while the turn is running.
 
 ### 3) RPC Runtime Calls (Tauri -> RPC Bridge Scripts -> RPC)
 
-- Tauri spawns RPC bridge scripts: [`scripts/chat-create-session.ts`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/scripts/chat-create-session.ts), [`scripts/chat-agent-turn.ts`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/scripts/chat-agent-turn.ts), and a persistent stream bridge [`scripts/chat-stream-events.ts`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/scripts/chat-stream-events.ts).
-- The scripts are thin RPC clients:
-  - `chat-create-session.ts` calls RPC `StartRuntimeSession`.
-  - `chat-agent-turn.ts` calls RPC `SendRuntimeSession` and returns only final `result`.
-  - `chat-stream-events.ts` maintains one long-lived `StreamEvents` subscription for currently active chat session IDs.
-- Abort calls use [`scripts/chat-abort-session.ts`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/scripts/chat-abort-session.ts), which calls RPC `AbortRuntimeSession`.
+- Tauri spawns one persistent runtime bridge script: [`scripts/chat-runtime-bridge.ts`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/scripts/chat-runtime-bridge.ts).
+- The bridge is a thin RPC client built on shared `@cline/rpc` helpers:
+  - [`packages/rpc/src/runtime-chat-client.ts`](/Users/beatrix/dev/clinee/sdk-wip/packages/rpc/src/runtime-chat-client.ts)
+  - [`packages/rpc/src/runtime-chat-command-bridge.ts`](/Users/beatrix/dev/clinee/sdk-wip/packages/rpc/src/runtime-chat-command-bridge.ts)
+  - [`packages/rpc/src/runtime-chat-stream-bridge.ts`](/Users/beatrix/dev/clinee/sdk-wip/packages/rpc/src/runtime-chat-stream-bridge.ts)
+  - `start` calls RPC `StartRuntimeSession`.
+  - `send` calls RPC `SendRuntimeSession`.
+  - `abort` calls RPC `AbortRuntimeSession`.
+  - `set_sessions` manages one long-lived `StreamEvents` subscription for active session IDs.
+  - `reset` clears bridge-local stream accumulation for a session.
 - The runtime execution now lives in the long-running RPC server process started via `clite rpc start`.
-- Tauri keeps stream ownership in one persistent process and only uses per-turn script for unary send requests.
-- Stream bridge output is newline-delimited JSON events (`chat_text`, `tool_call_start`, `tool_call_end`) that Tauri maps to `agent://chunk`.
-- Send bridge output is newline-delimited JSON with only `type: "result"`.
-- Session subscriptions are now stable: Tauri only updates bridge subscriptions when session IDs actually change, so each turn does not restart `StreamEvents` immediately before `SendRuntimeSession`.
+- Tauri keeps one persistent host-side bridge process for both command requests and stream events (no per-turn bridge process spawn for `start/send/abort`).
+- Bridge output is newline-delimited JSON:
+  - `type: "response"` lines correlated by `requestId` for command replies.
+  - `chat_text` / `tool_call_start` / `tool_call_end` lines for stream events, which Tauri maps to websocket `chat_event`.
+- Session subscriptions remain stable: Tauri only pushes `set_sessions` when subscribed IDs change.
 
 ### WebSocket Envelope Schema (UI <-> Host)
 
@@ -89,10 +109,10 @@ Key path:
 
 ### 4) Live Stream Events (Host WS -> Frontend)
 
-- Tauri still emits each stream line via `app.emit("agent://chunk", payload)` for compatibility, and also broadcasts canonical websocket events.
+- Tauri broadcasts stream lines using canonical websocket `chat_event` envelopes.
 - Frontend consumes websocket `chat_event` messages and updates messages live:
   - `chat_text` -> append to active assistant message
-  - `chat_tool_call_start` / `chat_tool_call_end` -> live tool activity rows
+  - `chat_tool_call_start` / `chat_tool_call_end` -> live tool activity rows with structured payload (`toolName`, `input`, `result`, `isError`) matching hydration rendering behavior
 - Completion safety net: if live tool stream events are missed, frontend materializes tool rows from final `result.toolCalls` so tool activity still appears without reloading the session.
 
 Important behavior:
@@ -145,6 +165,7 @@ Under:
 - [`chat-messages.tsx`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/components/chat-messages.tsx) renders:
   - user/assistant/system/status/error bubbles
   - tool messages via `ToolMessageBlock`
+  - lightweight transport-state indicator (`Connecting chat...` / `Reconnecting chat...`) while websocket recovery is in progress
   - scroll behavior that jumps to the latest content on initial mount and shows a floating "scroll to bottom" control when the viewport is away from the bottom
 - Tool bubbles display:
   - compact summary (action label)
@@ -183,7 +204,7 @@ If messages show after restart but not live:
 1. Verify websocket `chat_event` messages are received in `use-chat-session.ts`.
 2. Verify `payload.sessionId` matches active session.
 3. Verify `chat_text` creates/uses an assistant message ID before append.
-4. Verify stream bridge output lines are valid JSON (`chat-stream-events.ts`).
+4. Verify runtime bridge output lines are valid JSON (`chat-runtime-bridge.ts`).
 5. Verify Tauri emits `chat_text` chunks and a final `result`.
 
 If tool calls are present but not visible:

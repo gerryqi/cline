@@ -416,8 +416,34 @@ export interface AgentExtensionApi {
 	registerProvider: (provider: AgentExtensionProvider) => void;
 }
 
+export type AgentExtensionCapability =
+	| "hooks"
+	| "tools"
+	| "commands"
+	| "shortcuts"
+	| "flags"
+	| "message_renderers"
+	| "providers";
+
+export type AgentExtensionHookStage =
+	| "input"
+	| "runtime_event"
+	| "session_start"
+	| "before_agent_start"
+	| "tool_call_before"
+	| "tool_call_after"
+	| "turn_end"
+	| "session_shutdown"
+	| "error";
+
+export interface PluginManifest {
+	capabilities: AgentExtensionCapability[];
+	hookStages?: AgentExtensionHookStage[];
+}
+
 export interface AgentExtension {
 	name: string;
+	manifest: PluginManifest;
 	setup?: (api: AgentExtensionApi) => void | Promise<void>;
 	onSessionStart?: (
 		ctx: AgentExtensionSessionStartContext,

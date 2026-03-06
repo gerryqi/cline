@@ -6,6 +6,8 @@ Package-level docs are centralized:
 - Architecture and interactions: [`packages/ARCHITECTURE.md`](../ARCHITECTURE.md)
 
 For extended agent API details, see [`packages/agents/DOC.md`](./DOC.md).
+For execution flow and state behavior, see
+[`packages/agents/ARCHITECTURE.md`](./ARCHITECTURE.md#execution-model-flow--state).
 
 ## Conversation Restore API
 
@@ -59,3 +61,37 @@ importing internal logger services.
 ## Subprocess Hook Session Context
 
 Subprocess hook payloads now support `sessionContext` so hosts can pass root session metadata explicitly (for example, root session id and hook log path) without relying on process-global env mutation.
+
+## Plugin Architecture
+
+`@cline/agents` now uses a single hook execution path: `HookEngine`.
+
+- Runtime lifecycle hooks are dispatched only through `HookEngine`.
+- `AgentExtensionRunner` has been replaced by `ContributionRegistry`.
+- `ContributionRegistry` owns contribution registration only (`tools`, `commands`, `shortcuts`, `flags`, `messageRenderers`, `providers`).
+
+Extensions must now declare a manifest:
+
+- `manifest.capabilities` (required)
+- `manifest.hookStages` (required when `hooks` capability is declared)
+
+The registry uses deterministic phases:
+
+- `resolve -> validate -> setup -> activate -> run`
+
+Hook routing is precomputed from declared `hookStages` during startup, and dispatch remains stage-indexed inside `HookEngine` for O(1) stage lookup at runtime.
+
+## Package Boundaries
+
+`@cline/agents` owns stateless runtime concerns:
+
+- Hook execution
+- Tool dispatch
+- Contribution lookup
+
+`@cline/core` owns stateful plugin platform concerns:
+
+- Plugin/module discovery
+- Plugin loading
+- Trust/sandbox policy
+- Persistence/state management

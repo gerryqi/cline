@@ -1,7 +1,7 @@
 "use client";
 
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentHeader } from "@/components/agent-header";
 import { AgentSidebar } from "@/components/agent-sidebar";
 import { ChatInputBar } from "@/components/chat-input-bar";
@@ -14,6 +14,7 @@ import {
 	SidebarProvider,
 	SidebarRail,
 } from "@/components/ui/sidebar";
+import { WorkspaceProvider } from "@/contexts/workspace-context";
 import { useChatSession } from "@/hooks/use-chat-session";
 import type { SessionHistoryItem } from "@/lib/session-history";
 
@@ -148,6 +149,7 @@ function ChatThreadPane({
 	const {
 		sessionId,
 		status,
+		chatTransportState,
 		isHydratingSession,
 		activeAssistantMessageId,
 		config,
@@ -172,8 +174,19 @@ function ChatThreadPane({
 	const [providerCredentials, setProviderCredentials] = useState<
 		Record<string, { apiKey: string }>
 	>({});
+	const [providersLoaded, setProvidersLoaded] = useState(false);
+	const [workspaces, setWorkspaces] = useState<string[]>([]);
+	const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
 	const hydratedSessionRef = useRef<string | null>(null);
 	const resetThreadRef = useRef<string | null>(null);
+	const workspaceRef = useRef({
+		cwd: config.cwd,
+		workspaceRoot: config.workspaceRoot,
+	});
+	workspaceRef.current = {
+		cwd: config.cwd,
+		workspaceRoot: config.workspaceRoot,
+	};
 
 	useEffect(() => {
 		let cancelled = false;
@@ -203,6 +216,8 @@ function ChatThreadPane({
 				setProviderCredentials(next);
 			} catch {
 				// Keep current config if provider catalog cannot be read.
+			} finally {
+				if (!cancelled) setProvidersLoaded(true);
 			}
 		}
 
@@ -227,17 +242,25 @@ function ChatThreadPane({
 		}));
 	}, [config.apiKey, config.provider, providerCredentials, setConfig]);
 
+	const getWorkspaceCwd = useCallback(
+		() =>
+			workspaceRef.current.cwd ||
+			workspaceRef.current.workspaceRoot ||
+			undefined,
+		[],
+	);
+
 	const refreshGitBranch = useCallback(async () => {
 		try {
 			const payload = await invoke<{ branch?: string }>("get_git_branch", {
-				cwd: config.cwd || config.workspaceRoot || undefined,
+				cwd: getWorkspaceCwd(),
 			});
 			const branch = payload?.branch?.trim();
 			setGitBranch(branch && branch.length > 0 ? branch : "no-git");
 		} catch {
 			setGitBranch("no-git");
 		}
-	}, [config.cwd, config.workspaceRoot]);
+	}, [getWorkspaceCwd]);
 
 	const listGitBranches = useCallback(async (): Promise<{
 		current: string;
@@ -247,7 +270,7 @@ function ChatThreadPane({
 			const payload = await invoke<{ current?: string; branches?: string[] }>(
 				"list_git_branches",
 				{
-					cwd: config.cwd || config.workspaceRoot || undefined,
+					cwd: getWorkspaceCwd(),
 				},
 			);
 			const current = payload?.current?.trim() || "no-git";
@@ -258,7 +281,7 @@ function ChatThreadPane({
 		} catch {
 			return { current: "no-git", branches: [] };
 		}
-	}, [config.cwd, config.workspaceRoot]);
+	}, [getWorkspaceCwd]);
 
 	const switchGitBranch = useCallback(
 		async (nextBranch: string): Promise<boolean> => {
@@ -266,7 +289,7 @@ function ChatThreadPane({
 				const payload = await invoke<{ branch?: string }>(
 					"checkout_git_branch",
 					{
-						cwd: config.cwd || config.workspaceRoot || undefined,
+						cwd: getWorkspaceCwd(),
 						branch: nextBranch,
 					},
 				);
@@ -277,12 +300,16 @@ function ChatThreadPane({
 				return false;
 			}
 		},
-		[config.cwd, config.workspaceRoot],
+		[getWorkspaceCwd],
 	);
 
 	const listWorkspaces = useCallback(async (): Promise<string[]> => {
 		const roots = new Set<string>();
-		const current = (config.workspaceRoot || config.cwd || "").trim();
+		const current = (
+			workspaceRef.current.workspaceRoot ||
+			workspaceRef.current.cwd ||
+			""
+		).trim();
 		if (current) {
 			roots.add(current);
 		}
@@ -290,10 +317,10 @@ function ChatThreadPane({
 		try {
 			const [cliDiscovered, chatDiscovered] = await Promise.all([
 				invoke<WorkspaceSessionItem[]>("list_cli_sessions", {
-					limit: 300,
+					limit: 10,
 				}).catch(() => []),
 				invoke<WorkspaceSessionItem[]>("list_chat_sessions", {
-					limit: 300,
+					limit: 10,
 				}).catch(() => []),
 			]);
 
@@ -308,7 +335,20 @@ function ChatThreadPane({
 		}
 
 		return [...roots].sort((a, b) => a.localeCompare(b));
-	}, [config.cwd, config.workspaceRoot]);
+	}, []);
+
+	const refreshWorkspaces = useCallback(async () => {
+		try {
+			const results = await listWorkspaces();
+			setWorkspaces(results);
+		} finally {
+			setWorkspacesLoaded(true);
+		}
+	}, [listWorkspaces]);
+
+	useEffect(() => {
+		void refreshWorkspaces();
+	}, [refreshWorkspaces]);
 
 	const switchWorkspace = useCallback(
 		async (workspacePath: string): Promise<boolean> => {
@@ -323,19 +363,24 @@ function ChatThreadPane({
 				cwd: nextWorkspace,
 			}));
 
-			try {
-				const payload = await invoke<{ branch?: string }>("get_git_branch", {
-					cwd: nextWorkspace,
+			// Fire git branch + workspace list refresh in the background
+			invoke<{ branch?: string }>("get_git_branch", {
+				cwd: nextWorkspace,
+			})
+				.then((payload) => {
+					const branch = payload?.branch?.trim();
+					setGitBranch(branch && branch.length > 0 ? branch : "no-git");
+				})
+				.catch(() => {
+					setGitBranch("no-git");
 				});
-				const branch = payload?.branch?.trim();
-				setGitBranch(branch && branch.length > 0 ? branch : "no-git");
-			} catch {
-				setGitBranch("no-git");
-			}
+
+			// Re-fetch workspace list so the new root appears
+			void refreshWorkspaces();
 
 			return true;
 		},
-		[setConfig],
+		[setConfig, refreshWorkspaces],
 	);
 
 	useEffect(() => {
@@ -438,116 +483,152 @@ function ChatThreadPane({
 		}
 	}, [hasDiffChanges]);
 
+	const resolvedWorkspaceRoot = config.workspaceRoot || config.cwd || "";
+	const workspaceContextValue = useMemo(
+		() => ({
+			workspaceRoot: resolvedWorkspaceRoot,
+			workspaces,
+			listWorkspaces,
+			switchWorkspace,
+		}),
+		[resolvedWorkspaceRoot, workspaces, listWorkspaces, switchWorkspace],
+	);
+
+	const isAppReady =
+		chatTransportState === "connected" &&
+		resolvedWorkspaceRoot.length > 0 &&
+		providersLoaded &&
+		workspacesLoaded;
+
+	if (!isAppReady) {
+		return (
+			<div className="flex h-full flex-1 flex-col items-center justify-center gap-3 bg-background text-foreground">
+				<div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+				<p className="text-sm text-muted-foreground">
+					{chatTransportState !== "connected"
+						? "Connecting..."
+						: "Loading workspace..."}
+				</p>
+			</div>
+		);
+	}
+
 	return (
-		<div className="grid h-full min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
-			<div className="z-20">
-				<AgentHeader
-					canDeleteSession={Boolean(activeSessionToDelete)}
-					deletingSession={deletingSession}
-					diff={{ additions: summary.additions, deletions: summary.deletions }}
-					onDeleteSession={() => void handleDeleteSession()}
-					onNewThread={onNewThread}
-					onOpenDiff={() => {
-						if (hasDiffChanges) {
-							setShowDiffView(true);
-						}
-					}}
-					status={status}
-					title={threadTitle}
-				/>
-			</div>
-			<div className="h-full min-h-0 overflow-hidden">
-				{showDiffView ? (
-					<DiffView
-						fileDiffs={fileDiffs}
-						onClose={() => setShowDiffView(false)}
-					/>
-				) : (
-					<ChatMessages
-						onApproveToolApproval={handleApproveToolApproval}
-						onRejectToolApproval={handleRejectToolApproval}
-						error={error}
-						messages={messages}
-						model={config.model}
-						pendingToolApprovals={pendingToolApprovals}
-						provider={config.provider}
-						sessionId={sessionId}
-						streamingMessageId={activeAssistantMessageId}
-						isSessionSwitching={isHydratingSession}
-						status={status}
-					/>
-				)}
-			</div>
-			<div className="z-20 shrink-0">
-				<ChatInputBar
-					attachments={attachmentList}
-					onAbort={() => void abort()}
-					onAttachFiles={(files) => {
-						setPendingAttachments((prev) => {
-							const existing = new Set(
-								prev.map(
-									(file) => `${file.name}:${file.size}:${file.lastModified}`,
-								),
-							);
-							const next = [...prev];
-							for (const file of files) {
-								const key = `${file.name}:${file.size}:${file.lastModified}`;
-								if (!existing.has(key)) {
-									existing.add(key);
-									next.push(file);
-								}
+		<WorkspaceProvider value={workspaceContextValue}>
+			<div className="grid h-full min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
+				<div className="z-20">
+					<AgentHeader
+						canDeleteSession={Boolean(activeSessionToDelete)}
+						deletingSession={deletingSession}
+						diff={{
+							additions: summary.additions,
+							deletions: summary.deletions,
+						}}
+						onDeleteSession={() => void handleDeleteSession()}
+						onNewThread={onNewThread}
+						onOpenDiff={() => {
+							if (hasDiffChanges) {
+								setShowDiffView(true);
 							}
-							return next;
-						});
-					}}
-					onListGitBranches={listGitBranches}
-					onListWorkspaces={listWorkspaces}
-					onRemoveAttachment={(id) => {
-						setPendingAttachments((prev) =>
-							prev.filter((file, index) => {
-								const fileId = `${file.name}:${file.size}:${file.lastModified}:${index}`;
-								return fileId !== id;
-							}),
-						);
-					}}
-					onSwitchGitBranch={switchGitBranch}
-					onSwitchWorkspace={switchWorkspace}
-					onRefreshGitBranch={() => void refreshGitBranch()}
-					onModelChange={(nextModel) =>
-						setConfig((prev) => ({ ...prev, model: nextModel }))
-					}
-					onModeToggle={() =>
-						setConfig((prev) => ({
-							...prev,
-							mode: prev.mode === "plan" ? "act" : "plan",
-						}))
-					}
-					onPromptInputChange={setPromptInput}
-					onProviderChange={(nextProvider) =>
-						setConfig((prev) => {
-							const selected = providerCredentials[nextProvider];
-							return {
+						}}
+						status={status}
+						title={threadTitle}
+					/>
+				</div>
+				<div className="h-full min-h-0 overflow-hidden">
+					{showDiffView ? (
+						<DiffView
+							fileDiffs={fileDiffs}
+							onClose={() => setShowDiffView(false)}
+						/>
+					) : (
+						<ChatMessages
+							onApproveToolApproval={handleApproveToolApproval}
+							onRejectToolApproval={handleRejectToolApproval}
+							onStartChat={(prompt) => {
+								setPromptInput(prompt);
+							}}
+							chatTransportState={chatTransportState}
+							error={error}
+							messages={messages}
+							model={config.model}
+							pendingToolApprovals={pendingToolApprovals}
+							provider={config.provider}
+							sessionId={sessionId}
+							streamingMessageId={activeAssistantMessageId}
+							isSessionSwitching={isHydratingSession}
+							status={status}
+						/>
+					)}
+				</div>
+				<div className="z-20 shrink-0">
+					<ChatInputBar
+						attachments={attachmentList}
+						onAbort={() => void abort()}
+						onAttachFiles={(files) => {
+							setPendingAttachments((prev) => {
+								const existing = new Set(
+									prev.map(
+										(file) => `${file.name}:${file.size}:${file.lastModified}`,
+									),
+								);
+								const next = [...prev];
+								for (const file of files) {
+									const key = `${file.name}:${file.size}:${file.lastModified}`;
+									if (!existing.has(key)) {
+										existing.add(key);
+										next.push(file);
+									}
+								}
+								return next;
+							});
+						}}
+						onListGitBranches={listGitBranches}
+						onRemoveAttachment={(id) => {
+							setPendingAttachments((prev) =>
+								prev.filter((file, index) => {
+									const fileId = `${file.name}:${file.size}:${file.lastModified}:${index}`;
+									return fileId !== id;
+								}),
+							);
+						}}
+						onSwitchGitBranch={switchGitBranch}
+						onRefreshGitBranch={() => void refreshGitBranch()}
+						onModelChange={(nextModel) =>
+							setConfig((prev) => ({ ...prev, model: nextModel }))
+						}
+						onModeToggle={() =>
+							setConfig((prev) => ({
 								...prev,
-								provider: nextProvider,
-								apiKey: selected?.apiKey ?? "",
-							};
-						})
-					}
-					onReset={() => {
-						setPendingAttachments([]);
-						void reset();
-					}}
-					onSend={() => void handleSend()}
-					gitBranch={gitBranch}
-					model={config.model}
-					mode={config.mode}
-					promptInput={promptInput}
-					provider={config.provider}
-					status={status}
-					summary={summary}
-					workspaceRoot={config.workspaceRoot || config.cwd || ""}
-				/>
+								mode: prev.mode === "plan" ? "act" : "plan",
+							}))
+						}
+						onPromptInputChange={setPromptInput}
+						onProviderChange={(nextProvider) =>
+							setConfig((prev) => {
+								const selected = providerCredentials[nextProvider];
+								return {
+									...prev,
+									provider: nextProvider,
+									apiKey: selected?.apiKey ?? "",
+								};
+							})
+						}
+						onReset={() => {
+							setPendingAttachments([]);
+							void reset();
+						}}
+						onSend={() => void handleSend()}
+						gitBranch={gitBranch}
+						model={config.model}
+						mode={config.mode}
+						promptInput={promptInput}
+						provider={config.provider}
+						status={status}
+						summary={summary}
+					/>
+				</div>
 			</div>
-		</div>
+		</WorkspaceProvider>
 	);
 }

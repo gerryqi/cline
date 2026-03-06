@@ -18,6 +18,11 @@ import {
 	type ToolExecutors,
 	ToolPresets,
 } from "../default-tools";
+import {
+	createHookAuditHooks,
+	createHookConfigFileHooks,
+	mergeAgentHooks,
+} from "../runtime/hook-file-hooks";
 import { DefaultRuntimeBuilder } from "../runtime/runtime-builder";
 import type { BuiltRuntime, RuntimeBuilder } from "../runtime/session-runtime";
 import type { ProviderSettingsManager } from "../storage/provider-settings-manager";
@@ -71,6 +76,13 @@ export interface DefaultSessionManagerOptions {
 }
 
 const MAX_SCAN_LIMIT = 5000;
+
+function hasRuntimeHooks(hooks: AgentConfig["hooks"]): boolean {
+	if (!hooks) {
+		return false;
+	}
+	return Object.values(hooks).some((value) => typeof value === "function");
+}
 
 function serializeAgentEvent(event: AgentEvent): string {
 	return JSON.stringify(event, (_key, value) => {
@@ -165,39 +177,63 @@ export class DefaultSessionManager implements SessionManager {
 			startedAt: nowIso(),
 		})) as RootSessionArtifacts;
 
-		const runtime = this.runtimeBuilder.build({
-			config: input.config,
-			hooks: input.config.hooks,
+		const fileHooks = createHookConfigFileHooks({
+			cwd: input.config.cwd,
+			workspacePath: input.config.workspaceRoot ?? input.config.cwd,
+			rootSessionId: artifacts.manifest.session_id,
+			hookLogPath: artifacts.hookPath,
 			logger: input.config.logger,
+		});
+		const auditHooks = hasRuntimeHooks(input.config.hooks)
+			? undefined
+			: createHookAuditHooks({
+					hookLogPath: artifacts.hookPath,
+					rootSessionId: artifacts.manifest.session_id,
+					workspacePath: input.config.workspaceRoot ?? input.config.cwd,
+				});
+		const effectiveHooks = mergeAgentHooks([
+			input.config.hooks,
+			fileHooks,
+			auditHooks,
+		]);
+		const effectiveConfig: CoreSessionConfig = {
+			...input.config,
+			hooks: effectiveHooks,
+		};
+
+		const runtime = this.runtimeBuilder.build({
+			config: effectiveConfig,
+			hooks: effectiveHooks,
+			logger: effectiveConfig.logger,
 			onTeamEvent: (event: TeamEvent) => {
 				void this.handleTeamEvent(artifacts.manifest.session_id, event);
-				input.config.onTeamEvent?.(event);
+				effectiveConfig.onTeamEvent?.(event);
 			},
 			createSpawnTool: () =>
-				this.createSpawnTool(input.config, artifacts.manifest.session_id),
+				this.createSpawnTool(effectiveConfig, artifacts.manifest.session_id),
 			onTeamRestored: input.onTeamRestored,
 			userInstructionWatcher: input.userInstructionWatcher,
 			defaultToolExecutors:
 				input.defaultToolExecutors ?? this.defaultToolExecutors,
 		});
-		const tools = [...runtime.tools, ...(input.config.extraTools ?? [])];
+		const tools = [...runtime.tools, ...(effectiveConfig.extraTools ?? [])];
 		const agent = this.createAgentInstance({
-			providerId: input.config.providerId,
-			modelId: input.config.modelId,
-			apiKey: input.config.apiKey,
-			baseUrl: input.config.baseUrl,
-			knownModels: input.config.knownModels,
-			thinking: input.config.thinking,
-			systemPrompt: input.config.systemPrompt,
-			maxIterations: input.config.maxIterations,
+			providerId: effectiveConfig.providerId,
+			modelId: effectiveConfig.modelId,
+			apiKey: effectiveConfig.apiKey,
+			baseUrl: effectiveConfig.baseUrl,
+			knownModels: effectiveConfig.knownModels,
+			thinking: effectiveConfig.thinking,
+			systemPrompt: effectiveConfig.systemPrompt,
+			maxIterations: effectiveConfig.maxIterations,
 			tools,
-			hooks: input.config.hooks,
-			hookErrorMode: input.config.hookErrorMode,
+			hooks: effectiveHooks,
+			hookErrorMode: effectiveConfig.hookErrorMode,
 			initialMessages: input.initialMessages,
 			toolPolicies: input.toolPolicies ?? this.defaultToolPolicies,
 			requestToolApproval:
 				input.requestToolApproval ?? this.defaultRequestToolApproval,
-			logger: runtime.logger ?? input.config.logger,
+			logger: runtime.logger ?? effectiveConfig.logger,
 			onEvent: (event: AgentEvent) => {
 				this.emit({
 					type: "agent_event",
@@ -220,7 +256,7 @@ export class DefaultSessionManager implements SessionManager {
 
 		const active: ActiveSession = {
 			sessionId: artifacts.manifest.session_id,
-			config: input.config,
+			config: effectiveConfig,
 			artifacts,
 			runtime,
 			agent,
@@ -291,18 +327,29 @@ export class DefaultSessionManager implements SessionManager {
 		if (!session) {
 			return;
 		}
-		await this.updateStatus(session, "cancelled", null);
-		await session.agent.shutdown("session_stop");
-		await Promise.resolve(session.runtime.shutdown("session_stop"));
-		this.sessions.delete(sessionId);
-		this.emit({
-			type: "ended",
-			payload: {
-				sessionId,
-				reason: "stopped",
-				ts: Date.now(),
-			},
+		await this.shutdownSession(session, {
+			status: "cancelled",
+			exitCode: null,
+			shutdownReason: "session_stop",
+			endReason: "stopped",
 		});
+	}
+
+	async dispose(reason = "session_manager_dispose"): Promise<void> {
+		const sessions = [...this.sessions.values()];
+		if (sessions.length === 0) {
+			return;
+		}
+		await Promise.allSettled(
+			sessions.map(async (session) => {
+				await this.shutdownSession(session, {
+					status: "cancelled",
+					exitCode: null,
+					shutdownReason: reason,
+					endReason: "disposed",
+				});
+			}),
+		);
 	}
 
 	async get(sessionId: string): Promise<SessionRecord | undefined> {
@@ -431,33 +478,49 @@ export class DefaultSessionManager implements SessionManager {
 		finishReason: AgentResult["finishReason"],
 	): Promise<void> {
 		if (finishReason === "aborted" || session.aborting) {
-			await this.updateStatus(session, "cancelled", null);
+			await this.shutdownSession(session, {
+				status: "cancelled",
+				exitCode: null,
+				shutdownReason: "session_complete",
+				endReason: finishReason,
+			});
 		} else {
-			await this.updateStatus(session, "completed", 0);
+			await this.shutdownSession(session, {
+				status: "completed",
+				exitCode: 0,
+				shutdownReason: "session_complete",
+				endReason: finishReason,
+			});
 		}
-		await session.agent.shutdown("session_complete");
-		await Promise.resolve(session.runtime.shutdown("session_complete"));
-		this.sessions.delete(session.sessionId);
-		this.emit({
-			type: "ended",
-			payload: {
-				sessionId: session.sessionId,
-				reason: finishReason,
-				ts: Date.now(),
-			},
-		});
 	}
 
 	private async failSession(session: ActiveSession): Promise<void> {
-		await this.updateStatus(session, "failed", 1);
-		await session.agent.shutdown("session_error");
-		await Promise.resolve(session.runtime.shutdown("session_error"));
+		await this.shutdownSession(session, {
+			status: "failed",
+			exitCode: 1,
+			shutdownReason: "session_error",
+			endReason: "error",
+		});
+	}
+
+	private async shutdownSession(
+		session: ActiveSession,
+		input: {
+			status: SessionStatus;
+			exitCode: number | null;
+			shutdownReason: string;
+			endReason: string;
+		},
+	): Promise<void> {
+		await this.updateStatus(session, input.status, input.exitCode);
+		await session.agent.shutdown(input.shutdownReason);
+		await Promise.resolve(session.runtime.shutdown(input.shutdownReason));
 		this.sessions.delete(session.sessionId);
 		this.emit({
 			type: "ended",
 			payload: {
 				sessionId: session.sessionId,
-				reason: "error",
+				reason: input.endReason,
 				ts: Date.now(),
 			},
 		});

@@ -134,7 +134,10 @@ export class OpenAIBaseHandler extends BaseHandler {
 			messages: openAiMessages,
 			stream: true,
 			stream_options: { include_usage: true },
-			...getOpenAIToolParams(tools),
+			...getOpenAIToolParams(tools, {
+				// OpenRouter can reject strict function schemas on some routed models.
+				strict: this.config.providerId !== "openrouter",
+			}),
 		};
 
 		// Add max tokens if configured

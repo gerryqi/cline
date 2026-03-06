@@ -45,6 +45,7 @@ export interface SessionManager {
 	send(input: SendSessionInput): Promise<AgentResult | undefined>;
 	abort(sessionId: string): Promise<void>;
 	stop(sessionId: string): Promise<void>;
+	dispose(reason?: string): Promise<void>;
 	get(sessionId: string): Promise<SessionRecord | undefined>;
 	list(limit?: number): Promise<SessionRecord[]>;
 	delete(sessionId: string): Promise<boolean>;

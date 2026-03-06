@@ -49,6 +49,21 @@ type HookItem = {
 	path: string;
 };
 
+type SessionHookEvent = {
+	ts: string;
+	hookEventName: string;
+};
+
+type CliDiscoveredSession = {
+	sessionId: string;
+	startedAt: string;
+};
+
+type HookExecutionSummary = {
+	count: number;
+	lastTs: string | null;
+};
+
 type UserInstructionListsResponse = {
 	workspaceRoot: string;
 	rules: RuleItem[];
@@ -82,6 +97,12 @@ export function RulesView() {
 	const [agents, setAgents] = useState<AgentItem[]>([]);
 	const [hooks, setHooks] = useState<HookItem[]>([]);
 	const [warnings, setWarnings] = useState<string[]>([]);
+	const [hookExecutionByEvent, setHookExecutionByEvent] = useState<
+		Record<string, HookExecutionSummary>
+	>({});
+	const [hookExecutionSessionId, setHookExecutionSessionId] = useState<
+		string | null
+	>(null);
 
 	const refresh = useCallback(async () => {
 		setIsLoading(true);
@@ -97,12 +118,70 @@ export function RulesView() {
 			setAgents(response.agents);
 			setHooks(response.hooks);
 			setWarnings(response.warnings);
+
+			const sessions = await invoke<CliDiscoveredSession[]>(
+				"list_cli_sessions",
+				{
+					limit: 300,
+				},
+			);
+			const latestSession = (sessions ?? [])
+				.filter(
+					(session) =>
+						typeof session.sessionId === "string" &&
+						session.sessionId.trim().length > 0,
+				)
+				.sort((left, right) =>
+					(right.startedAt ?? "").localeCompare(left.startedAt ?? ""),
+				)[0];
+			if (!latestSession?.sessionId) {
+				setHookExecutionByEvent({});
+				setHookExecutionSessionId(null);
+				return;
+			}
+
+			const events = await invoke<SessionHookEvent[]>("read_session_hooks", {
+				sessionId: latestSession.sessionId,
+				limit: 5000,
+			});
+			const next: Record<string, HookExecutionSummary> = {};
+			for (const event of events ?? []) {
+				const hookName = event.hookEventName?.trim();
+				if (!hookName) {
+					continue;
+				}
+				const current = next[hookName] ?? {
+					count: 0,
+					lastTs: null,
+				};
+				current.count += 1;
+				if (event.ts && (!current.lastTs || event.ts > current.lastTs)) {
+					current.lastTs = event.ts;
+				}
+				next[hookName] = current;
+			}
+			setHookExecutionByEvent(next);
+			setHookExecutionSessionId(latestSession.sessionId);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			setErrorMessage(message);
 		} finally {
 			setIsLoading(false);
 		}
+	}, []);
+
+	const formatExecutionTs = useCallback((value: string | null): string => {
+		if (!value) {
+			return "never";
+		}
+		const asNumber = Number(value);
+		const date = Number.isFinite(asNumber)
+			? new Date(asNumber)
+			: new Date(value);
+		if (Number.isNaN(date.getTime())) {
+			return value;
+		}
+		return date.toLocaleString();
 	}, []);
 
 	useEffect(() => {
@@ -330,6 +409,17 @@ export function RulesView() {
 							Hook config files discovered from workspace and global hook
 							directories.
 						</p>
+						{hookExecutionSessionId ? (
+							<p className="mb-4 text-xs text-muted-foreground">
+								Execution status is based on hook events in session{" "}
+								<span className="font-mono">{hookExecutionSessionId}</span>.
+							</p>
+						) : (
+							<p className="mb-4 text-xs text-muted-foreground">
+								Execution status unavailable (no sessions with hook events
+								found).
+							</p>
+						)}
 
 						<div className="mb-6">
 							<h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -347,11 +437,41 @@ export function RulesView() {
 												{hook.fileName}
 											</span>
 											{hook.hookEventName && (
-												<span className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground">
-													{hook.hookEventName}
-												</span>
+												<div className="flex items-center gap-2">
+													<span className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground">
+														{hook.hookEventName}
+													</span>
+													{(() => {
+														const stats =
+															hookExecutionByEvent[hook.hookEventName];
+														const executed = (stats?.count ?? 0) > 0;
+														return (
+															<span
+																className={cn(
+																	"rounded border px-2 py-0.5 text-xs",
+																	executed
+																		? "border-emerald-400/50 text-emerald-600 dark:text-emerald-400"
+																		: "border-border text-muted-foreground",
+																)}
+															>
+																{executed
+																	? `${stats?.count ?? 0} executed`
+																	: "never executed"}
+															</span>
+														);
+													})()}
+												</div>
 											)}
 										</div>
+										{hook.hookEventName ? (
+											<p className="mt-1 text-xs text-muted-foreground">
+												Last run:{" "}
+												{formatExecutionTs(
+													hookExecutionByEvent[hook.hookEventName]?.lastTs ??
+														null,
+												)}
+											</p>
+										) : null}
 										<p className="mt-1 text-xs font-mono text-muted-foreground">
 											{hook.path}
 										</p>
@@ -382,11 +502,41 @@ export function RulesView() {
 												{hook.fileName}
 											</span>
 											{hook.hookEventName && (
-												<span className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground">
-													{hook.hookEventName}
-												</span>
+												<div className="flex items-center gap-2">
+													<span className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground">
+														{hook.hookEventName}
+													</span>
+													{(() => {
+														const stats =
+															hookExecutionByEvent[hook.hookEventName];
+														const executed = (stats?.count ?? 0) > 0;
+														return (
+															<span
+																className={cn(
+																	"rounded border px-2 py-0.5 text-xs",
+																	executed
+																		? "border-emerald-400/50 text-emerald-600 dark:text-emerald-400"
+																		: "border-border text-muted-foreground",
+																)}
+															>
+																{executed
+																	? `${stats?.count ?? 0} executed`
+																	: "never executed"}
+															</span>
+														);
+													})()}
+												</div>
 											)}
 										</div>
+										{hook.hookEventName ? (
+											<p className="mt-1 text-xs text-muted-foreground">
+												Last run:{" "}
+												{formatExecutionTs(
+													hookExecutionByEvent[hook.hookEventName]?.lastTs ??
+														null,
+												)}
+											</p>
+										) : null}
 										<p className="mt-1 text-xs font-mono text-muted-foreground">
 											{hook.path}
 										</p>

@@ -2,11 +2,12 @@
 
 ## Overview
 
-The desktop app is split into three layers:
+The desktop app is split into four layers:
 
 1. **Frontend (Next.js)**: Kanban board UI and user interactions.
-2. **Desktop Runtime (Tauri/Rust)**: process orchestration and event bridge.
-3. **Execution Engine (CLI + Agents)**: actual agent/task execution with hooks.
+2. **Desktop Runtime (Tauri/Rust)**: process orchestration and transport bridge.
+3. **RPC Runtime (CLI RPC server)**: shared session runtime and event bus.
+4. **Execution Engine (CLI + Agents)**: task-card subprocess execution with hooks.
 
 Boundary note:
 - Use explicit runtime entrypoints:
@@ -22,10 +23,9 @@ Primary file: `desktop/components/kanban-board.tsx`
 Responsibilities:
 
 - Manage card lifecycle (`queued -> running -> completed|failed|cancelled`).
-- Send `start_session` and `stop_session` commands to Tauri.
-- Listen for runtime events:
-  - `agent://chunk`
-  - `agent://session-ended`
+- Send task-card commands to Tauri (`start_session`, `stop_session`, etc.).
+- For chat, open one persistent websocket endpoint from Tauri (`get_chat_ws_endpoint`) and send command envelopes (`start/send/abort/reset`).
+- Listen for chat stream envelopes (`chat_event`) and compatibility events (`agent://chunk`).
 - Poll commands for process + hook state:
   - `poll_sessions`
   - `read_session_hooks`
@@ -36,9 +36,15 @@ Primary file: `desktop/src-tauri/src/main.rs`
 
 Responsibilities:
 
-- Spawn one CLI subprocess per session/card.
+- Ensure/register RPC server at app startup (`clite rpc ensure`, `clite rpc register`).
+- Spawn one CLI subprocess per task card.
 - Stream stdout/stderr as chunk events to frontend.
 - Persist transcript + hook logs per session.
+- Spawn one persistent chat runtime bridge script (`apps/desktop/scripts/chat-runtime-bridge.ts`) that handles `start/send/abort/set_sessions/reset`.
+- Run a local websocket bridge for chat with canonical envelopes:
+  - request: `{ requestId, request }`
+  - response: `{ type: "chat_response", requestId, response|error }`
+  - event: `{ type: "chat_event", event }`
 - Expose commands to webview:
   - `start_session`
   - `send_prompt`
@@ -48,7 +54,20 @@ Responsibilities:
   - `read_session_hooks`
   - team state/history helpers
 
-### 3) CLI + Agents
+### 3) RPC Runtime
+
+Primary files:
+
+- `cli/src/commands/rpc.ts`
+- `cli/src/commands/rpc-runtime.ts`
+
+Responsibilities:
+
+- Host shared runtime handlers (`start/send/abort runtime session`).
+- Publish runtime chat events (`runtime.chat.text_delta`, `runtime.chat.tool_call_*`).
+- Own stateful runtime/session lifecycle via `@cline/core/server`.
+
+### 4) CLI + Agents
 
 Primary file: `cli/src/index.ts`
 

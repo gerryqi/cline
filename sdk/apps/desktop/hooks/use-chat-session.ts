@@ -2,7 +2,7 @@
 
 import { models } from "@cline/llms";
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	type ChatMessage,
 	type ChatSessionConfig,
@@ -32,6 +32,29 @@ type ChatApiResult = {
 	}>;
 };
 
+type AgentChunkEvent = {
+	sessionId: string;
+	stream: string;
+	chunk: string;
+	ts: number;
+};
+
+type ChatWsResponseEvent = {
+	type: "chat_response";
+	requestId: string;
+	response?: {
+		sessionId?: string;
+		result?: ChatApiResult;
+		ok?: boolean;
+	};
+	error?: string;
+};
+
+type ChatWsChunkEvent = {
+	type: "chat_event";
+	event: AgentChunkEvent;
+};
+
 const DEFAULT_SYSTEM_PROMPT =
 	"You are Cline, an AI coding agent. Follow user requests and use tools when needed.";
 
@@ -54,6 +77,10 @@ export const DEFAULT_CHAT_CONFIG: ChatSessionConfig = {
 
 function makeId(prefix: string): string {
 	return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function makeRequestId(): string {
+	return `chat_req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function normalizeRuntimeConfig(config: ChatSessionConfig): ChatSessionConfig {
@@ -92,6 +119,21 @@ async function postSession(body: Record<string, unknown>) {
 }
 
 export function useChatSession() {
+	const wsRef = useRef<WebSocket | null>(null);
+	const pendingWsRequestsRef = useRef(
+		new Map<
+			string,
+			{
+				resolve: (value: {
+					error?: string;
+					sessionId?: string;
+					result?: ChatApiResult;
+				}) => void;
+				reject: (error: Error) => void;
+			}
+		>(),
+	);
+	const activeAssistantBySessionRef = useRef(new Map<string, string>());
 	const [sessionId, setSessionId] = useState<string | null>(null);
 	const [status, setStatus] = useState<ChatSessionStatus>("idle");
 	const [config, setConfig] = useState<ChatSessionConfig>(DEFAULT_CHAT_CONFIG);
@@ -120,6 +162,23 @@ export function useChatSession() {
 		);
 	}, []);
 
+	const appendMessageContent = useCallback((id: string, chunk: string) => {
+		if (!chunk) {
+			return;
+		}
+		setMessages((prev) =>
+			prev.map((message) => {
+				if (message.id !== id) {
+					return message;
+				}
+				return {
+					...message,
+					content: `${message.content}${chunk}`,
+				};
+			}),
+		);
+	}, []);
+
 	const applyProcessContext = useCallback(async () => {
 		try {
 			const ctx = await invoke<ProcessContext>("get_process_context");
@@ -136,6 +195,110 @@ export function useChatSession() {
 	useEffect(() => {
 		void applyProcessContext();
 	}, [applyProcessContext]);
+
+	useEffect(() => {
+		let cancelled = false;
+		let socket: WebSocket | null = null;
+
+		const connect = async () => {
+			let endpoint: string;
+			try {
+				endpoint = await invoke<string>("get_chat_ws_endpoint");
+			} catch {
+				return;
+			}
+			if (cancelled) {
+				return;
+			}
+			socket = new WebSocket(endpoint);
+			wsRef.current = socket;
+
+			socket.onmessage = (event) => {
+				if (typeof event.data !== "string") {
+					return;
+				}
+				let parsed: ChatWsResponseEvent | ChatWsChunkEvent;
+				try {
+					parsed = JSON.parse(event.data) as
+						| ChatWsResponseEvent
+						| ChatWsChunkEvent;
+				} catch {
+					return;
+				}
+
+				if (parsed.type === "chat_response") {
+					const pending = pendingWsRequestsRef.current.get(parsed.requestId);
+					if (!pending) {
+						return;
+					}
+					pendingWsRequestsRef.current.delete(parsed.requestId);
+					if (parsed.error) {
+						pending.reject(new Error(parsed.error));
+						return;
+					}
+					pending.resolve({
+						error: parsed.error,
+						sessionId: parsed.response?.sessionId,
+						result: parsed.response?.result,
+					});
+					return;
+				}
+
+				if (parsed.type === "chat_event") {
+					const chunkEvent = parsed.event;
+					if (chunkEvent.stream !== "chat_text") {
+						return;
+					}
+					const assistantId = activeAssistantBySessionRef.current.get(
+						chunkEvent.sessionId,
+					);
+					if (!assistantId) {
+						return;
+					}
+					appendMessageContent(assistantId, chunkEvent.chunk);
+					setRawTranscript((prev) => `${prev}${chunkEvent.chunk}`);
+				}
+			};
+
+			socket.onclose = () => {
+				if (wsRef.current === socket) {
+					wsRef.current = null;
+				}
+				if (pendingWsRequestsRef.current.size > 0) {
+					for (const [, pending] of pendingWsRequestsRef.current.entries()) {
+						pending.reject(new Error("chat websocket disconnected"));
+					}
+					pendingWsRequestsRef.current.clear();
+				}
+			};
+		};
+
+		void connect();
+
+		return () => {
+			cancelled = true;
+			if (socket) {
+				socket.close();
+			}
+		};
+	}, [appendMessageContent]);
+
+	const postChatSession = useCallback(async (body: Record<string, unknown>) => {
+		const socket = wsRef.current;
+		if (socket && socket.readyState === WebSocket.OPEN) {
+			const requestId = makeRequestId();
+			const responsePromise = new Promise<{
+				error?: string;
+				sessionId?: string;
+				result?: ChatApiResult;
+			}>((resolve, reject) => {
+				pendingWsRequestsRef.current.set(requestId, { resolve, reject });
+			});
+			socket.send(JSON.stringify({ requestId, request: body }));
+			return await responsePromise;
+		}
+		return await postSession(body);
+	}, []);
 
 	const start = useCallback(
 		async (nextConfig: ChatSessionConfig) => {
@@ -160,7 +323,7 @@ export function useChatSession() {
 			setConfig(parsed.data);
 
 			try {
-				const payload = await postSession({
+				const payload = await postChatSession({
 					action: "start",
 					config: parsed.data,
 				});
@@ -190,7 +353,7 @@ export function useChatSession() {
 				});
 			}
 		},
-		[addMessage],
+		[addMessage, postChatSession],
 	);
 
 	const sendPrompt = useCallback(
@@ -215,7 +378,7 @@ export function useChatSession() {
 
 			if (!activeSessionId) {
 				try {
-					const payload = await postSession({
+					const payload = await postChatSession({
 						action: "start",
 						config: parsed.data,
 					});
@@ -252,6 +415,10 @@ export function useChatSession() {
 			});
 
 			const assistantId = makeId("assistant");
+			if (!activeSessionId) {
+				return;
+			}
+			activeAssistantBySessionRef.current.set(activeSessionId, assistantId);
 			addMessage({
 				id: assistantId,
 				sessionId: activeSessionId,
@@ -262,7 +429,7 @@ export function useChatSession() {
 
 			setStatus("starting");
 			try {
-				const payload = await postSession({
+				const payload = await postChatSession({
 					action: "send",
 					sessionId: activeSessionId,
 					prompt: trimmed,
@@ -324,9 +491,11 @@ export function useChatSession() {
 					content: message,
 					createdAt: Date.now(),
 				});
+			} finally {
+				activeAssistantBySessionRef.current.delete(activeSessionId);
 			}
 		},
-		[addMessage, config, replaceMessageContent, sessionId],
+		[addMessage, config, postChatSession, replaceMessageContent, sessionId],
 	);
 
 	const abort = useCallback(async () => {
@@ -334,12 +503,12 @@ export function useChatSession() {
 			return;
 		}
 		try {
-			await postSession({ action: "abort", sessionId });
+			await postChatSession({ action: "abort", sessionId });
 		} catch {
 			// Best-effort abort path.
 		}
 		setStatus("cancelled");
-	}, [sessionId]);
+	}, [postChatSession, sessionId]);
 
 	const stop = useCallback(async () => {
 		await abort();
@@ -349,7 +518,7 @@ export function useChatSession() {
 		const activeSessionId = sessionId;
 		if (activeSessionId) {
 			try {
-				await postSession({ action: "reset", sessionId: activeSessionId });
+				await postChatSession({ action: "reset", sessionId: activeSessionId });
 			} catch {
 				// Best-effort reset path.
 			}
@@ -362,7 +531,7 @@ export function useChatSession() {
 		setToolCalls(0);
 		setTokensIn(0);
 		setTokensOut(0);
-	}, [sessionId]);
+	}, [postChatSession, sessionId]);
 
 	const summary = useMemo(
 		() => ({

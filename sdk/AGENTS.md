@@ -17,7 +17,7 @@ Packages:
 - `packages/shared` (`@cline/shared`): cross-package primitives (paths, common types, helpers).
 - `packages/llms` (`@cline/llms`): provider settings schema, model catalog, handler creation.
 - `packages/agents` (`@cline/agents`): stateless runtime loop, tools, hooks, teams.
-- `packages/rpc` (`@cline/rpc`): transport/control-plane APIs (session CRUD, tasks, events, approvals).
+- `packages/rpc` (`@cline/rpc`): transport/control-plane APIs (session CRUD, tasks, events, approvals) plus shared runtime chat client helpers (`RpcRuntimeChatClient`, `runRpcRuntimeEventBridge`, `runRpcRuntimeCommandBridge`).
 - `packages/core` (`@cline/core`) stateful orchestration (runtime composition, sessions, storage, RPC-backed session adapter).
 
 Apps:
@@ -76,16 +76,27 @@ flowchart LR
 
 ### `apps/code` startup flow (latest)
 
-1. On launch, Tauri checks RPC health via `clite rpc status`.
-2. If not healthy, it starts RPC in background via `clite rpc start`.
-3. After health is confirmed, it registers the desktop client via `clite rpc register`.
+1. On launch, Tauri ensures a compatible RPC server via `clite rpc ensure --json`.
+2. Tauri sets `CLINE_RPC_ADDRESS` to the ensured address.
+3. Tauri registers the desktop client via `clite rpc register`.
 4. Tauri starts a local persistent chat WebSocket bridge (`ws://127.0.0.1:<port>/chat`) and exposes the endpoint via `get_chat_ws_endpoint`.
 5. `apps/code` UI opens one persistent socket and sends chat control commands (`start/send/abort/reset`) as request envelopes over that connection.
 6. Host broadcasts chat stream events over the same socket using one canonical schema (`chat_event`) while still emitting `agent://chunk` for compatibility.
-7. Host-to-runtime remains RPC/gRPC-backed via existing bridge scripts:
-   - `apps/code/scripts/chat-create-session.ts` (`StartRuntimeSession`)
-   - `apps/code/scripts/chat-agent-turn.ts` (`SendRuntimeSession`)
-   - `apps/code/scripts/chat-stream-events.ts` (`StreamEvents`)
+7. Host-to-runtime remains RPC/gRPC-backed via one persistent bridge script using shared `@cline/rpc` runtime helpers:
+   - `apps/code/scripts/chat-runtime-bridge.ts` (`start/send/abort/set_sessions/reset`)
+   - shared helper: `runRpcRuntimeCommandBridge(...)` in `packages/rpc/src/runtime-chat-command-bridge.ts`
+
+### `apps/desktop` startup flow (latest)
+
+1. On launch, Tauri ensures a compatible RPC server via `clite rpc ensure --json`.
+2. Tauri sets `CLINE_RPC_ADDRESS` to the ensured address.
+3. Tauri registers the desktop client via `clite rpc register`.
+4. Tauri starts a local persistent chat WebSocket bridge (`ws://127.0.0.1:<port>/chat`) and exposes the endpoint via `get_chat_ws_endpoint`.
+5. `apps/desktop` UI opens one persistent socket and sends chat control commands (`start/send/abort/reset`) as request envelopes over that connection.
+6. Host broadcasts chat stream events over the same socket using canonical `chat_event` while still emitting `agent://chunk`.
+7. Host-to-runtime uses one persistent desktop bridge script backed by shared `@cline/rpc` helpers:
+   - `apps/desktop/scripts/chat-runtime-bridge.ts` (`start/send/abort/set_sessions/reset`)
+   - shared helper: `runRpcRuntimeCommandBridge(...)` in `packages/rpc/src/runtime-chat-command-bridge.ts`
 
 ### `apps/code` canonical chat transport schema
 

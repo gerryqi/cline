@@ -29,10 +29,12 @@ export function ProviderListContent({
 	providers,
 	onToggle,
 	onConfigure,
+	onAddProvider,
 }: {
 	providers: Provider[];
 	onToggle: (id: string) => void;
 	onConfigure: (id: string) => void;
+	onAddProvider: () => void;
 }) {
 	return (
 		<ScrollArea className="h-full">
@@ -43,6 +45,7 @@ export function ProviderListContent({
 					</h2>
 					<Button
 						className="flex items-center gap-2 rounded-lg border border-border bg-accent px-3.5 py-2 text-sm font-medium text-foreground hover:bg-accent/80 transition-colors"
+						onClick={onAddProvider}
 						variant="ghost"
 					>
 						<PlusCircle className="h-4 w-4" />

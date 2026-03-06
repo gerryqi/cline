@@ -1,12 +1,20 @@
 # Cline Desktop
 
-`@cline/desktop` is a Tauri desktop app that wraps the tasks UI and runs real agent tasks through the CLI as subprocesses.
+`@cline/desktop` is a Tauri desktop app that wraps the tasks UI and uses the shared RPC runtime for chat plus CLI subprocesses for task cards.
 
 ## What It Does
 
 - Adds `desktop` as a Bun workspace package.
 - Runs a Next.js frontend inside a Tauri webview.
 - Starts agent tasks by spawning the CLI (`packages/cli/src/index.ts`) per card.
+- Boots RPC on startup via `clite rpc ensure` + `clite rpc register`.
+- Runs chat through RPC runtime methods (`startRuntimeSession`, `sendRuntimeSession`, `abortRuntimeSession`).
+- Streams chat runtime events over one persistent websocket envelope (`chat_event` / `chat_response`).
+- Reuses shared `@cline/rpc` runtime chat helpers for desktop/code bridge scripts:
+  - [`packages/rpc/src/runtime-chat-client.ts`](/Users/beatrix/dev/clinee/sdk-wip/packages/rpc/src/runtime-chat-client.ts)
+  - [`packages/rpc/src/runtime-chat-command-bridge.ts`](/Users/beatrix/dev/clinee/sdk-wip/packages/rpc/src/runtime-chat-command-bridge.ts)
+  - [`packages/rpc/src/runtime-chat-stream-bridge.ts`](/Users/beatrix/dev/clinee/sdk-wip/packages/rpc/src/runtime-chat-stream-bridge.ts)
+  - [`apps/desktop/scripts/chat-runtime-bridge.ts`](/Users/beatrix/dev/clinee/sdk-wip/apps/desktop/scripts/chat-runtime-bridge.ts)
 - Auto-discovers sessions started directly from CLI (outside Desktop).
 - Uses persisted prompt data (and falls back to the first user message) for discovered session card titles.
 - Tracks live output via streamed stdout/stderr events.
@@ -38,11 +46,11 @@ From repository root (`packages`):
 ## Basic Flow
 
 1. Open desktop app.
-2. Create a new agent task from the header.
-3. Click **Start** on a queued card.
-4. Backend launches a new CLI subprocess with task settings.
-5. Card state updates from streamed chunks + hook logs.
-6. Session end transitions card to completed/failed/cancelled.
+2. Tauri ensures/registers RPC and starts the local chat websocket bridge.
+3. Chat UI opens one websocket (`get_chat_ws_endpoint`) and sends command envelopes (`start/send/abort/reset`).
+4. Tauri proxies chat commands to one persistent RPC runtime bridge script and forwards stream events.
+5. Task cards still run as CLI subprocesses for long-running task orchestration.
+6. Card state updates from streamed chunks + hook logs and session end transitions.
 
 ## Environment
 

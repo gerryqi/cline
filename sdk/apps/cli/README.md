@@ -2,6 +2,8 @@
 
 Fast CLI for running agentic loops with LLMs. Streams output in real time and includes built-in tools, sub-agent spawning, and team runtime support by default.
 
+Lifecycle note: active runs now install both `SIGINT` and `SIGTERM` abort handlers, and CLI runtime/session managers are disposed on shutdown paths to reduce orphaned subprocesses.
+
 ## Installation
 
 ```bash
@@ -150,8 +152,8 @@ When running in interactive mode with `-p cline`, `clite` now prints an account 
 | `--mission-step-interval <n>` | Mission log update interval in meaningful steps (default: `3`) |
 | `--mission-time-interval-ms <ms>` | Mission log update interval in milliseconds (default: `120000`) |
 | `--cwd <path>` | Working directory for built-in tools (default: current directory) |
-| `-h, --help` | Show help |
-| `-v, --version` | Show version |
+| `-h, --help` | Show help (exits immediately) |
+| `-v, --version` | Show version (exits immediately) |
 
 `--output json` is non-interactive and requires either a prompt argument or piped stdin.
 
@@ -288,6 +290,12 @@ On startup, `clite` also attempts a legacy settings import:
 - Existing providers in `providers.json` are never overwritten
 - Missing providers discovered in legacy files are merged into `providers.json`
 - Migrated provider entries are annotated with `tokenSource: "migration"`
+
+Custom provider registry notes:
+
+- Provider runtime settings continue to persist in `<CLINE_DATA_DIR>/settings/providers.json`.
+- User-added OpenAI-compatible provider model catalogs are persisted in `<CLINE_DATA_DIR>/settings/models.json` (or alongside `CLINE_PROVIDER_SETTINGS_PATH`).
+- `models.json` stores model lists by provider ID and is loaded by RPC runtime provider actions.
 
 ## Features
 
