@@ -4,11 +4,14 @@ import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { type AgentEvent, getClineDefaultSystemPrompt } from "@cline/agents";
 import {
+	ClineAccountService,
 	CoreSessionService,
 	createOAuthClientCallbacks,
 	DefaultSessionManager,
 	enrichPromptWithMentions,
+	executeRpcClineAccountAction,
 	generateWorkspaceInfo,
+	isRpcClineAccountActionRequest,
 	loginClineOAuth,
 	loginOcaOAuth,
 	loginOpenAICodex,
@@ -28,6 +31,7 @@ import {
 	type RpcProviderActionRequest,
 	type RpcProviderListItem,
 	type RpcProviderModel,
+	type RpcProviderSettingsActionRequest,
 	setHomeDir,
 	setHomeDirIfUnset,
 } from "@cline/shared";
@@ -216,7 +220,7 @@ async function getProviderModels(
 function saveProviderSettings(
 	manager: ProviderSettingsManager,
 	request: Extract<
-		RpcProviderActionRequest,
+		RpcProviderSettingsActionRequest,
 		{ action: "saveProviderSettings" }
 	>,
 ): { providerId: string; enabled: boolean; settingsPath: string } {
@@ -367,6 +371,13 @@ function saveProviderOAuthCredentials(
 	};
 	manager.saveProviderSettings(merged, { tokenSource: "oauth" });
 	return merged;
+}
+
+function resolveClineAuthToken(
+	settings: LlmsProviders.ProviderSettings | undefined,
+): string | undefined {
+	const token = settings?.auth?.accessToken?.trim() || settings?.apiKey?.trim();
+	return token && token.length > 0 ? token : undefined;
 }
 
 export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
@@ -639,6 +650,18 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 		runProviderAction: async (requestJson) => {
 			const manager = new ProviderSettingsManager();
 			const parsed = JSON.parse(requestJson) as RpcProviderActionRequest;
+			if (isRpcClineAccountActionRequest(parsed)) {
+				const settings = manager.getProviderSettings("cline");
+				const accountService = new ClineAccountService({
+					apiBaseUrl: settings?.baseUrl?.trim() || "https://api.cline.bot",
+					getAuthToken: async () => resolveClineAuthToken(settings),
+				});
+				return {
+					resultJson: JSON.stringify(
+						await executeRpcClineAccountAction(parsed, accountService),
+					),
+				};
+			}
 			if (parsed.action === "listProviders") {
 				return { resultJson: JSON.stringify(await listProviders(manager)) };
 			}

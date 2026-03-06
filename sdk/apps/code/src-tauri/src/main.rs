@@ -178,6 +178,7 @@ struct ChatTurnResult {
     usage: Option<ChatUsage>,
     input_tokens: Option<u64>,
     output_tokens: Option<u64>,
+    total_cost: Option<f64>,
     iterations: Option<u64>,
     finish_reason: Option<String>,
     #[serde(default)]
@@ -764,6 +765,48 @@ fn now_ms() -> u64 {
         .unwrap_or_default()
 }
 
+fn value_as_string(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Number(number) => Some(number.to_string()),
+        Value::Bool(flag) => Some(if *flag { "true" } else { "false" }.to_string()),
+        _ => None,
+    }
+}
+
+fn json_string_field(value: &Value, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(found) = value.get(key).and_then(value_as_string) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn json_bool_field(value: &Value, keys: &[&str]) -> Option<bool> {
+    for key in keys {
+        let next = value.get(key).and_then(|entry| match entry {
+            Value::Bool(flag) => Some(*flag),
+            Value::Number(number) => number.as_i64().map(|raw| raw != 0),
+            Value::String(text) => {
+                let normalized = text.trim().to_lowercase();
+                if normalized == "true" || normalized == "1" {
+                    Some(true)
+                } else if normalized == "false" || normalized == "0" {
+                    Some(false)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        });
+        if next.is_some() {
+            return next;
+        }
+    }
+    None
+}
+
 fn normalize_chat_finish_status(status: Option<&str>) -> String {
     let Some(raw) = status else {
         return "completed".to_string();
@@ -882,6 +925,7 @@ fn append_chat_usage_hook_event(session_id: &str, result: &ChatTurnResult) {
         .usage
         .as_ref()
         .and_then(|usage| usage.total_cost)
+        .or(result.total_cost)
         .filter(|value| value.is_finite() && *value >= 0.0);
 
     let payload = serde_json::json!({
@@ -891,7 +935,7 @@ fn append_chat_usage_hook_event(session_id: &str, result: &ChatTurnResult) {
         "usage": {
             "inputTokens": input_tokens.unwrap_or(0),
             "outputTokens": output_tokens.unwrap_or(0),
-            "totalCost": total_cost.unwrap_or(0.0),
+            "totalCost": total_cost,
         }
     });
 
@@ -3117,87 +3161,45 @@ fn list_cli_sessions(
     };
 
     for item in items {
-        let session_id = item
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_string();
+        let session_id =
+            json_string_field(item, &["session_id", "sessionId"]).unwrap_or_default();
         if session_id.is_empty() {
             continue;
         }
+        let cwd = json_string_field(item, &["cwd"]).unwrap_or_default();
+        let workspace_root = json_string_field(item, &["workspace_root", "workspaceRoot"])
+            .or_else(|| {
+                if cwd.trim().is_empty() {
+                    None
+                } else {
+                    Some(cwd.clone())
+                }
+            })
+            .unwrap_or_default();
         out.push(CliDiscoveredSession {
             session_id,
-            status: item
-                .get("status")
-                .and_then(|v| v.as_str())
-                .unwrap_or("running")
-                .to_string(),
-            provider: item
-                .get("provider")
-                .and_then(|v| v.as_str())
-                .unwrap_or("anthropic")
-                .to_string(),
-            model: item
-                .get("model")
-                .and_then(|v| v.as_str())
+            status: json_string_field(item, &["status"])
+                .unwrap_or_else(|| "running".to_string()),
+            provider: json_string_field(item, &["provider"])
+                .unwrap_or_else(|| "anthropic".to_string()),
+            model: json_string_field(item, &["model"])
                 .unwrap_or_default()
                 .to_string(),
-            cwd: item
-                .get("cwd")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string(),
-            workspace_root: item
-                .get("workspace_root")
-                .and_then(|v| v.as_str())
-                .or_else(|| item.get("cwd").and_then(|v| v.as_str()))
-                .unwrap_or_default()
-                .to_string(),
-            team_name: item
-                .get("team_name")
-                .and_then(|v| v.as_str())
-                .map(|v| v.to_string()),
-            parent_session_id: item
-                .get("parent_session_id")
-                .and_then(|v| v.as_str())
-                .map(|v| v.to_string()),
-            parent_agent_id: item
-                .get("parent_agent_id")
-                .and_then(|v| v.as_str())
-                .map(|v| v.to_string()),
-            agent_id: item
-                .get("agent_id")
-                .and_then(|v| v.as_str())
-                .map(|v| v.to_string()),
-            conversation_id: item
-                .get("conversation_id")
-                .and_then(|v| v.as_str())
-                .map(|v| v.to_string()),
-            is_subagent: item
-                .get("is_subagent")
-                .and_then(|v| v.as_i64())
-                .map(|v| v != 0)
-                .or_else(|| item.get("is_subagent").and_then(|v| v.as_bool()))
-                .unwrap_or(false),
-            prompt: item
-                .get("prompt")
-                .and_then(|v| v.as_str())
-                .map(|v| v.to_string()),
-            started_at: item
-                .get("started_at")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string(),
-            ended_at: item
-                .get("ended_at")
-                .and_then(|v| v.as_str())
-                .map(|v| v.to_string()),
-            interactive: item
-                .get("interactive")
-                .and_then(|v| v.as_i64())
-                .map(|v| v != 0)
-                .or_else(|| item.get("interactive").and_then(|v| v.as_bool()))
-                .unwrap_or(false),
+            cwd,
+            workspace_root,
+            team_name: json_string_field(item, &["team_name", "teamName"]),
+            parent_session_id: json_string_field(
+                item,
+                &["parent_session_id", "parentSessionId"],
+            ),
+            parent_agent_id: json_string_field(item, &["parent_agent_id", "parentAgentId"]),
+            agent_id: json_string_field(item, &["agent_id", "agentId"]),
+            conversation_id: json_string_field(item, &["conversation_id", "conversationId"]),
+            is_subagent: json_bool_field(item, &["is_subagent", "isSubagent"]).unwrap_or(false),
+            prompt: json_string_field(item, &["prompt"]),
+            started_at: json_string_field(item, &["started_at", "startedAt"]).unwrap_or_default(),
+            ended_at: json_string_field(item, &["ended_at", "endedAt"]),
+            interactive: json_bool_field(item, &["interactive"]).unwrap_or(false),
         });
     }
 
@@ -4164,15 +4166,14 @@ fn list_chat_sessions(
                     continue;
                 }
                 let manifest_path = path.join(format!("{session_id}.json"));
-                let is_desktop_chat = fs::read_to_string(&manifest_path)
+                let manifest = fs::read_to_string(&manifest_path)
                     .ok()
                     .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
-                    .and_then(|value| {
-                        value
-                            .get("source")
-                            .and_then(|v| v.as_str())
-                            .map(|v| v == "desktop-chat")
-                    })
+                    .unwrap_or(Value::Null);
+                let is_desktop_chat = manifest
+                    .get("source")
+                    .and_then(|v| v.as_str())
+                    .map(|v| v == "desktop-chat")
                     .unwrap_or(false);
                 if !is_desktop_chat && !session_id.starts_with("chat_") {
                     continue;
@@ -4207,13 +4208,34 @@ fn list_chat_sessions(
                     .and_then(|ts| ts.duration_since(std::time::UNIX_EPOCH).ok())
                     .map(|d| d.as_millis() as u64)
                     .unwrap_or_else(now_ms);
+                let cwd = json_string_field(&manifest, &["cwd"]).unwrap_or_default();
+                let workspace_root = json_string_field(
+                    &manifest,
+                    &["workspace_root", "workspaceRoot"],
+                )
+                .or_else(|| {
+                    if cwd.trim().is_empty() {
+                        None
+                    } else {
+                        Some(cwd.clone())
+                    }
+                })
+                .unwrap_or_default();
+                let provider =
+                    json_string_field(&manifest, &["provider"]).unwrap_or_else(|| "unknown".to_string());
+                let model =
+                    json_string_field(&manifest, &["model"]).unwrap_or_else(|| "unknown".to_string());
+                let started_at = json_string_field(&manifest, &["started_at", "startedAt"])
+                    .unwrap_or_else(|| file_ts.to_string());
+                let ended_at = json_string_field(&manifest, &["ended_at", "endedAt"])
+                    .unwrap_or_else(|| file_ts.to_string());
                 out.push(CliDiscoveredSession {
                     session_id: session_id.clone(),
                     status: "completed".to_string(),
-                    provider: "unknown".to_string(),
-                    model: "unknown".to_string(),
-                    cwd: "".to_string(),
-                    workspace_root: "".to_string(),
+                    provider,
+                    model,
+                    cwd,
+                    workspace_root,
                     team_name: None,
                     parent_session_id: None,
                     parent_agent_id: None,
@@ -4221,8 +4243,8 @@ fn list_chat_sessions(
                     conversation_id: None,
                     is_subagent: false,
                     prompt,
-                    started_at: file_ts.to_string(),
-                    ended_at: Some(file_ts.to_string()),
+                    started_at,
+                    ended_at: Some(ended_at),
                     interactive: false,
                 });
             }

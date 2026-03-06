@@ -529,7 +529,7 @@ function ToolMessageBlock({ message }: { message: ChatMessage }) {
 		<div className="flex justify-start w-full">
 			<div className={cn("w-full rounded-xl text-xs")}>
 				<Button
-					className="w-full justify-start gap-2 p-0 text-left font-medium text-foreground/80 hover:bg-transparent text-xs"
+					className="w-full justify-start gap-2 p-0 text-left font-medium text-foreground/70 hover:bg-transparent text-xs"
 					onClick={() => setExpanded((current) => !current)}
 					type="button"
 					variant="ghost"

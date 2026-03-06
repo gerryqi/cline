@@ -2,7 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { ChevronDown, Filter, Pin, Plus, Search, Settings } from "lucide-react";
+import { ChevronDown, Filter, Plus, Search, Settings } from "lucide-react";
 import {
 	type ReactNode,
 	useCallback,
@@ -190,7 +190,7 @@ function toThread(session: SessionHistoryItem): Thread {
 	};
 }
 
-function formatTokenCount(
+function _formatTokenCount(
 	inputTokens?: number,
 	outputTokens?: number,
 ): string | null {
@@ -206,7 +206,7 @@ function formatTokenCount(
 	return `${total}`;
 }
 
-function formatCostUsd(value?: number): string | null {
+function _formatCostUsd(value?: number): string | null {
 	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
 		return null;
 	}
@@ -836,7 +836,7 @@ function ThreadSection({
 }) {
 	return (
 		<div className="mb-1 w-full min-w-0 max-w-full overflow-x-hidden mx-3">
-			<div className="flex min-w-0 max-w-60 items-center justify-between py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+			<div className="flex min-w-0 max-w-60 items-center justify-between py-1.5 text-xs uppercase tracking-wider text-muted-foreground">
 				<span>{label}</span>
 				{action}
 			</div>
@@ -854,9 +854,6 @@ function ThreadItem({
 	isActive: boolean;
 	onClick: () => void;
 }) {
-	const tokenLabel = formatTokenCount(thread.inputTokens, thread.outputTokens);
-	const costLabel = formatCostUsd(thread.totalCostUsd);
-
 	return (
 		<Button
 			className={cn(
@@ -869,29 +866,22 @@ function ThreadItem({
 			type="button"
 			variant="session"
 		>
-			<div className="flex flex-col w-[92%] min-w-0 items-center gap-1.5 overflow-hidden">
-				<div className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-tight justify-between w-full">
-					<span>{normalizeTitle(thread.title)}</span>
-					{thread.pinned && (
-						<Pin className="h-3 w-3 shrink-0 text-muted-foreground" />
-					)}
+			<div className="flex flex-col w-[90%] min-w-0 items-center gap-1.5 overflow-hidden">
+				<div className="flex min-w-0 overflow-hidden justify-between w-full">
+					<div className="text-ellipsis whitespace-nowrap text-sm font-semibold leading-tight">
+						{normalizeTitle(thread.title)}
+					</div>
+					<div className="text-xs hidden">{thread.time}</div>
 				</div>
-				<div className="mt-0.5 flex justify-between w-full items-center gap-2 text-xs text-muted-foreground">
-					<span className="truncate rounded bg-secondary py-0.5 font-mono text-xs">
+				<div className="mt-0.5 flex w-full items-center gap-1 text-xs text-muted-foreground">
+					<span className="truncate rounded bg-secondary py-0.5 font-mono text-xs px-1">
 						{thread.codebase}
 					</span>
-					{tokenLabel && (
-						<span className="flex">
-							<span className="shrink-0 text-xs">{tokenLabel}</span>
+					{thread.model && (
+						<span className="truncate max-w-28 rounded border border-sidebar-border px-1 py-0.5 font-mono text-[10px]">
+							{thread.model}
 						</span>
 					)}
-					{costLabel && (
-						<span className="flex">
-							<span>·</span>
-							<span className="shrink-0 text-xs">{costLabel}</span>
-						</span>
-					)}
-					<span className="ml-auto">{thread.time}</span>
 				</div>
 			</div>
 		</Button>

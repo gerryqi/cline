@@ -1,0 +1,62 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+	type ClineAccountOperations,
+	executeRpcClineAccountAction,
+	RpcClineAccountService,
+} from "./rpc";
+
+describe("executeRpcClineAccountAction", () => {
+	it("dispatches fetchMe", async () => {
+		const service: ClineAccountOperations = {
+			fetchMe: vi.fn(async () => ({
+				id: "u1",
+				email: "user1@example.com",
+				displayName: "User 1",
+				photoUrl: "",
+				createdAt: "2025-01-01T00:00:00Z",
+				updatedAt: "2025-01-01T00:00:00Z",
+				organizations: [],
+			})),
+			fetchBalance: vi.fn(async () => ({ balance: 1, userId: "u1" })),
+			fetchUsageTransactions: vi.fn(async () => []),
+			fetchPaymentTransactions: vi.fn(async () => []),
+			fetchUserOrganizations: vi.fn(async () => []),
+			fetchOrganizationBalance: vi.fn(async () => ({
+				balance: 1,
+				organizationId: "org-1",
+			})),
+			fetchOrganizationUsageTransactions: vi.fn(async () => []),
+			switchAccount: vi.fn(async () => {}),
+		};
+
+		const result = await executeRpcClineAccountAction(
+			{ action: "clineAccount", operation: "fetchMe" },
+			service,
+		);
+		expect(service.fetchMe).toHaveBeenCalledTimes(1);
+		expect(result).toMatchObject({ id: "u1" });
+	});
+});
+
+describe("RpcClineAccountService", () => {
+	it("sends provider action payload and parses response", async () => {
+		const runProviderAction = vi.fn(async (requestJson: string) => {
+			const parsed = JSON.parse(requestJson) as {
+				action: string;
+				operation: string;
+			};
+			expect(parsed).toEqual({
+				action: "clineAccount",
+				operation: "fetchMe",
+			});
+			return {
+				resultJson: JSON.stringify({ id: "u2", email: "u2@example.com" }),
+			};
+		});
+		const service = new RpcClineAccountService({ runProviderAction });
+
+		const me = await service.fetchMe();
+		expect(runProviderAction).toHaveBeenCalledTimes(1);
+		expect(me).toEqual({ id: "u2", email: "u2@example.com" });
+	});
+});

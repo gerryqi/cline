@@ -15,6 +15,7 @@ bun i -g @cline/cli
 ```bash
 # Single prompt
 clite "What is 2+2?"
+# Single-prompt runs are non-interactive and exit when the turn finishes
 
 # Default run includes tools + spawn + teams
 clite "Audit this package and propose fixes"
@@ -108,6 +109,12 @@ clite auth oca
 When you run with one of these providers and no API key is available, `clite` will automatically start the OAuth login flow and persist credentials to provider settings.
 
 During OAuth login, `clite` now tries to open the authorization URL in your default browser automatically and still prints the URL for manual fallback.
+
+When running in interactive mode with `-p cline`, `clite` now prints an account banner before the model line when OAuth credentials are available, including:
+
+- user email
+- active account credit balance (organization balance when an organization is active, otherwise personal balance)
+- active organization name (when an organization account is active)
 
 ## Options
 

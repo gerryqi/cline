@@ -1,0 +1,176 @@
+import type {
+	RpcClineAccountActionRequest,
+	RpcProviderActionRequest,
+} from "@cline/shared";
+import type {
+	ClineAccountBalance,
+	ClineAccountOrganization,
+	ClineAccountOrganizationBalance,
+	ClineAccountOrganizationUsageTransaction,
+	ClineAccountPaymentTransaction,
+	ClineAccountUsageTransaction,
+	ClineAccountUser,
+} from "./types";
+
+export interface ClineAccountOperations {
+	fetchMe(): Promise<ClineAccountUser>;
+	fetchBalance(userId?: string): Promise<ClineAccountBalance>;
+	fetchUsageTransactions(
+		userId?: string,
+	): Promise<ClineAccountUsageTransaction[]>;
+	fetchPaymentTransactions(
+		userId?: string,
+	): Promise<ClineAccountPaymentTransaction[]>;
+	fetchUserOrganizations(): Promise<ClineAccountOrganization[]>;
+	fetchOrganizationBalance(
+		organizationId: string,
+	): Promise<ClineAccountOrganizationBalance>;
+	fetchOrganizationUsageTransactions(input: {
+		organizationId: string;
+		memberId?: string;
+	}): Promise<ClineAccountOrganizationUsageTransaction[]>;
+	switchAccount(organizationId?: string | null): Promise<void>;
+}
+
+export function isRpcClineAccountActionRequest(
+	request: RpcProviderActionRequest,
+): request is RpcClineAccountActionRequest {
+	return request.action === "clineAccount";
+}
+
+export async function executeRpcClineAccountAction(
+	request: RpcClineAccountActionRequest,
+	service: ClineAccountOperations,
+): Promise<unknown> {
+	switch (request.operation) {
+		case "fetchMe":
+			return service.fetchMe();
+		case "fetchBalance":
+			return service.fetchBalance(request.userId);
+		case "fetchUsageTransactions":
+			return service.fetchUsageTransactions(request.userId);
+		case "fetchPaymentTransactions":
+			return service.fetchPaymentTransactions(request.userId);
+		case "fetchUserOrganizations":
+			return service.fetchUserOrganizations();
+		case "fetchOrganizationBalance":
+			return service.fetchOrganizationBalance(request.organizationId);
+		case "fetchOrganizationUsageTransactions":
+			return service.fetchOrganizationUsageTransactions({
+				organizationId: request.organizationId,
+				memberId: request.memberId,
+			});
+		case "switchAccount":
+			await service.switchAccount(request.organizationId);
+			return { updated: true };
+		default: {
+			const exhaustive: never = request;
+			throw new Error(
+				`Unsupported Cline account operation: ${String(exhaustive)}`,
+			);
+		}
+	}
+}
+
+export interface RpcProviderActionExecutor {
+	runProviderAction(requestJson: string): Promise<{ resultJson: string }>;
+}
+
+export class RpcClineAccountService implements ClineAccountOperations {
+	private readonly executor: RpcProviderActionExecutor;
+
+	constructor(executor: RpcProviderActionExecutor) {
+		this.executor = executor;
+	}
+
+	public async fetchMe(): Promise<ClineAccountUser> {
+		return this.request<ClineAccountUser>({
+			action: "clineAccount",
+			operation: "fetchMe",
+		});
+	}
+
+	public async fetchBalance(userId?: string): Promise<ClineAccountBalance> {
+		return this.request<ClineAccountBalance>({
+			action: "clineAccount",
+			operation: "fetchBalance",
+			...(userId?.trim() ? { userId: userId.trim() } : {}),
+		});
+	}
+
+	public async fetchUsageTransactions(
+		userId?: string,
+	): Promise<ClineAccountUsageTransaction[]> {
+		return this.request<ClineAccountUsageTransaction[]>({
+			action: "clineAccount",
+			operation: "fetchUsageTransactions",
+			...(userId?.trim() ? { userId: userId.trim() } : {}),
+		});
+	}
+
+	public async fetchPaymentTransactions(
+		userId?: string,
+	): Promise<ClineAccountPaymentTransaction[]> {
+		return this.request<ClineAccountPaymentTransaction[]>({
+			action: "clineAccount",
+			operation: "fetchPaymentTransactions",
+			...(userId?.trim() ? { userId: userId.trim() } : {}),
+		});
+	}
+
+	public async fetchUserOrganizations(): Promise<ClineAccountOrganization[]> {
+		return this.request<ClineAccountOrganization[]>({
+			action: "clineAccount",
+			operation: "fetchUserOrganizations",
+		});
+	}
+
+	public async fetchOrganizationBalance(
+		organizationId: string,
+	): Promise<ClineAccountOrganizationBalance> {
+		const orgId = organizationId.trim();
+		if (!orgId) {
+			throw new Error("organizationId is required");
+		}
+		return this.request<ClineAccountOrganizationBalance>({
+			action: "clineAccount",
+			operation: "fetchOrganizationBalance",
+			organizationId: orgId,
+		});
+	}
+
+	public async fetchOrganizationUsageTransactions(input: {
+		organizationId: string;
+		memberId?: string;
+	}): Promise<ClineAccountOrganizationUsageTransaction[]> {
+		const orgId = input.organizationId.trim();
+		if (!orgId) {
+			throw new Error("organizationId is required");
+		}
+		return this.request<ClineAccountOrganizationUsageTransaction[]>({
+			action: "clineAccount",
+			operation: "fetchOrganizationUsageTransactions",
+			organizationId: orgId,
+			...(input.memberId?.trim() ? { memberId: input.memberId.trim() } : {}),
+		});
+	}
+
+	public async switchAccount(organizationId?: string | null): Promise<void> {
+		await this.request<{ updated: boolean }>({
+			action: "clineAccount",
+			operation: "switchAccount",
+			organizationId: organizationId?.trim() || null,
+		});
+	}
+
+	private async request<T>(request: RpcClineAccountActionRequest): Promise<T> {
+		const response = await this.executor.runProviderAction(
+			JSON.stringify(request),
+		);
+		const payload = response.resultJson?.trim();
+		if (!payload) {
+			throw new Error("provider action returned an empty response payload");
+		}
+		return JSON.parse(payload) as T;
+	}
+}

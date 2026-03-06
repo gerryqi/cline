@@ -13,7 +13,7 @@ It also exposes runtime session execution RPCs:
 - `SendRuntimeSession(session_id, request_json)` - execute a prompt turn on that runtime session
 - `AbortRuntimeSession(session_id)` - request cancellation for an active runtime session turn
 - `PublishEvent(...)` / `StreamEvents(...)` - publish and subscribe to routed events
-- `RunProviderAction(request_json)` - provider catalog/model/settings actions
+- `RunProviderAction(request_json)` - provider catalog/model/settings actions and typed Cline account actions (`action: "clineAccount"`)
 - `RunProviderOAuthLogin(provider)` - provider OAuth login action
 
 Runtime payload DTOs consumed by multiple hosts are defined in `@cline/shared`

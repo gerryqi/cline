@@ -4,6 +4,22 @@
  * Node/runtime services for host applications (CLI, desktop runtime, servers).
  */
 
+export {
+	type ClineAccountBalance,
+	type ClineAccountOperations,
+	type ClineAccountOrganization,
+	type ClineAccountOrganizationBalance,
+	type ClineAccountOrganizationUsageTransaction,
+	type ClineAccountPaymentTransaction,
+	ClineAccountService,
+	type ClineAccountServiceOptions,
+	type ClineAccountUsageTransaction,
+	type ClineAccountUser,
+	executeRpcClineAccountAction,
+	isRpcClineAccountActionRequest,
+	RpcClineAccountService,
+	type RpcProviderActionExecutor,
+} from "../account";
 export type {
 	AgentConfigWatcher,
 	AgentConfigWatcherEvent,

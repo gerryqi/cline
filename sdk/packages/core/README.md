@@ -7,6 +7,16 @@ Package-level docs are centralized:
 
 `@cline/core` is the stateful orchestration layer (runtime composition, sessions, storage, RPC session adapter).
 
+## Cline Account Service
+
+`@cline/core` now exposes a typed Cline account service API for account/profile/credit reads and account switching:
+
+- `ClineAccountService` for direct authenticated API usage
+- `RpcClineAccountService` for typed account calls over `RunProviderAction`
+- `executeRpcClineAccountAction(...)` and `isRpcClineAccountActionRequest(...)` for RPC runtime handler dispatch
+
+This keeps account behavior in core and removes ad hoc account JSON parsing from host runtime handlers.
+
 ## RPC Session Backend
 
 `@cline/core/server` provides the SQLite implementation for the RPC session persistence contract:

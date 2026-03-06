@@ -119,6 +119,7 @@ Under:
 - [`agent-sidebar.tsx`](/Users/beatrix/dev/clinee/sdk-wip/apps/code/components/agent-sidebar.tsx) does a second-pass hydration for recent sessions by reading session messages.
 - Sidebar polling is throttled and skips background-tab refreshes to reduce UI main-thread churn while turns are streaming.
 - Sidebar history is deduplicated by `sessionId` across CLI/chat discovery results before rendering.
+- Session discovery normalizes both snake_case and camelCase fields from CLI history payloads so `model`, `workspaceRoot`, and timestamps hydrate reliably.
 - Sidebar ordering is deterministic: newest session first, sorted by `startedAt` descending (not by last update time).
 - Session titles are derived from the first non-empty user message, with assistant text as fallback.
 - Session titles from discovered session prompts are normalized at write time (for example stripping `<user_input ...>` wrappers) so polling and message hydration use the same canonical title text.
@@ -126,6 +127,8 @@ Under:
   - if discovered status is `failed` but the last meaningful message is from `assistant`, sidebar treats it as `completed`
   - if a session has no meaningful user/assistant message content, it is treated as `idle` (not `completed`)
 - Refined status is also propagated into in-memory `sessions` state so reopened history sessions keep header/sidebar status in sync.
+- Chat fallback history now hydrates provider/model/workspace metadata from each session manifest when available instead of defaulting to placeholders.
+- Chat usage hook persistence preserves `totalCost` as optional, so unknown pricing no longer gets recorded as an explicit zero.
 
 ### 7) Render in Chat UI
 

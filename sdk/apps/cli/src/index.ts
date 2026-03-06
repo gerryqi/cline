@@ -28,6 +28,7 @@ import {
 	type ToolPolicy,
 } from "@cline/agents";
 import {
+	ClineAccountService,
 	createTeamName,
 	createUserInstructionConfigWatcher,
 	loadRulesForSystemPromptFromWatcher,
@@ -490,6 +491,81 @@ function printModelProviderInfo(config: Config): void {
 	);
 }
 
+function formatCreditBalance(value: number): string {
+	if (!Number.isFinite(value)) {
+		return "$0";
+	}
+	if (Number.isInteger(value)) {
+		return `$${value}`;
+	}
+	return `$${value.toFixed(4).replace(/\.?0+$/, "")}`;
+}
+
+function normalizeCreditBalance(value: number): number {
+	if (!Number.isFinite(value)) {
+		return 0;
+	}
+	// Cline account APIs may return raw integer micro-credit units.
+	if (Number.isInteger(value) && Math.abs(value) >= 1_000_000) {
+		return value / 1_000_000;
+	}
+	return value;
+}
+
+async function resolveInteractiveClineWelcomeLine(input: {
+	config: Config;
+	clineApiBaseUrl?: string;
+	clineProviderSettings?: providers.ProviderSettings;
+}): Promise<string | undefined> {
+	if (input.config.providerId !== "cline") {
+		return undefined;
+	}
+	const persistedAccessToken =
+		input.clineProviderSettings?.auth?.accessToken?.trim() || "";
+	const configApiKey = input.config.apiKey.trim();
+	let authToken = persistedAccessToken || configApiKey;
+	if (authToken.startsWith("workos:workos:")) {
+		authToken = authToken.slice("workos:".length);
+	}
+	if (!authToken) {
+		return undefined;
+	}
+
+	const service = new ClineAccountService({
+		apiBaseUrl: input.clineApiBaseUrl?.trim() || "https://api.cline.bot",
+		getAuthToken: async () => authToken,
+	});
+	try {
+		const me = await service.fetchMe();
+		const activeOrgName = me.organizations
+			.find((org) => org.active)
+			?.name?.trim();
+		const activeOrganizationId = me.organizations.find(
+			(org) => org.active,
+		)?.organizationId;
+		let rawBalance: number;
+		if (activeOrganizationId?.trim()) {
+			const orgBalance =
+				await service.fetchOrganizationBalance(activeOrganizationId);
+			rawBalance = orgBalance.balance;
+		} else {
+			const userBalance = await service.fetchBalance(me.id);
+			rawBalance = userBalance.balance;
+		}
+		const normalizedBalance = normalizeCreditBalance(rawBalance);
+		const parts = [
+			me.email,
+			`Credits: ${formatCreditBalance(normalizedBalance)}`,
+		];
+		if (activeOrgName) {
+			parts.push(activeOrgName);
+		}
+		return parts.join(" | ");
+	} catch {
+		return undefined;
+	}
+}
+
 function closeInlineStreamIfNeeded(): void {
 	if (!inlineStreamHasOutput) {
 		return;
@@ -703,6 +779,9 @@ async function runAgent(
 	} finally {
 		process.off("SIGINT", handleSigint);
 		unsubscribe();
+		if (activeSessionId) {
+			await sessionManager.stop(activeSessionId);
+		}
 		if (activeRuntimeAbort === abortAll) {
 			setActiveRuntimeAbort(undefined);
 		}
@@ -856,10 +935,23 @@ async function runInteractive(
 	config: Config,
 	userInstructionWatcher?: UserInstructionConfigWatcher,
 	resumeSessionId?: string,
+	options?: {
+		clineApiBaseUrl?: string;
+		clineProviderSettings?: providers.ProviderSettings;
+	},
 ): Promise<void> {
 	if (config.outputMode === "json") {
 		writeErr("interactive mode is not supported with --output json");
 		process.exit(1);
+	}
+
+	const clineWelcomeLine = await resolveInteractiveClineWelcomeLine({
+		config,
+		clineApiBaseUrl: options?.clineApiBaseUrl,
+		clineProviderSettings: options?.clineProviderSettings,
+	});
+	if (clineWelcomeLine) {
+		writeln(clineWelcomeLine);
 	}
 
 	writeln(
@@ -1510,7 +1602,10 @@ async function main(): Promise<void> {
 
 		// Interactive mode
 		if (args.interactive || !args.prompt) {
-			await runInteractive(config, userInstructionWatcher, resumeSessionId);
+			await runInteractive(config, userInstructionWatcher, resumeSessionId, {
+				clineApiBaseUrl: selectedProviderSettings?.baseUrl,
+				clineProviderSettings: selectedProviderSettings,
+			});
 			return;
 		}
 
