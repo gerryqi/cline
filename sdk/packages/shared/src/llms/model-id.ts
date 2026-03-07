@@ -1,15 +1,26 @@
-const MODELS_DEV_PROVIDER_KEY_ENTRIES: ReadonlyArray<{
+export const MODELS_DEV_PROVIDER_KEY_ENTRIES: ReadonlyArray<{
 	modelsDevKey: string;
 	generatedProviderId?: string;
 	runtimeProviderId?: string;
 }> = [
 	{
 		modelsDevKey: "openai",
+		generatedProviderId: "openai",
 		runtimeProviderId: "openai-native",
+	},
+	{
+		modelsDevKey: "openai",
+		generatedProviderId: "openai",
+		runtimeProviderId: "openai-codex",
 	},
 	{
 		modelsDevKey: "anthropic",
 		generatedProviderId: "anthropic",
+	},
+	{
+		modelsDevKey: "anthropic",
+		generatedProviderId: "anthropic",
+		runtimeProviderId: "claude-code",
 	},
 	{
 		modelsDevKey: "google",
@@ -73,6 +84,11 @@ const MODELS_DEV_PROVIDER_KEY_ENTRIES: ReadonlyArray<{
 		generatedProviderId: "vercel-ai-gateway",
 	},
 	{
+		modelsDevKey: "vercel",
+		runtimeProviderId: "cline",
+		generatedProviderId: "vercel-ai-gateway",
+	},
+	{
 		modelsDevKey: "aihubmix",
 		runtimeProviderId: "aihubmix",
 		generatedProviderId: "aihubmix",
@@ -112,3 +128,28 @@ function buildProviderKeyMap(
 export const MODELS_DEV_PROVIDER_KEY_MAP = buildProviderKeyMap(
 	"generatedProviderId",
 );
+
+function dedupe(values: readonly string[]): string[] {
+	return [...new Set(values)];
+}
+
+export function resolveProviderModelCatalogKeys(providerId: string): string[] {
+	const mapped = MODELS_DEV_PROVIDER_KEY_ENTRIES.flatMap((entry) => {
+		if (!entry.generatedProviderId) {
+			return [];
+		}
+		if (
+			entry.generatedProviderId === providerId ||
+			entry.runtimeProviderId === providerId
+		) {
+			return [entry.generatedProviderId];
+		}
+		return [];
+	});
+
+	if (providerId === "nousResearch") {
+		return dedupe([...mapped, "nousresearch", providerId]);
+	}
+
+	return dedupe([...mapped, providerId]);
+}

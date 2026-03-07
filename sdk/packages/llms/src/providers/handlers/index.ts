@@ -5,6 +5,7 @@
  */
 
 export { AnthropicHandler, createAnthropicHandler } from "./anthropic-base";
+export { AskSageHandler, createAskSageHandler } from "./asksage";
 export {
 	getMissingApiKeyError,
 	getProviderEnvKeys,
@@ -19,11 +20,16 @@ export {
 	CodexHandler,
 	createClaudeCodeHandler,
 	createCodexHandler,
+	createDifyHandler,
+	createMistralHandler,
 	createOpenCodeHandler,
 	createSapAiCoreHandler,
+	DifyHandler,
+	MistralHandler,
 	OpenCodeHandler,
 	SapAiCoreHandler,
 } from "./community-sdk";
+export { FetchBaseHandler } from "./fetch-base";
 export { createGeminiHandler, GeminiHandler } from "./gemini-base";
 // OpenAI Chat Completions API handler
 export { createOpenAIHandler, OpenAIBaseHandler } from "./openai-base";

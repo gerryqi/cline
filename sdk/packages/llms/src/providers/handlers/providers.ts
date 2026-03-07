@@ -6,7 +6,10 @@
  */
 /** biome-ignore-all lint/style/noNonNullAssertion: static */
 
-import { MODELS_DEV_PROVIDER_KEY_MAP } from "@cline/shared";
+import {
+	MODELS_DEV_PROVIDER_KEY_MAP,
+	resolveProviderModelCatalogKeys,
+} from "@cline/shared";
 import {
 	fetchModelsDevProviderModels,
 	sortModelsByReleaseDate,
@@ -39,12 +42,6 @@ export interface ProviderDefaults {
 export const DEFAULT_MODELS_CATALOG_URL = "https://models.dev/api.json";
 const DEFAULT_MODELS_CATALOG_CACHE_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_PRIVATE_MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
-
-const GENERATED_KEYS_BY_PROVIDER: Record<string, string[]> = {
-	cline: ["vercel-ai-gateway", "cline"],
-	"openai-native": ["openai"],
-	nousResearch: ["nousResearch", "nousresearch"],
-};
 
 const MODELS_CATALOG_CACHE = new Map<
 	string,
@@ -84,7 +81,7 @@ async function mergeKnownModels(
 	userKnownModels: Record<string, ModelInfo> = {},
 ): Promise<Record<string, ModelInfo>> {
 	const generatedProviderModels = await loadGeneratedProviderModels();
-	const generatedKeys = GENERATED_KEYS_BY_PROVIDER[providerId] ?? [providerId];
+	const generatedKeys = resolveProviderModelCatalogKeys(providerId);
 	const generated = Object.assign(
 		{},
 		...generatedKeys.map(
@@ -355,17 +352,26 @@ async function fetchPrivateProviderModels(
 		return {};
 	}
 
-	switch (providerId) {
-		case "baseten":
-			return fetchBasetenPrivateModels(config, token);
-		case "hicap":
-			return fetchHicapPrivateModels(config, token);
-		case "litellm":
-			return fetchLiteLlmPrivateModels(config, token);
-		default:
-			return {};
+	const fetcher = PRIVATE_PROVIDER_MODEL_FETCHERS[providerId];
+	if (!fetcher) {
+		return {};
 	}
+	return fetcher(config, token);
 }
+
+type PrivateProviderModelFetcher = (
+	config: ProviderConfig,
+	token: string,
+) => Promise<Record<string, ModelInfo>>;
+
+const PRIVATE_PROVIDER_MODEL_FETCHERS: Record<
+	string,
+	PrivateProviderModelFetcher
+> = {
+	baseten: fetchBasetenPrivateModels,
+	hicap: fetchHicapPrivateModels,
+	litellm: fetchLiteLlmPrivateModels,
+};
 
 function shouldLoadPrivateModels(
 	providerId: string,
@@ -375,7 +381,7 @@ function shouldLoadPrivateModels(
 	if (!config) {
 		return false;
 	}
-	if (!["baseten", "hicap", "litellm"].includes(providerId)) {
+	if (!PRIVATE_PROVIDER_MODEL_FETCHERS[providerId]) {
 		return false;
 	}
 	if (modelCatalog?.loadPrivateOnAuth === false) {

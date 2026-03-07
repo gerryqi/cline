@@ -1,10 +1,7 @@
 #!/usr/bin/env bun
 
 import { MODELS_DEV_PROVIDER_KEY_MAP } from "@cline/shared";
-import {
-	fetchModelsDevProviderModels,
-	sortModelsByReleaseDate,
-} from "../../src/models/models-dev-catalog.js";
+import { fetchModelsDevProviderModels } from "../../src/models/models-dev-catalog.js";
 import type { ModelInfo } from "../../src/models/schemas/index.js";
 
 function sortObjectByKey<T>(
@@ -25,11 +22,5 @@ export async function loadModelsDevProviderModels(): Promise<
 		"https://models.dev/api.json",
 		MODELS_DEV_PROVIDER_KEY_MAP,
 	);
-	const releaseDateSortedProviderModels = Object.fromEntries(
-		Object.entries(providerModels).map(([providerId, models]) => [
-			providerId,
-			sortModelsByReleaseDate(models),
-		]),
-	);
-	return sortObjectByKey(releaseDateSortedProviderModels);
+	return sortObjectByKey(providerModels);
 }

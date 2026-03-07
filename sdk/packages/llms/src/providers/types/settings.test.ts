@@ -1,3 +1,4 @@
+import { resolveProviderModelCatalogKeys } from "@cline/shared";
 import { describe, expect, it } from "vitest";
 import { getGeneratedModelsForProvider } from "../../models/generated-access.js";
 import type { ProviderSettings } from "./settings.js";
@@ -24,8 +25,13 @@ describe("toProviderConfig", () => {
 		expect(config.knownModels?.[modelId]?.pricing).toBeDefined();
 	});
 
-	it("maps cline provider to openrouter generated knownModels", () => {
-		const gatewayModels = getGeneratedModelsForProvider("openrouter");
+	it("hydrates cline knownModels using shared catalog key mapping", () => {
+		const gatewayModels = Object.assign(
+			{},
+			...resolveProviderModelCatalogKeys("cline").map((providerId) =>
+				getGeneratedModelsForProvider(providerId),
+			),
+		);
 		const modelId = "openai/gpt-5.3-codex";
 		expect(gatewayModels[modelId]).toBeDefined();
 

@@ -1,4 +1,8 @@
-export { MODELS_DEV_PROVIDER_KEY_MAP } from "./llms/model-id";
+export {
+	MODELS_DEV_PROVIDER_KEY_ENTRIES,
+	MODELS_DEV_PROVIDER_KEY_MAP,
+	resolveProviderModelCatalogKeys,
+} from "./llms/model-id";
 export type {
 	Tool,
 	ToolApprovalRequest,

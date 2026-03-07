@@ -21,13 +21,20 @@ function sortObjectByKey<T>(
 
 async function generate(): Promise<void> {
 	const providerModels: Record<string, Record<string, ModelInfo>> = {};
+	let loadError: Error | undefined;
 
 	try {
 		const modelsDev = await loadModelsDevProviderModels();
 		Object.assign(providerModels, modelsDev);
 	} catch (error) {
-		console.warn(
-			`Warning: failed to fetch models.dev: ${error instanceof Error ? error.message : String(error)}`,
+		loadError =
+			error instanceof Error ? error : new Error(String(error ?? "unknown"));
+	}
+
+	if (Object.keys(providerModels).length === 0) {
+		const details = loadError?.message ?? "unknown error";
+		throw new Error(
+			`Aborting model generation: no provider models were loaded (${details}). Existing generated catalog was left unchanged.`,
 		);
 	}
 
