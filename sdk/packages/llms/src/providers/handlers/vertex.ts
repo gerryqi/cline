@@ -6,6 +6,7 @@
  * - Claude models -> AI SDK Google Vertex Anthropic provider
  */
 
+import { toAiSdkMessages } from "../transform/ai-sdk-community-format";
 import {
 	convertToAnthropicMessages,
 	convertToolsToAnthropic,
@@ -22,7 +23,6 @@ import {
 	emitAiSdkStream,
 	loadAiSdkModule,
 	numberOrZero,
-	toAiSdkMessages,
 } from "./ai-sdk-community";
 import { resolveHandlerModel } from "./ai-sdk-provider-base";
 import { BaseHandler } from "./base";

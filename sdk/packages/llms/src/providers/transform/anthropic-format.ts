@@ -5,8 +5,10 @@
  */
 
 import type { Anthropic } from "@anthropic-ai/sdk";
+import { formatFileContentBlock } from "@cline/shared";
 import type {
 	ContentBlock,
+	FileContent,
 	ImageContent,
 	Message,
 	RedactedThinkingContent,
@@ -15,6 +17,7 @@ import type {
 	ToolResultContent,
 	ToolUseContent,
 } from "../types/messages";
+import { normalizeToolUseInput } from "./content-format";
 
 type AnthropicMessage = Anthropic.MessageParam;
 type AnthropicContentBlock = Anthropic.ContentBlockParam;
@@ -103,6 +106,14 @@ function convertContentBlock(
 			return result;
 		}
 
+		case "file": {
+			const fileBlock = block as FileContent;
+			return {
+				type: "text",
+				text: formatFileContentBlock(fileBlock.path, fileBlock.content),
+			};
+		}
+
 		case "image": {
 			const imageBlock = block as ImageContent;
 			return {
@@ -125,7 +136,7 @@ function convertContentBlock(
 				type: "tool_use",
 				id: toolBlock.id,
 				name: toolBlock.name,
-				input: toolBlock.input,
+				input: normalizeToolUseInput(toolBlock.input),
 			};
 		}
 
@@ -140,6 +151,12 @@ function convertContentBlock(
 				resultContent = resultBlock.content.map((item) => {
 					if (item.type === "text") {
 						return { type: "text" as const, text: item.text };
+					} else if (item.type === "file") {
+						const fileItem = item as FileContent;
+						return {
+							type: "text" as const,
+							text: formatFileContentBlock(fileItem.path, fileItem.content),
+						};
 					} else {
 						return {
 							type: "image" as const,

@@ -67,6 +67,8 @@ This keeps provider default derivation and protocol filtering in one place.
 - OpenAI-compatible tool schemas default to strict mode; `openrouter` requests disable tool strictness for broader routed-model compatibility.
 - OpenAI message conversion now normalizes malformed historical `tool_use.input` payloads (for example, top-level arrays) into object-shaped function arguments before replay.
 - Anthropic message conversion now normalizes malformed historical `tool_use.input` payloads (for example, top-level arrays) into object-shaped arguments before replaying them to Anthropic/Bedrock APIs.
+- Provider transform converters now coerce internal `file` content blocks into provider-native text payloads for both user messages and `tool_result` replay content (OpenAI, Gemini, Anthropic, R1).
+- AI SDK community-provider message conversion (`toAiSdkMessages`) now lives in `src/providers/transform/ai-sdk-community-format.ts` and applies the same `file` block coercion for user/tool-result replay payloads.
 - Retry decorator utility (`withRetry`) uses stage-3 decorators (no legacy decorator mode).
 
 ## Legacy Provider Migration Status

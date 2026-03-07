@@ -5,6 +5,11 @@ export {
 	loadRulesForSystemPromptFromWatcher,
 } from "./rules";
 export { createTeamName, DefaultRuntimeBuilder } from "./runtime-builder";
+export {
+	type SandboxCallOptions,
+	SubprocessSandbox,
+	type SubprocessSandboxOptions,
+} from "./sandbox/subprocess-sandbox";
 export type {
 	BuiltRuntime,
 	RuntimeBuilder,

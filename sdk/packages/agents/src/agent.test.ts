@@ -289,7 +289,7 @@ describe("Agent", () => {
 		});
 	});
 
-	it("normalizes array-shaped read_files tool args into object input", async () => {
+	it("passes through array-shaped read_files tool args", async () => {
 		const { Agent } = await import("./agent.js");
 		const readFilesTool = createTool({
 			name: "read_files",
@@ -342,9 +342,7 @@ describe("Agent", () => {
 		expect(result.finishReason).toBe("completed");
 		expect(result.toolCalls).toHaveLength(1);
 		expect(result.toolCalls[0]?.error).toBeUndefined();
-		expect(result.toolCalls[0]?.input).toEqual({
-			file_paths: ["/tmp/a.ts", "/tmp/b.ts"],
-		});
+		expect(result.toolCalls[0]?.input).toEqual(["/tmp/a.ts", "/tmp/b.ts"]);
 	});
 
 	it("continues conversation and clearHistory resets message state", async () => {
@@ -722,7 +720,7 @@ describe("Agent", () => {
 		]);
 	});
 
-	it("adds attached file content text block to initial user content", async () => {
+	it("adds attached file content block to initial user content", async () => {
 		const { Agent } = await import("./agent.js");
 		const handler = makeHandler([
 			[
@@ -757,8 +755,9 @@ describe("Agent", () => {
 			expect(requestMessages[0]?.content).toEqual([
 				{ type: "text", text: "Use this file" },
 				{
-					type: "text",
-					text: `Files attached by the user:\n\n<file_content path="${filePath.replace(/\\/g, "/")}">\nhello from file\n</file_content>`,
+					type: "file",
+					path: filePath.replace(/\\/g, "/"),
+					content: "hello from file",
 				},
 			]);
 		} finally {

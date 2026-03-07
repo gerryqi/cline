@@ -4,15 +4,21 @@
  * Converts our unified Message format to OpenAI's ChatCompletionMessageParam format.
  */
 
+import { formatFileContentBlock } from "@cline/shared";
 import type OpenAI from "openai";
 import type {
 	ContentBlock,
+	FileContent,
 	ImageContent,
 	Message,
 	TextContent,
 	ToolResultContent,
 	ToolUseContent,
 } from "../types/messages";
+import {
+	normalizeToolUseInput,
+	serializeToolResultContent,
+} from "./content-format";
 
 type OpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 type OpenAIContentPart = OpenAI.Chat.ChatCompletionContentPart;
@@ -56,7 +62,7 @@ function convertAssistantMessage(content: ContentBlock[]): OpenAIMessage {
 					type: "function",
 					function: {
 						name: toolUse.name,
-						arguments: JSON.stringify(toolUse.input),
+						arguments: JSON.stringify(normalizeToolUseInput(toolUse.input)),
 					},
 				});
 				break;
@@ -90,10 +96,7 @@ function convertUserMessage(content: ContentBlock[]): OpenAIMessage[] {
 		messages.push({
 			role: "tool",
 			tool_call_id: result.tool_use_id,
-			content:
-				typeof result.content === "string"
-					? result.content
-					: JSON.stringify(result.content),
+			content: serializeToolResultContent(result.content),
 		});
 	}
 
@@ -110,6 +113,14 @@ function convertUserMessage(content: ContentBlock[]): OpenAIMessage[] {
 			case "text":
 				parts.push({ type: "text", text: (block as TextContent).text });
 				break;
+			case "file": {
+				const fileBlock = block as FileContent;
+				parts.push({
+					type: "text",
+					text: formatFileContentBlock(fileBlock.path, fileBlock.content),
+				});
+				break;
+			}
 			case "image": {
 				const img = block as ImageContent;
 				parts.push({

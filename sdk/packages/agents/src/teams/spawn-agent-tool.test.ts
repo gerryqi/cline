@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentExtension } from "../types.js";
 
 const runMock = vi.fn();
 const getAgentIdMock = vi.fn(() => "sub-agent-1");
@@ -42,12 +43,20 @@ describe("createSpawnAgentTool", () => {
 		const onSubAgentStart = vi.fn();
 		const onSubAgentEnd = vi.fn();
 		const createSubAgentTools = vi.fn().mockResolvedValue([]);
+		const extensions = [
+			{
+				name: "sample-ext",
+				manifest: { capabilities: ["hooks"], hookStages: ["runtime_event"] },
+				onRuntimeEvent: vi.fn(),
+			} as AgentExtension,
+		];
 
 		const tool = createSpawnAgentTool({
 			providerId: "anthropic",
 			modelId: "mock-model",
 			defaultMaxIterations: 4,
 			createSubAgentTools,
+			extensions,
 			onSubAgentStart,
 			onSubAgentEnd,
 		});
@@ -81,6 +90,7 @@ describe("createSpawnAgentTool", () => {
 			expect.objectContaining({
 				parentAgentId: "parent-1",
 				maxIterations: 4,
+				extensions,
 			}),
 		);
 	});

@@ -1,5 +1,4 @@
 import type { providers } from "@cline/llms";
-import { formatFileContentBlock } from "@cline/shared";
 
 export async function buildInitialUserContent(
 	userMessage: string,
@@ -8,12 +7,12 @@ export async function buildInitialUserContent(
 	userFileContentLoader?: (path: string) => Promise<string>,
 ): Promise<string | providers.ContentBlock[]> {
 	const imageBlocks = buildImageBlocks(userImages);
-	const fileTextBlock = await buildUserFileTextBlock(
+	const fileTextBlocks = await buildUserFileContentBlock(
 		userFiles,
 		userFileContentLoader,
 	);
 
-	if (imageBlocks.length === 0 && !fileTextBlock) {
+	if (imageBlocks.length === 0 && !fileTextBlocks) {
 		return userMessage;
 	}
 
@@ -24,11 +23,8 @@ export async function buildInitialUserContent(
 		},
 		...imageBlocks,
 	];
-	if (fileTextBlock) {
-		content.push({
-			type: "text",
-			text: fileTextBlock,
-		});
+	if (fileTextBlocks) {
+		content.push(...fileTextBlocks);
 	}
 	return content;
 }
@@ -76,10 +72,10 @@ function parseDataUrlImage(image: string): providers.ImageContent | undefined {
 	};
 }
 
-async function buildUserFileTextBlock(
+async function buildUserFileContentBlock(
 	userFiles?: string[],
 	userFileContentLoader?: (path: string) => Promise<string>,
-): Promise<string | undefined> {
+): Promise<providers.FileContent[] | undefined> {
 	if (!userFiles || userFiles.length === 0) {
 		return undefined;
 	}
@@ -97,20 +93,24 @@ async function buildUserFileTextBlock(
 			const normalizedPath = filePath.replace(/\\/g, "/");
 			try {
 				const content = await loader(filePath);
-				return formatFileContentBlock(normalizedPath, content);
+				return {
+					type: "file",
+					path: normalizedPath,
+					content,
+				} satisfies providers.FileContent;
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
-				return formatFileContentBlock(
-					normalizedPath,
-					`Error fetching content: ${message}`,
-				);
+				return {
+					type: "file",
+					path: normalizedPath,
+					content: `Error fetching content: ${message}`,
+				} satisfies providers.FileContent;
 			}
 		}),
 	);
 
-	const combined = contents.filter((entry) => entry.length > 0).join("\n\n");
-	if (!combined) {
+	if (contents.length === 0) {
 		return undefined;
 	}
-	return `Files attached by the user:\n\n${combined}`;
+	return contents;
 }

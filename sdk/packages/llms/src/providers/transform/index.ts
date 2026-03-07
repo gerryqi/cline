@@ -5,6 +5,11 @@
  */
 
 export {
+	type AiSdkMessage,
+	type AiSdkMessagePart,
+	toAiSdkMessages,
+} from "./ai-sdk-community-format";
+export {
 	convertToAnthropicMessages,
 	convertToolsToAnthropic,
 } from "./anthropic-format";

@@ -16,6 +16,7 @@ import {
 import type { providers as LlmsProviders } from "@cline/llms";
 import { setHomeDirIfUnset } from "@cline/shared/storage";
 import { nanoid } from "nanoid";
+import { resolveAndLoadAgentPlugins } from "../agents/plugin-config-loader";
 import {
 	createBuiltinTools,
 	type ToolExecutors,
@@ -67,6 +68,7 @@ type ActiveSession = {
 	started: boolean;
 	aborting: boolean;
 	interactive: boolean;
+	pluginSandboxShutdown?: () => Promise<void>;
 };
 
 type StoredMessageWithMetadata = LlmsProviders.MessageWithMetadata & {
@@ -110,6 +112,26 @@ function hasRuntimeHooks(hooks: AgentConfig["hooks"]): boolean {
 		return false;
 	}
 	return Object.values(hooks).some((value) => typeof value === "function");
+}
+
+function mergeAgentExtensions(
+	explicitExtensions: AgentConfig["extensions"] | undefined,
+	loadedExtensions: AgentConfig["extensions"] | undefined,
+): AgentConfig["extensions"] {
+	const merged = [...(explicitExtensions ?? []), ...(loadedExtensions ?? [])];
+	if (merged.length === 0) {
+		return undefined;
+	}
+	const deduped: NonNullable<AgentConfig["extensions"]> = [];
+	const seenNames = new Set<string>();
+	for (const extension of merged) {
+		if (seenNames.has(extension.name)) {
+			continue;
+		}
+		seenNames.add(extension.name);
+		deduped.push(extension);
+	}
+	return deduped;
 }
 
 function serializeAgentEvent(event: AgentEvent): string {
@@ -285,14 +307,25 @@ export class DefaultSessionManager implements SessionManager {
 			fileHooks,
 			auditHooks,
 		]);
+		const loadedPlugins = await resolveAndLoadAgentPlugins({
+			pluginPaths: input.config.pluginPaths,
+			workspacePath: input.config.workspaceRoot ?? input.config.cwd,
+			cwd: input.config.cwd,
+		});
+		const effectiveExtensions = mergeAgentExtensions(
+			input.config.extensions,
+			loadedPlugins.extensions,
+		);
 		const effectiveConfig: CoreSessionConfig = {
 			...input.config,
 			hooks: effectiveHooks,
+			extensions: effectiveExtensions,
 		};
 
 		const runtime = this.runtimeBuilder.build({
 			config: effectiveConfig,
 			hooks: effectiveHooks,
+			extensions: effectiveExtensions,
 			logger: effectiveConfig.logger,
 			onTeamEvent: (event: TeamEvent) => {
 				void this.handleTeamEvent(sessionId, event);
@@ -316,6 +349,7 @@ export class DefaultSessionManager implements SessionManager {
 			maxIterations: effectiveConfig.maxIterations,
 			tools,
 			hooks: effectiveHooks,
+			extensions: effectiveExtensions,
 			hookErrorMode: effectiveConfig.hookErrorMode,
 			initialMessages: input.initialMessages,
 			userFileContentLoader: loadUserFileContent,
@@ -354,6 +388,7 @@ export class DefaultSessionManager implements SessionManager {
 			started: false,
 			aborting: false,
 			interactive: input.interactive === true,
+			pluginSandboxShutdown: loadedPlugins.shutdown,
 		};
 		this.sessions.set(active.sessionId, active);
 		this.emitStatus(active.sessionId, "running");
@@ -392,7 +427,11 @@ export class DefaultSessionManager implements SessionManager {
 			throw new Error(`session not found: ${input.sessionId}`);
 		}
 		try {
-			const result = await this.runTurn(session, input);
+			const result = await this.runTurn(session, {
+				prompt: input.prompt,
+				userImages: input.userImages,
+				userFiles: input.userFiles,
+			});
 			if (!session.interactive) {
 				await this.finalizeSingleRun(session, result.finishReason);
 			}
@@ -636,6 +675,9 @@ export class DefaultSessionManager implements SessionManager {
 			await session.agent.shutdown(input.shutdownReason);
 		}
 		await Promise.resolve(session.runtime.shutdown(input.shutdownReason));
+		if (session.pluginSandboxShutdown) {
+			await session.pluginSandboxShutdown();
+		}
 		this.sessions.delete(session.sessionId);
 		this.emit({
 			type: "ended",
@@ -736,6 +778,7 @@ export class DefaultSessionManager implements SessionManager {
 			defaultMaxIterations: config.maxIterations,
 			createSubAgentTools,
 			hooks: config.hooks,
+			extensions: config.extensions,
 			toolPolicies: this.defaultToolPolicies,
 			requestToolApproval: this.defaultRequestToolApproval,
 			logger: config.logger,

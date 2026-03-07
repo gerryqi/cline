@@ -11,6 +11,70 @@ import {
 } from "./index";
 
 describe("format conversion", () => {
+	it("converts file content blocks to text for user and tool_result payloads", () => {
+		const fileText =
+			'<file_content path="/repo/README.md">\nhello from file\n</file_content>';
+		const messages: Message[] = [
+			{
+				role: "user",
+				content: [
+					{ type: "file", path: "/repo/README.md", content: "hello from file" },
+				],
+			},
+			{
+				role: "assistant",
+				content: [
+					{
+						type: "tool_use",
+						id: "call_1",
+						name: "read_file",
+						input: { path: "/repo/README.md" },
+					},
+				],
+			},
+			{
+				role: "user",
+				content: [
+					{
+						type: "tool_result",
+						tool_use_id: "call_1",
+						content: [
+							{
+								type: "file",
+								path: "/repo/README.md",
+								content: "hello from file",
+							},
+						],
+					},
+				],
+			},
+		];
+
+		const openai = convertToOpenAIMessages(messages) as any[];
+		expect(openai[0]).toMatchObject({ role: "user", content: fileText });
+		expect(openai[2]).toMatchObject({ role: "tool", content: fileText });
+
+		const gemini = convertToGeminiMessages(messages) as any[];
+		expect(gemini[0]?.parts?.[0]?.text).toBe(fileText);
+		expect(gemini[2]?.parts?.[0]?.functionResponse?.response?.result).toBe(
+			fileText,
+		);
+
+		const anthropic = convertToAnthropicMessages(messages) as any[];
+		expect(anthropic[0]?.content?.[0]).toMatchObject({
+			type: "text",
+			text: fileText,
+		});
+		expect(anthropic[2]?.content?.[0]).toMatchObject({
+			type: "tool_result",
+			content: [{ type: "text", text: fileText }],
+		});
+
+		const r1 = convertToR1Messages(messages) as any[];
+		expect(r1[0]).toMatchObject({ role: "user", content: fileText });
+		expect(r1[2]).toMatchObject({ role: "tool", content: fileText });
+	});
+
 	it("replays gemini thought signatures on text/tool_use/thinking parts", () => {
 		const messages: Message[] = [
 			{ role: "user", content: "start" },

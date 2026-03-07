@@ -84,12 +84,16 @@ after the turn completes. This avoids executing partially streamed inputs that m
 be temporarily valid JSON but not the final tool payload.
 Final argument parsing now uses `parseJsonStream` from `@cline/shared` to recover
 repairable JSON payloads before treating inputs as invalid.
-When a provider emits non-object tool input (for example an array shorthand),
-the runtime normalizes known tool shapes and guarantees persisted `tool_use.input`
-is an object so downstream providers can replay history safely.
-The same normalization is also applied again right before tool execution, so
-hook overrides and other runtime inputs cannot pass array-shaped payloads into
-strict object tool schemas.
+If a provider emits non-object tool input (for example an array shorthand), that
+shape is preserved in the recorded `tool_use.input`; provider-specific replay
+normalization is handled in `@cline/llms` transforms.
+
+## User File Attachments
+
+`Agent.run(...)` / `Agent.continue(...)` now append `userFiles` as structured
+`file` content blocks in the initial user message (not preformatted text blobs).
+Provider adapters are responsible for converting these internal blocks into
+provider-specific wire formats.
 
 ## Shared Tool Contracts
 

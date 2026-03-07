@@ -15,6 +15,7 @@ export {
 	resolveClineDataDir,
 	resolveHooksConfigSearchPaths,
 	resolveMcpSettingsPath,
+	resolvePluginConfigSearchPaths,
 	resolveProviderSettingsPath,
 	resolveRulesConfigSearchPaths,
 	resolveSessionDataDir,

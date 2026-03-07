@@ -7,7 +7,8 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ToolContext } from "@cline/agents";
-import type { EditorExecutor, EditorExecutorInput } from "../types.js";
+import type { EditFileInput } from "../schemas.js";
+import type { EditorExecutor } from "../types.js";
 
 /**
  * Options for the editor executor
@@ -173,7 +174,7 @@ export function createEditorExecutor(
 	} = options;
 
 	return async (
-		input: EditorExecutorInput,
+		input: EditFileInput,
 		cwd: string,
 		_context: ToolContext,
 	): Promise<string> => {

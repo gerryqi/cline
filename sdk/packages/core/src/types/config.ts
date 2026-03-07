@@ -1,4 +1,10 @@
-import type { AgentHooks, HookErrorMode, TeamEvent, Tool } from "@cline/agents";
+import type {
+	AgentConfig,
+	AgentHooks,
+	HookErrorMode,
+	TeamEvent,
+	Tool,
+} from "@cline/agents";
 import type { providers as LlmsProviders } from "@cline/llms";
 import type { BasicLogger } from "@cline/shared";
 
@@ -38,5 +44,7 @@ export interface CoreSessionConfig
 	hookErrorMode?: HookErrorMode;
 	logger?: BasicLogger;
 	extraTools?: Tool[];
+	pluginPaths?: string[];
+	extensions?: AgentConfig["extensions"];
 	onTeamEvent?: (event: TeamEvent) => void;
 }

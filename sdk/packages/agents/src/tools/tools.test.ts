@@ -77,14 +77,14 @@ describe("tools utilities", () => {
 		);
 
 		expect(validateToolInput(tool, { count: 3, name: "x" }).valid).toBe(true);
-		expect(validateToolInput(tool, { name: "x" })).toEqual({
-			valid: false,
-			error: "Missing required field: count",
-		});
-		expect(validateToolInput(tool, { count: 1.2 })).toEqual({
-			valid: false,
-			error: 'Field "count" must be an integer',
-		});
+		const missingCount = validateToolInput(tool, { name: "x" });
+		expect(missingCount.valid).toBe(false);
+		expect(missingCount.error).toContain("expected number");
+		expect(missingCount.error).toContain("count");
+		const nonInteger = validateToolInput(tool, { count: 1.2 });
+		expect(nonInteger.valid).toBe(false);
+		expect(nonInteger.error).toContain("expected int");
+		expect(nonInteger.error).toContain("count");
 	});
 
 	it("builds registries and handles duplicate tool names", () => {

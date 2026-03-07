@@ -14,6 +14,7 @@ import { Agent } from "../agent.js";
 import { createTool } from "../tools/create.js";
 import type {
 	AgentEvent,
+	AgentExtension,
 	AgentFinishReason,
 	AgentHooks,
 	BasicLogger,
@@ -70,6 +71,10 @@ export interface SpawnAgentToolConfig {
 	 * Lifecycle hooks forwarded to spawned sub-agent runs.
 	 */
 	hooks?: AgentHooks;
+	/**
+	 * Extension list forwarded to spawned sub-agent runs.
+	 */
+	extensions?: AgentExtension[];
 	/**
 	 * Error handling mode for forwarded lifecycle hooks.
 	 */
@@ -148,6 +153,7 @@ export function createSpawnAgentTool(
 				abortSignal: context.abortSignal,
 				onEvent: config.onSubAgentEvent,
 				hooks: config.hooks,
+				extensions: config.extensions,
 				hookErrorMode: config.hookErrorMode,
 				toolPolicies: config.toolPolicies,
 				requestToolApproval: config.requestToolApproval,

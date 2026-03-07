@@ -5,6 +5,7 @@
  */
 
 import type { ToolContext } from "@cline/agents";
+import type { EditFileInput } from "./schemas";
 
 // =============================================================================
 // Tool Result Types
@@ -22,6 +23,8 @@ export interface ToolOperationResult {
 	error?: string;
 	/** Whether the operation succeeded */
 	success: boolean;
+	/** Duration in MS */
+	duration?: number;
 }
 
 // =============================================================================
@@ -83,18 +86,6 @@ export type WebFetchExecutor = (
 ) => Promise<string>;
 
 /**
- * Input for the editor executor
- */
-export interface EditorExecutorInput {
-	command: "create" | "str_replace" | "insert" | "undo_edit";
-	path: string;
-	file_text?: string;
-	old_str?: string;
-	new_str?: string;
-	insert_line?: number;
-}
-
-/**
  * Executor for editing files
  *
  * @param input - Editor command input
@@ -103,7 +94,7 @@ export interface EditorExecutorInput {
  * @returns A formatted operation result string
  */
 export type EditorExecutor = (
-	input: EditorExecutorInput,
+	input: EditFileInput,
 	cwd: string,
 	context: ToolContext,
 ) => Promise<string>;

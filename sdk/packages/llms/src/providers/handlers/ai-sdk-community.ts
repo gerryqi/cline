@@ -1,5 +1,10 @@
 import type { ApiStream } from "../types";
-import type { ImageContent, Message, TextContent } from "../types/messages";
+
+export type {
+	AiSdkMessage,
+	AiSdkMessagePart,
+} from "../transform/ai-sdk-community-format";
+export { toAiSdkMessages } from "../transform/ai-sdk-community-format";
 
 type AiSdkStreamPart = {
 	type?: string;
@@ -19,12 +24,6 @@ export type AiSdkStream = {
 	textStream?: AsyncIterable<string>;
 	text?: Promise<string> | string;
 	usage?: Promise<Record<string, unknown>>;
-};
-
-export type AiSdkMessagePart = Record<string, unknown>;
-export type AiSdkMessage = {
-	role: "system" | "user" | "assistant" | "tool";
-	content: string | AiSdkMessagePart[];
 };
 
 type AiSdkUsageMetrics = {
@@ -79,24 +78,6 @@ export function numberOrZero(value: unknown): number {
 	return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-export function serializeToolResult(
-	content: string | Array<TextContent | ImageContent>,
-): string {
-	if (typeof content === "string") {
-		return content;
-	}
-
-	const textParts: string[] = [];
-	for (const part of content) {
-		if (part.type === "text" && typeof part.text === "string") {
-			textParts.push(part.text);
-			continue;
-		}
-		textParts.push(JSON.stringify(part));
-	}
-	return textParts.join("\n");
-}
-
 function defaultResolveUsageMetrics(usage: AiSdkUsage): AiSdkUsageMetrics {
 	return {
 		inputTokens: numberOrZero(usage.inputTokens),
@@ -106,92 +87,6 @@ function defaultResolveUsageMetrics(usage: AiSdkUsage): AiSdkUsageMetrics {
 		),
 		cacheReadTokens: numberOrZero(usage.cachedInputTokens),
 	};
-}
-
-export function toAiSdkMessages(
-	systemContent: string | AiSdkMessagePart[],
-	messages: Message[],
-	options?: { assistantToolCallArgKey?: "args" | "input" },
-): AiSdkMessage[] {
-	const toolCallArgKey = options?.assistantToolCallArgKey ?? "args";
-	const result: AiSdkMessage[] = [{ role: "system", content: systemContent }];
-	const toolNamesById = new Map<string, string>();
-
-	for (const message of messages) {
-		if (typeof message.content === "string") {
-			result.push({ role: message.role, content: message.content });
-			continue;
-		}
-
-		if (message.role === "assistant") {
-			const parts: AiSdkMessagePart[] = [];
-			for (const block of message.content) {
-				if (block.type === "text") {
-					parts.push({ type: "text", text: block.text });
-					continue;
-				}
-				if (block.type === "tool_use") {
-					toolNamesById.set(block.id, block.name);
-					parts.push({
-						type: "tool-call",
-						toolCallId: block.id,
-						toolName: block.name,
-						[toolCallArgKey]: block.input,
-					});
-				}
-			}
-
-			if (parts.length > 0) {
-				result.push({ role: "assistant", content: parts });
-			}
-			continue;
-		}
-
-		const userParts: AiSdkMessagePart[] = [];
-		for (const block of message.content) {
-			if (block.type === "text") {
-				userParts.push({ type: "text", text: block.text });
-				continue;
-			}
-
-			if (block.type === "image") {
-				userParts.push({
-					type: "image",
-					image: Buffer.from(block.data, "base64"),
-					mediaType: block.mediaType,
-				});
-				continue;
-			}
-
-			if (block.type === "tool_result") {
-				if (userParts.length > 0) {
-					result.push({
-						role: "user",
-						content: userParts.splice(0, userParts.length),
-					});
-				}
-
-				result.push({
-					role: "tool",
-					content: [
-						{
-							type: "tool-result",
-							toolCallId: block.tool_use_id,
-							toolName: toolNamesById.get(block.tool_use_id) ?? "tool",
-							output: serializeToolResult(block.content),
-							isError: block.is_error ?? false,
-						},
-					],
-				});
-			}
-		}
-
-		if (userParts.length > 0) {
-			result.push({ role: "user", content: userParts });
-		}
-	}
-
-	return result;
 }
 
 export async function* emitAiSdkStream(

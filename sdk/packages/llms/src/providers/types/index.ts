@@ -52,6 +52,7 @@ export type {
 // Message types
 export type {
 	ContentBlock,
+	FileContent,
 	ImageContent,
 	Message,
 	MessageRole,

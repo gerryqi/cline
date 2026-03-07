@@ -34,6 +34,46 @@ Use this backend when starting `@cline/rpc` servers so RPC remains transport-onl
 - `DefaultRuntimeBuilder` injects these tools at runtime.
 - `@cline/agents` remains browser-safe and only provides the standalone `ask_question` helper tool.
 
+## Agent Plugin Loading (Path-Based)
+
+`@cline/core/server` now exposes host-side helpers to load `AgentExtension` plugins from local file paths:
+
+- `loadAgentPluginFromPath(path, options?)`
+- `loadAgentPluginsFromPaths(paths, options?)`
+- `resolveAgentPluginPaths(options?)`
+- `resolveAndLoadAgentPlugins(options?)`
+- `resolvePluginConfigSearchPaths(workspacePath?)`
+
+These helpers are intended for the core/host boundary where plugin discovery and module loading belong.
+Loaded extensions can be passed directly to `Agent` via `AgentConfig.extensions`.
+
+Validation performed by loader:
+
+- plugin export must be an object with non-empty `name`
+- `manifest` is required
+- `manifest.capabilities` must be a non-empty string array
+- `manifest.hookStages` must be a string array when present
+
+`CoreSessionConfig` now supports plugin inputs:
+
+- `pluginPaths?: string[]` (file or directory paths; relative paths resolve from `config.cwd`)
+- `extensions?: AgentConfig["extensions"]` (already-loaded extension objects)
+
+During `DefaultSessionManager.start(...)`, core resolves plugin modules from:
+
+- explicit `pluginPaths`
+- shared plugin search paths (`resolvePluginConfigSearchPaths(workspaceRoot || cwd)`)
+
+It loads them via `loadAgentPluginsFromPaths(...)`, merges with `extensions`, and forwards the merged extension list to:
+
+- root `Agent` instance
+- `spawn_agent` sub-agents
+- team teammate agents created through team runtime tools
+
+By default, plugin paths are loaded in an out-of-process sandbox (`resolveAndLoadAgentPlugins(...)` in `sandbox` mode). Core also exposes a reusable generic RPC subprocess primitive:
+
+- `SubprocessSandbox` (`@cline/core/server` runtime export)
+
 ## Default Session Manager
 
 `@cline/core/server` now exposes `DefaultSessionManager`, a concrete runtime facade that owns:

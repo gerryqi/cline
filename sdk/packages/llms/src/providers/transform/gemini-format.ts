@@ -4,9 +4,11 @@
  * Converts our unified Message format to Google Gemini's Content format.
  */
 
+import { formatFileContentBlock } from "@cline/shared";
 import type { Content, FunctionDeclaration, Part } from "@google/genai";
 import type {
 	ContentBlock,
+	FileContent,
 	ImageContent,
 	Message,
 	TextContent,
@@ -14,6 +16,10 @@ import type {
 	ToolResultContent,
 	ToolUseContent,
 } from "../types/messages";
+import {
+	normalizeToolUseInput,
+	serializeToolResultContent,
+} from "./content-format";
 
 /**
  * Convert messages to Gemini format
@@ -72,6 +78,15 @@ function convertContentBlock(block: ContentBlock): Part | null {
 			return part;
 		}
 
+		case "file": {
+			const fileBlock = block as FileContent;
+			const part: Part = {
+				text: formatFileContentBlock(fileBlock.path, fileBlock.content),
+			};
+
+			return part;
+		}
+
 		case "image": {
 			const imageBlock = block as ImageContent;
 			return {
@@ -87,7 +102,7 @@ function convertContentBlock(block: ContentBlock): Part | null {
 			const part: Part = {
 				functionCall: {
 					name: toolBlock.name,
-					args: toolBlock.input as Record<string, unknown>,
+					args: normalizeToolUseInput(toolBlock.input),
 				},
 			};
 			if (toolBlock.signature) {
@@ -103,11 +118,9 @@ function convertContentBlock(block: ContentBlock): Part | null {
 			if (typeof resultBlock.content === "string") {
 				responseContent = { result: resultBlock.content };
 			} else {
-				// Convert array content to a combined result
-				const textParts = resultBlock.content
-					.filter((item) => item.type === "text")
-					.map((item) => (item as TextContent).text);
-				responseContent = { result: textParts.join("\n") };
+				responseContent = {
+					result: serializeToolResultContent(resultBlock.content),
+				};
 			}
 
 			if (resultBlock.is_error) {

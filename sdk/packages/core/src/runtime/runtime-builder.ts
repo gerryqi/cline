@@ -7,6 +7,7 @@ import {
 	type TeamTeammateSpec,
 	type Tool,
 } from "@cline/agents";
+import { resolveSkillsConfigSearchPaths } from "@cline/shared/storage";
 import { nanoid } from "nanoid";
 import {
 	createUserInstructionConfigWatcher,
@@ -67,15 +68,6 @@ function createBuiltinToolsList(
 
 const SKILL_FILE_NAME = "SKILL.md";
 
-function getWorkspaceSkillDirectories(workspacePath: string): string[] {
-	return [
-		join(workspacePath, ".clinerules", "skills"),
-		join(workspacePath, ".cline", "skills"),
-		join(workspacePath, ".claude", "skills"),
-		join(workspacePath, ".agents", "skills"),
-	];
-}
-
 function listAvailableSkillNames(
 	watcher: UserInstructionConfigWatcher,
 ): string[] {
@@ -102,7 +94,7 @@ function listConfiguredSkills(
 }
 
 function hasSkillsFiles(workspacePath: string): boolean {
-	for (const directoryPath of getWorkspaceSkillDirectories(workspacePath)) {
+	for (const directoryPath of resolveSkillsConfigSearchPaths(workspacePath)) {
 		if (!existsSync(directoryPath)) {
 			continue;
 		}
@@ -286,6 +278,7 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 		const {
 			config,
 			hooks,
+			extensions,
 			logger,
 			createSpawnTool,
 			onTeamRestored,
@@ -416,6 +409,7 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 						thinking: config.thinking,
 						maxIterations: config.maxIterations,
 						hooks,
+						extensions: extensions ?? config.extensions,
 						logger: logger ?? config.logger,
 					},
 				});

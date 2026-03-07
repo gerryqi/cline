@@ -20,6 +20,7 @@ export {
 	type ApiStreamToolCallsChunk,
 	type ApiStreamUsageChunk,
 	type ContentBlock,
+	type FileContent,
 	getModelPricing,
 	type HandlerFactory,
 	type HandlerModelInfo,

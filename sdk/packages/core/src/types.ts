@@ -12,8 +12,10 @@ export type {
 	CreateSkillsConfigDefinitionOptions,
 	CreateUserInstructionConfigWatcherOptions,
 	CreateWorkflowsConfigDefinitionOptions,
+	LoadAgentPluginFromPathOptions,
 	ParseMarkdownFrontmatterResult,
 	ParseYamlFrontmatterResult,
+	ResolveAgentPluginPathsOptions,
 	RuleConfig,
 	SkillConfig,
 	UnifiedConfigDefinition,
@@ -37,13 +39,19 @@ export {
 	createWorkflowsConfigDefinition,
 	DOCUMENTS_RULES_DIRECTORY_PATH,
 	DOCUMENTS_WORKFLOWS_DIRECTORY_PATH,
+	discoverPluginModulePaths,
+	loadAgentPluginFromPath,
+	loadAgentPluginsFromPaths,
 	parseAgentConfigFromYaml,
 	parsePartialAgentConfigFromYaml,
 	parseRuleConfigFromMarkdown,
 	parseSkillConfigFromMarkdown,
 	parseWorkflowConfigFromMarkdown,
 	RULES_CONFIG_DIRECTORY_NAME,
+	resolveAgentPluginPaths,
 	resolveAgentTools,
+	resolveAndLoadAgentPlugins,
+	resolvePluginConfigSearchPaths,
 	resolveRulesConfigSearchPaths,
 	resolveSkillsConfigSearchPaths,
 	resolveWorkflowsConfigSearchPaths,
@@ -59,6 +67,11 @@ export type {
 	ChatSummary,
 	ChatViewState,
 } from "./chat/chat-schema";
+export type {
+	SandboxCallOptions,
+	SubprocessSandboxOptions,
+} from "./runtime/sandbox/subprocess-sandbox";
+export { SubprocessSandbox } from "./runtime/sandbox/subprocess-sandbox";
 export type {
 	BuiltRuntime as RuntimeEnvironment,
 	RuntimeBuilder,

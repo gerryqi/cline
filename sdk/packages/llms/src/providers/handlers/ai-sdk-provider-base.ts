@@ -1,3 +1,4 @@
+import { toAiSdkMessages } from "../transform/ai-sdk-community-format";
 import type { ApiStream, HandlerModelInfo, ProviderConfig } from "../types";
 import type { Message, ToolDefinition } from "../types/messages";
 import { withRetry } from "../utils/retry";
@@ -6,7 +7,6 @@ import {
 	emitAiSdkStream,
 	type LoadAiSdkOptions,
 	loadAiSdkModule,
-	toAiSdkMessages,
 } from "./ai-sdk-community";
 import { BaseHandler } from "./base";
 

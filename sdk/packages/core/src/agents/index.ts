@@ -29,6 +29,18 @@ export {
 	resolveHooksConfigSearchPaths,
 	toHookConfigFileName,
 } from "./hooks-config-loader";
+export type { ResolveAgentPluginPathsOptions } from "./plugin-config-loader";
+export {
+	discoverPluginModulePaths,
+	resolveAgentPluginPaths,
+	resolveAndLoadAgentPlugins,
+	resolvePluginConfigSearchPaths,
+} from "./plugin-config-loader";
+export type { LoadAgentPluginFromPathOptions } from "./plugin-loader";
+export {
+	loadAgentPluginFromPath,
+	loadAgentPluginsFromPaths,
+} from "./plugin-loader";
 export type {
 	UnifiedConfigDefinition,
 	UnifiedConfigFileCandidate,

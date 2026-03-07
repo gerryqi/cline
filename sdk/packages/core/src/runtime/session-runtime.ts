@@ -1,4 +1,5 @@
 import type {
+	AgentConfig,
 	AgentHooks,
 	AgentResult,
 	AgentTeamsRuntime,
@@ -20,6 +21,7 @@ export interface BuiltRuntime {
 export interface RuntimeBuilderInput {
 	config: CoreSessionConfig;
 	hooks?: AgentHooks;
+	extensions?: AgentConfig["extensions"];
 	onTeamEvent?: (event: import("@cline/agents").TeamEvent) => void;
 	createSpawnTool?: () => Tool;
 	onTeamRestored?: () => void;

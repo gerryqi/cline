@@ -22,6 +22,17 @@ export interface TextContent {
 }
 
 /**
+ * File content block for Cline
+ */
+export interface FileContent {
+	type: "file";
+	content: string;
+	/** Absolute Path */
+	path: string;
+	source?: string;
+}
+
+/**
  * Image content block
  */
 export interface ImageContent {
@@ -55,7 +66,7 @@ export interface ToolResultContent {
 	/** ID of the tool call this is responding to */
 	tool_use_id: string;
 	/** Result content (can be text or error) */
-	content: string | Array<TextContent | ImageContent>;
+	content: string | Array<TextContent | ImageContent | FileContent>;
 	/** Whether this result represents an error */
 	is_error?: boolean;
 }
@@ -89,6 +100,7 @@ export type ContentBlock =
 	| ToolUseContent
 	| ToolResultContent
 	| ThinkingContent
+	| FileContent
 	| RedactedThinkingContent;
 
 /**

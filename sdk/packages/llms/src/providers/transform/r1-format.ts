@@ -8,15 +8,22 @@
  * 3. No temperature parameter for reasoner models
  */
 
+import { formatFileContentBlock } from "@cline/shared";
 import type OpenAI from "openai";
 import type {
 	ContentBlock,
+	FileContent,
 	ImageContent,
 	Message,
 	TextContent,
 	ThinkingContent,
+	ToolResultContent,
 	ToolUseContent,
 } from "../types/messages";
+import {
+	normalizeToolUseInput,
+	serializeToolResultContent,
+} from "./content-format";
 
 type OpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 type OpenAIContentPart = OpenAI.Chat.ChatCompletionContentPart;
@@ -75,6 +82,13 @@ function convertAssistantMessage(content: ContentBlock[]): OpenAIMessage {
 			case "text":
 				textParts.push((block as TextContent).text);
 				break;
+			case "file": {
+				const fileBlock = block as FileContent;
+				textParts.push(
+					formatFileContentBlock(fileBlock.path, fileBlock.content),
+				);
+				break;
+			}
 			case "tool_use": {
 				const toolUse = block as ToolUseContent;
 				toolCalls.push({
@@ -82,7 +96,7 @@ function convertAssistantMessage(content: ContentBlock[]): OpenAIMessage {
 					type: "function",
 					function: {
 						name: toolUse.name,
-						arguments: JSON.stringify(toolUse.input),
+						arguments: JSON.stringify(normalizeToolUseInput(toolUse.input)),
 					},
 				});
 				break;
@@ -109,18 +123,14 @@ function convertUserMessage(content: ContentBlock[]): OpenAIMessage[] {
 	const messages: OpenAIMessage[] = [];
 
 	// Convert all tool results to separate tool messages
-	const toolResults = content.filter((b) => b.type === "tool_result");
-	for (const result of toolResults as {
-		tool_use_id: string;
-		content: string | ContentBlock[];
-	}[]) {
+	const toolResults = content.filter(
+		(b) => b.type === "tool_result",
+	) as ToolResultContent[];
+	for (const result of toolResults) {
 		messages.push({
 			role: "tool",
 			tool_call_id: result.tool_use_id,
-			content:
-				typeof result.content === "string"
-					? result.content
-					: JSON.stringify(result.content),
+			content: serializeToolResultContent(result.content),
 		});
 	}
 
@@ -140,6 +150,14 @@ function convertUserMessage(content: ContentBlock[]): OpenAIMessage[] {
 					image_url: {
 						url: `data:${img.mediaType};base64,${img.data}`,
 					},
+				});
+				break;
+			}
+			case "file": {
+				const fileBlock = block as FileContent;
+				parts.push({
+					type: "text",
+					text: formatFileContentBlock(fileBlock.path, fileBlock.content),
 				});
 				break;
 			}

@@ -2,7 +2,7 @@ import type { providers as LlmsProviders } from "@cline/llms";
 import { type Tool, validateWithZod, zodToJsonSchema } from "@cline/shared";
 import { z } from "zod";
 import { createTool } from "../tools/create.js";
-import type { AgentHooks, BasicLogger } from "../types.js";
+import type { AgentConfig, AgentHooks, BasicLogger } from "../types.js";
 import type { AgentTeamsRuntime, TeamRuntimeState } from "./multi-agent.js";
 
 export interface TeamTeammateSpec {
@@ -247,6 +247,7 @@ export interface TeamTeammateRuntimeConfig {
 	thinking?: boolean;
 	maxIterations?: number;
 	hooks?: AgentHooks;
+	extensions?: AgentConfig["extensions"];
 	logger?: BasicLogger;
 }
 
@@ -306,6 +307,7 @@ function spawnTeamTeammate(
 				options.spec.maxIterations ?? options.teammateRuntime.maxIterations,
 			tools: teammateTools,
 			hooks: options.teammateRuntime.hooks,
+			extensions: options.teammateRuntime.extensions,
 			logger: options.teammateRuntime.logger,
 		},
 	});

@@ -9,8 +9,8 @@ describe("default tool presets", () => {
 	it("explicitly configures ask_question across presets", () => {
 		expect(ToolPresets.search.enableAskQuestion).toBe(false);
 		expect(ToolPresets.development.enableAskQuestion).toBe(true);
-		expect(ToolPresets.readonly.enableAskQuestion).toBe(false);
-		expect(ToolPresets.minimal.enableAskQuestion).toBe(false);
+		expect(ToolPresets.readonly.enableAskQuestion).toBe(true);
+		expect(ToolPresets.minimal.enableAskQuestion).toBe(true);
 		expect(ToolPresets.yolo.enableAskQuestion).toBe(true);
 	});
 

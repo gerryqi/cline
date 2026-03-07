@@ -69,6 +69,7 @@ export {
 	createConfig,
 	createProviderConfig,
 	type EndpointConfig,
+	type FileContent,
 	type GcpConfig,
 	type GcpSettings,
 	GcpSettingsSchema,

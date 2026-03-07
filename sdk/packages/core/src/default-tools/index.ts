@@ -72,7 +72,6 @@ export type {
 	DefaultToolName,
 	DefaultToolsConfig,
 	EditorExecutor,
-	EditorExecutorInput,
 	FileReadExecutor,
 	SearchExecutor,
 	SkillsExecutor,
