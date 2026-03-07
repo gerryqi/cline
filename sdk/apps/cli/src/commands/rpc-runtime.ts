@@ -8,7 +8,6 @@ import {
 	CoreSessionService,
 	createOAuthClientCallbacks,
 	DefaultSessionManager,
-	enrichPromptWithMentions,
 	executeRpcClineAccountAction,
 	generateWorkspaceInfo,
 	loginClineOAuth,
@@ -21,17 +20,16 @@ import {
 import type { providers as LlmsProviders } from "@cline/llms";
 import { models, providers } from "@cline/llms";
 import { type RpcRuntimeHandlers, RpcSessionClient } from "@cline/rpc";
-import {
-	formatUserInputBlock,
-	type RpcChatMessage,
-	type RpcChatRunTurnRequest,
-	type RpcChatStartSessionRequest,
-	type RpcChatTurnResult,
-	type RpcClineAccountActionRequest,
-	type RpcProviderActionRequest,
-	type RpcProviderListItem,
-	type RpcProviderModel,
-	type RpcProviderSettingsActionRequest,
+import type {
+	RpcChatMessage,
+	RpcChatRunTurnRequest,
+	RpcChatStartSessionRequest,
+	RpcChatTurnResult,
+	RpcClineAccountActionRequest,
+	RpcProviderActionRequest,
+	RpcProviderListItem,
+	RpcProviderModel,
+	RpcProviderSettingsActionRequest,
 } from "@cline/shared";
 import { setHomeDir, setHomeDirIfUnset } from "@cline/shared/storage";
 
@@ -82,13 +80,6 @@ type StoredModelsFile = {
 		}
 	>;
 };
-
-function toPromptMessage(
-	message: string,
-	mode: "act" | "plan" = "act",
-): string {
-	return formatUserInputBlock(message, mode);
-}
 
 function sanitizeFilename(name: string, index: number): string {
 	const base = basename(name || `attachment-${index + 1}`);
@@ -859,17 +850,8 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 		sendSession: async (sessionId, requestJson) => {
 			const request = parseSendPayload(requestJson);
 			applyHomeDir(request.config);
-			const mode =
-				request.config.mode === "plan"
-					? "plan"
-					: (sessionModes.get(sessionId) ?? "act");
 			const cwd = resolveSessionCwd(request.config);
-			const input = request.promptPreformatted
-				? request.prompt.trim()
-				: toPromptMessage(
-						(await enrichPromptWithMentions(request.prompt, cwd)).prompt,
-						mode,
-					);
+			const input = request.prompt.trim();
 			const userImages = request.attachments?.userImages ?? [];
 			const fileMaterialized = await materializeUserFiles(
 				request.attachments?.userFiles,

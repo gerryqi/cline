@@ -10,18 +10,21 @@ import { z } from "zod";
 /**
  * Schema for read tool input
  */
-export const ReadInputSchema = z.object({
-	absolute_path: z
-		.string()
-		.describe("The absolute file path to read content from"),
-});
+const AbsolutePath = z
+	.string()
+	.describe("The absolute file path of a text file to read content from");
 
 /**
  * Schema for read_files tool input
  */
 export const ReadFilesInputSchema = z.object({
-	file_paths: z.array(z.string()).describe("The absolute file paths to read"),
+	file_paths: z.array(AbsolutePath).describe("Array of absolute file paths"),
 });
+export const ReadFilesInputUnionSchema = z.union([
+	ReadFilesInputSchema,
+	z.array(z.string()),
+	z.string(),
+]);
 
 /**
  * Schema for search_codebase tool input
@@ -38,6 +41,11 @@ export const SearchCodebaseInputSchema = z.object({
 export const RunCommandsInputSchema = z.object({
 	commands: z.array(z.string()).describe("Array of shell commands to execute"),
 });
+export const RunCommandsInputUnionSchema = z.union([
+	RunCommandsInputSchema,
+	z.array(z.string()),
+	z.string(),
+]);
 
 /**
  * Schema for a single web fetch request
@@ -156,11 +164,6 @@ export const AskQuestionInputSchema = z.object({
 // =============================================================================
 // Type Definitions (derived from Zod schemas)
 // =============================================================================
-
-/**
- * Input for the read tool
- */
-export type ReadInput = z.infer<typeof ReadInputSchema>;
 
 /**
  * Input for the read_files tool

@@ -27,6 +27,7 @@ export type {
 export { InMemoryWorkspaceManager } from "./workspace-manager";
 export type { WorkspaceManifest } from "./workspace-manifest";
 export {
+	buildWorkspaceMetadata,
 	emptyWorkspaceManifest,
 	generateWorkspaceInfo,
 	normalizeWorkspacePath,

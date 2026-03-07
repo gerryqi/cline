@@ -166,6 +166,12 @@ For `oca` CLI login, default callback ports are `48801-48811` (`/auth/oca`) to m
 - Refresh operations are single-flight per provider to avoid concurrent refresh storms in long-lived RPC runtimes.
 - When a turn fails with an auth-like error (for example HTTP 401/403), core force-refreshes once and retries the turn once.
 
+Prompt preparation behavior:
+
+- Hosts should pass raw prompt text into session `start/send` APIs.
+- Core normalizes any existing `<user_input ...>` wrapper, resolves `@mentions` through `enrichPromptWithMentions(...)` against `workspaceRoot` (fallback `cwd`), and formats exactly one canonical `<user_input mode="...">...</user_input>` block per turn.
+- Mention-matched files are merged into `userFiles` in core before dispatching to `Agent.run(...)` / `Agent.continue(...)`.
+
 ## MCP Settings Compatibility
 
 `@cline/core` loads MCP registrations from `cline_mcp_settings.json` and supports both shapes:

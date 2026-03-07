@@ -51,7 +51,6 @@ export interface RpcChatRunTurnRequest {
 	config: RpcChatStartSessionRequest;
 	messages?: RpcChatMessage[];
 	prompt: string;
-	promptPreformatted?: boolean;
 	attachments?: RpcChatAttachments;
 }
 

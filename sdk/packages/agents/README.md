@@ -151,6 +151,7 @@ Extensions can now subscribe to additional lifecycle hook stages:
 
 - `HookEngine` keeps handlers sorted at registration time to avoid per-dispatch sort overhead.
 - `MessageBuilder` now incrementally reuses tool/read indexes between turns and resets safely on non-append history changes.
+- `MessageBuilder` truncates oversized `file` block payloads in user messages and targeted tool results, and it also marks outdated read-result `file` blocks with `[outdated - see the latest file content]`.
 
 ## Package Boundaries
 

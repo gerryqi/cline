@@ -1,11 +1,6 @@
-import { readFile, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import path from "node:path";
-import { formatFileContentBlock } from "@cline/shared";
 import { type FastFileIndexOptions, getFileIndex } from "./file-indexer";
-
-const DEFAULT_MAX_FILES = 6;
-const DEFAULT_MAX_FILE_BYTES = 60_000;
-const DEFAULT_MAX_TOTAL_BYTES = 200_000;
 
 const TRAILING_PUNCTUATION = /[),.:;!?`'"]+$/;
 const LEADING_WRAPPERS = /^[(`'"]+/;
@@ -56,32 +51,6 @@ function normalizeMentionPath(
 	return relative.split(path.sep).join("/");
 }
 
-async function readTextFileSafe(
-	filePath: string,
-	maxBytes: number,
-): Promise<string | undefined> {
-	const fileStat = await stat(filePath);
-	if (!fileStat.isFile()) {
-		return undefined;
-	}
-	if (fileStat.size > maxBytes) {
-		return undefined;
-	}
-	const content = await readFile(filePath, "utf8");
-	if (content.includes("\u0000")) {
-		return undefined;
-	}
-	return content;
-}
-
-function buildAttachmentBlock(
-	entries: Array<{ path: string; content: string }>,
-): string {
-	return entries
-		.map((entry) => formatFileContentBlock(entry.path, entry.content))
-		.join("\n\n");
-}
-
 export async function enrichPromptWithMentions(
 	input: string,
 	cwd: string,
@@ -96,9 +65,9 @@ export async function enrichPromptWithMentions(
 		};
 	}
 
-	const maxFiles = options.maxFiles ?? DEFAULT_MAX_FILES;
-	const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
-	const maxTotalBytes = options.maxTotalBytes ?? DEFAULT_MAX_TOTAL_BYTES;
+	const maxFiles = options.maxFiles;
+	const maxFileBytes = options.maxFileBytes;
+	const maxTotalBytes = options.maxTotalBytes;
 	const fileList = await getFileIndex(cwd, { ttlMs: options.ttlMs });
 	const matched: string[] = [];
 	const ignored: string[] = [];
@@ -106,7 +75,7 @@ export async function enrichPromptWithMentions(
 	let totalBytes = 0;
 
 	for (const mention of mentions) {
-		if (attachments.length >= maxFiles) {
+		if (maxFiles && attachments.length >= maxFiles) {
 			ignored.push(mention);
 			continue;
 		}
@@ -117,41 +86,33 @@ export async function enrichPromptWithMentions(
 			continue;
 		}
 
+		if (!maxFileBytes || !maxTotalBytes) {
+			matched.push(relativePath);
+			continue;
+		}
+
 		const absolutePath = path.join(cwd, relativePath);
 		try {
-			const content = await readTextFileSafe(absolutePath, maxFileBytes);
-			if (content === undefined) {
+			const fileStat = await stat(absolutePath);
+			if (!fileStat.isFile()) {
 				ignored.push(mention);
 				continue;
 			}
-
-			const nextBytes = totalBytes + Buffer.byteLength(content, "utf8");
+			const nextBytes = totalBytes + maxFileBytes;
 			if (nextBytes > maxTotalBytes) {
 				ignored.push(mention);
 				continue;
 			}
 
-			totalBytes = nextBytes;
+			totalBytes += nextBytes;
 			matched.push(relativePath);
-			attachments.push({
-				path: relativePath,
-				content,
-			});
 		} catch {
 			ignored.push(mention);
 		}
 	}
 
-	if (attachments.length === 0) {
-		return {
-			prompt: input,
-			matchedFiles: matched,
-			ignoredMentions: ignored,
-		};
-	}
-
 	return {
-		prompt: `${input}\n\n${buildAttachmentBlock(attachments)}`,
+		prompt: input,
 		matchedFiles: matched,
 		ignoredMentions: ignored,
 	};

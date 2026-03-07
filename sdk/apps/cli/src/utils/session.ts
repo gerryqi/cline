@@ -1,5 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { basename, isAbsolute, resolve } from "node:path";
 import type {
 	AgentEvent,
 	AgentResult,
@@ -334,6 +336,30 @@ function parseEventPayload(payloadJson: string): Record<string, unknown> {
 	}
 }
 
+function resolveAttachmentPath(filePath: string, cwd: string): string {
+	return isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
+}
+
+async function toRpcAttachmentFiles(
+	userFiles: string[] | undefined,
+	cwd: string,
+): Promise<Array<{ name: string; content: string }> | undefined> {
+	if (!userFiles || userFiles.length === 0) {
+		return undefined;
+	}
+
+	const files = await Promise.all(
+		userFiles.map(async (filePath) => {
+			const absolutePath = resolveAttachmentPath(filePath, cwd);
+			return {
+				name: basename(filePath),
+				content: await readFile(absolutePath, "utf8"),
+			};
+		}),
+	);
+	return files.length > 0 ? files : undefined;
+}
+
 function resolveTextDelta(
 	payload: Record<string, unknown>,
 	streamedText: string,
@@ -405,10 +431,23 @@ function createRpcRuntimeCliSessionManager(
 			if (!config) {
 				throw new Error(`session not found: ${input.sessionId}`);
 			}
+			const attachmentFiles = await toRpcAttachmentFiles(
+				input.userFiles,
+				config.cwd ?? process.cwd(),
+			);
 			const request: RpcChatRunTurnRequest = {
 				config,
 				prompt: input.prompt,
-				promptPreformatted: true,
+				attachments:
+					(input.userImages && input.userImages.length > 0) || attachmentFiles
+						? {
+								userImages:
+									input.userImages && input.userImages.length > 0
+										? input.userImages
+										: undefined,
+								userFiles: attachmentFiles,
+							}
+						: undefined,
 			};
 			let streamedText = "";
 			const stopStreaming = client.streamEvents(

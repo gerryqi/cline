@@ -3,6 +3,7 @@
 Fast CLI for running agentic loops with LLMs. Streams output in real time and includes built-in tools, sub-agent spawning, and team runtime support by default.
 
 Lifecycle note: active runs now install both `SIGINT` and `SIGTERM` abort handlers, and CLI runtime/session managers are disposed on shutdown paths to reduce orphaned subprocesses.
+Prompt note: CLI sends raw user prompt text to core runtime; `@cline/core` canonicalizes `<user_input ...>` formatting and mention-based file attachment resolution once per turn.
 
 ## Installation
 

@@ -15,10 +15,10 @@ import {
 	FetchWebContentInputSchema,
 	type ReadFilesInput,
 	ReadFilesInputSchema,
-	type ReadInput,
-	ReadInputSchema,
+	ReadFilesInputUnionSchema,
 	type RunCommandsInput,
 	RunCommandsInputSchema,
+	RunCommandsInputUnionSchema,
 	type SearchCodebaseInput,
 	SearchCodebaseInputSchema,
 	type SkillsInput,
@@ -76,54 +76,6 @@ function withTimeout<T>(
  *
  * Reads the content of one or more files from the filesystem.
  */
-export function createReadTool(
-	executor: FileReadExecutor,
-	config: Pick<DefaultToolsConfig, "fileReadTimeoutMs"> = {},
-): Tool<ReadInput, ToolOperationResult> {
-	const timeoutMs = config.fileReadTimeoutMs ?? 10000;
-	return createTool<ReadInput, ToolOperationResult>({
-		name: "read",
-		description:
-			"Read the full content of a file from the filesystem using an absolute path. " +
-			"Returns file content or an error message. " +
-			"Use this to examine source code, configuration files, or any text files.",
-		inputSchema: zodToJsonSchema(ReadInputSchema),
-		timeoutMs: timeoutMs * 2, // Account for multiple files
-		retryable: true,
-		maxRetries: 1,
-		execute: async (input, context) => {
-			// Validate input with Zod schema
-			const validatedInput = validateWithZod(ReadInputSchema, input);
-			const absolutePath = validatedInput.absolute_path;
-			try {
-				const content = await withTimeout(
-					executor(absolutePath, context),
-					timeoutMs,
-					`File read timed out after ${timeoutMs}ms`,
-				);
-				return {
-					query: absolutePath,
-					result: content,
-					success: true,
-				};
-			} catch (error) {
-				const msg = formatError(error);
-				return {
-					query: absolutePath,
-					result: "",
-					error: `Error reading file: ${msg}`,
-					success: false,
-				};
-			}
-		},
-	});
-}
-
-/**
- * Create the read_files tool
- *
- * Reads the content of one or more files from the filesystem.
- */
 export function createReadFilesTool(
 	executor: FileReadExecutor,
 	config: Pick<DefaultToolsConfig, "fileReadTimeoutMs"> = {},
@@ -133,42 +85,44 @@ export function createReadFilesTool(
 	return createTool<ReadFilesInput, ToolOperationResult[]>({
 		name: "read_files",
 		description:
-			"Read the full content of one or more files from the codebase using absolute paths. " +
-			"Returns file contents or error messages for each path. " +
-			"Use this to examine source code, configuration files, or any text files.",
+			"Read the FULL content of text file at the provided absolute paths. " +
+			"Returns file contents or error messages for each path. ",
 		inputSchema: zodToJsonSchema(ReadFilesInputSchema),
 		timeoutMs: timeoutMs * 2, // Account for multiple files
 		retryable: true,
 		maxRetries: 1,
 		execute: async (input, context) => {
 			// Validate input with Zod schema
-			const validatedInput = validateWithZod(ReadFilesInputSchema, input);
+			const validate = validateWithZod(ReadFilesInputUnionSchema, input);
+			const filePaths = Array.isArray(validate)
+				? validate
+				: typeof validate === "object"
+					? validate.file_paths
+					: [validate];
 
 			return Promise.all(
-				validatedInput.file_paths.map(
-					async (filePath): Promise<ToolOperationResult> => {
-						try {
-							const content = await withTimeout(
-								executor(filePath, context),
-								timeoutMs,
-								`File read timed out after ${timeoutMs}ms`,
-							);
-							return {
-								query: filePath,
-								result: content,
-								success: true,
-							};
-						} catch (error) {
-							const msg = formatError(error);
-							return {
-								query: filePath,
-								result: "",
-								error: `Error reading file: ${msg}`,
-								success: false,
-							};
-						}
-					},
-				),
+				filePaths.map(async (filePath): Promise<ToolOperationResult> => {
+					try {
+						const content = await withTimeout(
+							executor(filePath, context),
+							timeoutMs,
+							`File read timed out after ${timeoutMs}ms`,
+						);
+						return {
+							query: filePath,
+							result: content,
+							success: true,
+						};
+					} catch (error) {
+						const msg = formatError(error);
+						return {
+							query: filePath,
+							result: "",
+							error: `Error reading file: ${msg}`,
+							success: false,
+						};
+					}
+				}),
 			);
 		},
 	});
@@ -256,34 +210,36 @@ export function createBashTool(
 		retryable: false, // Shell commands often have side effects
 		maxRetries: 0,
 		execute: async (input, context) => {
-			// Validate input with Zod schema
-			const validatedInput = validateWithZod(RunCommandsInputSchema, input);
+			const validate = validateWithZod(RunCommandsInputUnionSchema, input);
+			const commands = Array.isArray(validate)
+				? validate
+				: typeof validate === "object"
+					? validate.commands
+					: [validate];
 
 			return Promise.all(
-				validatedInput.commands.map(
-					async (command): Promise<ToolOperationResult> => {
-						try {
-							const output = await withTimeout(
-								executor(command, cwd, context),
-								timeoutMs,
-								`Command timed out after ${timeoutMs}ms`,
-							);
-							return {
-								query: command,
-								result: output,
-								success: true,
-							};
-						} catch (error) {
-							const msg = formatError(error);
-							return {
-								query: command,
-								result: "",
-								error: `Command failed: ${msg}`,
-								success: false,
-							};
-						}
-					},
-				),
+				commands.map(async (command): Promise<ToolOperationResult> => {
+					try {
+						const output = await withTimeout(
+							executor(command, cwd, context),
+							timeoutMs,
+							`Command timed out after ${timeoutMs}ms`,
+						);
+						return {
+							query: command,
+							result: output,
+							success: true,
+						};
+					} catch (error) {
+						const msg = formatError(error);
+						return {
+							query: command,
+							result: "",
+							error: `Command failed: ${msg}`,
+							success: false,
+						};
+					}
+				}),
 			);
 		},
 	});

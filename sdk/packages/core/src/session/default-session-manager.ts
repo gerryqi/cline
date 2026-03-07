@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import {
 	Agent,
 	type AgentConfig,
@@ -14,6 +14,7 @@ import {
 	type ToolApprovalResult,
 } from "@cline/agents";
 import type { providers as LlmsProviders } from "@cline/llms";
+import { formatUserInputBlock, normalizeUserInput } from "@cline/shared";
 import { setHomeDirIfUnset } from "@cline/shared/storage";
 import { nanoid } from "nanoid";
 import { resolveAndLoadAgentPlugins } from "../agents/plugin-config-loader";
@@ -22,6 +23,7 @@ import {
 	type ToolExecutors,
 	ToolPresets,
 } from "../default-tools";
+import { enrichPromptWithMentions } from "../input";
 import {
 	createHookAuditHooks,
 	createHookConfigFileHooks,
@@ -74,6 +76,12 @@ type ActiveSession = {
 type StoredMessageWithMetadata = LlmsProviders.MessageWithMetadata & {
 	providerId?: string;
 	modelId?: string;
+};
+
+type PreparedTurnInput = {
+	prompt: string;
+	userImages?: string[];
+	userFiles?: string[];
 };
 
 export interface DefaultSessionManagerOptions {
@@ -571,7 +579,8 @@ export class DefaultSessionManager implements SessionManager {
 			userFiles?: string[];
 		},
 	): Promise<AgentResult> {
-		const prompt = input.prompt.trim();
+		const preparedInput = await this.prepareTurnInput(session, input);
+		const prompt = preparedInput.prompt.trim();
 		if (!prompt) {
 			throw new Error("prompt cannot be empty");
 		}
@@ -585,12 +594,21 @@ export class DefaultSessionManager implements SessionManager {
 			? await this.runWithAuthRetry(
 					session,
 					() =>
-						session.agent.continue(prompt, input.userImages, input.userFiles),
+						session.agent.continue(
+							prompt,
+							preparedInput.userImages,
+							preparedInput.userFiles,
+						),
 					baselineMessages,
 				)
 			: await this.runWithAuthRetry(
 					session,
-					() => session.agent.run(prompt, input.userImages, input.userFiles),
+					() =>
+						session.agent.run(
+							prompt,
+							preparedInput.userImages,
+							preparedInput.userFiles,
+						),
 					baselineMessages,
 				);
 		session.started = true;
@@ -605,6 +623,67 @@ export class DefaultSessionManager implements SessionManager {
 			persistedMessages,
 		);
 		return result;
+	}
+
+	private async prepareTurnInput(
+		session: ActiveSession,
+		input: {
+			prompt: string;
+			userImages?: string[];
+			userFiles?: string[];
+		},
+	): Promise<PreparedTurnInput> {
+		const mentionBaseDir = session.config.workspaceRoot ?? session.config.cwd;
+		const normalizedPrompt = normalizeUserInput(input.prompt).trim();
+		if (!normalizedPrompt) {
+			return {
+				prompt: "",
+				userImages: input.userImages,
+				userFiles: this.resolveAbsoluteFilePaths(
+					session.config.cwd,
+					input.userFiles,
+				),
+			};
+		}
+
+		const enriched = await enrichPromptWithMentions(
+			normalizedPrompt,
+			mentionBaseDir,
+		);
+		const prompt = formatUserInputBlock(
+			enriched.prompt,
+			session.config.mode === "plan" ? "plan" : "act",
+		);
+		const explicitUserFiles = this.resolveAbsoluteFilePaths(
+			session.config.cwd,
+			input.userFiles,
+		);
+		const mentionedFiles = this.resolveAbsoluteFilePaths(
+			mentionBaseDir,
+			enriched.matchedFiles,
+		);
+		const mergedUserFiles = Array.from(
+			new Set([...explicitUserFiles, ...mentionedFiles]),
+		);
+
+		return {
+			prompt,
+			userImages: input.userImages,
+			userFiles: mergedUserFiles.length > 0 ? mergedUserFiles : undefined,
+		};
+	}
+
+	private resolveAbsoluteFilePaths(cwd: string, paths?: string[]): string[] {
+		if (!paths || paths.length === 0) {
+			return [];
+		}
+		const resolved = paths
+			.map((filePath) => filePath.trim())
+			.filter((filePath) => filePath.length > 0)
+			.map((filePath) =>
+				isAbsolute(filePath) ? filePath : resolve(cwd, filePath),
+			);
+		return Array.from(new Set(resolved));
 	}
 
 	private async ensureSessionPersisted(session: ActiveSession): Promise<void> {

@@ -293,8 +293,6 @@ async function runAgent(
 		printModelProviderInfo(config);
 		const userInput = await buildUserInputMessage(
 			prompt,
-			config.mode,
-			config.cwd,
 			userInstructionWatcher,
 		);
 		const started = await sessionManager.start({
@@ -613,8 +611,6 @@ async function runInteractive(
 
 			const userInput = await buildUserInputMessage(
 				input,
-				config.mode,
-				config.cwd,
 				userInstructionWatcher,
 			);
 			const result = await sessionManager.send({
@@ -1049,6 +1045,7 @@ async function main(): Promise<void> {
 			enableAgentTeams: args.enableAgentTeams,
 			enableTools: args.enableTools,
 			cwd,
+			workspaceRoot: resolveWorkspaceRoot(cwd),
 			teamName: args.enableAgentTeams
 				? args.teamName?.trim() || createTeamName()
 				: undefined,

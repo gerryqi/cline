@@ -27,8 +27,10 @@ Primary usage in `cli/src/index.ts`:
   - Handles team persistence bootstrap via core-owned runtime wiring.
 - `createTeamName`
   - Generates team names when team mode is enabled.
-- `enrichPromptWithMentions` and `prewarmFileIndex`
-  - Enriches `@mentions`/file context in user prompts.
+- `prewarmFileIndex`
+  - Warms file-index caches used by core prompt mention resolution paths.
+- `resolveWorkspaceRoot`
+  - Derives git workspace root and passes it into core config for workspace-relative mention resolution.
 - `generateWorkspaceInfo`
   - Builds workspace metadata used to construct the default system prompt.
 - `ProviderSettingsManager`
@@ -121,6 +123,8 @@ Flow summary:
 
 1. Host/UI collects prompt + model/provider + mode + attachments.
 2. Host serializes turn request and starts/uses runtime session.
+   - In CLI RPC mode, `userFiles` path inputs are resolved against session `cwd`, read locally, and forwarded as RPC `attachments.userFiles` (`name` + `content`).
+   - Prompt canonicalization is owned by `@cline/core` (`DefaultSessionManager`): it normalizes raw input, resolves `@mentions`, and formats a single `<user_input mode="...">...</user_input>` block.
 3. Runtime builder selects tool preset from mode:
    - `act` -> development preset
    - `plan` -> readonly preset

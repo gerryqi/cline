@@ -83,3 +83,18 @@ export function upsertWorkspaceInfo(
 	}
 	return WorkspaceManifestSchema.parse(nextManifest);
 }
+
+export async function buildWorkspaceMetadata(cwd: string): Promise<string> {
+	const workspaceInfo = await generateWorkspaceInfo(cwd);
+	const workspaceConfig = {
+		workspaces: {
+			[workspaceInfo.rootPath]: {
+				hint: workspaceInfo.hint,
+				associatedRemoteUrls: workspaceInfo.associatedRemoteUrls,
+				latestGitCommitHash: workspaceInfo.latestGitCommitHash,
+				latestGitBranchName: workspaceInfo.latestGitBranchName,
+			},
+		},
+	};
+	return `# Workspace Configuration\n${JSON.stringify(workspaceConfig, null, 2)}`;
+}

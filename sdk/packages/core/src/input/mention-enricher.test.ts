@@ -20,7 +20,7 @@ async function createTempWorkspace(): Promise<string> {
 }
 
 describe("enrichPromptWithMentions", () => {
-	it("attaches content for matching @path mentions", async () => {
+	it("returns matched files for matching @path mentions", async () => {
 		const cwd = await createTempWorkspace();
 		try {
 			const sourcePath = path.join(cwd, "src", "index.ts");
@@ -34,8 +34,7 @@ describe("enrichPromptWithMentions", () => {
 
 			expect(result.matchedFiles).toEqual(["src/index.ts"]);
 			expect(result.ignoredMentions).toEqual([]);
-			expect(result.prompt).toContain('<file_content path="src/index.ts">');
-			expect(result.prompt).toContain("export const answer = 42");
+			expect(result.prompt).toBe("Review @src/index.ts");
 		} finally {
 			await rm(cwd, { recursive: true, force: true });
 		}
@@ -53,13 +52,15 @@ describe("enrichPromptWithMentions", () => {
 
 			expect(result.matchedFiles).toEqual([]);
 			expect(result.ignoredMentions).toEqual(["missing/file.ts"]);
-			expect(result.prompt).not.toContain("<file_content");
+			expect(result.prompt).toBe(
+				"Ping me at test@example.com and check @missing/file.ts.",
+			);
 		} finally {
 			await rm(cwd, { recursive: true, force: true });
 		}
 	});
 
-	it("respects maxFiles while keeping matched files", async () => {
+	it("respects maxTotalBytes while keeping prompt unchanged", async () => {
 		const cwd = await createTempWorkspace();
 		try {
 			await writeFile(path.join(cwd, "a.ts"), "const a = 1\n", "utf8");
@@ -68,13 +69,12 @@ describe("enrichPromptWithMentions", () => {
 			const result = await enrichPromptWithMentions(
 				"Use @a.ts and @b.ts",
 				cwd,
-				{ maxFiles: 1 },
+				{ maxTotalBytes: 60_000 },
 			);
 
 			expect(result.matchedFiles).toEqual(["a.ts"]);
 			expect(result.ignoredMentions).toEqual(["b.ts"]);
-			expect(result.prompt).toContain('path="a.ts"');
-			expect(result.prompt).not.toContain('path="b.ts"');
+			expect(result.prompt).toBe("Use @a.ts and @b.ts");
 		} finally {
 			await rm(cwd, { recursive: true, force: true });
 		}

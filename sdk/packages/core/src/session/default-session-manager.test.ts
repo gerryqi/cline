@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AgentResult } from "@cline/agents";
 import { describe, expect, it, vi } from "vitest";
 import { SessionSource } from "../types/common";
@@ -452,6 +455,79 @@ describe("DefaultSessionManager", () => {
 			apiKey: "oauth-access-new",
 		});
 		expect(run).toHaveBeenCalledTimes(1);
+	});
+
+	it("formats prompt in core and merges explicit + mention user files", async () => {
+		const tempCwd = mkdtempSync(join(tmpdir(), "core-session-format-"));
+		try {
+			const srcDir = join(tempCwd, "src");
+			const docsDir = join(tempCwd, "docs");
+			mkdirSync(srcDir, { recursive: true });
+			mkdirSync(docsDir, { recursive: true });
+			const mentionPath = join(srcDir, "app.ts");
+			const explicitPath = join(docsDir, "note.md");
+			writeFileSync(mentionPath, "export const v = 1;\n", "utf8");
+			writeFileSync(explicitPath, "note\n", "utf8");
+
+			const sessionId = "sess-format";
+			const manifest = createManifest(sessionId);
+			const sessionService = {
+				ensureSessionsDir: vi.fn().mockReturnValue("/tmp/sessions"),
+				createRootSessionWithArtifacts: vi.fn().mockResolvedValue({
+					manifestPath: "/tmp/manifest-format.json",
+					transcriptPath: "/tmp/transcript-format.log",
+					hookPath: "/tmp/hook-format.log",
+					messagesPath: "/tmp/messages-format.json",
+					manifest,
+				}),
+				persistSessionMessages: vi.fn(),
+				updateSessionStatus: vi.fn().mockResolvedValue({ updated: true }),
+				writeSessionManifest: vi.fn(),
+				listSessions: vi.fn().mockResolvedValue([]),
+				deleteSession: vi.fn().mockResolvedValue({ deleted: true }),
+			};
+			const run = vi.fn().mockResolvedValue(createResult({ text: "ok" }));
+			const manager = new DefaultSessionManager({
+				sessionService: sessionService as never,
+				runtimeBuilder: {
+					build: vi.fn().mockReturnValue({
+						tools: [],
+						shutdown: vi.fn(),
+					}),
+				},
+				createAgent: () =>
+					({
+						run,
+						continue: vi.fn(),
+						abort: vi.fn(),
+						shutdown: vi.fn().mockResolvedValue(undefined),
+						getMessages: vi.fn().mockReturnValue([]),
+						messages: [],
+					}) as never,
+			});
+
+			await manager.start({
+				config: createConfig({
+					sessionId,
+					cwd: join(tempCwd, "docs"),
+					workspaceRoot: tempCwd,
+				}),
+				interactive: true,
+			});
+			await manager.send({
+				sessionId,
+				prompt: '<user_input mode="act">explain @src/app.ts</user_input>',
+				userFiles: ["note.md"],
+			});
+
+			expect(run).toHaveBeenCalledWith(
+				'<user_input mode="act">explain @src/app.ts</user_input>',
+				undefined,
+				expect.arrayContaining([mentionPath, explicitPath]),
+			);
+		} finally {
+			rmSync(tempCwd, { recursive: true, force: true });
+		}
 	});
 
 	it("force refreshes and retries once when turn fails with auth error", async () => {

@@ -2,12 +2,12 @@ import type { providers as LlmsProviders } from "@cline/llms";
 
 const DEFAULT_MAX_TOOL_RESULT_CHARS = 50_000;
 const TARGET_TOOL_NAMES = new Set([
-	"read_file",
+	"read",
 	"read_files",
 	"bash",
 	"run_commands",
 ]);
-const READ_TOOL_NAMES = new Set(["read_file", "read_files"]);
+const READ_TOOL_NAMES = new Set(["read", "read_files"]);
 const KEEP_CHARS_PER_SIDE = 50_000;
 const OUTDATED_FILE_CONTENT = "[outdated - see the latest file content]";
 
@@ -44,6 +44,17 @@ export class MessageBuilder {
 			}
 
 			const content = message.content.map((block) => {
+				if (block.type === "file") {
+					const truncated = this.truncateMiddle(block.content);
+					if (truncated === block.content) {
+						return block;
+					}
+					return {
+						...block,
+						content: truncated,
+					};
+				}
+
 				if (block.type !== "tool_result") {
 					return block;
 				}
@@ -265,6 +276,16 @@ export class MessageBuilder {
 		}
 
 		return content.map((entry) => {
+			if (entry.type === "file") {
+				if (!outdatedPathSet.has(entry.path)) {
+					return entry;
+				}
+				return {
+					...(entry as LlmsProviders.FileContent),
+					content: OUTDATED_FILE_CONTENT,
+				};
+			}
+
 			if (entry.type !== "text") {
 				return entry;
 			}
@@ -364,6 +385,17 @@ export class MessageBuilder {
 		}
 
 		return content.map((entry) => {
+			if (entry.type === "file") {
+				const fileContent = this.truncateMiddle(entry.content);
+				if (fileContent === entry.content) {
+					return entry;
+				}
+				return {
+					...(entry as LlmsProviders.FileContent),
+					content: fileContent,
+				};
+			}
+
 			if (entry.type !== "text") {
 				return entry;
 			}
