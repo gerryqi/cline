@@ -13,9 +13,9 @@ import {
 	ensureOAuthProviderApiKey,
 	getPersistedProviderApiKey,
 	isOAuthProvider,
-	normalizeAuthProviderId,
 	normalizeProviderId,
-	runAuthProviderCommand,
+	parseAuthCommandArgs,
+	runAuthCommand,
 } from "./commands/auth";
 import { runHookCommand } from "./commands/hook";
 import { runHistoryListCommand, runListCommand } from "./commands/list";
@@ -103,22 +103,19 @@ export async function runCli(): Promise<void> {
 		process.exit(1);
 	}
 	if (rawArgs[0] === "auth") {
-		const explicitProviderArg =
-			rawArgs[1] && !rawArgs[1].startsWith("-") ? rawArgs[1] : undefined;
-		const lastUsedProvider =
-			providerSettingsManager.getLastUsedProviderSettings()?.provider;
-		const providerId = normalizeAuthProviderId(
-			explicitProviderArg || args.provider?.trim() || lastUsedProvider || "",
-		);
-		if (!providerId) {
-			writeErr(`auth requires a provider (example: "clite auth openai-codex")`);
+		const parsedAuthArgs = parseAuthCommandArgs(rawArgs.slice(1));
+		if (parsedAuthArgs.parseError) {
+			writeErr(parsedAuthArgs.parseError);
 			process.exit(1);
 		}
-		const code = await runAuthProviderCommand(
+		const code = await runAuthCommand({
 			providerSettingsManager,
-			providerId,
-			{ writeln, writeErr },
-		);
+			explicitProvider: parsedAuthArgs.explicitProvider,
+			apikey: parsedAuthArgs.apikey,
+			modelid: parsedAuthArgs.modelid,
+			baseurl: parsedAuthArgs.baseurl,
+			io: { writeln, writeErr },
+		});
 		process.exit(code);
 	}
 	if (rawArgs[0] === "list") {

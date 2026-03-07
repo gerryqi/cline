@@ -366,7 +366,7 @@ export async function loginOcaOAuth(
 	});
 	options.callbacks.onAuth({
 		url: authUrl,
-		instructions: "A browser window should open. Complete login to finish.",
+		instructions: "Continue the authentication process in your browser.",
 	});
 
 	try {

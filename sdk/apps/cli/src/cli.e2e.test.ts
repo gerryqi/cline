@@ -191,7 +191,7 @@ describe("cli e2e", () => {
 		);
 	});
 
-	it("returns an error when auth provider is missing", () => {
+	it("returns an error for interactive auth when no TTY is available", () => {
 		const homeDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-home-"));
 		const dataDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-data-"));
 		tempDirs.push(homeDir, dataDir);
@@ -203,7 +203,9 @@ describe("cli e2e", () => {
 			},
 		});
 		expect(result.status).toBe(1);
-		expect(asText(result.stderr)).toContain("auth requires a provider");
+		expect(asText(result.stderr)).toContain(
+			"interactive auth setup requires a TTY",
+		);
 	});
 
 	it("rejects unsupported mode values", () => {

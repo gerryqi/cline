@@ -4,6 +4,7 @@ Fast CLI for running agentic loops with LLMs. Streams output in real time and in
 
 Lifecycle note: active runs now install both `SIGINT` and `SIGTERM` abort handlers, CLI runtime/session managers are disposed on shutdown paths to reduce orphaned subprocesses, and one-shot (non-interactive) runs exit automatically when the turn finishes.
 Prompt note: CLI sends raw user prompt text to core runtime; `@cline/core` canonicalizes `<user_input ...>` formatting and mention-based file attachment resolution once per turn.
+Interactive note: `clite -i` now runs inside a React Ink TUI (mouse-reactive WelcomeView-style intro, provider/model + mode badges, live streaming agent output, inline composer, and a 4-row status footer with mode/context/git/auto-approve state).
 
 ## Installation
 
@@ -41,6 +42,16 @@ clite -s "You are a pirate" "Tell me about the sea"
 # Interactive mode
 clite -i
 # Running `clite` with no prompt also enters interactive mode.
+# Interactive mode is rendered with the Ink TUI.
+# The initial screen now uses a WelcomeView-style layout before the first prompt.
+# Inline composer supports completion menus:
+# - `@` opens workspace file mention search (arrow keys to move, Enter/Tab to insert)
+# - `/` opens workflow slash command search (arrow keys to move, Enter/Tab to insert)
+# Footer rows mirror the legacy CLI layout:
+# 1) command/file hint + Plan/Act badges (Tab)
+# 2) provider/model + context bar + token/cost
+# 3) repo/branch + git diff stats
+# 4) auto-approve state (Shift+Tab toggles)
 # For one-shot auto-exit behavior, pass a prompt argument.
 # Exit interactive mode with Ctrl+D (or Ctrl+C when idle).
 
@@ -79,9 +90,13 @@ clite rpc register --address 127.0.0.1:4317 --client-type desktop --client-id co
 clite rpc register --meta app=code --meta host=tauri
 
 # Authenticate OAuth providers explicitly
+clite auth
 clite auth openai-codex
 clite auth oca
 clite auth cline
+# Quick setup with API key/model
+clite auth --provider anthropic --apikey sk-... --modelid claude-sonnet-4-6
+clite auth --provider openai-native --apikey sk-... --modelid gpt-5 --baseurl https://api.openai.com/v1
 
 # Use persistent team state name
 clite --team-name dev-team "Continue yesterday's team workflow"
@@ -101,20 +116,30 @@ clite -p openrouter -m google/gemini-3-pro -k sk-your-google-gemini-api-key "Set
 Use the explicit auth command:
 
 ```bash
+clite auth
 clite auth <provider>
 ```
 
 Examples:
 
 ```bash
+clite auth
 clite auth cline
 clite auth openai-codex
 clite auth oca
+clite auth --provider anthropic --apikey sk-... --modelid claude-sonnet-4-6
 ```
 
 When you run with one of these providers and no API key is available, `clite` will automatically start the OAuth login flow and persist credentials to provider settings.
 
 During OAuth login, `clite` now tries to open the authorization URL in your default browser automatically and still prints the URL for manual fallback.
+
+`clite auth` (without a provider) now opens the interactive auth TUI with the same auth options as the old CLI flow:
+
+- Sign in with Cline
+- Sign in with ChatGPT Subscription (`openai-codex`)
+- Sign in with OCA
+- Use your own API key (provider + model + optional base URL)
 
 When running in interactive mode with `-p cline`, `clite` now prints an account banner before the model line when OAuth credentials are available, including:
 
@@ -163,6 +188,7 @@ When running in interactive mode with `-p cline`, `clite` now prints an account 
 
 Subcommands:
 
+- `clite auth` - Run interactive auth setup TUI
 - `clite auth <provider>` - Run OAuth login for `cline`, `openai-codex`, or `oca`
 - `clite rpc start` - Start the RPC gateway
 - `clite rpc status` - Check whether the RPC gateway is healthy
@@ -170,6 +196,13 @@ Subcommands:
 - `clite rpc ensure` - Ensure a compatible runtime-capable RPC server is available and return the effective address
 - `clite rpc register` - Register a client id/type (+ optional metadata) with the RPC gateway
 - `clite list ...` - List workflows/rules/skills/agents/history/hooks/mcp
+
+Auth quick-setup flags:
+
+- `-p, --provider <id>`
+- `-k, --apikey <key>`
+- `-m, --modelid <id>`
+- `-b, --baseurl <url>` (OpenAI/OpenAI-compatible quick setup)
 
 MCP list examples:
 

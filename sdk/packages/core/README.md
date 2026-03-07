@@ -32,6 +32,7 @@ Use this backend when starting `@cline/rpc` servers so RPC remains transport-onl
 
 - Use `createBuiltinTools(...)`, `createDefaultTools(...)`, and `createDefaultExecutors(...)` from `@cline/core` / `@cline/core/server`.
 - `DefaultRuntimeBuilder` injects these tools at runtime.
+- Built-in file editing now includes both `editor` operations and legacy-compatible `apply_patch`.
 - `@cline/agents` remains browser-safe and only provides the standalone `ask_question` helper tool.
 
 ## Agent Plugin Loading (Path-Based)

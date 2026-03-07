@@ -309,7 +309,7 @@ export async function loginOpenAICodex(options: {
 
 	options.onAuth({
 		url,
-		instructions: "A browser window should open. Complete login to finish.",
+		instructions: "Continue the authentication process in your browser.",
 	});
 
 	let code: string | undefined;

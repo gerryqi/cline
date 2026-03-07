@@ -7,7 +7,7 @@ export function showHelp(): void {
 ${c.bold}USAGE${c.reset}
   clite [OPTIONS] [PROMPT]
   clite -i                    Interactive mode
-  clite auth <provider>       Run OAuth login (cline|openai-codex|oca)
+  clite auth <provider>       Authenticate with a provider (cline|openai-codex|oca)
   clite hook < payload.json   Handle hook payload from stdin
   clite list <workflows|rules|skills|agents|history|hooks|mcp>
                               List workflow/rule/skill/agent configs, history, or hook file paths
@@ -45,6 +45,11 @@ ${c.bold}OPTIONS${c.reset}
                               Mission log update interval in milliseconds (default: 120000)
   --cwd <path>                Working directory for tools (default: current dir)
   --session <id>              Resume interactive chat from a saved session id
+  auth options:
+    -p, --provider <id>       Provider ID for auth quick setup
+    -k, --apikey <key>        API key for auth quick setup
+    -m, --modelid <id>        Model ID for auth quick setup
+    -b, --baseurl <url>       Base URL for auth quick setup (openai/openai-native)
   -h, --help                  Show this help
   -v, --version               Show version
 
@@ -68,7 +73,9 @@ ${c.bold}EXAMPLES${c.reset}
   clite list agents
   clite list hooks
   clite list mcp
+  clite auth
   clite auth openai-codex
+  clite auth --provider anthropic --apikey sk-xxx --modelid claude-sonnet-4-6
   clite auth oca
   clite "What is 2+2?"
   clite "Read package.json and summarize it"

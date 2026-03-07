@@ -3,8 +3,10 @@ import {
 	createOAuthClientCallbacks,
 	type ProviderSettingsManager,
 } from "@cline/core/server";
-import { providers } from "@cline/llms";
+import { models, providers } from "@cline/llms";
+import { Box, render, Text, useApp, useInput } from "ink";
 import open from "open";
+import React, { useEffect, useMemo, useState } from "react";
 
 const c = {
 	reset: "\x1b[0m",
@@ -58,6 +60,30 @@ type CoreOAuthApi = {
 type AuthIo = {
 	writeln: (text?: string) => void;
 	writeErr: (text: string) => void;
+};
+
+type AuthQuickSetupInput = {
+	provider: string;
+	apikey: string;
+	modelid: string;
+	baseurl?: string;
+};
+
+type AuthCommandInput = {
+	providerSettingsManager: ProviderSettingsManager;
+	io: AuthIo;
+	explicitProvider?: string;
+	apikey?: string;
+	modelid?: string;
+	baseurl?: string;
+};
+
+type ParsedAuthCommandArgs = {
+	explicitProvider?: string;
+	apikey?: string;
+	modelid?: string;
+	baseurl?: string;
+	parseError?: string;
 };
 
 let cachedCoreOAuthApi: Promise<CoreOAuthApi> | undefined;
@@ -129,6 +155,89 @@ export function getPersistedProviderApiKey(
 		return authKey;
 	}
 	return undefined;
+}
+
+export function parseAuthCommandArgs(args: string[]): ParsedAuthCommandArgs {
+	const parsed: ParsedAuthCommandArgs = {};
+	const positional: string[] = [];
+	let i = 0;
+	while (i < args.length) {
+		const arg = args[i];
+		if (!arg) {
+			i++;
+			continue;
+		}
+		if (arg === "-p" || arg === "--provider") {
+			parsed.explicitProvider = args[++i];
+		} else if (arg === "-k" || arg === "--apikey") {
+			parsed.apikey = args[++i];
+		} else if (arg === "-m" || arg === "--modelid") {
+			parsed.modelid = args[++i];
+		} else if (arg === "-b" || arg === "--baseurl") {
+			parsed.baseurl = args[++i];
+		} else if (arg.startsWith("-")) {
+			parsed.parseError = `unknown auth option "${arg}"`;
+			return parsed;
+		} else {
+			positional.push(arg);
+		}
+		i++;
+	}
+	if (!parsed.explicitProvider && positional.length > 0) {
+		parsed.explicitProvider = positional[0];
+	}
+	return parsed;
+}
+
+function getSupportedProviderIds(): string[] {
+	return models.getProviderIds().sort((a, b) => a.localeCompare(b));
+}
+
+function ensureQuickSetupInputValid(
+	input: AuthQuickSetupInput,
+): string | undefined {
+	const normalizedProvider = normalizeProviderId(input.provider);
+	if (!models.hasProvider(normalizedProvider)) {
+		return `invalid provider "${input.provider}"`;
+	}
+	if (!input.apikey.trim()) {
+		return "auth quick setup requires --apikey <key>";
+	}
+	if (!input.modelid.trim()) {
+		return "auth quick setup requires --modelid <id>";
+	}
+	if (
+		input.baseurl?.trim() &&
+		normalizedProvider !== "openai" &&
+		normalizedProvider !== "openai-native"
+	) {
+		return "base URL is only supported for OpenAI and OpenAI-compatible providers";
+	}
+	return undefined;
+}
+
+function saveQuickAuthProviderSettings(input: {
+	providerSettingsManager: ProviderSettingsManager;
+	providerId: string;
+	apikey: string;
+	modelid: string;
+	baseurl?: string;
+}): void {
+	const existing = input.providerSettingsManager.getProviderSettings(
+		input.providerId,
+	);
+	const nextSettings: providers.ProviderSettings = {
+		...(existing ?? {
+			provider: input.providerId as providers.ProviderSettings["provider"],
+		}),
+		provider: input.providerId as providers.ProviderSettings["provider"],
+		apiKey: input.apikey,
+		model: input.modelid,
+	};
+	if (input.baseurl?.trim()) {
+		nextSettings.baseUrl = input.baseurl.trim();
+	}
+	input.providerSettingsManager.saveProviderSettings(nextSettings);
 }
 
 async function askForInputInTerminal(question: string): Promise<string> {
@@ -263,6 +372,535 @@ export async function ensureOAuthProviderApiKey(input: {
 		apiKey: toProviderApiKey(input.providerId, credentials),
 		selectedProviderSettings,
 	};
+}
+
+async function runQuickAuthSetup(input: AuthCommandInput): Promise<number> {
+	const providerId = normalizeProviderId((input.explicitProvider ?? "").trim());
+	const apikey = input.apikey?.trim() ?? "";
+	const modelid = input.modelid?.trim() ?? "";
+	const baseurl = input.baseurl?.trim();
+	const validationError = ensureQuickSetupInputValid({
+		provider: providerId,
+		apikey,
+		modelid,
+		baseurl,
+	});
+	if (validationError) {
+		input.io.writeErr(validationError);
+		return 1;
+	}
+	saveQuickAuthProviderSettings({
+		providerSettingsManager: input.providerSettingsManager,
+		providerId,
+		apikey,
+		modelid,
+		baseurl,
+	});
+	input.io.writeln(
+		`${c.green}Provider configured:${c.reset} ${c.cyan}${providerId}${c.reset} (${modelid})`,
+	);
+	return 0;
+}
+
+type InteractiveAuthState = {
+	screen: "menu" | "provider" | "apikey" | "modelid" | "baseurl" | "done";
+	menuIndex: number;
+	providerIndex: number;
+	selectedProvider: string;
+	apiKey: string;
+	modelId: string;
+	baseUrl: string;
+	exitCode: number;
+	busy: boolean;
+	busyMessage?: string;
+	errorMessage?: string;
+};
+
+const AUTH_MENU_ITEMS = [
+	{ label: "Sign in with Cline", value: "oauth-cline" as const },
+	{
+		label: "Sign in with ChatGPT Subscription",
+		value: "oauth-openai-codex" as const,
+	},
+	{ label: "Sign in with OCA", value: "oauth-oca" as const },
+	{ label: "Use your own API key", value: "byokey" as const },
+	{ label: "Exit", value: "exit" as const },
+];
+
+function renderSelectableList(input: {
+	items: string[];
+	selected: number;
+	title: string;
+}): React.ReactElement {
+	return React.createElement(
+		Box,
+		{ flexDirection: "column", marginBottom: 1 },
+		React.createElement(Text, { color: "cyan", bold: true }, input.title),
+		...input.items.map((item, index) =>
+			React.createElement(
+				Text,
+				{
+					color: index === input.selected ? "blue" : undefined,
+					key: `${index}:${item}`,
+				},
+				`${index === input.selected ? "❯" : " "} ${item}`,
+			),
+		),
+		React.createElement(
+			Text,
+			{ color: "gray" },
+			"Use arrow keys to navigate, Enter to select",
+		),
+	);
+}
+
+function renderPromptInput(input: {
+	title: string;
+	value: string;
+	placeholder?: string;
+	secret?: boolean;
+}): React.ReactElement {
+	const display = input.secret ? "•".repeat(input.value.length) : input.value;
+	return React.createElement(
+		Box,
+		{ flexDirection: "column", marginBottom: 1 },
+		React.createElement(Text, { color: "cyan", bold: true }, input.title),
+		React.createElement(
+			Box,
+			null,
+			React.createElement(
+				Text,
+				{ color: display ? "white" : "gray" },
+				display || input.placeholder || "",
+			),
+			React.createElement(Text, { inverse: true }, " "),
+		),
+		React.createElement(
+			Text,
+			{ color: "gray" },
+			"Enter to continue, Esc to go back",
+		),
+	);
+}
+
+async function runInteractiveAuthTui(input: AuthCommandInput): Promise<number> {
+	if (!process.stdin.isTTY || !process.stdout.isTTY) {
+		input.io.writeErr(
+			"interactive auth setup requires a TTY (use --provider/--apikey/--modelid for non-interactive setup)",
+		);
+		return 1;
+	}
+	const providerIds = getSupportedProviderIds();
+	const defaultProvider =
+		normalizeProviderId(
+			input.providerSettingsManager.getLastUsedProviderSettings()?.provider ??
+				"anthropic",
+		) || "anthropic";
+
+	const initialProviderIndex = Math.max(
+		0,
+		providerIds.indexOf(defaultProvider),
+	);
+
+	return await new Promise<number>((resolve) => {
+		function AuthTui(props: {
+			onDone: (code: number) => void;
+		}): React.ReactElement {
+			const { exit } = useApp();
+			const [state, setState] = useState<InteractiveAuthState>({
+				screen: "menu",
+				menuIndex: 0,
+				providerIndex: initialProviderIndex,
+				selectedProvider: providerIds[initialProviderIndex] ?? "anthropic",
+				apiKey: "",
+				modelId: "",
+				baseUrl: "",
+				exitCode: 0,
+				busy: false,
+			});
+
+			const currentProvider = useMemo(
+				() => providerIds[state.providerIndex] ?? state.selectedProvider,
+				[state.providerIndex, state.selectedProvider],
+			);
+
+			const finalize = (code: number) => {
+				setState((prev) => ({ ...prev, screen: "done", exitCode: code }));
+			};
+
+			useInput((value, key) => {
+				if (state.screen === "done") {
+					return;
+				}
+				if (state.busy) {
+					if (key.ctrl && value === "c") {
+						finalize(1);
+					}
+					return;
+				}
+				if (key.ctrl && value === "c") {
+					finalize(1);
+					return;
+				}
+				if (state.screen === "menu") {
+					if (key.upArrow) {
+						setState((prev) => ({
+							...prev,
+							menuIndex:
+								prev.menuIndex > 0
+									? prev.menuIndex - 1
+									: AUTH_MENU_ITEMS.length - 1,
+						}));
+						return;
+					}
+					if (key.downArrow) {
+						setState((prev) => ({
+							...prev,
+							menuIndex:
+								prev.menuIndex < AUTH_MENU_ITEMS.length - 1
+									? prev.menuIndex + 1
+									: 0,
+						}));
+						return;
+					}
+					if (key.return) {
+						const selected = AUTH_MENU_ITEMS[state.menuIndex]?.value;
+						if (selected === "exit") {
+							finalize(0);
+							return;
+						}
+						if (selected === "byokey") {
+							setState((prev) => ({
+								...prev,
+								screen: "provider",
+								errorMessage: undefined,
+							}));
+							return;
+						}
+						const providerId =
+							selected === "oauth-cline"
+								? "cline"
+								: selected === "oauth-openai-codex"
+									? "openai-codex"
+									: "oca";
+						setState((prev) => ({
+							...prev,
+							busy: true,
+							busyMessage: `Signing in to ${providerId}...`,
+							errorMessage: undefined,
+						}));
+						void runAuthProviderCommand(
+							input.providerSettingsManager,
+							providerId,
+							input.io,
+						).then((code) => {
+							if (code === 0) {
+								finalize(0);
+							} else {
+								setState((prev) => ({
+									...prev,
+									busy: false,
+									busyMessage: undefined,
+									errorMessage: `Failed to authenticate with ${providerId}`,
+								}));
+							}
+						});
+					}
+					return;
+				}
+				if (state.screen === "provider") {
+					if (key.escape) {
+						setState((prev) => ({ ...prev, screen: "menu" }));
+						return;
+					}
+					if (key.upArrow) {
+						setState((prev) => ({
+							...prev,
+							providerIndex:
+								prev.providerIndex > 0
+									? prev.providerIndex - 1
+									: providerIds.length - 1,
+						}));
+						return;
+					}
+					if (key.downArrow) {
+						setState((prev) => ({
+							...prev,
+							providerIndex:
+								prev.providerIndex < providerIds.length - 1
+									? prev.providerIndex + 1
+									: 0,
+						}));
+						return;
+					}
+					if (key.return) {
+						const providerId = providerIds[state.providerIndex] ?? "anthropic";
+						const defaultModelId =
+							input.providerSettingsManager.getProviderSettings(providerId)
+								?.model ?? "";
+						setState((prev) => ({
+							...prev,
+							selectedProvider: providerId,
+							modelId: defaultModelId,
+							screen: "apikey",
+							errorMessage: undefined,
+						}));
+					}
+					return;
+				}
+				if (state.screen === "apikey") {
+					if (key.escape) {
+						setState((prev) => ({ ...prev, screen: "provider" }));
+						return;
+					}
+					if (key.return) {
+						setState((prev) => ({ ...prev, screen: "modelid" }));
+						return;
+					}
+					if (key.backspace || key.delete) {
+						setState((prev) => ({
+							...prev,
+							apiKey: prev.apiKey.slice(0, -1),
+						}));
+						return;
+					}
+					if (
+						!key.ctrl &&
+						!key.meta &&
+						value.length > 0 &&
+						!value.includes("\u001b")
+					) {
+						setState((prev) => ({
+							...prev,
+							apiKey: prev.apiKey + value,
+						}));
+					}
+					return;
+				}
+				if (state.screen === "modelid") {
+					if (key.escape) {
+						setState((prev) => ({ ...prev, screen: "apikey" }));
+						return;
+					}
+					if (key.return) {
+						if (
+							currentProvider !== "openai" &&
+							currentProvider !== "openai-native"
+						) {
+							setState((prev) => ({ ...prev, screen: "baseurl", baseUrl: "" }));
+						} else {
+							setState((prev) => ({ ...prev, screen: "baseurl" }));
+						}
+						return;
+					}
+					if (key.backspace || key.delete) {
+						setState((prev) => ({
+							...prev,
+							modelId: prev.modelId.slice(0, -1),
+						}));
+						return;
+					}
+					if (
+						!key.ctrl &&
+						!key.meta &&
+						value.length > 0 &&
+						!value.includes("\u001b")
+					) {
+						setState((prev) => ({ ...prev, modelId: prev.modelId + value }));
+					}
+					return;
+				}
+				if (state.screen === "baseurl") {
+					if (key.escape) {
+						setState((prev) => ({ ...prev, screen: "modelid" }));
+						return;
+					}
+					if (key.return) {
+						const payload: AuthQuickSetupInput = {
+							provider: currentProvider,
+							apikey: state.apiKey,
+							modelid: state.modelId,
+							baseurl: state.baseUrl.trim() || undefined,
+						};
+						const validationError = ensureQuickSetupInputValid(payload);
+						if (validationError) {
+							setState((prev) => ({ ...prev, errorMessage: validationError }));
+							return;
+						}
+						setState((prev) => ({
+							...prev,
+							busy: true,
+							busyMessage: "Saving provider settings...",
+							errorMessage: undefined,
+						}));
+						try {
+							saveQuickAuthProviderSettings({
+								providerSettingsManager: input.providerSettingsManager,
+								providerId: normalizeProviderId(payload.provider),
+								apikey: payload.apikey,
+								modelid: payload.modelid,
+								baseurl: payload.baseurl,
+							});
+							finalize(0);
+						} catch (error) {
+							setState((prev) => ({
+								...prev,
+								busy: false,
+								busyMessage: undefined,
+								errorMessage:
+									error instanceof Error ? error.message : String(error),
+							}));
+						}
+						return;
+					}
+					if (key.backspace || key.delete) {
+						setState((prev) => ({
+							...prev,
+							baseUrl: prev.baseUrl.slice(0, -1),
+						}));
+						return;
+					}
+					if (
+						!key.ctrl &&
+						!key.meta &&
+						value.length > 0 &&
+						!value.includes("\u001b")
+					) {
+						setState((prev) => ({ ...prev, baseUrl: prev.baseUrl + value }));
+					}
+				}
+			});
+
+			useEffect(() => {
+				if (state.screen !== "done") {
+					return;
+				}
+				props.onDone(state.exitCode);
+				exit();
+			}, [exit, props, state.exitCode, state.screen]);
+
+			const menuItems = AUTH_MENU_ITEMS.map((item) => item.label);
+			const providerItems = providerIds;
+			const showBaseUrlInput =
+				currentProvider === "openai" || currentProvider === "openai-native";
+
+			return React.createElement(
+				Box,
+				{ flexDirection: "column", paddingX: 1 },
+				React.createElement(
+					Text,
+					{ bold: true, color: "white" },
+					"Authentication Setup",
+				),
+				React.createElement(Text, { color: "gray" }, ""),
+				state.errorMessage
+					? React.createElement(Text, { color: "red" }, state.errorMessage)
+					: null,
+				state.busy
+					? React.createElement(
+							Text,
+							{ color: "cyan" },
+							state.busyMessage ?? "Working...",
+						)
+					: null,
+				!state.busy && state.screen === "menu"
+					? renderSelectableList({
+							items: menuItems,
+							selected: state.menuIndex,
+							title: "Choose an auth option",
+						})
+					: null,
+				!state.busy && state.screen === "provider"
+					? renderSelectableList({
+							items: providerItems,
+							selected: state.providerIndex,
+							title: "Select provider for API key setup",
+						})
+					: null,
+				!state.busy && state.screen === "apikey"
+					? renderPromptInput({
+							title: `API key for ${currentProvider}`,
+							value: state.apiKey,
+							placeholder: "sk-...",
+							secret: true,
+						})
+					: null,
+				!state.busy && state.screen === "modelid"
+					? renderPromptInput({
+							title: `Model ID for ${currentProvider}`,
+							value: state.modelId,
+							placeholder:
+								input.providerSettingsManager.getProviderSettings(
+									currentProvider,
+								)?.model ?? "",
+						})
+					: null,
+				!state.busy && state.screen === "baseurl"
+					? renderPromptInput({
+							title: showBaseUrlInput
+								? "Base URL (optional)"
+								: "Press Enter to save",
+							value: showBaseUrlInput ? state.baseUrl : "",
+							placeholder: "https://api.example.com/v1",
+						})
+					: null,
+			);
+		}
+
+		let settled = false;
+		const app = render(
+			React.createElement(AuthTui, {
+				onDone: (code) => {
+					if (settled) {
+						return;
+					}
+					settled = true;
+					resolve(code);
+				},
+			}),
+			{ exitOnCtrlC: false },
+		);
+		void app.waitUntilExit().then(() => {
+			if (!settled) {
+				settled = true;
+				resolve(1);
+			}
+		});
+	});
+}
+
+export async function runAuthCommand(input: AuthCommandInput): Promise<number> {
+	const hasQuickSetupFlags =
+		typeof input.apikey === "string" ||
+		typeof input.modelid === "string" ||
+		typeof input.baseurl === "string";
+
+	if (hasQuickSetupFlags) {
+		if (!input.explicitProvider?.trim()) {
+			input.io.writeErr(
+				"auth quick setup requires --provider <id> when using --apikey/--modelid/--baseurl",
+			);
+			return 1;
+		}
+		return runQuickAuthSetup(input);
+	}
+
+	if (input.explicitProvider?.trim()) {
+		const providerId = normalizeAuthProviderId(input.explicitProvider);
+		if (isOAuthProvider(providerId)) {
+			return runAuthProviderCommand(
+				input.providerSettingsManager,
+				providerId,
+				input.io,
+			);
+		}
+		input.io.writeErr(
+			`provider "${providerId}" requires API key setup (use: clite auth --provider ${providerId} --apikey <key> --modelid <id>)`,
+		);
+		return 1;
+	}
+
+	return runInteractiveAuthTui(input);
 }
 
 export async function runAuthProviderCommand(

@@ -1,29 +1,36 @@
-import { createInterface } from "node:readline";
-import type { AgentEvent } from "@cline/agents";
+import { EventEmitter } from "node:events";
+import type { AgentEvent, TeamEvent } from "@cline/agents";
 import {
 	prewarmFileIndex,
 	SessionSource,
 	type UserInstructionConfigWatcher,
 } from "@cline/core/server";
 import type { providers } from "@cline/llms";
+import { render } from "ink";
+import React from "react";
 import { askQuestionInTerminal, requestToolApproval } from "../approval";
-import { handleEvent, handleTeamEvent } from "../events";
+import { InteractiveTui } from "../tui/interactive-tui";
 import { createRuntimeHooks } from "../utils/hooks";
-import {
-	c,
-	emitJsonLine,
-	formatUsd,
-	setActiveCliSession,
-	writeErr,
-	writeln,
-} from "../utils/output";
+import { setActiveCliSession, writeErr } from "../utils/output";
 import { loadInteractiveResumeMessages } from "../utils/resume";
 import { createDefaultCliSessionManager } from "../utils/session";
 import type { Config } from "../utils/types";
 import { setActiveRuntimeAbort } from "./active-runtime";
-import { resolveClineWelcomeLine } from "./interactive-welcome";
+import {
+	listInteractiveSlashCommands,
+	resolveClineWelcomeLine,
+} from "./interactive-welcome";
 import { buildUserInputMessage } from "./prompt";
 import { subscribeToAgentEvents } from "./session-events";
+
+interface InteractiveEventBridge {
+	on(event: "agent", listener: (event: AgentEvent) => void): this;
+	on(event: "team", listener: (event: TeamEvent) => void): this;
+	off(event: "agent", listener: (event: AgentEvent) => void): this;
+	off(event: "team", listener: (event: TeamEvent) => void): this;
+	emit(event: "agent", payload: AgentEvent): boolean;
+	emit(event: "team", payload: TeamEvent): boolean;
+}
 
 export async function runInteractive(
 	config: Config,
@@ -38,43 +45,44 @@ export async function runInteractive(
 		writeErr("interactive mode is not supported with --output json");
 		process.exit(1);
 	}
+	if (!process.stdin.isTTY || !process.stdout.isTTY) {
+		writeErr(
+			"interactive mode requires a TTY (stdin/stdout must both be terminals)",
+		);
+		process.exit(1);
+	}
 
 	const clineWelcomeLine = await resolveClineWelcomeLine({
 		config,
 		clineApiBaseUrl: options?.clineApiBaseUrl,
 		clineProviderSettings: options?.clineProviderSettings,
 	});
-	if (clineWelcomeLine) {
-		writeln(clineWelcomeLine);
-	}
-
-	writeln(
-		`${c.cyan}${config.providerId}${c.reset} ${c.dim}${config.modelId}${c.reset}`,
-	);
-	writeln(`${c.dim}Type your message. Press Ctrl+C to exit.${c.reset}`);
-	writeln();
 	void prewarmFileIndex(config.cwd);
+	const workflowSlashCommands = listInteractiveSlashCommands(
+		userInstructionWatcher,
+	);
 
-	const rl = createInterface({
-		input: process.stdin,
-		output: process.stdout,
-		prompt: `${c.green}>${c.reset} `,
-	});
 	const hooks = createRuntimeHooks();
+	const autoApproveAllRef = {
+		current: config.toolPolicies["*"]?.autoApprove !== false,
+	};
 	const sessionManager = await createDefaultCliSessionManager({
 		defaultToolExecutors: {
 			askQuestion: askQuestionInTerminal,
 		},
 		toolPolicies: config.toolPolicies,
-		requestToolApproval,
+		requestToolApproval: async (request) => {
+			if (autoApproveAllRef.current) {
+				return { approved: true };
+			}
+			return requestToolApproval(request);
+		},
 	});
 
-	let turnErrorReported = false;
+	const uiEvents = new EventEmitter() as InteractiveEventBridge;
+
 	const onAgentEvent = (event: AgentEvent) => {
-		if (event.type === "error") {
-			turnErrorReported = true;
-		}
-		handleEvent(event, config);
+		uiEvents.emit("agent", event);
 	};
 	const unsubscribe = subscribeToAgentEvents(sessionManager, onAgentEvent);
 
@@ -87,23 +95,14 @@ export async function runInteractive(
 		config: {
 			...config,
 			hooks,
-			onTeamEvent: handleTeamEvent,
+			onTeamEvent: (event) => {
+				uiEvents.emit("team", event);
+			},
 		},
 		interactive: true,
 		initialMessages,
 		userInstructionWatcher,
-		onTeamRestored: () => {
-			if (config.outputMode === "json") {
-				emitJsonLine("stdout", {
-					type: "team_restored",
-					teamName: config.teamName ?? "(unknown team)",
-				});
-				return;
-			}
-			writeln(
-				`${c.dim}[team] restored persisted team state for "${config.teamName ?? "(unknown team)"}"${c.reset}`,
-			);
-		},
+		onTeamRestored: () => {},
 	});
 	setActiveCliSession({
 		manifestPath: started.manifestPath,
@@ -125,125 +124,106 @@ export async function runInteractive(
 		return true;
 	};
 	setActiveRuntimeAbort(abortAll);
+
+	let unmountInteractiveUi: (() => void) | undefined;
+	const requestExit = () => {
+		if (!unmountInteractiveUi) {
+			return;
+		}
+		const close = unmountInteractiveUi;
+		unmountInteractiveUi = undefined;
+		close();
+	};
+
 	const handleSigint = () => {
 		if (isRunning) {
-			if (abortAll()) {
-				if (config.outputMode === "json") {
-					emitJsonLine("stdout", {
-						type: "run_abort_requested",
-						reason: "sigint",
-					});
-					return;
-				}
-				writeln(`\n${c.dim}[abort] requested${c.reset}`);
-			}
+			abortAll();
 			return;
 		}
-		if (process.stdin.isTTY) {
-			rl.close();
-			return;
-		}
-		writeln(`\n${c.dim}[abort] no active run${c.reset}`);
-		rl.prompt();
+		requestExit();
 	};
 	const handleSigterm = () => {
 		if (isRunning) {
-			if (abortAll() && config.outputMode === "json") {
-				emitJsonLine("stdout", {
-					type: "run_abort_requested",
-					reason: "sigterm",
-				});
-			}
+			abortAll();
 			return;
 		}
-		rl.close();
+		requestExit();
 	};
 
 	process.on("SIGINT", handleSigint);
 	process.on("SIGTERM", handleSigterm);
 
-	rl.prompt();
-
-	rl.on("line", async (line) => {
-		const input = line.trim();
-		if (!input) {
-			rl.prompt();
-			return;
-		}
-
-		if (isRunning) {
-			return;
-		}
-
-		isRunning = true;
-		abortRequested = false;
-		turnErrorReported = false;
-		rl.pause();
-
+	const inkApp = render(
+		React.createElement(InteractiveTui, {
+			config,
+			welcomeLine: clineWelcomeLine ?? undefined,
+			workflowSlashCommands,
+			subscribeToEvents: ({ onAgentEvent: onAgent, onTeamEvent: onTeam }) => {
+				uiEvents.on("agent", onAgent);
+				uiEvents.on("team", onTeam);
+				return () => {
+					uiEvents.off("agent", onAgent);
+					uiEvents.off("team", onTeam);
+				};
+			},
+			onSubmit: async (input, _mode) => {
+				abortRequested = false;
+				isRunning = true;
+				try {
+					const userInput = await buildUserInputMessage(
+						input,
+						userInstructionWatcher,
+					);
+					const result = await sessionManager.send({
+						sessionId: activeSessionId,
+						prompt: userInput,
+					});
+					if (!result) {
+						throw new Error("session manager did not return a result");
+					}
+					return {
+						usage: result.usage,
+						iterations: result.iterations,
+					};
+				} finally {
+					isRunning = false;
+				}
+			},
+			onAbort: () => {
+				abortAll();
+			},
+			onExit: requestExit,
+			onRunningChange: (running) => {
+				isRunning = running;
+			},
+			onTurnErrorReported: () => {
+				// Interactive TUI handles turn-scoped error rendering.
+			},
+			onAutoApproveChange: (enabled) => {
+				autoApproveAllRef.current = enabled;
+			},
+		}),
+		{ exitOnCtrlC: false },
+	);
+	unmountInteractiveUi = () => {
 		try {
-			writeln();
-			const startTime = performance.now();
-
-			const userInput = await buildUserInputMessage(
-				input,
-				userInstructionWatcher,
-			);
-			const result = await sessionManager.send({
-				sessionId: activeSessionId,
-				prompt: userInput,
-			});
-			if (!result) {
-				throw new Error("session manager did not return a result");
-			}
-
-			writeln();
-
-			if (config.showTimings || config.showUsage) {
-				const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
-				const parts: string[] = [];
-				if (config.showTimings) {
-					parts.push(`${elapsed}s`);
-				}
-				if (config.showUsage) {
-					const tokens = result.usage.inputTokens + result.usage.outputTokens;
-					parts.push(`${tokens} tokens`);
-					if (typeof result.usage.totalCost === "number") {
-						parts.push(`${formatUsd(result.usage.totalCost)} est. cost`);
-					}
-					if (result.iterations > 1) {
-						parts.push(`${result.iterations} iterations`);
-					}
-				}
-				writeln(`${c.dim}[${parts.join(" | ")}]${c.reset}`);
-			}
-
-			writeln();
-		} catch (err) {
-			writeln();
-			if (!turnErrorReported) {
-				writeErr(err instanceof Error ? err.message : String(err));
-			}
-			writeln();
-		} finally {
-			isRunning = false;
-			rl.resume();
-			rl.prompt();
+			inkApp.unmount();
+		} catch {
+			// no-op: already unmounted
 		}
-	});
+	};
 
-	rl.on("close", () => {
-		void (async () => {
-			process.off("SIGINT", handleSigint);
-			process.off("SIGTERM", handleSigterm);
-			unsubscribe();
-			try {
-				await sessionManager.stop(activeSessionId);
-			} finally {
-				await sessionManager.dispose("cli_interactive_shutdown");
-			}
-			setActiveRuntimeAbort(undefined);
-			writeln();
-			process.exit(0);
-		})();
-	});
+	try {
+		await inkApp.waitUntilExit();
+	} finally {
+		process.off("SIGINT", handleSigint);
+		process.off("SIGTERM", handleSigterm);
+		unsubscribe();
+		try {
+			await sessionManager.stop(activeSessionId);
+		} finally {
+			await sessionManager.dispose("cli_interactive_shutdown");
+		}
+		setActiveRuntimeAbort(undefined);
+	}
 }

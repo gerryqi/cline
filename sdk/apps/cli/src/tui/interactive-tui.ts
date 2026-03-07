@@ -1,0 +1,1043 @@
+import { spawnSync } from "node:child_process";
+import { basename } from "node:path";
+import type { AgentEvent, TeamEvent } from "@cline/agents";
+import { Box, Text, useInput } from "ink";
+import React, {
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import {
+	type InteractiveSlashCommand,
+	searchWorkspaceFilesForMention,
+} from "../runtime/interactive-welcome";
+import { formatToolInput, formatToolOutput, truncate } from "../utils/helpers";
+import { c, formatUsd } from "../utils/output";
+import type { Config } from "../utils/types";
+import { WelcomeView } from "./components/WelcomeView";
+
+interface InteractiveTurnResult {
+	usage: {
+		inputTokens: number;
+		outputTokens: number;
+		totalCost?: number;
+	};
+	iterations: number;
+}
+
+interface InteractiveTuiProps {
+	config: Config;
+	welcomeLine?: string;
+	workflowSlashCommands?: InteractiveSlashCommand[];
+	subscribeToEvents: (handlers: {
+		onAgentEvent: (event: AgentEvent) => void;
+		onTeamEvent: (event: TeamEvent) => void;
+	}) => () => void;
+	onSubmit: (
+		input: string,
+		mode: "act" | "plan",
+	) => Promise<InteractiveTurnResult>;
+	onAbort: () => void;
+	onExit: () => void;
+	onRunningChange: (isRunning: boolean) => void;
+	onTurnErrorReported: (reported: boolean) => void;
+	onAutoApproveChange: (enabled: boolean) => void;
+}
+
+interface UiLine {
+	id: number;
+	text: string;
+}
+
+type InlineStream = "text" | "reasoning" | undefined;
+type CompletionMode = "mention" | "slash" | undefined;
+
+interface MentionQueryInfo {
+	inMentionMode: boolean;
+	query: string;
+	atIndex: number;
+}
+
+interface SlashQueryInfo {
+	inSlashMode: boolean;
+	query: string;
+	slashIndex: number;
+}
+
+const MAX_LINES_FALLBACK = 40;
+const MAX_BUFFERED_LINES = 500;
+const DEFAULT_CONTEXT_WINDOW = 200000;
+const MOUSE_UPDATE_THROTTLE_MS = 33;
+const COMPLETION_DEBOUNCE_MS = 120;
+const MAX_COMPLETION_RESULTS = 8;
+const MAX_MENU_ITEMS_VISIBLE = 5;
+
+function isLikelyMouseEscapeSequence(input: string): boolean {
+	if (input.length === 0) {
+		return false;
+	}
+	if (input.includes("[<") && /\[<\d+;\d+;\d+[mM]/.test(input)) {
+		return true;
+	}
+	// Sometimes chunks arrive split and lose the leading "[<".
+	// Filter pure coordinate-like control payloads to keep input clean.
+	if (/^[\d;[<mM]+$/.test(input) && input.includes(";") && /[mM]/.test(input)) {
+		return true;
+	}
+	return false;
+}
+
+function createContextBar(
+	used: number,
+	total: number,
+	width = 8,
+): { filled: string; empty: string } {
+	const ratio = total > 0 ? Math.min(used / total, 1) : 0;
+	const filledCount = used > 0 ? Math.max(1, Math.round(ratio * width)) : 0;
+	const emptyCount = Math.max(0, width - filledCount);
+	return {
+		filled: "█".repeat(filledCount),
+		empty: "█".repeat(emptyCount),
+	};
+}
+
+function extractMentionQuery(text: string): MentionQueryInfo {
+	const atIndex = text.lastIndexOf("@");
+	if (atIndex === -1 || (atIndex > 0 && !/\s/.test(text[atIndex - 1] ?? ""))) {
+		return { inMentionMode: false, query: "", atIndex: -1 };
+	}
+	const query = text.slice(atIndex + 1);
+	if (query.includes(" ")) {
+		return { inMentionMode: false, query: "", atIndex: -1 };
+	}
+	return { inMentionMode: true, query, atIndex };
+}
+
+function insertMention(
+	text: string,
+	atIndex: number,
+	filePath: string,
+): string {
+	const endIndex = text.indexOf(" ", atIndex);
+	const end = endIndex === -1 ? text.length : endIndex;
+	const normalizedPath = filePath.startsWith("/") ? filePath : `/${filePath}`;
+	const mention = normalizedPath.includes(" ")
+		? `@"${normalizedPath}"`
+		: `@${normalizedPath}`;
+	return `${text.slice(0, atIndex)}${mention} ${text.slice(end).trimStart()}`;
+}
+
+function extractSlashQuery(text: string): SlashQueryInfo {
+	const slashIndex = text.lastIndexOf("/");
+	if (slashIndex === -1) {
+		return { inSlashMode: false, query: "", slashIndex: -1 };
+	}
+	if (slashIndex > 0 && !/\s/.test(text[slashIndex - 1] ?? "")) {
+		return { inSlashMode: false, query: "", slashIndex: -1 };
+	}
+	const query = text.slice(slashIndex + 1);
+	if (/\s/.test(query)) {
+		return { inSlashMode: false, query: "", slashIndex: -1 };
+	}
+	const firstSlashCommandRegex = /(^|\s)\/[a-zA-Z0-9_.-]+\s/;
+	const textBeforeCurrentSlash = text.slice(0, slashIndex);
+	if (firstSlashCommandRegex.test(textBeforeCurrentSlash)) {
+		return { inSlashMode: false, query: "", slashIndex: -1 };
+	}
+	return { inSlashMode: true, query, slashIndex };
+}
+
+function insertSlashCommand(
+	text: string,
+	slashIndex: number,
+	commandName: string,
+): string {
+	return `${text.slice(0, slashIndex)}/${commandName} `;
+}
+
+function truncatePath(path: string, maxLength = 70): string {
+	if (path.length <= maxLength) {
+		return path;
+	}
+	return `...${path.slice(-(maxLength - 3))}`;
+}
+
+function getVisibleWindow<T>(
+	items: T[],
+	selectedIndex: number,
+	maxVisible = MAX_MENU_ITEMS_VISIBLE,
+): { items: T[]; startIndex: number } {
+	if (items.length <= maxVisible) {
+		return { items, startIndex: 0 };
+	}
+	const halfWindow = Math.floor(maxVisible / 2);
+	let startIndex = Math.max(0, selectedIndex - halfWindow);
+	const endIndex = Math.min(items.length, startIndex + maxVisible);
+	if (endIndex - startIndex < maxVisible) {
+		startIndex = Math.max(0, endIndex - maxVisible);
+	}
+	return { items: items.slice(startIndex, endIndex), startIndex };
+}
+
+function readGitBranch(cwd: string): string | null {
+	const result = spawnSync(
+		"git",
+		["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"],
+		{
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		},
+	);
+	if (result.status !== 0) {
+		return null;
+	}
+	const branch = result.stdout.trim();
+	return branch.length > 0 ? branch : null;
+}
+
+function readGitDiffStats(
+	cwd: string,
+): { files: number; additions: number; deletions: number } | null {
+	const result = spawnSync("git", ["-C", cwd, "diff", "--shortstat"], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	});
+	if (result.status !== 0) {
+		return null;
+	}
+	const output = result.stdout.trim();
+	if (!output) {
+		return null;
+	}
+	const filesMatch = output.match(/(\d+)\s+file/);
+	const additionsMatch = output.match(/(\d+)\s+insertion/);
+	const deletionsMatch = output.match(/(\d+)\s+deletion/);
+	return {
+		files: filesMatch ? Number.parseInt(filesMatch[1] ?? "0", 10) : 0,
+		additions: additionsMatch
+			? Number.parseInt(additionsMatch[1] ?? "0", 10)
+			: 0,
+		deletions: deletionsMatch
+			? Number.parseInt(deletionsMatch[1] ?? "0", 10)
+			: 0,
+	};
+}
+
+function resolveModelContextWindow(config: Config): number {
+	const modelInfo = (config.knownModels?.[config.modelId] ?? {}) as {
+		contextWindow?: number;
+		context_window?: number;
+	};
+	if (
+		typeof modelInfo.contextWindow === "number" &&
+		modelInfo.contextWindow > 0
+	) {
+		return modelInfo.contextWindow;
+	}
+	if (
+		typeof modelInfo.context_window === "number" &&
+		modelInfo.context_window > 0
+	) {
+		return modelInfo.context_window;
+	}
+	return DEFAULT_CONTEXT_WINDOW;
+}
+
+export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
+	const {
+		config,
+		subscribeToEvents,
+		onSubmit,
+		onAbort,
+		onExit,
+		onRunningChange,
+		onTurnErrorReported,
+		onAutoApproveChange,
+	} = props;
+	const [lines, setLines] = useState<UiLine[]>(
+		props.welcomeLine ? [{ id: 0, text: props.welcomeLine }] : [],
+	);
+	const [input, setInput] = useState("");
+	const [isRunning, setIsRunning] = useState(false);
+	const [abortRequested, setAbortRequested] = useState(false);
+	const [hasSubmitted, setHasSubmitted] = useState(false);
+	const [uiMode, setUiMode] = useState<"act" | "plan">(config.mode);
+	const [fileMentionResults, setFileMentionResults] = useState<string[]>([]);
+	const [fileMentionSelectedIndex, setFileMentionSelectedIndex] = useState(0);
+	const [isSearchingMentions, setIsSearchingMentions] = useState(false);
+	const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
+	const [autoApproveAll, setAutoApproveAll] = useState(
+		config.toolPolicies["*"]?.autoApprove !== false,
+	);
+	const [mouseOffsetX, setMouseOffsetX] = useState(0);
+	const [mouseOffsetY, setMouseOffsetY] = useState(0);
+	const [lastTotalTokens, setLastTotalTokens] = useState(0);
+	const [lastTotalCost, setLastTotalCost] = useState(0);
+	const [gitBranch, setGitBranch] = useState<string | null>(null);
+	const [gitDiffStats, setGitDiffStats] = useState<{
+		files: number;
+		additions: number;
+		deletions: number;
+	} | null>(null);
+	const nextLineIdRef = useRef(props.welcomeLine ? 1 : 0);
+	const activeInlineStreamRef = useRef<InlineStream>(undefined);
+	const mentionSearchTimerRef = useRef<NodeJS.Timeout | null>(null);
+	const mentionSearchCounterRef = useRef(0);
+	const turnErrorReportedRef = useRef(false);
+	const lastMouseUpdateRef = useRef(0);
+
+	const workspaceName = useMemo(
+		() => basename(config.cwd) || config.cwd,
+		[config.cwd],
+	);
+	const workspaceRoot = useMemo(
+		() => config.workspaceRoot?.trim() || config.cwd,
+		[config.cwd, config.workspaceRoot],
+	);
+	const contextWindowSize = useMemo(
+		() => resolveModelContextWindow(config),
+		[config],
+	);
+	const maxVisibleLines = Math.max(
+		12,
+		(process.stdout.rows ?? MAX_LINES_FALLBACK) - 14,
+	);
+	const mentionInfo = useMemo(() => extractMentionQuery(input), [input]);
+	const slashInfo = useMemo(() => extractSlashQuery(input), [input]);
+	const slashCommands = useMemo(
+		() => props.workflowSlashCommands ?? [],
+		[props.workflowSlashCommands],
+	);
+	const filteredSlashCommands = useMemo(() => {
+		if (!slashInfo.inSlashMode) {
+			return [];
+		}
+		const query = slashInfo.query.trim().toLowerCase();
+		if (!query) {
+			return slashCommands.slice(0, MAX_COMPLETION_RESULTS);
+		}
+		return slashCommands
+			.filter((command) => command.name.toLowerCase().includes(query))
+			.sort((a, b) => {
+				const aName = a.name.toLowerCase();
+				const bName = b.name.toLowerCase();
+				const aStarts = aName.startsWith(query);
+				const bStarts = bName.startsWith(query);
+				if (aStarts !== bStarts) {
+					return aStarts ? -1 : 1;
+				}
+				return aName.localeCompare(bName);
+			})
+			.slice(0, MAX_COMPLETION_RESULTS);
+	}, [slashCommands, slashInfo.inSlashMode, slashInfo.query]);
+	const activeCompletionMode: CompletionMode = mentionInfo.inMentionMode
+		? "mention"
+		: slashInfo.inSlashMode
+			? "slash"
+			: undefined;
+
+	const refreshRepoStatus = useCallback(() => {
+		setGitBranch(readGitBranch(config.cwd));
+		setGitDiffStats(readGitDiffStats(config.cwd));
+	}, [config.cwd]);
+
+	useEffect(() => {
+		onAutoApproveChange(autoApproveAll);
+	}, [autoApproveAll, onAutoApproveChange]);
+
+	useEffect(() => {
+		refreshRepoStatus();
+	}, [refreshRepoStatus]);
+
+	useEffect(() => {
+		if (!process.stdin.isTTY || !process.stdout.isTTY) {
+			return;
+		}
+		process.stdout.write("\u001b[?1003h\u001b[?1006h");
+		const onData = (chunk: Buffer | string) => {
+			const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+			if (!text.includes("\u001b[<")) {
+				return;
+			}
+			const now = Date.now();
+			if (now - lastMouseUpdateRef.current < MOUSE_UPDATE_THROTTLE_MS) {
+				return;
+			}
+			lastMouseUpdateRef.current = now;
+			// biome-ignore lint/suspicious/noControlCharactersInRegex: we are specifically looking for mouse event escape sequences here
+			const matches = [...text.matchAll(/\u001b\[<\d+;(\d+);(\d+)[mM]/g)];
+			const last = matches[matches.length - 1];
+			if (!last) {
+				return;
+			}
+			const x = Number.parseInt(last[1] ?? "0", 10);
+			const y = Number.parseInt(last[2] ?? "0", 10);
+			if (!Number.isFinite(x) || !Number.isFinite(y)) {
+				return;
+			}
+			const columns = process.stdout.columns ?? 120;
+			const rows = process.stdout.rows ?? 40;
+			const nextX = Math.max(
+				-4,
+				Math.min(4, Math.round(((x / columns) * 2 - 1) * 4)),
+			);
+			const nextY = Math.max(
+				-1,
+				Math.min(1, Math.round(((y / rows) * 2 - 1) * 1)),
+			);
+			setMouseOffsetX(nextX);
+			setMouseOffsetY(nextY);
+		};
+		process.stdin.on("data", onData);
+		return () => {
+			process.stdin.off("data", onData);
+			process.stdout.write("\u001b[?1003l\u001b[?1006l");
+		};
+	}, []);
+
+	useEffect(() => {
+		setSlashSelectedIndex(0);
+	}, []);
+
+	useEffect(() => {
+		setFileMentionSelectedIndex(0);
+	}, []);
+
+	useEffect(() => {
+		if (!mentionInfo.inMentionMode) {
+			setIsSearchingMentions(false);
+			setFileMentionResults([]);
+			if (mentionSearchTimerRef.current) {
+				clearTimeout(mentionSearchTimerRef.current);
+				mentionSearchTimerRef.current = null;
+			}
+			return;
+		}
+		if (mentionSearchTimerRef.current) {
+			clearTimeout(mentionSearchTimerRef.current);
+			mentionSearchTimerRef.current = null;
+		}
+		const currentSearchId = ++mentionSearchCounterRef.current;
+		setIsSearchingMentions(true);
+		mentionSearchTimerRef.current = setTimeout(() => {
+			void searchWorkspaceFilesForMention({
+				workspaceRoot,
+				query: mentionInfo.query,
+				limit: MAX_COMPLETION_RESULTS,
+			})
+				.then((results) => {
+					if (currentSearchId !== mentionSearchCounterRef.current) {
+						return;
+					}
+					setFileMentionResults(results);
+				})
+				.catch(() => {
+					if (currentSearchId !== mentionSearchCounterRef.current) {
+						return;
+					}
+					setFileMentionResults([]);
+				})
+				.finally(() => {
+					if (currentSearchId !== mentionSearchCounterRef.current) {
+						return;
+					}
+					setIsSearchingMentions(false);
+				});
+		}, COMPLETION_DEBOUNCE_MS);
+		return () => {
+			if (mentionSearchTimerRef.current) {
+				clearTimeout(mentionSearchTimerRef.current);
+				mentionSearchTimerRef.current = null;
+			}
+		};
+	}, [mentionInfo.inMentionMode, mentionInfo.query, workspaceRoot]);
+
+	const appendLine = useCallback((text: string) => {
+		setLines((prev) => {
+			const next = [...prev, { id: nextLineIdRef.current++, text }];
+			if (next.length <= MAX_BUFFERED_LINES) {
+				return next;
+			}
+			return next.slice(next.length - MAX_BUFFERED_LINES);
+		});
+	}, []);
+
+	const appendInline = useCallback((text: string) => {
+		setLines((prev) => {
+			if (prev.length === 0) {
+				return [{ id: nextLineIdRef.current++, text }];
+			}
+			const next = [...prev];
+			const lastIndex = next.length - 1;
+			next[lastIndex] = {
+				...next[lastIndex],
+				text: `${next[lastIndex]?.text ?? ""}${text}`,
+			};
+			return next;
+		});
+	}, []);
+
+	const closeInlineStream = useCallback(() => {
+		activeInlineStreamRef.current = undefined;
+	}, []);
+
+	const handleAgentEvent = useCallback(
+		(event: AgentEvent) => {
+			switch (event.type) {
+				case "iteration_start":
+					closeInlineStream();
+					appendLine(`${c.yellow}── iteration ${event.iteration} ──${c.reset}`);
+					break;
+				case "iteration_end":
+					closeInlineStream();
+					break;
+				case "content_start": {
+					switch (event.contentType) {
+						case "text": {
+							if (activeInlineStreamRef.current !== "text") {
+								closeInlineStream();
+								appendLine("");
+								activeInlineStreamRef.current = "text";
+							}
+							appendInline(event.text ?? "");
+							break;
+						}
+						case "reasoning": {
+							if (activeInlineStreamRef.current !== "reasoning") {
+								closeInlineStream();
+								appendLine(`${c.dim}[thinking] ${c.reset}`);
+								activeInlineStreamRef.current = "reasoning";
+							}
+							if (event.redacted && !event.reasoning) {
+								appendInline(`${c.dim}[redacted]${c.reset}`);
+								break;
+							}
+							appendInline(`${c.dim}${event.reasoning ?? ""}${c.reset}`);
+							break;
+						}
+						case "tool": {
+							closeInlineStream();
+							const toolName = event.toolName ?? "unknown_tool";
+							const inputStr = formatToolInput(toolName, event.input);
+							appendLine(
+								`${c.dim}[${toolName}]${c.reset} ${c.cyan}${inputStr}${c.reset}`,
+							);
+							break;
+						}
+					}
+					break;
+				}
+				case "content_end": {
+					switch (event.contentType) {
+						case "text":
+						case "reasoning":
+							closeInlineStream();
+							break;
+						case "tool": {
+							closeInlineStream();
+							if (event.error) {
+								appendLine(`${c.red}error:${c.reset} ${event.error}`);
+							} else {
+								const outputStr = formatToolOutput(event.output);
+								appendLine(
+									outputStr
+										? `  ${c.dim}-> ${outputStr}${c.reset}`
+										: ` ${c.green}ok${c.reset}`,
+								);
+							}
+							break;
+						}
+					}
+					break;
+				}
+				case "done":
+					closeInlineStream();
+					break;
+				case "error":
+					closeInlineStream();
+					turnErrorReportedRef.current = true;
+					onTurnErrorReported(true);
+					appendLine(`${c.red}error:${c.reset} ${event.error.message}`);
+					break;
+			}
+		},
+		[appendInline, appendLine, closeInlineStream, onTurnErrorReported],
+	);
+
+	const handleTeamEvent = useCallback(
+		(event: TeamEvent) => {
+			switch (event.type) {
+				case "teammate_spawned":
+					appendLine(
+						`${c.dim}[team] teammate spawned:${c.reset} ${c.cyan}${event.agentId}${c.reset}`,
+					);
+					break;
+				case "teammate_shutdown":
+					appendLine(
+						`${c.dim}[team] teammate shutdown:${c.reset} ${c.cyan}${event.agentId}${c.reset}`,
+					);
+					break;
+				case "team_task_updated":
+					appendLine(
+						`${c.dim}[team task]${c.reset} ${c.cyan}${event.task.id}${c.reset} -> ${event.task.status}`,
+					);
+					break;
+				case "team_message":
+					appendLine(
+						`${c.dim}[mailbox]${c.reset} ${event.message.fromAgentId} -> ${event.message.toAgentId}: ${event.message.subject}`,
+					);
+					break;
+				case "team_mission_log":
+					appendLine(
+						`${c.dim}[mission]${c.reset} ${event.entry.agentId}: ${truncate(event.entry.summary, 90)}`,
+					);
+					break;
+				case "task_start":
+				case "task_end":
+				case "agent_event":
+					break;
+			}
+		},
+		[appendLine],
+	);
+
+	useEffect(
+		() =>
+			subscribeToEvents({
+				onAgentEvent: handleAgentEvent,
+				onTeamEvent: handleTeamEvent,
+			}),
+		[handleAgentEvent, handleTeamEvent, subscribeToEvents],
+	);
+
+	useEffect(() => {
+		onRunningChange(isRunning);
+	}, [isRunning, onRunningChange]);
+
+	const submitPrompt = useCallback(
+		async (prompt: string) => {
+			setHasSubmitted(true);
+			setIsRunning(true);
+			setAbortRequested(false);
+			turnErrorReportedRef.current = false;
+			onTurnErrorReported(false);
+			appendLine(`${c.green}>${c.reset} ${prompt}`);
+			setInput("");
+
+			const startedAt = performance.now();
+			try {
+				const result = await onSubmit(prompt, uiMode);
+				const tokens = result.usage.inputTokens + result.usage.outputTokens;
+				setLastTotalTokens(tokens);
+				if (typeof result.usage.totalCost === "number") {
+					setLastTotalCost(result.usage.totalCost);
+				}
+				if (config.showTimings || config.showUsage) {
+					const elapsed = ((performance.now() - startedAt) / 1000).toFixed(2);
+					const parts: string[] = [];
+					if (config.showTimings) {
+						parts.push(`${elapsed}s`);
+					}
+					if (config.showUsage) {
+						parts.push(`${tokens} tokens`);
+						if (typeof result.usage.totalCost === "number") {
+							parts.push(`${formatUsd(result.usage.totalCost)} est. cost`);
+						}
+						if (result.iterations > 1) {
+							parts.push(`${result.iterations} iterations`);
+						}
+					}
+					appendLine(`${c.dim}[${parts.join(" | ")}]${c.reset}`);
+				}
+			} catch (error) {
+				if (!turnErrorReportedRef.current) {
+					appendLine(
+						`${c.red}error:${c.reset} ${error instanceof Error ? error.message : String(error)}`,
+					);
+				}
+			} finally {
+				setIsRunning(false);
+				refreshRepoStatus();
+			}
+		},
+		[
+			appendLine,
+			config.showTimings,
+			config.showUsage,
+			onSubmit,
+			onTurnErrorReported,
+			refreshRepoStatus,
+			uiMode,
+		],
+	);
+
+	useInput((value, key) => {
+		if (isLikelyMouseEscapeSequence(value)) {
+			return;
+		}
+
+		const mentionResults = fileMentionResults;
+		const slashResults = filteredSlashCommands;
+		const hasMentionMenu =
+			activeCompletionMode === "mention" && mentionResults.length > 0;
+		const hasSlashMenu =
+			activeCompletionMode === "slash" && slashResults.length > 0;
+		const hasCompletionMenu = hasMentionMenu || hasSlashMenu;
+
+		if (key.shift && key.tab) {
+			setAutoApproveAll((prev) => !prev);
+			return;
+		}
+
+		if (key.tab) {
+			if (hasMentionMenu) {
+				const selectedPath = mentionResults[fileMentionSelectedIndex];
+				if (selectedPath) {
+					setInput((prev) =>
+						insertMention(
+							prev,
+							extractMentionQuery(prev).atIndex,
+							selectedPath,
+						),
+					);
+				}
+				return;
+			}
+			if (hasSlashMenu) {
+				const selectedCommand = slashResults[slashSelectedIndex];
+				if (selectedCommand) {
+					setInput((prev) =>
+						insertSlashCommand(
+							prev,
+							extractSlashQuery(prev).slashIndex,
+							selectedCommand.name,
+						),
+					);
+				}
+				return;
+			}
+			if (activeCompletionMode) {
+				return;
+			}
+			setUiMode((prev) => (prev === "act" ? "plan" : "act"));
+			return;
+		}
+
+		if (key.ctrl && value === "c") {
+			if (isRunning) {
+				if (!abortRequested) {
+					setAbortRequested(true);
+					onAbort();
+					appendLine(`${c.dim}[abort] requested${c.reset}`);
+				}
+				return;
+			}
+			onExit();
+			return;
+		}
+
+		if (key.ctrl && value === "d") {
+			if (!isRunning && input.length === 0) {
+				onExit();
+				return;
+			}
+		}
+
+		if (key.return) {
+			if (hasMentionMenu) {
+				const selectedPath = mentionResults[fileMentionSelectedIndex];
+				if (selectedPath) {
+					setInput((prev) =>
+						insertMention(
+							prev,
+							extractMentionQuery(prev).atIndex,
+							selectedPath,
+						),
+					);
+				}
+				return;
+			}
+			if (hasSlashMenu) {
+				const selectedCommand = slashResults[slashSelectedIndex];
+				if (selectedCommand) {
+					setInput((prev) =>
+						insertSlashCommand(
+							prev,
+							extractSlashQuery(prev).slashIndex,
+							selectedCommand.name,
+						),
+					);
+				}
+				return;
+			}
+			if (activeCompletionMode) {
+				return;
+			}
+			const trimmed = input.trim();
+			if (!trimmed || isRunning) {
+				return;
+			}
+			void submitPrompt(trimmed);
+			return;
+		}
+
+		if (key.backspace || key.delete) {
+			setInput((prev) => prev.slice(0, -1));
+			return;
+		}
+
+		if (key.upArrow) {
+			if (hasMentionMenu) {
+				setFileMentionSelectedIndex((prev) =>
+					prev > 0 ? prev - 1 : mentionResults.length - 1,
+				);
+				return;
+			}
+			if (hasSlashMenu) {
+				setSlashSelectedIndex((prev) =>
+					prev > 0 ? prev - 1 : slashResults.length - 1,
+				);
+				return;
+			}
+			return;
+		}
+
+		if (key.downArrow) {
+			if (hasMentionMenu) {
+				setFileMentionSelectedIndex((prev) =>
+					prev < mentionResults.length - 1 ? prev + 1 : 0,
+				);
+				return;
+			}
+			if (hasSlashMenu) {
+				setSlashSelectedIndex((prev) =>
+					prev < slashResults.length - 1 ? prev + 1 : 0,
+				);
+				return;
+			}
+			return;
+		}
+
+		if (key.escape) {
+			if (hasCompletionMenu) {
+				return;
+			}
+			return;
+		}
+
+		if (key.leftArrow || key.rightArrow) {
+			return;
+		}
+
+		if (
+			!key.ctrl &&
+			!key.meta &&
+			value.length > 0 &&
+			!value.includes("\u001b")
+		) {
+			setInput((prev) => prev + value);
+		}
+	});
+
+	const visibleLines = useMemo(
+		() => lines.slice(-maxVisibleLines),
+		[lines, maxVisibleLines],
+	);
+	const shouldShowWelcome = !hasSubmitted && visibleLines.length <= 1;
+	const visibleMentionResults = useMemo(
+		() => getVisibleWindow(fileMentionResults, fileMentionSelectedIndex),
+		[fileMentionResults, fileMentionSelectedIndex],
+	);
+	const visibleSlashResults = useMemo(
+		() => getVisibleWindow(filteredSlashCommands, slashSelectedIndex),
+		[filteredSlashCommands, slashSelectedIndex],
+	);
+	const contextBar = useMemo(
+		() => createContextBar(lastTotalTokens, contextWindowSize),
+		[lastTotalTokens, contextWindowSize],
+	);
+
+	return React.createElement(
+		Box,
+		{ flexDirection: "column", paddingX: 1 },
+		shouldShowWelcome
+			? React.createElement(WelcomeView, {
+					providerId: config.providerId,
+					modelId: config.modelId,
+					mode: uiMode,
+					mouseOffsetX,
+					mouseOffsetY,
+				})
+			: null,
+		React.createElement(
+			Box,
+			{ flexDirection: "column", marginBottom: 1 },
+			visibleLines.map((line) =>
+				React.createElement(Text, { key: line.id }, line.text),
+			),
+		),
+		React.createElement(
+			Box,
+			{ borderStyle: "round", paddingX: 1 },
+			React.createElement(Text, null, `${c.green}>${c.reset} ${input}`),
+		),
+		mentionInfo.inMentionMode
+			? React.createElement(
+					Box,
+					{ flexDirection: "column", marginTop: 1, paddingX: 1 },
+					isSearchingMentions
+						? React.createElement(Text, { color: "gray" }, "Searching files...")
+						: fileMentionResults.length === 0
+							? React.createElement(
+									Text,
+									{ color: "gray" },
+									mentionInfo.query
+										? `No files matching "${mentionInfo.query}"`
+										: "Type to search files...",
+								)
+							: visibleMentionResults.items.map((path, index) => {
+									const absoluteIndex =
+										visibleMentionResults.startIndex + index;
+									const selected = absoluteIndex === fileMentionSelectedIndex;
+									const prefix = selected ? "❯" : " ";
+									return React.createElement(
+										Text,
+										{
+											color: selected ? "blue" : undefined,
+											key: `${path}:${absoluteIndex}`,
+										},
+										`${prefix} ${truncatePath(path)}`,
+									);
+								}),
+					fileMentionResults.length >
+						visibleMentionResults.startIndex +
+							visibleMentionResults.items.length
+						? React.createElement(Text, { color: "gray" }, "  ▼")
+						: null,
+				)
+			: null,
+		!mentionInfo.inMentionMode && slashInfo.inSlashMode
+			? React.createElement(
+					Box,
+					{ flexDirection: "column", marginTop: 1, paddingX: 1 },
+					filteredSlashCommands.length === 0
+						? React.createElement(
+								Text,
+								{ color: "gray" },
+								slashInfo.query
+									? `No commands matching "/${slashInfo.query}"`
+									: "No slash commands available",
+							)
+						: visibleSlashResults.items.map((command, index) => {
+								const absoluteIndex = visibleSlashResults.startIndex + index;
+								const selected = absoluteIndex === slashSelectedIndex;
+								const prefix = selected ? "❯" : " ";
+								return React.createElement(
+									Text,
+									{
+										color: selected ? "blue" : undefined,
+										key: `${command.name}:${absoluteIndex}`,
+									},
+									`${prefix} /${command.name}`,
+								);
+							}),
+					filteredSlashCommands.length >
+						visibleSlashResults.startIndex + visibleSlashResults.items.length
+						? React.createElement(Text, { color: "gray" }, "  ▼")
+						: null,
+				)
+			: null,
+		React.createElement(
+			Box,
+			{ flexDirection: "column", marginTop: 1 },
+			React.createElement(
+				Box,
+				{ justifyContent: "space-between" },
+				React.createElement(
+					Text,
+					{ color: "gray" },
+					"/ for commands · @ for files",
+				),
+				React.createElement(
+					Box,
+					{ gap: 1 },
+					React.createElement(
+						Text,
+						{
+							color: uiMode === "plan" ? "yellow" : "gray",
+							bold: uiMode === "plan",
+						},
+						`${uiMode === "plan" ? "●" : "○"} Plan`,
+					),
+					React.createElement(
+						Text,
+						{
+							color: uiMode === "act" ? "blue" : "gray",
+							bold: uiMode === "act",
+						},
+						`${uiMode === "act" ? "●" : "○"} Act`,
+					),
+					React.createElement(Text, { color: "gray" }, "(Tab)"),
+				),
+			),
+			React.createElement(
+				Box,
+				null,
+				React.createElement(
+					Text,
+					null,
+					`${config.providerId} ${config.modelId} `,
+				),
+				React.createElement(Text, null, contextBar.filled),
+				React.createElement(Text, { color: "gray" }, contextBar.empty),
+				React.createElement(
+					Text,
+					{ color: "gray" },
+					` (${lastTotalTokens.toLocaleString()}) | $${lastTotalCost.toFixed(3)}`,
+				),
+			),
+			React.createElement(
+				Box,
+				null,
+				React.createElement(Text, null, workspaceName),
+				gitBranch ? React.createElement(Text, null, ` (${gitBranch})`) : null,
+				gitDiffStats && gitDiffStats.files > 0
+					? React.createElement(
+							Text,
+							{ color: "gray" },
+							` | ${gitDiffStats.files} file${gitDiffStats.files !== 1 ? "s" : ""} `,
+							React.createElement(
+								Text,
+								{ color: "green" },
+								`+${gitDiffStats.additions}`,
+							),
+							" ",
+							React.createElement(
+								Text,
+								{ color: "red" },
+								`-${gitDiffStats.deletions}`,
+							),
+						)
+					: null,
+			),
+			autoApproveAll
+				? React.createElement(
+						Text,
+						null,
+						React.createElement(
+							Text,
+							{ color: "green" },
+							"⏵⏵ Auto-approve all enabled",
+						),
+						React.createElement(Text, { color: "gray" }, " (Shift+Tab)"),
+					)
+				: React.createElement(
+						Text,
+						{ color: "gray" },
+						"Auto-approve all disabled (Shift+Tab)",
+					),
+		),
+	);
+}
