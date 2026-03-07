@@ -12,6 +12,7 @@
 	"dependencies": {
 		"@chat-adapter/slack": "^4.16.1",
 		"@cline/agents": "workspace:*",
+		"@cline/core": "workspace:*",
 		"@cline/llms": "workspace:*",
 		"chat": "^4.16.1"
 	}
