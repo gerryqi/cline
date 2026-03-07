@@ -1,6 +1,6 @@
 import { appendFileSync } from "node:fs";
-import { nowIso } from "./utils/helpers";
-import type { ActiveCliSession, CliOutputMode } from "./utils/types";
+import { nowIso } from "./helpers";
+import type { ActiveCliSession, CliOutputMode } from "./types";
 
 // =============================================================================
 // ANSI Colors (no dependencies for speed)

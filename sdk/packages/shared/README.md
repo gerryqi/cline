@@ -38,6 +38,9 @@ outside transport wiring:
 - provider runtime payloads (`RpcProviderActionRequest`, `RpcProviderCatalogResponse`, `RpcProviderOAuthLoginResponse`)
 - Cline account runtime payloads (`RpcClineAccountActionRequest`, `RpcClineAccountUser`, `RpcClineAccountBalance`)
 - provider action requests include provider catalog/model operations plus provider add/save operations for settings hosts
+- provider action payloads now expose granular request/type contracts for reuse:
+  `RpcAddProviderActionRequest`, `RpcSaveProviderSettingsActionRequest`,
+  `RpcProviderCapability`, and `RpcOAuthProviderId`
 
 Chat runtime payload notes:
 - `RpcChatStartSessionRequest` supports `initialMessages`, optional `toolPolicies`, and optional `rules` for default system prompt assembly.

@@ -10,10 +10,10 @@ import {
 	type SqliteDb,
 	toBoolInt,
 } from "@cline/shared/db";
+import { resolveSessionDataDir } from "@cline/shared/storage";
 import type { SessionStatus } from "../types/common";
 import type { SessionRecord } from "../types/sessions";
 import type { SessionStore } from "../types/storage";
-import { resolveSessionDataDir } from "./paths";
 
 function defaultSessionsDir(): string {
 	return resolveSessionDataDir();

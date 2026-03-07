@@ -25,6 +25,7 @@ It also exposes server lifecycle helpers:
 - `requestRpcServerShutdown(address)` for remote graceful shutdown
 - `registerRpcClient(address, input)` for client registration (`clientId`, `clientType`, optional metadata)
 - `RpcSessionClient.publishEvent(...)` / `RpcSessionClient.streamEvents(...)` for client-side event routing
+- `RpcSessionClient.requestToolApproval(...)` / `respondToolApproval(...)` / `listPendingApprovals(...)` for approval request/decision flows
 - On graceful shutdown, the server broadcasts `eventType: "rpc.server.shutting_down"` to current stream subscribers before transport teardown.
 
 ## Runtime Chat Client Helpers

@@ -1,12 +1,12 @@
 import type { AgentEvent, TeamEvent } from "@cline/agents";
+import { formatToolInput, formatToolOutput, truncate } from "./utils/helpers";
 import {
 	c,
 	emitJsonLine,
 	getCurrentOutputMode,
 	write,
 	writeErr,
-} from "./output";
-import { formatToolInput, formatToolOutput, truncate } from "./utils/helpers";
+} from "./utils/output";
 import type { Config } from "./utils/types";
 
 // =============================================================================

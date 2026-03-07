@@ -191,31 +191,51 @@ export interface RpcClineAccountOrganizationUsageTransaction {
 	userId: string;
 }
 
+export type RpcOAuthProviderId = "cline" | "oca" | "openai-codex";
+
+export type RpcProviderCapability =
+	| "reasoning"
+	| "prompt-cache"
+	| "streaming"
+	| "tools"
+	| "vision";
+
+export interface RpcListProvidersActionRequest {
+	action: "listProviders";
+}
+
+export interface RpcGetProviderModelsActionRequest {
+	action: "getProviderModels";
+	providerId: string;
+}
+
+export interface RpcSaveProviderSettingsActionRequest {
+	action: "saveProviderSettings";
+	providerId: string;
+	enabled?: boolean;
+	apiKey?: string;
+	baseUrl?: string;
+}
+
+export interface RpcAddProviderActionRequest {
+	action: "addProvider";
+	providerId: string;
+	name: string;
+	baseUrl: string;
+	apiKey?: string;
+	headers?: Record<string, string>;
+	timeoutMs?: number;
+	models?: string[];
+	defaultModelId?: string;
+	modelsSourceUrl?: string;
+	capabilities?: RpcProviderCapability[];
+}
+
 export type RpcProviderSettingsActionRequest =
-	| { action: "listProviders" }
-	| { action: "getProviderModels"; providerId: string }
-	| {
-			action: "saveProviderSettings";
-			providerId: string;
-			enabled?: boolean;
-			apiKey?: string;
-			baseUrl?: string;
-	  }
-	| {
-			action: "addProvider";
-			providerId: string;
-			name: string;
-			baseUrl: string;
-			apiKey?: string;
-			headers?: Record<string, string>;
-			timeoutMs?: number;
-			models?: string[];
-			defaultModelId?: string;
-			modelsSourceUrl?: string;
-			capabilities?: Array<
-				"reasoning" | "prompt-cache" | "streaming" | "tools" | "vision"
-			>;
-	  };
+	| RpcListProvidersActionRequest
+	| RpcGetProviderModelsActionRequest
+	| RpcSaveProviderSettingsActionRequest
+	| RpcAddProviderActionRequest;
 
 export type RpcClineAccountActionRequest =
 	| {
@@ -263,6 +283,6 @@ export type RpcProviderActionRequest =
 	| RpcClineAccountActionRequest;
 
 export interface RpcProviderOAuthLoginResponse {
-	provider: string;
+	provider: RpcOAuthProviderId;
 	apiKey: string;
 }

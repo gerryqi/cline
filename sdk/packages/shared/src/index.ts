@@ -18,6 +18,7 @@ export {
 	xmlTagsRemoval,
 } from "./prompt/format";
 export type {
+	RpcAddProviderActionRequest,
 	RpcAgentMode,
 	RpcChatAttachmentFile,
 	RpcChatAttachments,
@@ -35,13 +36,18 @@ export type {
 	RpcClineAccountPaymentTransaction,
 	RpcClineAccountUsageTransaction,
 	RpcClineAccountUser,
+	RpcGetProviderModelsActionRequest,
+	RpcListProvidersActionRequest,
+	RpcOAuthProviderId,
 	RpcProviderActionRequest,
+	RpcProviderCapability,
 	RpcProviderCatalogResponse,
 	RpcProviderListItem,
 	RpcProviderModel,
 	RpcProviderModelsResponse,
 	RpcProviderOAuthLoginResponse,
 	RpcProviderSettingsActionRequest,
+	RpcSaveProviderSettingsActionRequest,
 	RpcSessionStorageOptions,
 } from "./rpc/runtime";
 export type {

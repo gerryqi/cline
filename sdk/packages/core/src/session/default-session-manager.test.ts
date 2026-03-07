@@ -8,6 +8,8 @@ import type { CoreSessionConfig } from "../types/config";
 import { DefaultSessionManager } from "./default-session-manager";
 import type { SessionManifest } from "./session-manifest";
 
+const distinctId = "test-machine-id";
+
 function createResult(overrides: Partial<AgentResult> = {}): AgentResult {
 	return {
 		text: "ok",
@@ -121,6 +123,7 @@ describe("DefaultSessionManager", () => {
 		};
 
 		const manager = new DefaultSessionManager({
+			distinctId,
 			sessionService: sessionService as never,
 			runtimeBuilder,
 			createAgent: () => agent as never,
@@ -188,6 +191,7 @@ describe("DefaultSessionManager", () => {
 			}),
 		);
 		const manager = new DefaultSessionManager({
+			distinctId,
 			sessionService: sessionService as never,
 			runtimeBuilder,
 			createAgent: () =>
@@ -262,6 +266,7 @@ describe("DefaultSessionManager", () => {
 			.fn()
 			.mockResolvedValue(createResult({ text: "second" }));
 		const manager = new DefaultSessionManager({
+			distinctId,
 			sessionService: sessionService as never,
 			runtimeBuilder,
 			createAgent: () =>
@@ -317,6 +322,7 @@ describe("DefaultSessionManager", () => {
 		const run = vi.fn().mockRejectedValue(new Error("run failed"));
 		const agentShutdown = vi.fn().mockResolvedValue(undefined);
 		const manager = new DefaultSessionManager({
+			distinctId,
 			sessionService: sessionService as never,
 			runtimeBuilder,
 			createAgent: () =>
@@ -365,6 +371,7 @@ describe("DefaultSessionManager", () => {
 		};
 		const agentShutdown = vi.fn().mockResolvedValue(undefined);
 		const manager = new DefaultSessionManager({
+			distinctId,
 			sessionService: sessionService as never,
 			runtimeBuilder,
 			createAgent: () =>
@@ -419,6 +426,7 @@ describe("DefaultSessionManager", () => {
 		const run = vi.fn().mockResolvedValue(createResult({ text: "ok" }));
 		const updateConnection = vi.fn();
 		const manager = new DefaultSessionManager({
+			distinctId,
 			sessionService: sessionService as never,
 			runtimeBuilder,
 			oauthTokenManager: {
@@ -488,6 +496,7 @@ describe("DefaultSessionManager", () => {
 			};
 			const run = vi.fn().mockResolvedValue(createResult({ text: "ok" }));
 			const manager = new DefaultSessionManager({
+				distinctId,
 				sessionService: sessionService as never,
 				runtimeBuilder: {
 					build: vi.fn().mockReturnValue({
@@ -569,6 +578,7 @@ describe("DefaultSessionManager", () => {
 				refreshed: true,
 			});
 		const manager = new DefaultSessionManager({
+			distinctId,
 			sessionService: sessionService as never,
 			runtimeBuilder,
 			oauthTokenManager: {

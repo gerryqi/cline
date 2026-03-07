@@ -202,6 +202,7 @@ Approve tool "<tool_name>" with input <preview>? [y/N]
 - Enter `y` or `yes` to approve.
 - Enter anything else (or press Enter) to reject.
 - If stdin/stdout is not a TTY, required-approval calls are denied in terminal mode.
+- RPC-backed prompt runs also honor required approvals: approval requests are relayed through RPC, prompted in the CLI TTY, and responded back to the runtime before tool execution continues.
 
 Desktop-integrated approval mode is also supported via env wiring:
 
@@ -224,6 +225,7 @@ In desktop mode, CLI writes a request JSON file and waits for a matching decisio
 - Client registration: `clite rpc register --client-type <type> [--client-id <id>] [--meta key=value]...` registers host identity for RPC clients
 - Runtime APIs: `clite rpc start` now wires server-side runtime handlers for `StartRuntimeSession`, `SendRuntimeSession`, and `AbortRuntimeSession` (used by `@cline/code` and CLI runtime actions)
 - Runtime event bridge: runtime handlers publish live `runtime.chat.*` events via RPC `PublishEvent`, so subscribed clients can consume real-time text/tool updates through `StreamEvents`
+- Tool approval bridge: runtime handlers publish `approval.requested` and wait for RPC responses; CLI prompt runs consume these requests and return approval decisions through RPC.
 - Runtime event contract: the bridge publishes `runtime.chat.*` from structured `agent_event` payloads emitted by core runtime sessions.
 - CLI streaming: RPC-backed prompt runs subscribe to `runtime.chat.*` during each turn, so text/tool output is rendered incrementally in the terminal (not only at turn completion).
 - Prompt startup behavior: regular `clite "<prompt>"` runs invoke `rpc ensure --json` first, adopt the ensured address for that process (`CLINE_RPC_ADDRESS`), and then use runtime RPC APIs.
@@ -254,6 +256,11 @@ bun run dev:cli -- "your prompt"
 # Run built CLI with Node (no Bun runtime required for end users)
 node cli/dist/index.js "your prompt"
 ```
+
+Dev runtime note:
+
+- Distinct host ID resolution is handled by `@cline/core/server` `createSessionHost(...)`.
+- When no explicit `distinctId` is provided, core persists a fallback ID at `<session-data-dir>/machine-id` (for example `~/.cline/data/sessions/machine-id`).
 
 ## Publishing
 
@@ -315,17 +322,6 @@ Custom provider registry notes:
 - **JSON output mode** - NDJSON records for run lifecycle, agent/team events, and final result (`--output json` / `--json`)
 - **Minimal dependencies** - Fast startup time
 - **Multiple providers** - Works with Anthropic, OpenAI, and more
-
-## Source Layout
-
-The CLI entrypoint delegates to focused modules so `src/index.ts` acts as orchestration glue:
-
-- `src/commands/auth.ts` - OAuth provider normalization/login/persistence helpers
-- `src/commands/hook.ts` - hook payload stdin handler and hook output formatting
-- `src/commands/list.ts` - `clite list ...` command handlers
-- `src/commands/rpc.ts` - `clite rpc start` lifecycle command
-- `src/runtime/prompt.ts` - shared system-prompt resolver (CLI + RPC runtime) and user-input enrichment builders
-- `src/index.ts` - process/session lifecycle, streaming output, run loop orchestration
 
 ## Runtime Ownership
 

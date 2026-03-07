@@ -7,8 +7,13 @@ import type { ClineGatewayClient } from "./proto/generated/cline/rpc/v1/ClineGat
 import type { DeleteSessionResponse__Output } from "./proto/generated/cline/rpc/v1/DeleteSessionResponse.js";
 import type { EnqueueSpawnRequestResponse__Output } from "./proto/generated/cline/rpc/v1/EnqueueSpawnRequestResponse.js";
 import type { GetSessionResponse__Output } from "./proto/generated/cline/rpc/v1/GetSessionResponse.js";
+import type { ListPendingApprovalsResponse__Output } from "./proto/generated/cline/rpc/v1/ListPendingApprovalsResponse.js";
 import type { ListSessionsResponse__Output } from "./proto/generated/cline/rpc/v1/ListSessionsResponse.js";
 import type { PublishEventResponse__Output } from "./proto/generated/cline/rpc/v1/PublishEventResponse.js";
+import type { RequestToolApprovalRequest } from "./proto/generated/cline/rpc/v1/RequestToolApprovalRequest.js";
+import type { RequestToolApprovalResponse__Output } from "./proto/generated/cline/rpc/v1/RequestToolApprovalResponse.js";
+import type { RespondToolApprovalRequest } from "./proto/generated/cline/rpc/v1/RespondToolApprovalRequest.js";
+import type { RespondToolApprovalResponse__Output } from "./proto/generated/cline/rpc/v1/RespondToolApprovalResponse.js";
 import type { RoutedEvent__Output } from "./proto/generated/cline/rpc/v1/RoutedEvent.js";
 import type { RunProviderActionResponse__Output } from "./proto/generated/cline/rpc/v1/RunProviderActionResponse.js";
 import type { RunProviderOAuthLoginResponse__Output } from "./proto/generated/cline/rpc/v1/RunProviderOAuthLoginResponse.js";
@@ -279,6 +284,97 @@ export class RpcSessionClient {
 			},
 		);
 		return { applied: response.applied === true };
+	}
+
+	public async requestToolApproval(input: {
+		approvalId?: string;
+		sessionId: string;
+		taskId?: string;
+		toolCallId: string;
+		toolName: string;
+		inputJson?: string;
+		requesterClientId?: string;
+		timeoutMs?: number;
+	}): Promise<{
+		approvalId: string;
+		decided: boolean;
+		approved: boolean;
+		reason: string;
+	}> {
+		const request: RequestToolApprovalRequest = {
+			approvalId: input.approvalId,
+			sessionId: input.sessionId,
+			taskId: input.taskId,
+			toolCallId: input.toolCallId,
+			toolName: input.toolName,
+			inputJson: input.inputJson,
+			requesterClientId: input.requesterClientId,
+			timeoutMs: input.timeoutMs,
+		};
+		const response = await this.unary<RequestToolApprovalResponse__Output>(
+			(callback) => {
+				this.client.RequestToolApproval(request, callback);
+			},
+		);
+		return {
+			approvalId: response.approvalId ?? "",
+			decided: response.decided === true,
+			approved: response.approved === true,
+			reason: response.reason ?? "",
+		};
+	}
+
+	public async respondToolApproval(input: {
+		approvalId: string;
+		approved: boolean;
+		reason?: string;
+		responderClientId?: string;
+	}): Promise<{ approvalId: string; applied: boolean }> {
+		const request: RespondToolApprovalRequest = {
+			approvalId: input.approvalId,
+			approved: input.approved,
+			reason: input.reason,
+			responderClientId: input.responderClientId,
+		};
+		const response = await this.unary<RespondToolApprovalResponse__Output>(
+			(callback) => {
+				this.client.RespondToolApproval(request, callback);
+			},
+		);
+		return {
+			approvalId: response.approvalId ?? "",
+			applied: response.applied === true,
+		};
+	}
+
+	public async listPendingApprovals(sessionId?: string): Promise<
+		Array<{
+			approvalId: string;
+			sessionId: string;
+			taskId: string;
+			toolCallId: string;
+			toolName: string;
+			inputJson: string;
+			requesterClientId: string;
+			createdAt: string;
+		}>
+	> {
+		const response = await this.unary<ListPendingApprovalsResponse__Output>(
+			(callback) => {
+				this.client.ListPendingApprovals({ sessionId }, callback);
+			},
+		);
+		const approvals = response.approvals ?? [];
+		return approvals.map((approval) => ({
+			approvalId: approval.approvalId ?? "",
+			sessionId: approval.sessionId ?? "",
+			taskId: approval.taskId ?? "",
+			toolCallId: approval.toolCallId ?? "",
+			toolName: approval.toolName ?? "",
+			inputJson: approval.inputJson ?? "",
+			requesterClientId: approval.requesterClientId ?? "",
+			createdAt: approval.createdAt ?? "",
+		}));
 	}
 
 	public async stopRuntimeSession(

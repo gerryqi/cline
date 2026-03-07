@@ -77,11 +77,6 @@ export {
 	resolveMcpServerRegistrations,
 } from "./mcp";
 
-export {
-	resolveClineDataDir,
-	resolveProviderSettingsPath,
-	resolveSessionDataDir,
-} from "./storage/paths";
 export { ProviderSettingsManager } from "./storage/provider-settings-manager";
 
 // Compatibility barrel (legacy imports).

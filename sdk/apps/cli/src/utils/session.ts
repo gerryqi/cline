@@ -12,7 +12,6 @@ import {
 	CoreSessionService,
 	createSessionHost,
 	RpcCoreSessionService,
-	resolveSessionDataDir,
 	type SessionManifest,
 	SqliteSessionStore,
 } from "@cline/core/server";
@@ -23,6 +22,7 @@ import type {
 	RpcChatStartSessionRequest,
 	RpcChatTurnResult,
 } from "@cline/shared";
+import { resolveSessionDataDir } from "@cline/shared/storage";
 
 const DEFAULT_RPC_ADDRESS =
 	process.env.CLINE_RPC_ADDRESS?.trim() || "127.0.0.1:4317";
@@ -336,6 +336,17 @@ function parseEventPayload(payloadJson: string): Record<string, unknown> {
 	}
 }
 
+function parseToolApprovalInput(inputJson: unknown): unknown {
+	if (typeof inputJson !== "string" || !inputJson.trim()) {
+		return undefined;
+	}
+	try {
+		return JSON.parse(inputJson);
+	} catch {
+		return undefined;
+	}
+}
+
 function resolveAttachmentPath(filePath: string, cwd: string): string {
 	return isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
 }
@@ -458,6 +469,48 @@ function createRpcRuntimeCliSessionManager(
 				{
 					onEvent: (event) => {
 						const payload = parseEventPayload(event.payloadJson);
+						if (event.eventType === "approval.requested") {
+							const approvalId =
+								typeof payload.approvalId === "string"
+									? payload.approvalId.trim()
+									: "";
+							const toolCallId =
+								typeof payload.toolCallId === "string"
+									? payload.toolCallId
+									: "";
+							const toolName =
+								typeof payload.toolName === "string" ? payload.toolName : "";
+							if (!approvalId || !toolCallId || !toolName) {
+								return;
+							}
+							const inputValue = parseToolApprovalInput(payload.inputJson);
+							const requestApproval = options?.requestToolApproval;
+							void (async () => {
+								const decision = requestApproval
+									? await requestApproval({
+											agentId: "",
+											conversationId: "",
+											iteration: 0,
+											toolCallId,
+											toolName,
+											input: inputValue,
+											policy: {},
+										})
+									: {
+											approved: false,
+											reason: `Tool "${toolName}" requires approval but no approval handler is configured`,
+										};
+								await client.respondToolApproval({
+									approvalId,
+									approved: decision.approved === true,
+									reason: decision.reason,
+									responderClientId: `cli-runtime-${process.pid}`,
+								});
+							})().catch(() => {
+								// Best effort: do not fail turn streaming on approval transport errors.
+							});
+							return;
+						}
 						if (event.eventType === "runtime.chat.text_delta") {
 							const resolved = resolveTextDelta(payload, streamedText);
 							if (!resolved.delta) {

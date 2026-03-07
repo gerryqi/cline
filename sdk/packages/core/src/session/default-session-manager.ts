@@ -85,6 +85,7 @@ type PreparedTurnInput = {
 };
 
 export interface DefaultSessionManagerOptions {
+	distinctId: string;
 	sessionService: SessionBackend;
 	runtimeBuilder?: RuntimeBuilder;
 	createAgent?: (config: AgentConfig) => Agent;

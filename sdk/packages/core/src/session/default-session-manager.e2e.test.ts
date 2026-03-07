@@ -274,6 +274,7 @@ describe("DefaultSessionManager e2e", () => {
 		const agentShutdown = vi.fn().mockResolvedValue(undefined);
 
 		const manager = new DefaultSessionManager({
+			distinctId: `test-${nanoid(5)}`,
 			sessionService: sessionService as never,
 			runtimeBuilder: runtimeBuilder as never,
 			createAgent: () =>

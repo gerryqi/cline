@@ -1,12 +1,15 @@
 import { spawn } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type {
 	AgentConfig,
 	ToolApprovalRequest,
 	ToolApprovalResult,
 } from "@cline/agents";
 import { getRpcServerHealth } from "@cline/rpc";
+import { resolveSessionDataDir } from "@cline/shared/storage";
+import { nanoid } from "nanoid";
 import type { ToolExecutors } from "../default-tools";
-import { resolveSessionDataDir } from "../storage/paths";
 import { SqliteSessionStore } from "../storage/sqlite-session-store";
 import { DefaultSessionManager } from "./default-session-manager";
 import { RpcCoreSessionService } from "./rpc-session-service";
@@ -22,6 +25,7 @@ let cachedBackend: SessionBackend | undefined;
 let backendInitPromise: Promise<SessionBackend> | undefined;
 
 export interface CreateSessionHostOptions {
+	distinctId?: string;
 	sessionService?: SessionBackend;
 	backendMode?: "auto" | "rpc" | "local";
 	rpcAddress?: string;
@@ -79,6 +83,37 @@ async function tryConnectRpcBackend(
 
 function createLocalBackend(): CoreSessionService {
 	return new CoreSessionService(new SqliteSessionStore());
+}
+
+function resolveHostDistinctId(explicitDistinctId: string | undefined): string {
+	if (
+		typeof explicitDistinctId === "string" &&
+		explicitDistinctId.trim().length > 0
+	) {
+		return explicitDistinctId.trim();
+	}
+
+	const sessionDataDir = resolveSessionDataDir();
+	const distinctIdPath = resolve(sessionDataDir, "machine-id");
+	try {
+		if (existsSync(distinctIdPath)) {
+			const savedDistinctId = readFileSync(distinctIdPath, "utf8").trim();
+			if (savedDistinctId.length > 0) {
+				return savedDistinctId;
+			}
+		}
+	} catch {
+		// Ignore read errors and generate a fresh fallback ID.
+	}
+
+	const generatedDistinctId = nanoid();
+	try {
+		mkdirSync(sessionDataDir, { recursive: true });
+		writeFileSync(distinctIdPath, generatedDistinctId, "utf8");
+	} catch {
+		// Ignore write errors and continue with in-memory fallback.
+	}
+	return generatedDistinctId;
 }
 
 async function resolveBackend(
@@ -142,7 +177,7 @@ async function resolveBackend(
 }
 
 export async function createSessionHost(
-	options: CreateSessionHostOptions = {},
+	options: CreateSessionHostOptions,
 ): Promise<SessionHost> {
 	const backend = options.sessionService ?? (await resolveBackend(options));
 	return new DefaultSessionManager({
@@ -150,5 +185,6 @@ export async function createSessionHost(
 		defaultToolExecutors: options.defaultToolExecutors,
 		toolPolicies: options.toolPolicies,
 		requestToolApproval: options.requestToolApproval,
+		distinctId: resolveHostDistinctId(options.distinctId),
 	});
 }

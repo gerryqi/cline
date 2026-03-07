@@ -265,11 +265,6 @@ export {
 	WorkspaceManifestSchema,
 } from "../session/workspace-manifest";
 export {
-	resolveClineDataDir,
-	resolveProviderSettingsPath,
-	resolveSessionDataDir,
-} from "../storage/paths";
-export {
 	type MigrateLegacyProviderSettingsOptions,
 	type MigrateLegacyProviderSettingsResult,
 	migrateLegacyProviderSettings,

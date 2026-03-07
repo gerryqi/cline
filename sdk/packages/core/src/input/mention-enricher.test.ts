@@ -63,13 +63,13 @@ describe("enrichPromptWithMentions", () => {
 	it("respects maxTotalBytes while keeping prompt unchanged", async () => {
 		const cwd = await createTempWorkspace();
 		try {
-			await writeFile(path.join(cwd, "a.ts"), "const a = 1\n", "utf8");
+			await writeFile(path.join(cwd, "a.ts"), "123", "utf8");
 			await writeFile(path.join(cwd, "b.ts"), "const b = 2\n", "utf8");
 
 			const result = await enrichPromptWithMentions(
 				"Use @a.ts and @b.ts",
 				cwd,
-				{ maxTotalBytes: 60_000 },
+				{ maxTotalBytes: 5, maxFiles: 2, maxFileBytes: 5 },
 			);
 
 			expect(result.matchedFiles).toEqual(["a.ts"]);

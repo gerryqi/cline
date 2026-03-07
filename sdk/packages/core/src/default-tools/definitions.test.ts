@@ -154,8 +154,12 @@ describe("zod schema conversion", () => {
 		expect(inputSchema.type).toBe("object");
 		expect(properties.file_paths).toEqual({
 			type: "array",
-			items: { type: "string" },
-			description: "The absolute file paths to read",
+			items: {
+				type: "string",
+				description:
+					"The absolute file path of a text file to read content from",
+			},
+			description: "Array of absolute file paths",
 		});
 		expect(inputSchema.required).toEqual(["file_paths"]);
 	});

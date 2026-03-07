@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { resolveProviderSettingsPath } from "@cline/shared/storage";
 import {
 	emptyStoredProviderSettings,
 	type ProviderConfig,
@@ -10,7 +11,6 @@ import {
 	StoredProviderSettingsSchema,
 	toProviderConfig,
 } from "../types/provider-settings";
-import { resolveProviderSettingsPath } from "./paths";
 
 function nowIso(): string {
 	return new Date().toISOString();

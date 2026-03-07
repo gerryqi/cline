@@ -1,10 +1,5 @@
 export type { ArtifactStore } from "./artifact-store";
 export {
-	resolveClineDataDir,
-	resolveProviderSettingsPath,
-	resolveSessionDataDir,
-} from "./paths";
-export {
 	type MigrateLegacyProviderSettingsOptions,
 	type MigrateLegacyProviderSettingsResult,
 	migrateLegacyProviderSettings,
