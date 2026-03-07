@@ -31,7 +31,6 @@ const CLINE_LOGO = [
 
 function WelcomeViewComponent(props: WelcomeViewProps): React.ReactElement {
 	const horizontalShift = Math.max(-4, Math.min(4, props.mouseOffsetX));
-	const verticalPadding = Math.max(0, Math.min(2, props.mouseOffsetY + 1));
 	const shiftedLogo = CLINE_LOGO.map((line) => {
 		if (horizontalShift === 0) {
 			return line;
@@ -45,9 +44,8 @@ function WelcomeViewComponent(props: WelcomeViewProps): React.ReactElement {
 	return React.createElement(
 		Box,
 		{ flexDirection: "column", alignItems: "center", marginBottom: 1 },
-		...Array.from({ length: verticalPadding }, (_, index) =>
-			React.createElement(Text, { key: `top-pad:${index}` }, " "),
-		),
+		React.createElement(Text, { key: "top-pad:0" }, " "),
+		React.createElement(Text, { key: "top-pad:1" }, " "),
 		React.createElement(
 			Box,
 			{ flexDirection: "column", marginBottom: 1 },

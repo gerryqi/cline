@@ -1,12 +1,18 @@
 # Cline Cli Lite
 
-Fast CLI for running agentic loops with LLMs. Streams output in real time and includes built-in tools, sub-agent spawning, and team runtime support by default.
+Cline CLI built with Cline SDK. 
 
-Lifecycle note: active runs now install both `SIGINT` and `SIGTERM` abort handlers, CLI runtime/session managers are disposed on shutdown paths to reduce orphaned subprocesses, and one-shot (non-interactive) runs exit automatically when the turn finishes.
-Prompt note: CLI sends raw user prompt text to core runtime; `@cline/core` canonicalizes `<user_input ...>` formatting and mention-based file attachment resolution once per turn.
-Interactive note: `clite -i` now runs inside a React Ink TUI (mouse-reactive WelcomeView-style intro, provider/model + mode badges, live streaming agent output, inline composer, and a 4-row status footer with mode/context/git/auto-approve state).
+Streams output in real time and includes built-in tools, sub-agent spawning, and team runtime support by default.
+
+
+## Requirements
+
+- [Bun](https://bun.com/docs/installation) (for development and build)
+- Node.js 18+ (for end users)
 
 ## Installation
+
+> NOTE: The package is not published yet, so the CLI is not available on npm. To use the CLI, you can clone the repository and link the package locally with `bun link` from the `@cline/cli` workspace. Global installation from npm will be available after the initial release.
 
 ```bash
 npm i -g @cline/cli
@@ -14,38 +20,119 @@ npm i -g @cline/cli
 bun i -g @cline/cli
 ```
 
+## Development
+
+Quick Start:
+
+```bash
+# From Root of the repository
+bun install
+bun run build
+
+bun run dev:cli # Run Dev script for the CLI package 
+# or
+bun run -F @cline/cli dev "your prompt" # Run the CLI from the package workspace
+# or
+bun link # Link the package globally for easy access from anywhere
+# Run from the linked binary
+clite auth
+
+# Run built CLI with Node (no Bun runtime required for end users)
+node cli/dist/index.js "your prompt"
+```
+
+Dev runtime note:
+
+- Distinct host ID resolution is handled by `@cline/core/server` `createSessionHost(...)`.
+- When no explicit `distinctId` is provided, core persists a fallback ID at `<session-data-dir>/machine-id` (for example `~/.cline/data/sessions/machine-id`).
+
+## Publishing
+
+From the @cline/cli package workspace:
+
+```bash
+# Package the latest model list from models.dev
+bun run build:models
+
+# Dry run for checking package size and build output
+bun publish --dry-run
+# Example Output: Total files: 3 / Unpacked size: 2.28MB
+
+# Publish to npm (version bump required)
+bun run release
+```
+
+## Testing
+
+```bash
+
+# Run CLI unit tests
+bun -F @cline/cli test:unit
+
+# Run CLI e2e tests
+bun -F @cline/cli test:e2e
+```
+
 ## Usage
 
 ```bash
-# Single prompt
-clite "What is 2+2?"
-# Single-prompt runs are non-interactive and exit when the turn finishes
+# Start Cline CLI without a prompt to enter interactive mode
+clite
 
-# Default run includes tools + spawn + teams
+# Single prompt / One-shot - includes tools + spawn + teams
 clite "Audit this package and propose fixes"
-
-# Disable defaults explicitly
-clite --no-tools --no-spawn --no-teams "Answer from general knowledge only"
-
-# Require approval before each tool call
-clite --require-tool-approval "Inspect and modify this repository"
-
-# Require approval only for command execution
-clite --tool-require-approval run_commands "Fix failing tests"
-
-# Require approval for editor only
-clite --tool-require-approval editor "Refactor src/index.ts for readability"
-
-# With custom system prompt
-clite -s "You are a pirate" "Tell me about the sea"
+# NOTE: Single-prompt runs are non-interactive and exit when the turn finishes
 
 # Interactive mode
 clite -i
+# With custom system prompt
+clite -i -s "You are a pirate" "Tell me about the sea"
+clite -i "Let's work on this together. First, analyze the current state and suggest next steps."
+
+# Disable defaults tools, spawn(subagent), teams explicitly
+clite --no-tools --no-spawn --no-teams "Answer from general knowledge only"
+# Require approval before each tool call
+clite --require-tool-approval "Inspect and modify this repository"
+# Require approval only for command execution
+clite --tool-require-approval run_commands "Fix failing tests"
+# Require approval for editor only
+clite --tool-require-approval editor "Refactor src/index.ts for readability"
+
+# Pipe input
+cat file.txt | clite "Summarize this"
+
+# Team workflow with persistent name
+clite --team-name my-team "Plan, implement, and verify release checklist"
+clite --team-name my-team "Continue yesterday's team workflow"
+
+# Show usage stats (tokens + estimated cost when available)
+clite -u -t "Explain quantum computing"
+
+# Stream structured NDJSON output
+clite --output json "Summarize this repository"
+# equivalent
+clite --json "Summarize this repository"
+
+# Use a specific provider, model, and access token for a single prompt/task
+clite -p openrouter -m google/gemini-3-pro -k sk-your-google-gemini-api-key "Set up a storybook for the frontend react ui components"
+# Use a different model with the last used provider
+clite -m anthropic/claude-opus-4-6 "Explain string theory"
+# Refresh model catalog from provider endpoints for this run 
+# to use a new model not available in the built-in model catalog yet 
+clite --refresh-models -p cline -m "openai/gpt-10"
+
+# Quick setup with API key/model
+clite auth --provider anthropic --apikey sk-... --modelid claude-sonnet-4-6
+clite auth --provider openai-native --apikey sk-... --modelid gpt-5 --baseurl https://api.example.com/v1
+
+# Authenticate OAuth providers explicitly
+clite auth <cline|openai-codex|oca>
+
 # Open interactive config view directly
 clite config
 # Running `clite` with no prompt also enters interactive mode.
 # Interactive mode is rendered with the Ink TUI.
-# The initial screen now uses a WelcomeView-style layout before the first prompt.
+# The initial screen uses a WelcomeView-style layout before the first prompt.
 # Inline composer supports completion menus:
 # - `@` opens workspace file mention search (arrow keys to move, Enter/Tab to insert)
 # - `/` opens workflow slash command search (arrow keys to move, Enter/Tab to insert)
@@ -59,54 +146,21 @@ clite config
 # For one-shot auto-exit behavior, pass a prompt argument.
 # Exit interactive mode with Ctrl+D (or Ctrl+C when idle).
 
-# Pipe input
-cat file.txt | clite "Summarize this"
-
-# Show usage stats (tokens + estimated cost when available)
-clite -u -t "Explain quantum computing"
-
-# Stream structured NDJSON output
-clite --output json "Summarize this repository"
-# equivalent
-clite --json "Summarize this repository"
-
-# Refresh model catalog from provider endpoints for this run 
-# to use a new model not available in the built-in model catalog yet 
-clite --refresh-models -p cline -m "openai/gpt-10"
-
-# Start the RPC gateway server (blocks until Ctrl+C)
+# INTERNAL: RPC gateway commands for host integration and runtime management
+# Start the RPC gateway server
 clite rpc start
 clite rpc start --address 127.0.0.1:4317
-
 # Check whether an RPC gateway is running
 clite rpc status
 clite rpc status --address 127.0.0.1:4317
-
 # Request RPC gateway shutdown
 clite rpc stop
 clite rpc stop --address 127.0.0.1:4317
-
 # Ensure a compatible runtime server is available (JSON output for host apps)
 clite rpc ensure --address 127.0.0.1:4317 --json
-
-# Register a client with the RPC gateway
+# For new client to call to register with the RPC gateway
 clite rpc register --address 127.0.0.1:4317 --client-type desktop --client-id code-desktop
 clite rpc register --meta app=code --meta host=tauri
-
-# Authenticate OAuth providers explicitly
-clite auth
-clite auth openai-codex
-clite auth oca
-clite auth cline
-# Quick setup with API key/model
-clite auth --provider anthropic --apikey sk-... --modelid claude-sonnet-4-6
-clite auth --provider openai-native --apikey sk-... --modelid gpt-5 --baseurl https://api.openai.com/v1
-
-# Use persistent team state name
-clite --team-name dev-team "Continue yesterday's team workflow"
-
-# Use a specific provider, model, and access token for a single prompt/task
-clite -p openrouter -m google/gemini-3-pro -k sk-your-google-gemini-api-key "Set up a storybook for the frontend react ui components"
 ```
 
 ## OAuth Authentication
@@ -117,39 +171,16 @@ clite -p openrouter -m google/gemini-3-pro -k sk-your-google-gemini-api-key "Set
 - `openai-codex`
 - `oca`
 
-Use the explicit auth command:
-
-```bash
-clite auth
-clite auth <provider>
-```
-
-Examples:
-
-```bash
-clite auth
-clite auth cline
-clite auth openai-codex
-clite auth oca
-clite auth --provider anthropic --apikey sk-... --modelid claude-sonnet-4-6
-```
-
 When you run with one of these providers and no API key is available, `clite` will automatically start the OAuth login flow and persist credentials to provider settings.
 
-During OAuth login, `clite` now tries to open the authorization URL in your default browser automatically and still prints the URL for manual fallback.
+During OAuth login, `clite` tries to open the authorization URL in your default browser automatically and still prints the URL for manual fallback.
 
-`clite auth` (without a provider) now opens the interactive auth TUI with the same auth options as the old CLI flow:
+`clite auth` (without a provider) opens the interactive auth TUI with the same auth options as the old CLI flow:
 
 - Sign in with Cline
 - Sign in with ChatGPT Subscription (`openai-codex`)
 - Sign in with OCA
 - Use your own API key (provider + model + optional base URL)
-
-When running in interactive mode with `-p cline`, `clite` now prints an account banner before the model line when OAuth credentials are available, including:
-
-- user email
-- active account credit balance (organization balance when an organization is active, otherwise personal balance)
-- active organization name (when an organization account is active)
 
 ## Options
 
@@ -165,7 +196,8 @@ When running in interactive mode with `-p cline`, `clite` now prints an account 
 | `-t, --timings` | Show timing info |
 | `--thinking` | Enable model thinking/reasoning when supported |
 | `--refresh-models` | Refresh model catalog from provider endpoints for this run |
-| `--output <text|json>` | Output format (default: `text`) |
+| `--mode <act\|plan>` | Agent mode for tool presets (default: `act`) |
+| `--output <text\|json>` | Output format (default: `text`) |
 | `--json` | Shorthand for `--output json` (NDJSON stream) |
 | `--sandbox` | Run with isolated local state; avoids writing to `~/.cline` |
 | `--sandbox-dir <path>` | Sandbox state directory (default: `$CLINE_SANDBOX_DATA_DIR` or `/tmp/cline-sandbox`) |
@@ -185,6 +217,7 @@ When running in interactive mode with `-p cline`, `clite` now prints an account 
 | `--mission-step-interval <n>` | Mission log update interval in meaningful steps (default: `3`) |
 | `--mission-time-interval-ms <ms>` | Mission log update interval in milliseconds (default: `120000`) |
 | `--cwd <path>` | Working directory for built-in tools (default: current directory) |
+| `--session <id>` | Resume interactive chat from a saved session id |
 | `-h, --help` | Show help (exits immediately) |
 | `-v, --version` | Show version (exits immediately) |
 
@@ -261,62 +294,16 @@ In desktop mode, CLI writes a request JSON file and waits for a matching decisio
 - Ensure: `clite rpc ensure` reuses a compatible server when possible; if the listener is stale/incompatible it can launch a fresh server on a new available port and report that effective address
 - Compatibility check: `rpc ensure` requires runtime chat methods including `StartRuntimeSession`, `SendRuntimeSession`, `AbortRuntimeSession`, and `StopRuntimeSession`.
 - Client registration: `clite rpc register --client-type <type> [--client-id <id>] [--meta key=value]...` registers host identity for RPC clients
-- Runtime APIs: `clite rpc start` now wires server-side runtime handlers for `StartRuntimeSession`, `SendRuntimeSession`, and `AbortRuntimeSession` (used by `@cline/code` and CLI runtime actions)
+- Runtime APIs: `clite rpc start` wires server-side runtime handlers for `StartRuntimeSession`, `SendRuntimeSession`, and `AbortRuntimeSession` (used by `@cline/code` and CLI runtime actions)
 - Runtime event bridge: runtime handlers publish live `runtime.chat.*` events via RPC `PublishEvent`, so subscribed clients can consume real-time text/tool updates through `StreamEvents`
 - Tool approval bridge: runtime handlers publish `approval.requested` and wait for RPC responses; CLI prompt runs consume these requests and return approval decisions through RPC.
-- Runtime event contract: the bridge publishes `runtime.chat.*` from structured `agent_event` payloads emitted by core runtime sessions.
-- CLI streaming: RPC-backed prompt runs subscribe to `runtime.chat.*` during each turn, so text/tool output is rendered incrementally in the terminal (not only at turn completion).
-- Prompt startup behavior: regular `clite "<prompt>"` runs invoke `rpc ensure --json` first, adopt the ensured address for that process (`CLINE_RPC_ADDRESS`), and then use runtime RPC APIs.
-- Regular `clite "<prompt>"` runs now use RPC runtime `StartRuntimeSession`/`SendRuntimeSession` when RPC is available, and fall back to in-process local runtime when RPC is unavailable.
-
-## Development
-
-```bash
-# From the packages directory
-bun install
-bun run build
-
-# Run CLI unit tests
-bun -F @cline/cli test:unit
-
-# Run CLI e2e tests
-bun -F @cline/cli test:e2e
-
-# Link the clite bin name
-bun link
-
-# Run from the linked binary
-clite "your prompt"
-
-# Run from source (dev)
-bun run dev:cli -- "your prompt"
-
-# Run built CLI with Node (no Bun runtime required for end users)
-node cli/dist/index.js "your prompt"
-```
-
-Dev runtime note:
-
-- Distinct host ID resolution is handled by `@cline/core/server` `createSessionHost(...)`.
-- When no explicit `distinctId` is provided, core persists a fallback ID at `<session-data-dir>/machine-id` (for example `~/.cline/data/sessions/machine-id`).
-
-## Publishing
-
-```bash
-npm publish --access public
-```
-
-After publishing, users can install globally with:
-
-```bash
-npm install -g @cline/cli
-# with bun
-bun install -g @cline/cli
-```
+- CLI streaming: RPC-backed prompt runs subscribe to `runtime.chat.*` during each turn, so text/tool output is rendered incrementally in the terminal.
+- Prompt startup behavior: regular `clite "<prompt>"` runs call `rpc ensure --json` first to get a compatible address, then try to connect to the RPC server. If no server is running, one is spawned in the background and the CLI waits briefly for it to bind. If the background spawn fails, the CLI falls back to an in-process local runtime.
 
 ## Environment Variables
 
 - `ANTHROPIC_API_KEY` - API key for Anthropic
+- `CLINE_API_KEY` - API key for Cline (when using `-p cline`)
 - `CLINE_DATA_DIR` - Base data directory for sessions/settings/teams/hooks
 - `CLINE_SANDBOX` - Set to `1` to force sandbox mode
 - `CLINE_SANDBOX_DATA_DIR` - Override sandbox state directory
@@ -329,7 +316,8 @@ bun install -g @cline/cli
 - `CLINE_LOG_PATH` - Runtime log file path (default `<CLINE_DATA_DIR>/logs/clite.log`)
 - `CLINE_LOG_NAME` - Logger name embedded in runtime log records
 - `OPENAI_API_KEY` - API key for OpenAI (when using `-p openai`)
-- `OPENROUTER_API_KEY` - API key for OpenRouter
+- `OPENROUTER_API_KEY` - API key for OpenRouter (when using `-p openrouter`)
+- `AI_GATEWAY_API_KEY` - API key for Vercel AI Gateway (when using `-p vercel-ai-gateway`)
 
 `--key` takes precedence over environment variables.
 
@@ -337,14 +325,13 @@ For OAuth providers (`cline`, `openai-codex`, `oca`), you can either use `clite 
 
 ## Logging Adapter
 
-`clite` now uses a `pino`-backed adapter that targets the core `BasicLogger`
-contract:
+`clite` uses a `pino`-backed adapter that targets the core `BasicLogger` contract:
 
 - CLI runtime passes `logger` directly into local `@cline/core` sessions.
 - RPC-backed sessions include a serialized logger payload in `RpcChatStartSessionRequest.logger`; the RPC runtime reconstructs the same `pino` settings and injects them into core.
 - Hosts can attach stable runtime logger bindings (for example `clientId`, `clientType`, `clientApp`) through `RpcChatRuntimeLoggerConfig.bindings`.
-- `clite rpc register` and `clite rpc start` now emit activation/registration log records so startup ownership is visible in logs.
-- This keeps logger behavior consistent between local and RPC runtime execution paths while preserving a transport-safe config boundary.
+- `clite rpc register` and `clite rpc start` emit activation/registration log records so startup ownership is visible in logs.
+- Logger behavior is consistent between local and RPC runtime execution paths while preserving a transport-safe config boundary.
 
 After login, OAuth credentials are persisted with `auth.expiresAt`, and `@cline/core` refreshes these tokens automatically during session turns (including long-lived RPC runtime sessions).
 
@@ -378,47 +365,9 @@ Custom provider registry notes:
 
 ## Runtime Ownership
 
-`clite` now routes both prompt and interactive flows through `@cline/core/server` `DefaultSessionManager`.
-
 - CLI renders runtime events and handles terminal UX.
 - Core owns agent creation, runtime composition, and session message persistence.
-- CLI no longer directly instantiates `Agent` for chat/task execution.
+- CLI does not directly instantiate `Agent` for chat/task execution.
 - CLI does not perform direct file/db message persistence in run/interactive paths.
 - CLI owns the user-instruction watcher (rules/workflows/skills) because prompt assembly uses rule context before session start; the watcher is disposed on all exit paths.
 - RPC runtime uses the same prompt resolver and accepts optional `rules` in runtime config (or `systemPrompt` when fully prebuilt by the caller).
-
-## Examples
-
-```bash
-# Quick question
-clite "What's the capital of France?"
-
-# Code review with piped input
-cat src/index.ts | clite "Review this code for bugs"
-
-# Creative writing with custom persona
-clite -s "You are Shakespeare" "Write a sonnet about AI"
-
-# Use a different model
-clite -m claude-opus-4-20250514 "Explain string theory"
-
-# Latest model metadata is loaded from models.dev automatically on startup
-clite -p openai -m gpt-5 "Explain this codebase"
-
-# Use a different provider and model with a specific access token for the provider
-clite -p openrouter -m google/gemini-3-pro -k sk-your-google-gemini-api-key "Set up a storybook for the frontend react ui components"
-
-# Explicit OAuth login for auth-capable providers
-clite auth openai-codex
-
-# Team workflow with persistent name
-clite --team-name release-team "Plan, implement, and verify release checklist"
-# Team state file is written after meaningful team activity only
-# (fresh empty team sessions do not create state.json)
-
-# Interactive coding session
-clite -i -s "You are an expert Python developer"
-
-# Parseable JSON output (NDJSON)
-clite --json "List the key modules in this project"
-```

@@ -4,6 +4,55 @@ This repository contains the SDK packages that power Cline agent runtimes.
 
 Contributor onboarding and architecture guidance is centralized in [`AGENTS.md`](/Users/beatrix/dev/clinee/sdk-wip/AGENTS.md).
 
+## Prerequisites
+
+Install these before working in this repo:
+
+- `git` (version control and cloning)
+- `bun` (workspace install/build/test runner)
+  - https://bun.com/docs/installation
+- `node` (required target runtime for built CLI artifacts)
+
+Verify:
+
+```bash
+git --version
+bun --version
+node --version
+```
+
+## Quick Start
+
+```bash
+# from repo root
+bun install
+# Build all the SDK packages
+bun run build
+# Start the CLI in dev mode with a prompt argument
+bun run dev:cli -- "your prompt here"
+# Start the code app in dev mode
+bun run dev:code
+```
+
+Useful workspace scripts (root `package.json`):
+
+- `bun run build` - build SDK packages + CLI (`shared → llms → rpc → agents → core → cli`)
+- `bun run build:sdk` - build only SDK packages (no CLI)
+- `bun run build:apps` - build app targets (`cli` + `desktop` + `code`)
+- `bun run build:shared|build:llms|build:agents|build:rpc|build:core|build:cli|build:code|build:desktop` - build one workspace package
+- `bun run build:models` - regenerate model metadata in `llms`
+- `bun run dev:cli -- "your prompt"` - run CLI from source (direct entrypoint, no workspace log prefixing)
+- `bun run dev` - build SDK packages + CLI, then run CLI interactively (dev mode)
+- `bun run dev:code` - launch code app directly
+- `bun run dev:desktop` - launch desktop app directly
+- `bun run types` - typecheck all packages
+- `bun run clean` - remove build outputs across packages
+
+> **RPC server requires restart after changes.** The RPC server (`clite rpc start`) loads compiled code at startup and does not hot-reload. After rebuilding any affected package, stop (`clite rpc stop`) and restart the server.
+
+
+# Repository Structure
+
 It is organized as a Bun workspace with four SDK packages and three app targets:
 
 SDK packages (`packages/`):
@@ -60,63 +109,15 @@ Apps built with the Cline SDK (`apps/`):
 - Bridge command/control is shared via `@cline/rpc` `runRpcRuntimeCommandBridge(...)`.
 - Bridge stream subscription handling remains shared via `@cline/rpc` runtime chat helpers.
 
-## Prerequisites
-
-Install these before working in this repo:
-
-- `git` (version control and cloning)
-- `bun` (workspace install/build/test runner)
-  - https://bun.com/docs/installation
-- `node` (required target runtime for built CLI artifacts)
-
-Verify:
-
-```bash
-git --version
-bun --version
-node --version
-```
-
-## Quick Start
-
-```bash
-# from repo root
-bun install
-# Build all the SDK packages
-bun run build
-# Build all the apps
-bun run build:apps
-```
-
-Useful workspace scripts (root `package.json`):
-
-- `bun run build` - build SDK packages (`llms -> agents -> rpc -> core`)
-- `bun run build:apps` - build app targets (`cli` + `desktop` + `code`)
-- `bun run build:llms|build:agents|build:rpc|build:core|build:cli|build:code|build:desktop` - build one workspace package
-- `bun run build:models` - regenerate model metadata in `llms`
-- `bun run dev:cli -- "your prompt"` - run CLI from source (direct entrypoint, no workspace log prefixing)
-- `bun run dev` - build SDK packages + CLI, then launch code app (`tauri dev`)
-- `bun run dev:code` - launch code app directly
-- `bun run dev:desktop` - launch desktop app directly
-- `bun run typecheck` - typecheck all packages
-- `bun run clean` - remove build outputs across packages
-
-Development note:
-- SDK packages now support source-first development resolution without rebuilding `dist`:
-  - `@cline/core`, `@cline/agents`, and `@cline/llms` `typecheck` scripts use `tsconfig.dev.json` path aliases to sibling `packages/*/src`.
-  - SDK package `exports` now include a `development` condition that points to `src` entrypoints.
-  - Root dev scripts run Bun with `--conditions=development` (`dev:cli`, `dev:code`, `dev:desktop`) so runtime imports pick up live workspace source changes.
-
 ## Linting and Formatting (Biome)
 
 This repo uses [Biome](https://biomejs.dev/) for both linting and formatting from the root workspace scripts:
 
-- `bun run check` - run Biome checks across the repo
 - `bun run lint` - run lint-only checks
 - `bun run format` - run formatter (without writing changes)
 - `bun run fix` - apply safe Biome fixes and formatting with `--write`
 
-Tip: run `bun run fix` before opening a PR, then `bun run check` to verify everything passes cleanly.
+Tip: run `bun run fix` before opening a PR, then `bun run lint` to verify everything passes cleanly.
 
 ## Testing (Vitest)
 
@@ -143,7 +144,7 @@ Disallowed:
 
 - all other deep imports like `@cline/llms/*`, `@cline/agents/*`, `@cline/core/*` (except `@cline/core/server`)
 
-The boundary check is enforced by `bun run check:boundaries`.
+Keep these boundaries in mind when adding imports — cross-boundary deep imports will cause build/type errors.
 
 ## Repository Structure
 
@@ -360,7 +361,7 @@ Common commands:
 - from `apps/desktop/`: `bun run dev:web` (frontend-only Next.js dev server on port `3124`)
 - from `apps/desktop/`: `bun run build` (build web assets)
 - from `apps/desktop/`: `bun run build:binary` (build desktop binary with Tauri)
-- from `apps/desktop/`: `bun run typecheck`
+- from `apps/desktop/`: `bun run types` (or `bun run typecheck` within the package)
 - from `apps/desktop/`: `bun run clean` (clears Next + Cargo artifacts)
 
 ## How Apps Compose `llms`, `agents`, `rpc`, and `core`

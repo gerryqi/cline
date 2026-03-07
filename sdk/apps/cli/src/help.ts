@@ -16,8 +16,8 @@ ${c.bold}USAGE${c.reset}
 
 ${c.bold}OPTIONS${c.reset}
   -s, --system <prompt>       System prompt for the agent
-  -m, --model <id>            Model ID (default: claude-sonnet-4-20250514)
-  -p, --provider <id>         Provider ID (default: anthropic)
+  -m, --model <id>            Model ID (default: anthropic/claude-sonnet-4.6)
+  -p, --provider <id>         Provider ID (default: cline)
   -k, --key <api-key>         API key override for this run
   -n, --max-iterations <n>    Max agentic loop iterations (currently ignored; runtime is unbounded)
   -i, --interactive           Interactive mode with multi-turn conversation

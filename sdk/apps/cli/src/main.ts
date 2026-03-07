@@ -259,9 +259,7 @@ export async function runCli(): Promise<void> {
 		const lastUsedProviderSettings =
 			providerSettingsManager.getLastUsedProviderSettings();
 		const provider = normalizeProviderId(
-			args.provider?.trim() ||
-				lastUsedProviderSettings?.provider ||
-				"anthropic",
+			args.provider?.trim() || lastUsedProviderSettings?.provider || "cline",
 		);
 		let selectedProviderSettings =
 			providerSettingsManager.getProviderSettings(provider);
@@ -314,7 +312,7 @@ export async function runCli(): Promise<void> {
 				args.model ??
 				selectedProviderSettings?.model ??
 				knownModelIds[0] ??
-				"claude-sonnet-4-6",
+				"anthropic/claude-sonnet-4.6",
 			apiKey: apiKey ?? "",
 			knownModels,
 			systemPrompt: await resolveSystemPrompt({

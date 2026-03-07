@@ -180,7 +180,7 @@ class FileIndexWorkerClient {
 			request.resolve(message.files ?? []);
 		});
 
-		this.worker.on("error", (error) => {
+		this.worker.on("error", (error: Error) => {
 			this.flushPending(error);
 		});
 

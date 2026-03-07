@@ -1,12 +1,14 @@
 ---
-description: Contributor onboarding + architecture guide for the Cline workspace (single source of truth).
+description: Onboarding + architecture guide for the Cline SDK.
 globs: "*.ts,*.tsx,*.js,*.jsx,*.json,*.md"
 alwaysApply: true
 ---
 
 ## Purpose
 
-Single onboarding guide for contributors and agents. This repo is WIP and not production-bound, so full refactors are allowed without backward-compatibility shims.
+Single onboarding guide for contributors and agents. This repo is WIP and not production-bound, so full refactors are allowed without backward-compatibility shims or support requirements. The goal is to move fast and iterate on the core primitives and architecture, so we can converge on a solid foundation for future production work.
+
+Always update the architecture and onboarding docs with any non-trivial changes to runtime flows, package responsibilities, or development workflow. This is the source of truth for how the system works and how to get new contributors up to speed effectively.
 
 ## Workspace Map
 
@@ -167,8 +169,10 @@ Three interfaces define the storage contract consumed by session management:
 - Build core SDK + CLI: `bun run build`
 - Build apps (also regenerates models): `bun run build:apps`
 - Build SDK only: `bun run build:sdk`
+- Build Apps only: `bun run build:apps`
 - Regenerate model metadata: `bun run build:models`
-- Run code app from root: `bun run dev` or `bun run dev:code`
+- Build SDK + run CLI interactively: `bun run dev`
+- Run code app from root: `bun run dev:code`
 - Run desktop app from root: `bun run dev:desktop`
 - Run CLI from source: `bun run dev:cli -- "<prompt>"`
 - Typecheck all packages/apps: `bun run types`
@@ -176,6 +180,42 @@ Three interfaces define the storage contract consumed by session management:
 - Lint: `bun run lint`
 - Format: `bun run format`
 - Apply fixes: `bun run fix`
+
+## Development Workflow Notes
+
+### Rebuilding after package changes
+
+SDK packages compile TypeScript to `dist/`. When you change source in any package, dependent packages and apps use the compiled output — **they do not pick up source changes automatically** (except when running with `--conditions=development` via `dev:cli`, `dev:code`, `dev:desktop`).
+
+After editing a package, rebuild it before running tests or other packages:
+
+```bash
+# Rebuild a single package
+bun -F @cline/shared build
+bun -F @cline/llms build
+bun -F @cline/agents build
+bun -F @cline/rpc build
+bun -F @cline/core build
+bun -F @cline/cli build
+
+# Rebuild all SDK packages in dependency order
+bun run build:sdk
+
+# Rebuild everything (SDK + CLI)
+bun run build
+```
+
+Build order for SDK packages (dependency order): `shared → llms → (rpc, agents in parallel) → core`
+
+### RPC server restart required after changes
+
+The RPC server (`clite rpc start`) loads compiled code at startup. After making changes to **any package the RPC server depends on** (`@cline/shared`, `@cline/llms`, `@cline/agents`, `@cline/rpc`, `@cline/core`, or `@cline/cli`), you must:
+
+1. Rebuild the affected packages (`bun run build:sdk` or the individual `build:<package>` script).
+2. Stop the running RPC server (`clite rpc stop` or Ctrl+C on the `clite rpc start` process).
+3. Restart it (`clite rpc start` or `clite rpc ensure`).
+
+Without a restart the server continues running the old compiled code regardless of source changes.
 
 ## Validation Checklist Before Merge
 

@@ -1,5 +1,6 @@
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { basename } from "node:path";
+import { promisify } from "node:util";
 import type { AgentEvent, TeamEvent } from "@cline/agents";
 import { Box, Text, useInput } from "ink";
 import React, {
@@ -21,6 +22,8 @@ import { formatToolInput, formatToolOutput, truncate } from "../utils/helpers";
 import { c, formatUsd } from "../utils/output";
 import type { Config } from "../utils/types";
 import { WelcomeView } from "./components/WelcomeView";
+
+const execFileAsync = promisify(execFile);
 
 interface InteractiveTurnResult {
 	usage: {
@@ -215,48 +218,48 @@ function getVisibleWindow<T>(
 	return { items: items.slice(startIndex, endIndex), startIndex };
 }
 
-function readGitBranch(cwd: string): string | null {
-	const result = spawnSync(
-		"git",
-		["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"],
-		{
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "ignore"],
-		},
-	);
-	if (result.status !== 0) {
+async function readGitBranch(cwd: string): Promise<string | null> {
+	try {
+		const { stdout } = await execFileAsync(
+			"git",
+			["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"],
+			{ encoding: "utf8" },
+		);
+		const branch = stdout.trim();
+		return branch.length > 0 ? branch : null;
+	} catch {
 		return null;
 	}
-	const branch = result.stdout.trim();
-	return branch.length > 0 ? branch : null;
 }
 
-function readGitDiffStats(
+async function readGitDiffStats(
 	cwd: string,
-): { files: number; additions: number; deletions: number } | null {
-	const result = spawnSync("git", ["-C", cwd, "diff", "--shortstat"], {
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "ignore"],
-	});
-	if (result.status !== 0) {
+): Promise<{ files: number; additions: number; deletions: number } | null> {
+	try {
+		const { stdout } = await execFileAsync(
+			"git",
+			["-C", cwd, "diff", "--shortstat"],
+			{ encoding: "utf8" },
+		);
+		const output = stdout.trim();
+		if (!output) {
+			return null;
+		}
+		const filesMatch = output.match(/(\d+)\s+file/);
+		const additionsMatch = output.match(/(\d+)\s+insertion/);
+		const deletionsMatch = output.match(/(\d+)\s+deletion/);
+		return {
+			files: filesMatch ? Number.parseInt(filesMatch[1] ?? "0", 10) : 0,
+			additions: additionsMatch
+				? Number.parseInt(additionsMatch[1] ?? "0", 10)
+				: 0,
+			deletions: deletionsMatch
+				? Number.parseInt(deletionsMatch[1] ?? "0", 10)
+				: 0,
+		};
+	} catch {
 		return null;
 	}
-	const output = result.stdout.trim();
-	if (!output) {
-		return null;
-	}
-	const filesMatch = output.match(/(\d+)\s+file/);
-	const additionsMatch = output.match(/(\d+)\s+insertion/);
-	const deletionsMatch = output.match(/(\d+)\s+deletion/);
-	return {
-		files: filesMatch ? Number.parseInt(filesMatch[1] ?? "0", 10) : 0,
-		additions: additionsMatch
-			? Number.parseInt(additionsMatch[1] ?? "0", 10)
-			: 0,
-		deletions: deletionsMatch
-			? Number.parseInt(deletionsMatch[1] ?? "0", 10)
-			: 0,
-	};
 }
 
 function resolveModelContextWindow(config: Config): number {
@@ -290,31 +293,47 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 		onTurnErrorReported,
 		onAutoApproveChange,
 	} = props;
+
+	// Output
 	const [lines, setLines] = useState<UiLine[]>(
 		props.welcomeLine ? [{ id: 0, text: props.welcomeLine }] : [],
 	);
+
+	// Input & submission
 	const [input, setInput] = useState("");
 	const [isRunning, setIsRunning] = useState(false);
 	const [abortRequested, setAbortRequested] = useState(false);
 	const [hasSubmitted, setHasSubmitted] = useState(false);
 	const [uiMode, setUiMode] = useState<"act" | "plan">(config.mode);
-	const [fileMentionResults, setFileMentionResults] = useState<string[]>([]);
-	const [fileMentionSelectedIndex, setFileMentionSelectedIndex] = useState(0);
-	const [isSearchingMentions, setIsSearchingMentions] = useState(false);
-	const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
 	const [autoApproveAll, setAutoApproveAll] = useState(
 		config.toolPolicies["*"]?.autoApprove !== false,
 	);
+
+	// File mention completion
+	const [fileMentionResults, setFileMentionResults] = useState<string[]>([]);
+	const [fileMentionSelectedIndex, setFileMentionSelectedIndex] = useState(0);
+	const [isSearchingMentions, setIsSearchingMentions] = useState(false);
+
+	// Slash command completion
+	const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
+
+	// Mouse tracking
 	const [mouseOffsetX, setMouseOffsetX] = useState(0);
 	const [mouseOffsetY, setMouseOffsetY] = useState(0);
+
+	// Usage statistics
 	const [lastTotalTokens, setLastTotalTokens] = useState(0);
 	const [lastTotalCost, setLastTotalCost] = useState(0);
+
+	// Git status
 	const [gitBranch, setGitBranch] = useState<string | null>(null);
 	const [gitDiffStats, setGitDiffStats] = useState<{
 		files: number;
 		additions: number;
 		deletions: number;
 	} | null>(null);
+
+	// Config view
 	const [isConfigViewOpen, setIsConfigViewOpen] = useState(
 		props.initialView === "config",
 	);
@@ -328,6 +347,7 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 	});
 	const [configTab, setConfigTab] = useState<InteractiveConfigTab>("workflows");
 	const [configSelectedIndex, setConfigSelectedIndex] = useState(0);
+
 	const nextLineIdRef = useRef(props.welcomeLine ? 1 : 0);
 	const activeInlineStreamRef = useRef<InlineStream>(undefined);
 	const mentionSearchTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -380,11 +400,13 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 			})
 			.slice(0, MAX_COMPLETION_RESULTS);
 	}, [slashCommands, slashInfo.inSlashMode, slashInfo.query]);
+
 	const activeCompletionMode: CompletionMode = mentionInfo.inMentionMode
 		? "mention"
 		: slashInfo.inSlashMode
 			? "slash"
 			: undefined;
+
 	const activeConfigItems = useMemo(() => {
 		switch (configTab) {
 			case "workflows":
@@ -401,13 +423,15 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 	}, [configData, configTab]);
 
 	const refreshRepoStatus = useCallback(() => {
-		setGitBranch(readGitBranch(config.cwd));
-		setGitDiffStats(readGitDiffStats(config.cwd));
+		void readGitBranch(config.cwd).then(setGitBranch);
+		void readGitDiffStats(config.cwd).then(setGitDiffStats);
 	}, [config.cwd]);
+
 	const closeConfigView = useCallback(() => {
 		setIsConfigViewOpen(false);
 		setConfigSelectedIndex(0);
 	}, []);
+
 	const loadConfig = useCallback(() => {
 		const loadId = ++configLoadCounterRef.current;
 		setIsLoadingConfig(true);
@@ -438,6 +462,7 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 				setIsLoadingConfig(false);
 			});
 	}, [props.loadConfigData]);
+
 	const openConfigView = useCallback(() => {
 		setIsConfigViewOpen(true);
 		setConfigTab("workflows");
@@ -449,9 +474,6 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 		onAutoApproveChange(autoApproveAll);
 	}, [autoApproveAll, onAutoApproveChange]);
 
-	useEffect(() => {
-		setConfigSelectedIndex(0);
-	}, []);
 	useEffect(() => {
 		if (props.initialView === "config") {
 			loadConfig();
@@ -506,14 +528,6 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 			process.stdin.off("data", onData);
 			process.stdout.write("\u001b[?1003l\u001b[?1006l");
 		};
-	}, []);
-
-	useEffect(() => {
-		setSlashSelectedIndex(0);
-	}, []);
-
-	useEffect(() => {
-		setFileMentionSelectedIndex(0);
 	}, []);
 
 	useEffect(() => {
@@ -1037,108 +1051,105 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 		[lastTotalTokens, contextWindowSize],
 	);
 
-	return React.createElement(
-		Box,
-		{ flexDirection: "column", paddingX: 1 },
-		shouldShowWelcome
-			? React.createElement(WelcomeView, {
-					providerId: config.providerId,
-					modelId: config.modelId,
-					mode: uiMode,
-					mouseOffsetX,
-					mouseOffsetY,
-				})
-			: null,
-		!isConfigViewOpen
+	// Render sections
+	const renderWelcome = shouldShowWelcome
+		? React.createElement(WelcomeView, {
+				providerId: config.providerId,
+				modelId: config.modelId,
+				mode: uiMode,
+				mouseOffsetX,
+				mouseOffsetY,
+			})
+		: null;
+
+	const renderLines = !isConfigViewOpen
+		? React.createElement(
+				Box,
+				{ flexDirection: "column", marginBottom: 1 },
+				visibleLines.map((line) =>
+					React.createElement(Text, { key: line.id }, line.text),
+				),
+			)
+		: null;
+
+	const renderInputBox = !isConfigViewOpen
+		? React.createElement(
+				Box,
+				{ borderStyle: "round", paddingX: 1 },
+				React.createElement(Text, null, `${c.green}>${c.reset} ${input}`),
+			)
+		: null;
+
+	const renderConfigItems = isLoadingConfig
+		? React.createElement(Text, { color: "gray" }, "Loading config...")
+		: activeConfigItems.length === 0
 			? React.createElement(
-					Box,
-					{ flexDirection: "column", marginBottom: 1 },
-					visibleLines.map((line) =>
-						React.createElement(Text, { key: line.id }, line.text),
-					),
+					Text,
+					{ color: "gray" },
+					`No ${toTabLabel(configTab).toLowerCase()} found.`,
 				)
-			: null,
-		!isConfigViewOpen
-			? React.createElement(
-					Box,
-					{ borderStyle: "round", paddingX: 1 },
-					React.createElement(Text, null, `${c.green}>${c.reset} ${input}`),
-				)
-			: null,
-		isConfigViewOpen
-			? React.createElement(
-					Box,
-					{
-						flexDirection: "column",
-						borderStyle: "round",
-						paddingX: 1,
-						marginBottom: 1,
-					},
-					React.createElement(Text, { color: "cyan" }, "Configuration"),
-					React.createElement(
+			: visibleConfigItems.items.map((item, index) => {
+					const absoluteIndex = visibleConfigItems.startIndex + index;
+					const selected = absoluteIndex === configSelectedIndex;
+					const prefix = selected ? "❯" : " ";
+					const enabledTag =
+						typeof item.enabled === "boolean"
+							? item.enabled
+								? "enabled"
+								: "disabled"
+							: "";
+					const details = [item.source, enabledTag, truncatePath(item.path, 42)]
+						.filter((value) => value.length > 0)
+						.join(" · ");
+					return React.createElement(
 						Box,
-						{ marginBottom: 1, gap: 1 },
-						CONFIG_TABS.map((tab) =>
-							React.createElement(
-								Text,
-								{
-									key: tab,
-									color: tab === configTab ? "blue" : "gray",
-									bold: tab === configTab,
-								},
-								tab === configTab ? `[${toTabLabel(tab)}]` : toTabLabel(tab),
-							),
+						{
+							flexDirection: "column",
+							key: `${item.id}:${absoluteIndex}`,
+						},
+						React.createElement(
+							Text,
+							{ color: selected ? "blue" : undefined },
+							`${prefix} ${item.name}`,
+						),
+						React.createElement(Text, { color: "gray" }, `  ${details}`),
+					);
+				});
+
+	const renderConfigView = isConfigViewOpen
+		? React.createElement(
+				Box,
+				{
+					flexDirection: "column",
+					borderStyle: "round",
+					paddingX: 1,
+					marginBottom: 1,
+				},
+				React.createElement(Text, { color: "cyan" }, "Configuration"),
+				React.createElement(
+					Box,
+					{ marginBottom: 1, gap: 1 },
+					CONFIG_TABS.map((tab) =>
+						React.createElement(
+							Text,
+							{
+								key: tab,
+								color: tab === configTab ? "blue" : "gray",
+								bold: tab === configTab,
+							},
+							tab === configTab ? `[${toTabLabel(tab)}]` : toTabLabel(tab),
 						),
 					),
-					isLoadingConfig
-						? React.createElement(Text, { color: "gray" }, "Loading config...")
-						: activeConfigItems.length === 0
-							? React.createElement(
-									Text,
-									{ color: "gray" },
-									`No ${toTabLabel(configTab).toLowerCase()} found.`,
-								)
-							: visibleConfigItems.items.map((item, index) => {
-									const absoluteIndex = visibleConfigItems.startIndex + index;
-									const selected = absoluteIndex === configSelectedIndex;
-									const prefix = selected ? "❯" : " ";
-									const enabledTag =
-										typeof item.enabled === "boolean"
-											? item.enabled
-												? "enabled"
-												: "disabled"
-											: "";
-									const details = [
-										item.source,
-										enabledTag,
-										truncatePath(item.path, 42),
-									]
-										.filter((value) => value.length > 0)
-										.join(" · ");
-									return React.createElement(
-										Box,
-										{
-											flexDirection: "column",
-											key: `${item.id}:${absoluteIndex}`,
-										},
-										React.createElement(
-											Text,
-											{ color: selected ? "blue" : undefined },
-											`${prefix} ${item.name}`,
-										),
-										React.createElement(
-											Text,
-											{ color: "gray" },
-											`  ${details}`,
-										),
-									);
-								}),
-					activeConfigItems.length >
-						visibleConfigItems.startIndex + visibleConfigItems.items.length
-						? React.createElement(Text, { color: "gray" }, "  ▼")
-						: null,
-				)
-			: null,
+				),
+				renderConfigItems,
+				activeConfigItems.length >
+					visibleConfigItems.startIndex + visibleConfigItems.items.length
+					? React.createElement(Text, { color: "gray" }, "  ▼")
+					: null,
+			)
+		: null;
+
+	const renderMentionMenu =
 		!isConfigViewOpen && mentionInfo.inMentionMode
 			? React.createElement(
 					Box,
@@ -1173,7 +1184,9 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 						? React.createElement(Text, { color: "gray" }, "  ▼")
 						: null,
 				)
-			: null,
+			: null;
+
+	const renderSlashMenu =
 		!isConfigViewOpen && !mentionInfo.inMentionMode && slashInfo.inSlashMode
 			? React.createElement(
 					Box,
@@ -1207,100 +1220,119 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 						? React.createElement(Text, { color: "gray" }, "  ▼")
 						: null,
 				)
-			: null,
+			: null;
+
+	const renderModeSelector = React.createElement(
+		Box,
+		{ gap: 1 },
+		React.createElement(
+			Text,
+			{
+				color: uiMode === "plan" ? "yellow" : "gray",
+				bold: uiMode === "plan",
+			},
+			`${uiMode === "plan" ? "●" : "○"} Plan`,
+		),
+		React.createElement(
+			Text,
+			{
+				color: uiMode === "act" ? "blue" : "gray",
+				bold: uiMode === "act",
+			},
+			`${uiMode === "act" ? "●" : "○"} Act`,
+		),
+		React.createElement(Text, { color: "gray" }, "(Tab)"),
+	);
+
+	const renderGitDiffStats =
+		gitDiffStats && gitDiffStats.files > 0
+			? React.createElement(
+					Text,
+					{ color: "gray" },
+					` | ${gitDiffStats.files} file${gitDiffStats.files !== 1 ? "s" : ""} `,
+					React.createElement(
+						Text,
+						{ color: "green" },
+						`+${gitDiffStats.additions}`,
+					),
+					" ",
+					React.createElement(
+						Text,
+						{ color: "red" },
+						`-${gitDiffStats.deletions}`,
+					),
+				)
+			: null;
+
+	const renderAutoApprove = autoApproveAll
+		? React.createElement(
+				Text,
+				null,
+				React.createElement(
+					Text,
+					{ color: "green" },
+					"⏵⏵ Auto-approve all enabled",
+				),
+				React.createElement(Text, { color: "gray" }, " (Shift+Tab)"),
+			)
+		: React.createElement(
+				Text,
+				{ color: "gray" },
+				"Auto-approve all disabled (Shift+Tab)",
+			);
+
+	const renderStatusBar = React.createElement(
+		Box,
+		{ flexDirection: "column", marginTop: 1 },
 		React.createElement(
 			Box,
-			{ flexDirection: "column", marginTop: 1 },
+			{ justifyContent: "space-between" },
 			React.createElement(
-				Box,
-				{ justifyContent: "space-between" },
-				React.createElement(
-					Text,
-					{ color: "gray" },
-					isConfigViewOpen
-						? "Config mode: \u2190/\u2192 tabs \u00b7 \u2191/\u2193 navigate \u00b7 Esc close"
-						: "/ for commands · @ for files",
-				),
+				Text,
+				{ color: "gray" },
 				isConfigViewOpen
-					? React.createElement(Text, { color: "gray" }, "(Esc)")
-					: React.createElement(
-							Box,
-							{ gap: 1 },
-							React.createElement(
-								Text,
-								{
-									color: uiMode === "plan" ? "yellow" : "gray",
-									bold: uiMode === "plan",
-								},
-								`${uiMode === "plan" ? "●" : "○"} Plan`,
-							),
-							React.createElement(
-								Text,
-								{
-									color: uiMode === "act" ? "blue" : "gray",
-									bold: uiMode === "act",
-								},
-								`${uiMode === "act" ? "●" : "○"} Act`,
-							),
-							React.createElement(Text, { color: "gray" }, "(Tab)"),
-						),
+					? "Config mode: \u2190/\u2192 tabs \u00b7 \u2191/\u2193 navigate \u00b7 Esc close"
+					: "/ for commands · @ for files",
 			),
-			React.createElement(
-				Box,
-				null,
-				React.createElement(
-					Text,
-					null,
-					`${config.providerId} ${config.modelId} `,
-				),
-				React.createElement(Text, null, contextBar.filled),
-				React.createElement(Text, { color: "gray" }, contextBar.empty),
-				React.createElement(
-					Text,
-					{ color: "gray" },
-					` (${lastTotalTokens.toLocaleString()}) | $${lastTotalCost.toFixed(3)}`,
-				),
-			),
-			React.createElement(
-				Box,
-				null,
-				React.createElement(Text, null, workspaceName),
-				gitBranch ? React.createElement(Text, null, ` (${gitBranch})`) : null,
-				gitDiffStats && gitDiffStats.files > 0
-					? React.createElement(
-							Text,
-							{ color: "gray" },
-							` | ${gitDiffStats.files} file${gitDiffStats.files !== 1 ? "s" : ""} `,
-							React.createElement(
-								Text,
-								{ color: "green" },
-								`+${gitDiffStats.additions}`,
-							),
-							" ",
-							React.createElement(
-								Text,
-								{ color: "red" },
-								`-${gitDiffStats.deletions}`,
-							),
-						)
-					: null,
-			),
-			autoApproveAll
-				? React.createElement(
-						Text,
-						null,
-						React.createElement(
-							Text,
-							{ color: "green" },
-							"⏵⏵ Auto-approve all enabled",
-						),
-						React.createElement(Text, { color: "gray" }, " (Shift+Tab)"),
-					)
-				: React.createElement(
-						Text,
-						{ color: "gray" },
-						"Auto-approve all disabled (Shift+Tab)",
-					),
+			isConfigViewOpen
+				? React.createElement(Text, { color: "gray" }, "(Esc)")
+				: renderModeSelector,
 		),
+		React.createElement(
+			Box,
+			null,
+			React.createElement(
+				Text,
+				null,
+				`${config.providerId} ${config.modelId} `,
+			),
+			React.createElement(Text, null, contextBar.filled),
+			React.createElement(Text, { color: "gray" }, contextBar.empty),
+			React.createElement(
+				Text,
+				{ color: "gray" },
+				` (${lastTotalTokens.toLocaleString()}) | $${lastTotalCost.toFixed(3)}`,
+			),
+		),
+		React.createElement(
+			Box,
+			null,
+			React.createElement(Text, null, workspaceName),
+			gitBranch ? React.createElement(Text, null, ` (${gitBranch})`) : null,
+			renderGitDiffStats,
+		),
+		renderAutoApprove,
+	);
+
+	return React.createElement(
+		Box,
+		{ flexDirection: "column", paddingX: 1 },
+		renderWelcome,
+		renderLines,
+		renderInputBox,
+		renderConfigView,
+		renderMentionMenu,
+		renderSlashMenu,
+		renderStatusBar,
 	);
 }
