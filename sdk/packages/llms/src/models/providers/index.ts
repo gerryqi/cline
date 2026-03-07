@@ -13,6 +13,7 @@ export {
 	getActiveAnthropicModels,
 	getAnthropicReasoningModels,
 } from "./anthropic.js";
+export { ASKSAGE_PROVIDER } from "./asksage.js";
 export { BASETEN_PROVIDER } from "./baseten.js";
 export {
 	BEDROCK_DEFAULT_MODEL,
@@ -37,6 +38,7 @@ export {
 	DEEPSEEK_PROVIDER,
 	getDeepSeekReasoningModels,
 } from "./deepseek.js";
+export { DIFY_PROVIDER } from "./dify.js";
 export {
 	DOUBAO_DEFAULT_MODEL,
 	DOUBAO_MODELS,
@@ -74,6 +76,7 @@ export {
 	MINIMAX_MODELS,
 	MINIMAX_PROVIDER,
 } from "./minimax.js";
+export { MISTRAL_PROVIDER } from "./mistral.js";
 export {
 	MOONSHOT_DEFAULT_MODEL,
 	MOONSHOT_MODELS,

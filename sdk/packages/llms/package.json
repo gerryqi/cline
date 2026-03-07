@@ -38,17 +38,19 @@
 		"generate:models": "bun run scripts/generate-models.ts"
 	},
 	"dependencies": {
-		"@cline/shared": "workspace:*",
 		"@ai-sdk/amazon-bedrock": "^4.0.67",
 		"@ai-sdk/google-vertex": "^4.0.74",
+		"@ai-sdk/mistral": "^3.0.24",
 		"@anthropic-ai/sdk": "^0.78.0",
 		"@aws-sdk/credential-providers": "^3.922.0",
+		"@cline/shared": "workspace:*",
 		"@google/genai": "^1.43.0",
 		"@streamparser/json": "^0.0.21",
 		"ai": "^6.0.112",
 		"ai-sdk-provider-claude-code": "^3.4.3",
 		"ai-sdk-provider-codex-cli": "^1.1.0",
 		"ai-sdk-provider-opencode-sdk": "^2.1.2",
+		"dify-ai-provider": "^1.1.0",
 		"nanoid": "^5.1.6",
 		"openai": "^6.25.0",
 		"zod": "^4.3.6"

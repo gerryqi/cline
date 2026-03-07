@@ -110,6 +110,10 @@ function toModelInfo(modelId: string, model: ModelsDevModel): ModelInfo {
 	};
 }
 
+function isDeprecatedModel(model: ModelsDevModel): boolean {
+	return model.status === "deprecated";
+}
+
 export function normalizeModelsDevProviderModels(
 	payload: ModelsDevPayload,
 	providerKeyMap: ModelsDevProviderKeyMap,
@@ -126,7 +130,7 @@ export function normalizeModelsDevProviderModels(
 
 		const models: Record<string, ModelInfo> = {};
 		for (const [modelId, model] of Object.entries(source.models)) {
-			if (model.tool_call !== true) {
+			if (model.tool_call !== true || isDeprecatedModel(model)) {
 				continue;
 			}
 			models[modelId] = toModelInfo(modelId, model);

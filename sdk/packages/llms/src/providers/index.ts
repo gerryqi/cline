@@ -141,6 +141,7 @@ export {
 export {
 	// Provider-specific handlers
 	AnthropicHandler,
+	AskSageHandler,
 	// Base classes (for extension)
 	BaseHandler,
 	ClaudeCodeHandler,
@@ -150,9 +151,12 @@ export {
 	// Custom handler registry
 	clearRegistry,
 	createAnthropicHandler,
+	createAskSageHandler,
 	createClaudeCodeHandler,
 	createCodexHandler,
+	createDifyHandler,
 	createGeminiHandler,
+	createMistralHandler,
 	createOpenAIHandler,
 	createOpenAIResponsesHandler,
 	createOpenCodeHandler,
@@ -160,6 +164,7 @@ export {
 	createSapAiCoreHandler,
 	createVertexHandler,
 	DEFAULT_MODELS_CATALOG_URL,
+	DifyHandler,
 	GeminiHandler,
 	getLiveModelsCatalog,
 	getMissingApiKeyError,
@@ -170,6 +175,7 @@ export {
 	hasRegisteredHandler,
 	isOpenAICompatibleProvider,
 	isRegisteredHandlerAsync,
+	MistralHandler,
 	normalizeProviderId,
 	// Provider configs
 	OPENAI_COMPATIBLE_PROVIDERS,
@@ -241,10 +247,13 @@ import {
 // =============================================================================
 
 import { AnthropicHandler } from "./handlers/anthropic-base";
+import { AskSageHandler } from "./handlers/asksage";
 import { BedrockHandler } from "./handlers/bedrock-base";
 import {
 	ClaudeCodeHandler,
 	CodexHandler,
+	DifyHandler,
+	MistralHandler,
 	OpenCodeHandler,
 	SapAiCoreHandler,
 } from "./handlers/community-sdk";
@@ -329,6 +338,22 @@ function mergeProviderDefaults(
 	};
 }
 
+type HandlerFactory = (config: ProviderConfig) => ApiHandler;
+
+const BUILT_IN_HANDLER_FACTORIES: Record<string, HandlerFactory> = {
+	[BUILT_IN_PROVIDER.ASKSAGE]: (config) => new AskSageHandler(config),
+	[BUILT_IN_PROVIDER.ANTHROPIC]: (config) => new AnthropicHandler(config),
+	[BUILT_IN_PROVIDER.BEDROCK]: (config) => new BedrockHandler(config),
+	[BUILT_IN_PROVIDER.CLAUDE_CODE]: (config) => new ClaudeCodeHandler(config),
+	[BUILT_IN_PROVIDER.GEMINI]: (config) => new GeminiHandler(config),
+	[BUILT_IN_PROVIDER.VERTEX]: (config) => new VertexHandler(config),
+	[BUILT_IN_PROVIDER.OPENCODE]: (config) => new OpenCodeHandler(config),
+	[BUILT_IN_PROVIDER.OPENAI_NATIVE]: (config) =>
+		new OpenAIResponsesHandler(config),
+	[BUILT_IN_PROVIDER.MISTRAL]: (config) => new MistralHandler(config),
+	[BUILT_IN_PROVIDER.DIFY]: (config) => new DifyHandler(config),
+};
+
 function createOpenAICompatibleHandler(config: ProviderConfig): ApiHandler {
 	if (config.providerId === BUILT_IN_PROVIDER.OPENAI_CODEX) {
 		return new CodexHandler(config);
@@ -340,6 +365,11 @@ function createOpenAICompatibleHandler(config: ProviderConfig): ApiHandler {
 		return createOcaHandler(config);
 	}
 	return new OpenAIBaseHandler(config);
+}
+
+function createBuiltInHandler(config: ProviderConfig): ApiHandler | undefined {
+	const factory = BUILT_IN_HANDLER_FACTORIES[config.providerId];
+	return factory ? factory(config) : undefined;
 }
 
 /**
@@ -381,53 +411,34 @@ export function createHandler(config: ProviderConfig): ApiHandler {
 		}
 	}
 
-	switch (providerId) {
-		case BUILT_IN_PROVIDER.ANTHROPIC:
-			return new AnthropicHandler(normalizedConfig);
-
-		case BUILT_IN_PROVIDER.BEDROCK:
-			return new BedrockHandler(normalizedConfig);
-
-		case BUILT_IN_PROVIDER.CLAUDE_CODE:
-			return new ClaudeCodeHandler(normalizedConfig);
-
-		case BUILT_IN_PROVIDER.GEMINI:
-			return new GeminiHandler(normalizedConfig);
-
-		case BUILT_IN_PROVIDER.VERTEX:
-			return new VertexHandler(normalizedConfig);
-
-		case BUILT_IN_PROVIDER.OPENCODE:
-			return new OpenCodeHandler(normalizedConfig);
-
-		case BUILT_IN_PROVIDER.OPENAI_NATIVE:
-			return new OpenAIResponsesHandler(normalizedConfig);
-
-		default:
-			// Check if it's an OpenAI-compatible provider
-			if (isOpenAICompatibleProvider(providerId)) {
-				if (
-					normalizedConfig.modelCatalog?.loadLatestOnInit ||
-					normalizedConfig.modelCatalog?.loadPrivateOnAuth
-				) {
-					throw new Error(
-						`Provider "${providerId}" has runtime model refresh enabled. Use createHandlerAsync() to allow async model refresh.`,
-					);
-				}
-				const providerDefaults = OPENAI_COMPATIBLE_PROVIDERS[providerId];
-				return createOpenAICompatibleHandler(
-					mergeProviderDefaults(normalizedConfig, providerDefaults),
-				);
-			}
-
-			// Fall back to OpenAI-compatible with custom base URL
-			return normalizedConfig.baseUrl
-				? new OpenAIBaseHandler(normalizedConfig)
-				: new OpenAIResponsesHandler({
-						...normalizedConfig,
-						baseUrl: "https://api.openai.com/v1",
-					});
+	const builtInHandler = createBuiltInHandler(normalizedConfig);
+	if (builtInHandler) {
+		return builtInHandler;
 	}
+
+	// Check if it's an OpenAI-compatible provider
+	if (isOpenAICompatibleProvider(providerId)) {
+		if (
+			normalizedConfig.modelCatalog?.loadLatestOnInit ||
+			normalizedConfig.modelCatalog?.loadPrivateOnAuth
+		) {
+			throw new Error(
+				`Provider "${providerId}" has runtime model refresh enabled. Use createHandlerAsync() to allow async model refresh.`,
+			);
+		}
+		const providerDefaults = OPENAI_COMPATIBLE_PROVIDERS[providerId];
+		return createOpenAICompatibleHandler(
+			mergeProviderDefaults(normalizedConfig, providerDefaults),
+		);
+	}
+
+	// Fall back to OpenAI-compatible with custom base URL
+	return normalizedConfig.baseUrl
+		? new OpenAIBaseHandler(normalizedConfig)
+		: new OpenAIResponsesHandler({
+				...normalizedConfig,
+				baseUrl: "https://api.openai.com/v1",
+			});
 }
 
 /**
@@ -471,14 +482,6 @@ export async function createHandlerAsync(
 		}
 	}
 
-	if (providerId === BUILT_IN_PROVIDER.OPENCODE) {
-		return new OpenCodeHandler(normalizedConfig);
-	}
-
-	if (providerId === BUILT_IN_PROVIDER.CLAUDE_CODE) {
-		return new ClaudeCodeHandler(normalizedConfig);
-	}
-
 	if (isOpenAICompatibleProvider(providerId)) {
 		const providerDefaults = await resolveProviderConfig(
 			providerId,
@@ -492,10 +495,6 @@ export async function createHandlerAsync(
 		}
 	}
 
-	if (providerId === BUILT_IN_PROVIDER.BEDROCK) {
-		return new BedrockHandler(normalizedConfig);
-	}
-
 	// Fall back to sync handler creation for built-in providers
 	return createHandler(normalizedConfig);
 }
@@ -504,28 +503,32 @@ export async function createHandlerAsync(
  * List of all built-in provider IDs
  */
 export const BUILT_IN_PROVIDERS: ProviderId[] = [
-	CLINE_PROVIDER.provider.id,
-	BUILT_IN_PROVIDER.ANTHROPIC,
-	BUILT_IN_PROVIDER.BEDROCK,
-	BUILT_IN_PROVIDER.CLAUDE_CODE,
-	BUILT_IN_PROVIDER.OPENAI_NATIVE,
-	BUILT_IN_PROVIDER.GEMINI,
-	BUILT_IN_PROVIDER.VERTEX,
-	...Object.keys(OPENAI_COMPATIBLE_PROVIDERS),
-] as ProviderId[];
+	...new Set<ProviderId>([
+		CLINE_PROVIDER.provider.id,
+		BUILT_IN_PROVIDER.ANTHROPIC,
+		BUILT_IN_PROVIDER.ASKSAGE,
+		BUILT_IN_PROVIDER.BEDROCK,
+		BUILT_IN_PROVIDER.CLAUDE_CODE,
+		BUILT_IN_PROVIDER.OPENCODE,
+		BUILT_IN_PROVIDER.MISTRAL,
+		BUILT_IN_PROVIDER.DIFY,
+		BUILT_IN_PROVIDER.OPENAI_NATIVE,
+		BUILT_IN_PROVIDER.GEMINI,
+		BUILT_IN_PROVIDER.VERTEX,
+		...(Object.keys(OPENAI_COMPATIBLE_PROVIDERS) as ProviderId[]),
+	]),
+];
+
+const BUILT_IN_PROVIDER_SET = new Set<string>(BUILT_IN_PROVIDERS);
 
 /**
  * Check if a provider ID is supported (built-in or registered)
  */
 export function isProviderSupported(providerId: string): boolean {
+	const normalizedProviderId = normalizeProviderId(providerId);
 	return (
-		providerId === BUILT_IN_PROVIDER.ANTHROPIC ||
-		providerId === BUILT_IN_PROVIDER.BEDROCK ||
-		providerId === BUILT_IN_PROVIDER.CLAUDE_CODE ||
-		providerId === BUILT_IN_PROVIDER.OPENCODE ||
-		providerId === BUILT_IN_PROVIDER.GEMINI ||
-		providerId === BUILT_IN_PROVIDER.VERTEX ||
-		isOpenAICompatibleProvider(providerId) ||
+		BUILT_IN_PROVIDER_SET.has(normalizedProviderId) ||
+		hasRegisteredHandler(normalizedProviderId) ||
 		hasRegisteredHandler(providerId)
 	);
 }

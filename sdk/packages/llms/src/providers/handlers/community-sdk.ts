@@ -5,6 +5,8 @@
  * - Codex CLI (`openai-codex`)
  * - Claude Code (`claude-code`)
  * - OpenCode (`opencode`)
+ * - Mistral (`mistral`)
+ * - Dify (`dify`)
  * - SAP AI Core (`sapaicore`)
  */
 
@@ -302,6 +304,65 @@ export class SapAiCoreHandler extends AiSdkProviderHandler {
 	}
 }
 
+export class MistralHandler extends AiSdkProviderHandler {
+	protected getProviderDefinition() {
+		return {
+			moduleName: "@ai-sdk/mistral",
+			createExportName: "createMistral",
+			providerExportName: "mistral",
+			missingDependencyError:
+				"Mistral provider requires `@ai-sdk/mistral` at runtime.",
+		};
+	}
+
+	protected getDefaultModelId(): string {
+		return "mistral-medium-latest";
+	}
+
+	protected getStreamErrorMessage(): string {
+		return "Mistral stream failed";
+	}
+}
+
+export class DifyHandler extends AiSdkProviderHandler {
+	protected getProviderDefinition() {
+		return {
+			moduleName: "dify-ai-provider",
+			createExportName: "createDifyProvider",
+			providerExportName: "difyProvider",
+			missingDependencyError:
+				"Dify provider requires `dify-ai-provider` at runtime.",
+		};
+	}
+
+	protected getDefaultModelId(): string {
+		return "default";
+	}
+
+	protected getProviderCreateOptions(): Record<string, unknown> | undefined {
+		if (!this.config.baseUrl) {
+			return undefined;
+		}
+		return {
+			baseURL: this.config.baseUrl,
+		};
+	}
+
+	protected getProviderModelSettings(): Record<string, unknown> | undefined {
+		const modelSettings: Record<string, unknown> = {
+			responseMode: "blocking",
+		};
+		if (this.config.apiKey) {
+			modelSettings.apiKey = this.config.apiKey;
+		}
+		return modelSettings;
+	}
+
+	protected getStreamErrorMessage(): string {
+		return "Dify stream failed";
+	}
+}
+
 export function createCodexHandler(config: ProviderConfig): CodexHandler {
 	return new CodexHandler(config);
 }
@@ -320,4 +381,12 @@ export function createSapAiCoreHandler(
 	config: ProviderConfig,
 ): SapAiCoreHandler {
 	return new SapAiCoreHandler(config);
+}
+
+export function createMistralHandler(config: ProviderConfig): MistralHandler {
+	return new MistralHandler(config);
+}
+
+export function createDifyHandler(config: ProviderConfig): DifyHandler {
+	return new DifyHandler(config);
 }

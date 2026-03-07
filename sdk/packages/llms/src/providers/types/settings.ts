@@ -5,6 +5,7 @@
  * Converts to internal ProviderConfig for handler creation.
  */
 
+import { resolveProviderModelCatalogKeys } from "@cline/shared";
 import { z } from "zod";
 import { getGeneratedModelsForProvider } from "../../models/generated-access";
 import {
@@ -355,6 +356,7 @@ export function safeParseSettings(
  */
 export function toProviderConfig(settings: ProviderSettings): ProviderConfig {
 	const providerId = settings.provider as ProviderId;
+	const normalizedProviderId = normalizeProviderId(providerId);
 	const unifiedReasoningLevel = settings.reasoning?.effort;
 	const reasoningEffort =
 		unifiedReasoningLevel && unifiedReasoningLevel !== "none"
@@ -362,21 +364,12 @@ export function toProviderConfig(settings: ProviderSettings): ProviderConfig {
 			: undefined;
 
 	// Get provider defaults if available
-	const providerDefaults = OPENAI_COMPATIBLE_PROVIDERS[providerId];
-	const normalizedProviderId = normalizeProviderId(providerId);
-
-	const modelCatalogProviderId =
-		normalizedProviderId === "openai-native"
-			? "openai"
-			: normalizedProviderId === "claude-code"
-				? "anthropic"
-				: normalizedProviderId === "openai-codex"
-					? "openai"
-					: normalizedProviderId === "cline"
-						? "openrouter"
-						: normalizedProviderId;
-	const generatedKnownModels = getGeneratedModelsForProvider(
-		modelCatalogProviderId,
+	const providerDefaults = OPENAI_COMPATIBLE_PROVIDERS[normalizedProviderId];
+	const generatedKnownModels = Object.assign(
+		{},
+		...resolveProviderModelCatalogKeys(normalizedProviderId).map((catalogKey) =>
+			getGeneratedModelsForProvider(catalogKey),
+		),
 	);
 
 	// Resolve API key: OAuth access token wins (most recent), then shorthand apiKey, then auth.apiKey
@@ -384,7 +377,7 @@ export function toProviderConfig(settings: ProviderSettings): ProviderConfig {
 		settings.auth?.accessToken ?? settings.apiKey ?? settings.auth?.apiKey;
 	const resolvedBaseUrl =
 		settings.baseUrl ??
-		(providerId === "oca"
+		(normalizedProviderId === "oca"
 			? settings.oca?.mode === "internal"
 				? DEFAULT_INTERNAL_OCA_BASE_URL
 				: DEFAULT_EXTERNAL_OCA_BASE_URL

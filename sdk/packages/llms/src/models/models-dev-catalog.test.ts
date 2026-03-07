@@ -26,6 +26,11 @@ describe("models-dev-catalog", () => {
 						name: "GPT No Tools",
 						tool_call: false,
 					},
+					"gpt-deprecated": {
+						name: "GPT Deprecated",
+						tool_call: true,
+						status: "deprecated",
+					},
 				},
 			},
 			anthropic: {
@@ -109,6 +114,9 @@ describe("models-dev-catalog", () => {
 			"claude-defaults",
 			"claude-older",
 		]);
+		expect(providerModels["openai-native"]).not.toHaveProperty(
+			"gpt-deprecated",
+		);
 	});
 
 	it("fetches and normalizes models.dev payload", async () => {

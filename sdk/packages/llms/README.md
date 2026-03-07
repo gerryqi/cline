@@ -43,13 +43,24 @@ OpenAI-compatible provider discovery is centralized in `src/providers/shared/ope
 
 This keeps provider default derivation and protocol filtering in one place.
 
+Provider model-catalog key remapping is centralized in `@cline/shared` (`src/llms/model-id.ts`, `MODELS_DEV_PROVIDER_KEY_ENTRIES`) and reused by:
+
+- `src/providers/types/settings.ts` (`toProviderConfig`) for generated known-model hydration
+- `src/providers/handlers/providers.ts` (`mergeKnownModels`) for runtime generated/live/private model merging
+
+Generated models imported from models.dev now exclude entries marked with `status: "deprecated"` at normalization time, so `src/models/generated.ts` only contains non-deprecated tool-capable entries.
+
 ## Provider Runtime Notes
 
 - Provider IDs and alias normalization (for example, `openai` -> `openai-native`) are centralized in `src/providers/types/provider-ids.ts` and reused across provider auth, handler factory routing, and app call sites.
+- Built-in handler routing is table-driven in `src/providers/index.ts` (`BUILT_IN_HANDLER_FACTORIES`) and shared by both `createHandler` and `createHandlerAsync` (async only adds catalog-refresh resolution before falling back to the same sync routing path).
 - The model registry lazy-loader (`src/models/registry.ts`) includes `openai-native` (plus `openai` alias), `openrouter`, `zai`, `doubao`, `moonshot`, `qwen`, `qwen-code`, `sapaicore`, and `minimax` as built-in provider loaders.
-- `openai-codex`, `claude-code`, `opencode`, `sapaicore`, and Vertex Claude routes share a common AI SDK runtime bridge (`handlers/ai-sdk-community.ts`) for message mapping and stream normalization.
-- `openai-codex`, `claude-code`, `opencode`, and `sapaicore` are consolidated in `handlers/community-sdk.ts` and share a common SDK-backed handler base (`handlers/ai-sdk-provider-base.ts`) for provider loading, model resolution, and stream wiring.
-- Tests for Claude Code, OpenCode, and SAP AI Core community handlers are consolidated in `handlers/community-sdk.test.ts`.
+- Registry loader registration is consolidated through one `BUILT_IN_PROVIDER_LOADER_ENTRIES` table in `src/models/registry.ts` to reduce duplicated `PROVIDER_LOADERS.set(...)` boilerplate.
+- Built-in provider ID drift is guarded by `src/providers/types/provider-ids.test.ts`, which checks `BUILT_IN_PROVIDER_IDS` against `getProviderIds()` from the model registry.
+- Fetch-based providers can share `FetchBaseHandler` (`src/providers/handlers/fetch-base.ts`) for common JSON request plumbing, error handling, and retry behavior; `AskSageHandler` is implemented on top of this base.
+- `openai-codex`, `claude-code`, `opencode`, `mistral`, `dify`, `sapaicore`, and Vertex Claude routes share a common AI SDK runtime bridge (`handlers/ai-sdk-community.ts`) for message mapping and stream normalization.
+- `openai-codex`, `claude-code`, `opencode`, `mistral`, `dify`, and `sapaicore` are consolidated in `handlers/community-sdk.ts` and share a common SDK-backed handler base (`handlers/ai-sdk-provider-base.ts`) for provider loading, model resolution, and stream wiring.
+- Tests for Claude Code, OpenCode, Mistral, Dify, and SAP AI Core community handlers are consolidated in `handlers/community-sdk.test.ts`.
 - `providerId: "openai-codex"` uses `ai-sdk-provider-codex-cli` (Codex CLI), not OpenCode.
 - Codex CLI executes its own tools; AI SDK custom tool schemas are ignored for this provider path.
 - OAuth-backed `openai-codex` settings do not force `OPENAI_API_KEY`; only explicit OpenAI API keys (`sk-...`) map to Codex CLI env.
@@ -79,14 +90,14 @@ Source of truth for the legacy list: `src/core/api/index.ts`.
 | --- | --- | --- |
 | `aihubmix` | ✅ | ✅ |
 | `anthropic` | ✅ | ✅ |
-| `asksage` | ✅ | ❌ |
+| `asksage` | ✅ | ✅ |
 | `baseten` | ✅ | ✅ |
 | `bedrock` | ✅ | ✅ |
 | `cerebras` | ✅ | ✅ |
 | `claude-code` | ✅ | ✅ |
 | `cline` | ✅ | ✅ |
 | `deepseek` | ✅ | ✅ |
-| `dify` | ✅ | ❌ |
+| `dify` | ✅ | ✅ |
 | `doubao` | ✅ | ✅ |
 | `fireworks` | ✅ | ✅ |
 | `gemini` | ✅ | ✅ |
@@ -96,8 +107,8 @@ Source of truth for the legacy list: `src/core/api/index.ts`.
 | `huggingface` | ✅ | ✅ |
 | `litellm` | ✅ | ✅ |
 | `lmstudio` | ✅ | ✅ |
-| `minimax` | ✅ | ❌ |
-| `mistral` | ✅ | ❌ |
+| `minimax` | ✅ | ✅ |
+| `mistral` | ✅ | ✅ |
 | `moonshot` | ✅ | ✅ |
 | `nebius` | ✅ | ✅ |
 | `nousResearch` | ✅ | ✅ |
@@ -127,9 +138,9 @@ Source of truth for the legacy list: `src/core/api/index.ts`.
 ### Support Snapshot (Docs Sync)
 
 - Legacy provider rows tracked: `42`
-- Built-in in `@cline/llms`: `37`
-- Not built-in in `@cline/llms`: `5` (`asksage`, `dify`, `minimax`, `mistral`, `vscode-lm`)
-- Newly built-in vs legacy: `opencode`
+- Built-in in `@cline/llms`: `41`
+- Not built-in in `@cline/llms`: `1` (`vscode-lm`)
+- Newly built-in vs legacy: `opencode`, `dify`, `mistral`, `asksage`
 
 ## Live Provider Smoke Test
 

@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiStreamChunk } from "../types";
 import {
 	ClaudeCodeHandler,
+	DifyHandler,
+	MistralHandler,
 	OpenCodeHandler,
 	SapAiCoreHandler,
 } from "./community-sdk";
@@ -9,8 +11,16 @@ import {
 const streamTextSpy = vi.fn();
 const claudeCodeSpy = vi.fn((modelId: string) => ({ modelId }));
 const opencodeSpy = vi.fn((modelId: string) => ({ modelId }));
+const mistralSpy = vi.fn((modelId: string) => ({ modelId }));
+const difySpy = vi.fn(
+	(modelId: string, settings?: Record<string, unknown>) => ({
+		modelId,
+		settings,
+	}),
+);
 const sapAiProviderSpy = vi.fn((modelId: string) => ({ modelId }));
 let lastCreateSapAiProviderOptions: Record<string, unknown> | undefined;
+let lastCreateDifyProviderOptions: Record<string, unknown> | undefined;
 
 vi.mock("ai", () => ({
 	streamText: (input: unknown) => streamTextSpy(input),
@@ -24,6 +34,21 @@ vi.mock("ai-sdk-provider-claude-code", () => ({
 vi.mock("ai-sdk-provider-opencode-sdk", () => ({
 	opencode: (modelId: string) => opencodeSpy(modelId),
 	createOpencode: () => (modelId: string) => opencodeSpy(modelId),
+}));
+
+vi.mock("@ai-sdk/mistral", () => ({
+	mistral: (modelId: string) => mistralSpy(modelId),
+	createMistral: () => (modelId: string) => mistralSpy(modelId),
+}));
+
+vi.mock("dify-ai-provider", () => ({
+	difyProvider: (modelId: string, settings?: Record<string, unknown>) =>
+		difySpy(modelId, settings),
+	createDifyProvider: (options?: Record<string, unknown>) => {
+		lastCreateDifyProviderOptions = options;
+		return (modelId: string, settings?: Record<string, unknown>) =>
+			difySpy(modelId, settings);
+	},
 }));
 
 vi.mock("@jerome-benoit/sap-ai-provider", () => ({
@@ -44,6 +69,7 @@ describe("Community SDK handlers", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		lastCreateSapAiProviderOptions = undefined;
+		lastCreateDifyProviderOptions = undefined;
 	});
 
 	describe("ClaudeCodeHandler", () => {
@@ -96,6 +122,46 @@ describe("Community SDK handlers", () => {
 			});
 
 			expect(handler.getModel().id).toBe("sonnet");
+		});
+	});
+
+	describe("MistralHandler", () => {
+		it("uses a fallback model id when model is missing", () => {
+			const handler = new MistralHandler({
+				providerId: "mistral",
+				modelId: "",
+			});
+
+			expect(handler.getModel().id).toBe("mistral-medium-latest");
+		});
+	});
+
+	describe("DifyHandler", () => {
+		it("passes baseURL and apiKey model settings to dify provider", async () => {
+			streamTextSpy.mockReturnValue({
+				fullStream: makeStreamParts([{ type: "finish", usage: {} }]),
+			});
+
+			const handler = new DifyHandler({
+				providerId: "dify",
+				modelId: "workflow-123",
+				apiKey: "dify-key",
+				baseUrl: "https://dify.example.com/v1",
+			});
+
+			for await (const _chunk of handler.createMessage("System", [
+				{ role: "user", content: "Hi" },
+			])) {
+				// noop
+			}
+
+			expect(lastCreateDifyProviderOptions).toEqual({
+				baseURL: "https://dify.example.com/v1",
+			});
+			expect(difySpy).toHaveBeenCalledWith("workflow-123", {
+				responseMode: "blocking",
+				apiKey: "dify-key",
+			});
 		});
 	});
 
