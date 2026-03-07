@@ -62,12 +62,14 @@ function normalizeRuntimeConfig(input: {
 		base?.name?.trim() ||
 		process.env.CLINE_LOG_NAME?.trim() ||
 		`clite.${input.runtime}`;
+	const bindings = base?.bindings ?? {};
 
 	return {
 		enabled,
 		level,
 		destination,
 		name,
+		bindings,
 	};
 }
 
@@ -178,9 +180,10 @@ export function createCliLoggerAdapter(
 		runtimeConfig: input.runtimeConfig,
 	});
 	const baseLogger = getOrCreatePinoLogger(runtimeConfig);
-	const logger = input.component
-		? baseLogger.child({ component: input.component })
-		: baseLogger;
+	const logger = baseLogger.child({
+		...runtimeConfig.bindings,
+		...(input.component ? { component: input.component } : {}),
+	});
 	return createAdapterFromPino(logger, runtimeConfig);
 }
 

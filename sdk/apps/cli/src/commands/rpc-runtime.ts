@@ -7,7 +7,10 @@ import {
 import type { providers as LlmsProviders } from "@cline/llms";
 import type { RpcRuntimeHandlers } from "@cline/rpc";
 import { RpcSessionClient } from "@cline/rpc";
-import { flushCliLoggerAdapters } from "../logging/adapter";
+import {
+	createCliLoggerAdapter,
+	flushCliLoggerAdapters,
+} from "../logging/adapter";
 import {
 	createRpcToolApprovalRequester,
 	subscribeRuntimeEventBridge,
@@ -46,6 +49,11 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 		startSession: async (requestJson) => {
 			const config = parseStartPayload(requestJson);
 			applyHomeDir(config);
+			const runtimeLogger = createCliLoggerAdapter({
+				runtime: "rpc-runtime",
+				component: "rpc-runtime-session",
+				runtimeConfig: config.logger,
+			}).core;
 			const sessionId = `${Date.now()}_${randomUUID().slice(0, 5)}`;
 			const startedConfig = await buildSessionStartInput({
 				config,
@@ -61,6 +69,10 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 					sessionId,
 				});
 			const started = await sessionManager.start(startedConfig.sessionInput);
+			runtimeLogger.info?.("RPC runtime session started", {
+				sessionId: started.sessionId,
+				mode: startedConfig.mode,
+			});
 			sessionModes.set(started.sessionId, startedConfig.mode);
 			activeSessions.add(started.sessionId);
 			return {
@@ -71,6 +83,11 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 		sendSession: async (sessionId, requestJson) => {
 			const request = parseSendPayload(requestJson);
 			applyHomeDir(request.config);
+			const runtimeLogger = createCliLoggerAdapter({
+				runtime: "rpc-runtime",
+				component: "rpc-runtime-session",
+				runtimeConfig: request.config.logger,
+			}).core;
 			const input = request.prompt.trim();
 			const userImages = request.attachments?.userImages ?? [];
 			const fileMaterialized = await materializeUserFiles(
@@ -78,6 +95,10 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 			);
 
 			try {
+				runtimeLogger.debug?.("RPC runtime turn send requested", {
+					sessionId,
+					promptLength: input.length,
+				});
 				const result = await sessionManager.send({
 					sessionId,
 					prompt: input,
@@ -87,9 +108,15 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 				if (!result) {
 					throw new Error("runtime send returned no result");
 				}
+				runtimeLogger.info?.("RPC runtime turn send completed", {
+					sessionId,
+					finishReason: result.finishReason,
+					iterations: result.iterations,
+				});
 				return { resultJson: JSON.stringify(toRpcTurnResult(result)) };
 			} catch (error) {
 				if (!shouldRestoreSession(error)) {
+					runtimeLogger.error?.("RPC runtime turn send failed", { error });
 					throw error;
 				}
 
@@ -101,6 +128,12 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 						| undefined,
 				});
 				await sessionManager.start(restoredConfig.sessionInput);
+				runtimeLogger.warn?.(
+					"RPC runtime session restored after missing session",
+					{
+						sessionId,
+					},
+				);
 				sessionModes.set(sessionId, restoredConfig.mode);
 				activeSessions.add(sessionId);
 				const restoredResult = await sessionManager.send({
@@ -112,6 +145,11 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 				if (!restoredResult) {
 					throw new Error("runtime send returned no result after restore");
 				}
+				runtimeLogger.info?.("RPC runtime turn completed after restore", {
+					sessionId,
+					finishReason: restoredResult.finishReason,
+					iterations: restoredResult.iterations,
+				});
 				return { resultJson: JSON.stringify(toRpcTurnResult(restoredResult)) };
 			} finally {
 				flushCliLoggerAdapters();
@@ -125,6 +163,13 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 			}
 			const known = activeSessions.has(id);
 			await sessionManager.abort(id);
+			createCliLoggerAdapter({
+				runtime: "rpc-runtime",
+				component: "rpc-runtime-session",
+			}).core.info?.("RPC runtime session abort requested", {
+				sessionId: id,
+				known,
+			});
 			return { applied: known };
 		},
 		stopSession: async (sessionId) => {
@@ -134,6 +179,13 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 			}
 			const known = activeSessions.has(id);
 			await sessionManager.stop(id);
+			createCliLoggerAdapter({
+				runtime: "rpc-runtime",
+				component: "rpc-runtime-session",
+			}).core.info?.("RPC runtime session stopped", {
+				sessionId: id,
+				known,
+			});
 			flushCliLoggerAdapters();
 			activeSessions.delete(id);
 			sessionModes.delete(id);

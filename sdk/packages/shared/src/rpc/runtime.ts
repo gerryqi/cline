@@ -29,6 +29,7 @@ export interface RpcChatRuntimeLoggerConfig {
 	level?: "trace" | "debug" | "info" | "warn" | "error" | "fatal" | "silent";
 	destination?: string;
 	name?: string;
+	bindings?: Record<string, string | number | boolean>;
 }
 
 export interface RpcChatStartSessionRequest extends RpcChatRuntimeConfigBase {

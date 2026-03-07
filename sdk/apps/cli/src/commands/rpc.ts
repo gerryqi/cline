@@ -9,6 +9,7 @@ import {
 	startRpcServer,
 	stopRpcServer,
 } from "@cline/rpc";
+import { createCliLoggerAdapter } from "../logging/adapter";
 import { createRpcRuntimeHandlers } from "./rpc-runtime";
 
 const c = {
@@ -298,9 +299,14 @@ export async function runRpcStartCommand(
 	writeln: (text?: string) => void,
 	writeErr: (text: string) => void,
 ): Promise<number> {
+	const startupLogger = createCliLoggerAdapter({
+		runtime: "cli",
+		component: "rpc-start",
+	}).core;
 	const normalizedAddress = resolveRpcAddress(rawArgs);
 	if (!normalizedAddress) {
 		writeErr("rpc start requires a non-empty address");
+		startupLogger.error?.("RPC start rejected: empty address");
 		return 1;
 	}
 
@@ -308,6 +314,11 @@ export async function runRpcStartCommand(
 	const startAddress = ensured.address;
 	if (ensured.action === "reuse") {
 		const existing = await getRpcServerHealth(startAddress);
+		startupLogger.info?.("RPC server activation reused existing instance", {
+			address: startAddress,
+			serverId: existing?.serverId,
+			action: ensured.action,
+		});
 		writeln(
 			`${c.dim}[rpc] already running server_id=${existing?.serverId ?? "unknown"} address=${startAddress}${c.reset}`,
 		);
@@ -319,6 +330,12 @@ export async function runRpcStartCommand(
 		address: startAddress,
 		sessionBackend: createSqliteRpcSessionBackend(),
 		runtimeHandlers: createRpcRuntimeHandlers(),
+	});
+	startupLogger.info?.("RPC server activation started", {
+		address: handle.address,
+		serverId: handle.serverId,
+		requestedAddress: normalizedAddress,
+		action: ensured.action,
 	});
 	writeln(
 		`${c.dim}[rpc] started server_id=${handle.serverId} address=${handle.address}${c.reset}`,
@@ -336,6 +353,10 @@ export async function runRpcStartCommand(
 	});
 
 	await stopRpcServer();
+	startupLogger.info?.("RPC server stopped", {
+		address: handle.address,
+		serverId: handle.serverId,
+	});
 	writeln(`${c.dim}[rpc] stopped${c.reset}`);
 	return 0;
 }
@@ -466,9 +487,14 @@ export async function runRpcRegisterCommand(
 	writeln: (text?: string) => void,
 	writeErr: (text: string) => void,
 ): Promise<number> {
+	const registerLogger = createCliLoggerAdapter({
+		runtime: "cli",
+		component: "rpc-register",
+	}).core;
 	const normalizedAddress = resolveRpcAddress(rawArgs);
 	if (!normalizedAddress) {
 		writeErr("rpc register requires a non-empty address");
+		registerLogger.error?.("RPC client registration rejected: empty address");
 		return 1;
 	}
 
@@ -482,11 +508,24 @@ export async function runRpcRegisterCommand(
 		metadata,
 	});
 	if (!registration?.registered) {
+		registerLogger.error?.("RPC client registration failed", {
+			address: normalizedAddress,
+			clientType,
+			requestedClientId: requestedClientId ?? "",
+			metadata,
+		});
 		writeErr(
 			`failed to register client with rpc server at ${normalizedAddress}`,
 		);
 		return 1;
 	}
+	registerLogger.info?.("RPC client registered", {
+		address: normalizedAddress,
+		clientType,
+		clientId: registration.clientId,
+		requestedClientId: requestedClientId ?? "",
+		metadata,
+	});
 
 	writeln(
 		`${c.dim}[rpc] registered client_id=${registration.clientId} address=${normalizedAddress}${c.reset}`,

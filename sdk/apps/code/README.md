@@ -18,6 +18,7 @@ From `apps/code/`:
 - If a stale/incompatible listener exists on the requested address, `rpc ensure` can launch a fresh server on a different available port.
 - Tauri sets `CLINE_RPC_ADDRESS` from the ensured response so all subsequent script RPC calls use the effective port.
 - Once healthy, it registers the desktop client with `clite rpc register --client-type desktop --client-id code-desktop`.
+- The chat runtime bridge forwards logger context to RPC runtime sessions (`clientId=code-desktop`, `clientType=desktop`, `clientApp=code`) so shared runtime logs can be attributed per client.
 - Tauri invokes the installed `clite` command from `PATH` for RPC lifecycle calls. Set `CLINE_CLI_COMMAND` to override the command/binary path if needed.
 - Requested RPC address defaults to `127.0.0.1:4317` and can be overridden with `CLINE_RPC_ADDRESS`.
 - Provider flows also use RPC bridge scripts:

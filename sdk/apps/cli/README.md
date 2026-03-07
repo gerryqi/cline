@@ -342,6 +342,8 @@ contract:
 
 - CLI runtime passes `logger` directly into local `@cline/core` sessions.
 - RPC-backed sessions include a serialized logger payload in `RpcChatStartSessionRequest.logger`; the RPC runtime reconstructs the same `pino` settings and injects them into core.
+- Hosts can attach stable runtime logger bindings (for example `clientId`, `clientType`, `clientApp`) through `RpcChatRuntimeLoggerConfig.bindings`.
+- `clite rpc register` and `clite rpc start` now emit activation/registration log records so startup ownership is visible in logs.
 - This keeps logger behavior consistent between local and RPC runtime execution paths while preserving a transport-safe config boundary.
 
 After login, OAuth credentials are persisted with `auth.expiresAt`, and `@cline/core` refreshes these tokens automatically during session turns (including long-lived RPC runtime sessions).

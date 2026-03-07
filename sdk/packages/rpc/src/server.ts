@@ -102,6 +102,15 @@ interface StreamSubscriber {
 	filterSessionIds: Set<string> | undefined;
 }
 
+interface RegisteredClientState {
+	clientId: string;
+	clientType?: string;
+	metadata?: Record<string, string>;
+	firstRegisteredAt: string;
+	lastRegisteredAt: string;
+	activationCount: number;
+}
+
 type HealthRequest = HealthRequest__Output;
 type RegisterClientRequest = RegisterClientRequest__Output;
 type EnsureSessionRequest = EnsureSessionRequest__Output;
@@ -146,6 +155,25 @@ function nowIso(): string {
 
 function safeString(value: unknown): string {
 	return typeof value === "string" ? value : "";
+}
+
+function normalizeMetadataMap(value: unknown): Record<string, string> {
+	if (!value || typeof value !== "object") {
+		return {};
+	}
+	const out: Record<string, string> = {};
+	for (const [key, raw] of Object.entries(value)) {
+		const normalizedKey = key.trim();
+		if (!normalizedKey) {
+			continue;
+		}
+		const normalizedValue = safeString(raw).trim();
+		if (!normalizedValue) {
+			continue;
+		}
+		out[normalizedKey] = normalizedValue;
+	}
+	return out;
 }
 
 function normalizeSessionIds(
@@ -312,6 +340,7 @@ class ClineGatewayRuntime {
 	private readonly tasks = new Map<string, TaskState>();
 	private readonly approvals = new Map<string, ApprovalState>();
 	private readonly subscribers = new Map<number, StreamSubscriber>();
+	private readonly clients = new Map<string, RegisteredClientState>();
 	private readonly store: RpcSessionBackend;
 	private nextSubscriberId = 1;
 
@@ -341,6 +370,40 @@ class ClineGatewayRuntime {
 	): RegisterClientResponse {
 		const requested = safeString(request.clientId).trim();
 		const clientId = requested || `client_${randomUUID()}`;
+		const clientType = safeString(request.clientType).trim() || undefined;
+		const metadata = normalizeMetadataMap(
+			request as unknown as { metadata?: unknown },
+		);
+		const now = nowIso();
+		const existing = this.clients.get(clientId);
+		const nextState: RegisteredClientState = existing
+			? {
+					...existing,
+					clientType: clientType ?? existing.clientType,
+					metadata:
+						Object.keys(metadata).length > 0
+							? { ...(existing.metadata ?? {}), ...metadata }
+							: existing.metadata,
+					lastRegisteredAt: now,
+					activationCount: existing.activationCount + 1,
+				}
+			: {
+					clientId,
+					clientType,
+					metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+					firstRegisteredAt: now,
+					lastRegisteredAt: now,
+					activationCount: 1,
+				};
+		this.clients.set(clientId, nextState);
+		this.broadcastServerEvent("rpc.client.activated", {
+			clientId: nextState.clientId,
+			clientType: nextState.clientType,
+			metadata: nextState.metadata ?? {},
+			firstRegisteredAt: nextState.firstRegisteredAt,
+			lastRegisteredAt: nextState.lastRegisteredAt,
+			activationCount: nextState.activationCount,
+		});
 		return { clientId, registered: true };
 	}
 

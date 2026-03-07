@@ -24,6 +24,7 @@ It also exposes server lifecycle helpers:
 - `getRpcServerHealth(address)` for health checks
 - `requestRpcServerShutdown(address)` for remote graceful shutdown
 - `registerRpcClient(address, input)` for client registration (`clientId`, `clientType`, optional metadata)
+- Each successful `registerRpcClient` call emits a routed server event: `eventType: "rpc.client.activated"` with client identity/metadata and activation counters, even when no runtime session is started.
 - `RpcSessionClient.publishEvent(...)` / `RpcSessionClient.streamEvents(...)` for client-side event routing
 - `RpcSessionClient.requestToolApproval(...)` / `respondToolApproval(...)` / `listPendingApprovals(...)` for approval request/decision flows
 - On graceful shutdown, the server broadcasts `eventType: "rpc.server.shutting_down"` to current stream subscribers before transport teardown.

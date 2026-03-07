@@ -2164,6 +2164,9 @@ fn ensure_chat_runtime_bridge_started(
             "CLINE_TOOL_APPROVAL_DIR",
             approval_dir.to_string_lossy().to_string(),
         )
+        .env("CLINE_RPC_CLIENT_ID", DEFAULT_RPC_CLIENT_ID)
+        .env("CLINE_RPC_CLIENT_TYPE", DEFAULT_RPC_CLIENT_TYPE)
+        .env("CLINE_RPC_CLIENT_APP", "code")
         .spawn()
         .map_err(|e| format!("failed to start chat runtime bridge script: {e}"))?;
 
