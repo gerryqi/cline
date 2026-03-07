@@ -64,6 +64,12 @@ per-iteration tool fan-out.
 - Team tools emit runtime events and manage in-memory behavior.
 - Persistent team state storage is handled by `@cline/core`.
 
+## Team Tool Input Normalization
+
+`team_member` now tolerates strict-mode `null` values for optional fields (for
+example `maxIterations`, `reason`) and normalizes them before
+validation.
+
 ## Browser-Safe Default Tooling
 
 Node-specific default tools were moved out of `@cline/agents` into `@cline/core`.
@@ -78,12 +84,18 @@ after the turn completes. This avoids executing partially streamed inputs that m
 be temporarily valid JSON but not the final tool payload.
 Final argument parsing now uses `parseJsonStream` from `@cline/shared` to recover
 repairable JSON payloads before treating inputs as invalid.
+When a provider emits non-object tool input (for example an array shorthand),
+the runtime normalizes known tool shapes and guarantees persisted `tool_use.input`
+is an object so downstream providers can replay history safely.
+The same normalization is also applied again right before tool execution, so
+hook overrides and other runtime inputs cannot pass array-shaped payloads into
+strict object tool schemas.
 
 ## Shared Tool Contracts
 
 Tool contract types and schemas are now sourced from `@cline/shared`.
 
-- `Tool`, `ToolContext`, `ToolPolicy`, `ToolCallRecord`, `JsonSchema`
+- `Tool`, `ToolContext`, `ToolPolicy`, `ToolCallRecord`
 - `ToolContextSchema`, `ToolCallRecordSchema`
 
 `@cline/agents` re-exports these through its public API for convenience.

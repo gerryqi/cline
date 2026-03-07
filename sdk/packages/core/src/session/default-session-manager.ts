@@ -14,7 +14,7 @@ import {
 	type ToolApprovalResult,
 } from "@cline/agents";
 import type { providers as LlmsProviders } from "@cline/llms";
-import { setHomeDirIfUnset } from "@cline/shared";
+import { setHomeDirIfUnset } from "@cline/shared/storage";
 import { nanoid } from "nanoid";
 import {
 	createBuiltinTools,
@@ -719,6 +719,14 @@ export class DefaultSessionManager implements SessionManager {
 			});
 		};
 
+		const createSubAgentTools = () => {
+			const tools = createBaseTools();
+			if (config.enableSpawnAgent) {
+				tools.push(this.createSpawnTool(config, rootSessionId));
+			}
+			return tools;
+		};
+
 		return createSpawnAgentTool({
 			providerId: config.providerId,
 			modelId: config.modelId,
@@ -726,7 +734,7 @@ export class DefaultSessionManager implements SessionManager {
 			baseUrl: config.baseUrl,
 			knownModels: config.knownModels,
 			defaultMaxIterations: config.maxIterations,
-			createSubAgentTools: createBaseTools,
+			createSubAgentTools,
 			hooks: config.hooks,
 			toolPolicies: this.defaultToolPolicies,
 			requestToolApproval: this.defaultRequestToolApproval,

@@ -1,0 +1,43 @@
+import { describe, expect, it } from "vitest";
+import { getGeneratedModelsForProvider } from "../../models/generated-access.js";
+import type { ProviderSettings } from "./settings.js";
+import { toProviderConfig } from "./settings.js";
+
+describe("toProviderConfig", () => {
+	it("backfills knownModels from generated catalogs for anthropic", () => {
+		const anthropicModels = getGeneratedModelsForProvider("anthropic");
+		const modelId = Object.keys(anthropicModels)[0];
+		expect(modelId).toBeTruthy();
+		if (!modelId) {
+			return;
+		}
+
+		const settings: ProviderSettings = {
+			provider: "anthropic",
+			apiKey: "test-key",
+			model: modelId,
+		};
+
+		const config = toProviderConfig(settings);
+
+		expect(config.knownModels?.[modelId]).toEqual(anthropicModels[modelId]);
+		expect(config.knownModels?.[modelId]?.pricing).toBeDefined();
+	});
+
+	it("maps cline provider to openrouter generated knownModels", () => {
+		const gatewayModels = getGeneratedModelsForProvider("openrouter");
+		const modelId = "openai/gpt-5.3-codex";
+		expect(gatewayModels[modelId]).toBeDefined();
+
+		const settings: ProviderSettings = {
+			provider: "cline",
+			apiKey: "test-key",
+			model: modelId,
+		};
+
+		const config = toProviderConfig(settings);
+
+		expect(config.knownModels?.[modelId]).toEqual(gatewayModels[modelId]);
+		expect(config.knownModels?.[modelId]?.pricing).toBeDefined();
+	});
+});

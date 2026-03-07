@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 export const AGENT_CONFIG_DIRECTORY_NAME = "agents";
 export const HOOKS_CONFIG_DIRECTORY_NAME = "hooks";
@@ -165,4 +166,23 @@ export function resolveWorkflowsConfigSearchPaths(
 		join(resolveClineDataDir(), "settings", WORKFLOWS_CONFIG_DIRECTORY_NAME),
 		DOCUMENTS_WORKFLOWS_DIRECTORY_PATH,
 	]);
+}
+
+export function ensureParentDir(filePath: string): void {
+	const parent = dirname(filePath);
+	if (!existsSync(parent)) {
+		mkdirSync(parent, { recursive: true });
+	}
+}
+
+export function ensureHookLogDir(filePath?: string): string {
+	if (filePath?.trim()) {
+		ensureParentDir(filePath);
+		return dirname(filePath);
+	}
+	const dir = join(resolveClineDataDir(), "hooks");
+	if (!existsSync(dir)) {
+		mkdirSync(dir, { recursive: true });
+	}
+	return dir;
 }

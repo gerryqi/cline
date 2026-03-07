@@ -36,6 +36,26 @@ interface WelcomePageProps {
 	onNavigateToVisualizer: () => void;
 }
 
+const providerSupportDelta = [
+	{ provider: "opencode", old: "Not built-in", current: "Built-in handler" },
+	{ provider: "asksage", old: "Built-in", current: "Not built-in yet" },
+	{ provider: "dify", old: "Built-in", current: "Not built-in yet" },
+	{ provider: "minimax", old: "Built-in", current: "Not built-in yet" },
+	{ provider: "mistral", old: "Built-in", current: "Not built-in yet" },
+	{
+		provider: "vscode-lm",
+		old: "Built-in",
+		current: "Client-hosted (registerHandler)",
+	},
+];
+
+const providerQualityGains = [
+	"Public providers API (`providers.createHandler`, `createHandlerAsync`, `resolveProviderConfig`) replaces internal-only wiring.",
+	"OpenAI-compatible provider discovery is centralized and reused across runtime defaults, catalog views, and model scripts.",
+	"Provider ID normalization is shared (`openai` -> `openai-native`) across auth, routing, and call sites.",
+	"Known model metadata is backfilled for non-OpenAI-compatible providers, improving usage pricing/cost accounting.",
+];
+
 export function WelcomePage({ onNavigateToVisualizer }: WelcomePageProps) {
 	return (
 		<div className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -735,6 +755,80 @@ export function WelcomePage({ onNavigateToVisualizer }: WelcomePageProps) {
 								))}
 							</tbody>
 						</table>
+					</div>
+
+					<div className="mt-6 grid md:grid-cols-3 gap-3">
+						<div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+							<div className="text-[11px] font-semibold text-cyan-400 uppercase tracking-wider mb-1">
+								Built-in Coverage
+							</div>
+							<p className="text-[13px] text-zinc-400 leading-relaxed">
+								37 of 42 legacy providers are now built-in in `@cline/llms`.
+							</p>
+						</div>
+						<div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+							<div className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider mb-1">
+								New Built-in Route
+							</div>
+							<p className="text-[13px] text-zinc-400 leading-relaxed">
+								`opencode` is now built-in in SDK-WIP (was not built-in in
+								legacy Cline).
+							</p>
+						</div>
+						<div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+							<div className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider mb-1">
+								Out-of-Scope Route
+							</div>
+							<p className="text-[13px] text-zinc-400 leading-relaxed">
+								`vscode-lm` moved to a client-hosted model: hosts register it
+								via `registerHandler()` / `registerAsyncHandler()`.
+							</p>
+						</div>
+					</div>
+
+					<div className="mt-6 overflow-x-auto rounded-lg border border-zinc-800">
+						<table className="w-full text-sm">
+							<thead className="bg-zinc-900/80">
+								<tr>
+									<th className="px-4 py-3 text-left text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
+										Provider
+									</th>
+									<th className="px-4 py-3 text-left text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
+										Legacy
+									</th>
+									<th className="px-4 py-3 text-left text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
+										SDK-WIP
+									</th>
+								</tr>
+							</thead>
+							<tbody className="divide-y divide-zinc-800/60">
+								{providerSupportDelta.map((row) => (
+									<tr key={row.provider} className="hover:bg-zinc-900/30">
+										<td className="px-4 py-2.5 font-mono text-zinc-200">
+											{row.provider}
+										</td>
+										<td className="px-4 py-2.5 text-zinc-400">{row.old}</td>
+										<td className="px-4 py-2.5 text-zinc-400">{row.current}</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+					</div>
+
+					<div className="mt-6 bg-emerald-500/5 border-l-4 border-emerald-500 rounded-r-lg p-4">
+						<strong className="block text-[11px] text-zinc-100 uppercase tracking-wider mb-2">
+							Why Provider Support Is Better Now
+						</strong>
+						<div className="space-y-2">
+							{providerQualityGains.map((gain) => (
+								<p
+									key={gain}
+									className="text-[13px] text-zinc-400 leading-relaxed"
+								>
+									{gain}
+								</p>
+							))}
+						</div>
 					</div>
 				</section>
 

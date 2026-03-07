@@ -149,12 +149,14 @@ describe("default ask_question tool", () => {
 describe("zod schema conversion", () => {
 	it("preserves read_files required properties in generated JSON schema", () => {
 		const tool = createReadFilesTool(async () => "ok");
-		expect(tool.inputSchema.type).toBe("object");
-		expect(tool.inputSchema.properties.file_paths).toEqual({
+		const inputSchema = tool.inputSchema as Record<string, unknown>;
+		const properties = inputSchema.properties as Record<string, unknown>;
+		expect(inputSchema.type).toBe("object");
+		expect(properties.file_paths).toEqual({
 			type: "array",
 			items: { type: "string" },
 			description: "The absolute file paths to read",
 		});
-		expect(tool.inputSchema.required).toEqual(["file_paths"]);
+		expect(inputSchema.required).toEqual(["file_paths"]);
 	});
 });

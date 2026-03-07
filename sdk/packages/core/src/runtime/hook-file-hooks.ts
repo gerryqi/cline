@@ -1,12 +1,12 @@
 import { spawn } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { appendFileSync, readFileSync } from "node:fs";
 import type {
 	AgentHooks,
 	HookEventName,
 	HookEventPayload,
 } from "@cline/agents";
 import type { BasicLogger, HookSessionContext } from "@cline/shared";
+import { ensureParentDir } from "@cline/shared/storage";
 import { listHookConfigFiles } from "../agents/hooks-config-loader";
 
 type HookContextBase = {
@@ -134,10 +134,7 @@ function isAbortReason(reason?: string): boolean {
 }
 
 function ensureHookLogDir(filePath: string): void {
-	const parent = dirname(filePath);
-	if (!existsSync(parent)) {
-		mkdirSync(parent, { recursive: true });
-	}
+	ensureParentDir(filePath);
 }
 
 function createPayloadBase(

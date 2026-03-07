@@ -28,7 +28,7 @@ import {
 	type UserInstructionConfigWatcher,
 } from "@cline/core/server";
 import { providers } from "@cline/llms";
-import { setHomeDir } from "@cline/shared";
+import { setHomeDir } from "@cline/shared/storage";
 import { version } from "../package.json";
 import { askQuestionInTerminal, requestToolApproval } from "./approval";
 import {

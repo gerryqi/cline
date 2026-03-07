@@ -65,7 +65,7 @@ export const ToolPresets = {
 		enableWebFetch: true,
 		enableEditor: false,
 		enableSkills: true,
-		enableAskQuestion: false,
+		enableAskQuestion: true,
 	},
 
 	/**
@@ -73,13 +73,13 @@ export const ToolPresets = {
 	 * Good for focused single-file tasks
 	 */
 	minimal: {
-		enableReadFiles: true,
+		enableReadFiles: false,
 		enableSearch: false,
 		enableBash: false,
 		enableWebFetch: false,
 		enableEditor: false,
 		enableSkills: false,
-		enableAskQuestion: false,
+		enableAskQuestion: true,
 	},
 
 	/**

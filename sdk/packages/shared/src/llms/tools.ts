@@ -8,77 +8,6 @@
 import { z } from "zod";
 
 // =============================================================================
-// JSON Schema Types (for tool input validation)
-// =============================================================================
-
-/**
- * JSON Schema for tool input parameters
- */
-export type JsonSchema = {
-	type: "object";
-	properties: Record<string, JsonSchemaProperty>;
-	required?: string[];
-	additionalProperties?: boolean;
-	description?: string;
-};
-
-export type JsonSchemaProperty = {
-	type:
-		| "string"
-		| "number"
-		| "integer"
-		| "boolean"
-		| "array"
-		| "object"
-		| "null";
-	description?: string;
-	enum?: unknown[];
-	items?: JsonSchemaProperty;
-	properties?: Record<string, JsonSchemaProperty>;
-	required?: string[];
-	default?: unknown;
-	minimum?: number;
-	maximum?: number;
-	minLength?: number;
-	maxLength?: number;
-	pattern?: string;
-};
-
-export const JsonSchemaPropertySchema: z.ZodType<JsonSchemaProperty> = z.lazy(
-	() =>
-		z.object({
-			type: z.enum([
-				"string",
-				"number",
-				"integer",
-				"boolean",
-				"array",
-				"object",
-				"null",
-			]),
-			description: z.string().optional(),
-			enum: z.array(z.unknown()).optional(),
-			items: JsonSchemaPropertySchema.optional(),
-			properties: z.record(z.string(), JsonSchemaPropertySchema).optional(),
-			required: z.array(z.string()).optional(),
-			default: z.unknown().optional(),
-			minimum: z.number().optional(),
-			maximum: z.number().optional(),
-			minLength: z.number().optional(),
-			maxLength: z.number().optional(),
-			pattern: z.string().optional(),
-		}),
-);
-
-export const JsonSchemaSchema = z.object({
-	type: z.literal("object"),
-	properties: z.record(z.string(), JsonSchemaPropertySchema),
-	required: z.array(z.string()).optional(),
-	additionalProperties: z.boolean().optional(),
-	description: z.string().optional(),
-});
-
-// =============================================================================
 // Tool Context
 // =============================================================================
 
@@ -135,7 +64,7 @@ export interface Tool<TInput = unknown, TOutput = unknown> {
 	/** Human-readable description of what the tool does */
 	description: string;
 	/** JSON Schema defining the tool's input parameters */
-	inputSchema: JsonSchema;
+	inputSchema: Record<string, unknown>;
 	/** The function that executes the tool */
 	execute: (input: TInput, context: ToolContext) => Promise<TOutput>;
 	/**

@@ -11,6 +11,11 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
+		"./storage": {
+			"development": "./src/storage/index.ts",
+			"types": "./dist/storage/index.d.ts",
+			"import": "./dist/storage/index.js"
+		},
 		"./db": {
 			"development": "./src/db/index.ts",
 			"types": "./dist/db/index.d.ts",
@@ -34,6 +39,7 @@
 	"dependencies": {
 		"better-sqlite3": "^11.10.0",
 		"jsonrepair": "^3.13.2",
-		"zod": "^4.3.6"
+		"zod": "^4.3.6",
+		"zod-to-json-schema": "^3.25.1"
 	}
 }

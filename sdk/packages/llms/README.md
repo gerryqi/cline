@@ -62,8 +62,11 @@ This keeps provider default derivation and protocol filtering in one place.
 - Set `AI_SDK_LOG_WARNINGS=false` to suppress AI SDK warning logs.
 - Provider settings `headers` must be a string-to-string map (`Record<string, string>`).
 - Provider settings OAuth auth schema includes `auth.expiresAt` (epoch ms) for runtime token refresh orchestration in `@cline/core`.
+- `toProviderConfig(...)` now backfills `knownModels` from generated model catalogs for non-OpenAI-compatible providers (and alias routes like `openai-native` -> `openai`, `claude-code` -> `anthropic`, `cline` -> `vercel-ai-gateway`) so pricing metadata is available for usage cost calculation.
 - Stream chunks are modeled as discriminated unions (`ApiStreamChunk`); tests should narrow by `type` instead of casting to generic records.
 - OpenAI-compatible tool schemas default to strict mode; `openrouter` requests disable tool strictness for broader routed-model compatibility.
+- OpenAI message conversion now normalizes malformed historical `tool_use.input` payloads (for example, top-level arrays) into object-shaped function arguments before replay.
+- Anthropic message conversion now normalizes malformed historical `tool_use.input` payloads (for example, top-level arrays) into object-shaped arguments before replaying them to Anthropic/Bedrock APIs.
 - Retry decorator utility (`withRetry`) uses stage-3 decorators (no legacy decorator mode).
 
 ## Legacy Provider Migration Status
@@ -118,6 +121,13 @@ Source of truth for the legacy list: `src/core/api/index.ts`.
 `vscode-lm` is client-hosted (VS Code LM/Copilot runtime), so it is not a built-in package provider. VS Code clients can add it via `registerHandler()` or `registerAsyncHandler()`.
 
 `New package` is marked `✅` only when the provider has a built-in handler route in `src/providers/index.ts` (explicit or OpenAI-compatible defaults), not just an enum entry.
+
+### Support Snapshot (Docs Sync)
+
+- Legacy provider rows tracked: `42`
+- Built-in in `@cline/llms`: `37`
+- Not built-in in `@cline/llms`: `5` (`asksage`, `dify`, `minimax`, `mistral`, `vscode-lm`)
+- Newly built-in vs legacy: `opencode`
 
 ## Live Provider Smoke Test
 

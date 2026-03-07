@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { providers as LlmsProviders } from "@cline/llms";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTool } from "./tools/create.js";
 import type { AgentExtension, Tool } from "./types.js";
@@ -14,10 +15,21 @@ type FakeHandler = {
 };
 
 const createHandlerMock = vi.fn<(config: unknown) => FakeHandler>();
+const toProviderConfigMock = vi.fn((settings: any) => ({
+	knownModels: settings?.model
+		? {
+				[settings.model]: {
+					id: settings.model,
+					pricing: { input: 1, output: 1 },
+				},
+			}
+		: undefined,
+}));
 
 vi.mock("@cline/llms", () => ({
 	providers: {
 		createHandler: (config: unknown) => createHandlerMock(config),
+		toProviderConfig: (settings: unknown) => toProviderConfigMock(settings),
 	},
 }));
 
@@ -76,6 +88,30 @@ describe("Agent", () => {
 		expect(result.usage.inputTokens).toBe(10);
 		expect(result.usage.outputTokens).toBe(5);
 		expect(events).toContain("done");
+		expect(toProviderConfigMock).toHaveBeenCalled();
+	});
+
+	it("keeps totalCost undefined when usage chunks omit cost", async () => {
+		const { Agent } = await import("./agent.js");
+		const handler = makeHandler([
+			[
+				{ type: "text", id: "r1", text: "Hello from model" },
+				{ type: "usage", id: "r1", inputTokens: 10, outputTokens: 5 },
+				{ type: "done", id: "r1", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "You are helpful.",
+			tools: [],
+		});
+
+		const result = await agent.run("Say hello");
+
+		expect(result.usage.totalCost).toBeUndefined();
 	});
 
 	it("emits loop logs to provided logger", async () => {
@@ -253,6 +289,64 @@ describe("Agent", () => {
 		});
 	});
 
+	it("normalizes array-shaped read_files tool args into object input", async () => {
+		const { Agent } = await import("./agent.js");
+		const readFilesTool = createTool({
+			name: "read_files",
+			description: "Read multiple files",
+			inputSchema: {
+				type: "object",
+				properties: {
+					file_paths: {
+						type: "array",
+						items: { type: "string" },
+					},
+				},
+				required: ["file_paths"],
+			},
+			execute: async ({ file_paths }) => ({ file_paths }),
+		}) as Tool;
+
+		const handler = makeHandler([
+			[
+				{
+					type: "tool_calls",
+					id: "r1",
+					tool_call: {
+						call_id: "call_1",
+						function: {
+							name: "read_files",
+							arguments: '["/tmp/a.ts","/tmp/b.ts"]',
+						},
+					},
+				},
+				{ type: "usage", id: "r1", inputTokens: 10, outputTokens: 5 },
+				{ type: "done", id: "r1", success: true },
+			],
+			[
+				{ type: "text", id: "r2", text: "Done" },
+				{ type: "usage", id: "r2", inputTokens: 2, outputTokens: 1 },
+				{ type: "done", id: "r2", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "Use tools",
+			tools: [readFilesTool],
+		});
+
+		const result = await agent.run("read files");
+		expect(result.finishReason).toBe("completed");
+		expect(result.toolCalls).toHaveLength(1);
+		expect(result.toolCalls[0]?.error).toBeUndefined();
+		expect(result.toolCalls[0]?.input).toEqual({
+			file_paths: ["/tmp/a.ts", "/tmp/b.ts"],
+		});
+	});
+
 	it("continues conversation and clearHistory resets message state", async () => {
 		const { Agent } = await import("./agent.js");
 		const handler = makeHandler([
@@ -306,7 +400,7 @@ describe("Agent", () => {
 		]);
 		createHandlerMock.mockReturnValue(handler);
 
-		const initial = [
+		const initial: LlmsProviders.Message[] = [
 			{ role: "user", content: [{ type: "text", text: "history" }] },
 		];
 		const agent = new Agent({
@@ -321,7 +415,7 @@ describe("Agent", () => {
 		const first = await agent.continue("resume");
 		expect(first.text).toBe("restored");
 
-		const restored = [
+		const restored: LlmsProviders.Message[] = [
 			{ role: "assistant", content: [{ type: "text", text: "new-state" }] },
 		];
 		agent.restore(restored);
@@ -561,7 +655,7 @@ describe("Agent", () => {
 
 	it("rejects overlapping runs on the same agent instance", async () => {
 		const { Agent } = await import("./agent.js");
-		let releaseFirstTurn: (() => void) | null = null;
+		let releaseFirstTurn!: () => void;
 		const firstTurnBlocked = new Promise<void>((resolve) => {
 			releaseFirstTurn = resolve;
 		});
@@ -592,7 +686,7 @@ describe("Agent", () => {
 			/state is "running"/i,
 		);
 
-		releaseFirstTurn?.();
+		releaseFirstTurn();
 		await firstRun;
 	});
 

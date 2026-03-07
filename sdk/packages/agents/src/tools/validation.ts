@@ -4,6 +4,7 @@
  * Functions for validating tools and tool inputs.
  */
 
+import { z } from "zod";
 import type { Tool } from "../types.js";
 
 /**
@@ -29,49 +30,15 @@ export function validateToolInput(
 	tool: Tool,
 	input: unknown,
 ): { valid: boolean; error?: string } {
-	if (typeof input !== "object" || input === null) {
-		return { valid: false, error: "Input must be an object" };
+	const schema = z.fromJSONSchema(tool.inputSchema);
+	if (!schema) {
+		return { valid: false, error: "Input schema must be an object" };
 	}
-
-	const inputObj = input as Record<string, unknown>;
-	const { properties, required } = tool.inputSchema;
-
-	// Check required fields
-	if (required) {
-		for (const field of required) {
-			if (!(field in inputObj)) {
-				return { valid: false, error: `Missing required field: ${field}` };
-			}
-		}
+	const result = schema.safeParse(input);
+	if (result.success) {
+		return { valid: true };
 	}
-
-	// Basic type checking for known properties
-	for (const [key, value] of Object.entries(inputObj)) {
-		const schema = properties[key];
-		if (!schema) {
-			// Unknown property - might be ok depending on additionalProperties
-			continue;
-		}
-
-		// Simple type check
-		if (value !== null && value !== undefined) {
-			const actualType = Array.isArray(value) ? "array" : typeof value;
-			const expectedType = schema.type;
-
-			if (expectedType === "integer" && actualType === "number") {
-				if (!Number.isInteger(value)) {
-					return { valid: false, error: `Field "${key}" must be an integer` };
-				}
-			} else if (actualType !== expectedType && expectedType !== "null") {
-				return {
-					valid: false,
-					error: `Field "${key}" has wrong type: expected ${expectedType}, got ${actualType}`,
-				};
-			}
-		}
-	}
-
-	return { valid: true };
+	return { valid: false, error: z.prettifyError(result.error) };
 }
 
 /**

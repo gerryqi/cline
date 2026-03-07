@@ -17,7 +17,8 @@ import type {
 	TeamTeammateSpec,
 } from "@cline/agents";
 import type { providers as LlmsProviders } from "@cline/llms";
-import { resolveRootSessionId, resolveTeamDataDir } from "@cline/shared";
+import { resolveRootSessionId } from "@cline/shared";
+import { resolveTeamDataDir } from "@cline/shared/storage";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import type { SqliteSessionStore } from "../storage/sqlite-session-store";

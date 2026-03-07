@@ -98,6 +98,33 @@ describe("format conversion", () => {
 		expect(openai[1].tool_calls[0].extra_content).toBeUndefined();
 	});
 
+	it("normalizes array-shaped tool_use input for openai replay", () => {
+		const messages: Message[] = [
+			{ role: "user", content: "run these" },
+			{
+				role: "assistant",
+				content: [
+					{
+						type: "tool_use",
+						id: "call_1",
+						name: "run_commands",
+						input: ["ls -la", "pwd"] as unknown as Record<string, unknown>,
+					},
+				],
+			},
+		];
+
+		const openai = convertToOpenAIMessages(messages) as any[];
+		expect(openai[1]?.tool_calls?.[0]).toMatchObject({
+			id: "call_1",
+			type: "function",
+			function: {
+				name: "run_commands",
+				arguments: JSON.stringify({ commands: ["ls -la", "pwd"] }),
+			},
+		});
+	});
+
 	it("keeps anthropic thinking signature and cache marker behavior", () => {
 		const messages: Message[] = [
 			{ role: "user", content: "hello" },
@@ -116,6 +143,33 @@ describe("format conversion", () => {
 		const anthropic = convertToAnthropicMessages(messages, true) as any[];
 		expect(anthropic[1].content[0].type).toBe("thinking");
 		expect(anthropic[1].content[0].signature).toBe("anthropic-sig");
+	});
+
+	it("normalizes array-shaped tool_use input for anthropic replay", () => {
+		const messages: Message[] = [
+			{ role: "user", content: "run these" },
+			{
+				role: "assistant",
+				content: [
+					{
+						type: "tool_use",
+						id: "call_1",
+						name: "run_commands",
+						input: ["ls -la", "pwd"] as unknown as Record<string, unknown>,
+					},
+				],
+			},
+		];
+
+		const anthropic = convertToAnthropicMessages(messages) as any[];
+		expect(anthropic[1]?.content?.[0]).toMatchObject({
+			type: "tool_use",
+			id: "call_1",
+			name: "run_commands",
+			input: {
+				commands: ["ls -la", "pwd"],
+			},
+		});
 	});
 
 	it("handles R1 interchange with tool results and reasoning_content", () => {

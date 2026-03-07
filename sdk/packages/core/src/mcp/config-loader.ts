@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolveMcpSettingsPath } from "@cline/shared";
+import { resolveMcpSettingsPath } from "@cline/shared/storage";
 import { z } from "zod";
 import type { McpManager, McpServerRegistration } from "./types";
 

@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { appendFileSync, existsSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { type HookEventPayload, parseHookEventPayload } from "@cline/agents";
 import { resolveHookLogPath } from "@cline/shared";
+import { ensureHookLogDir } from "@cline/shared/storage";
 import { nanoid } from "nanoid";
 import type { ParsedArgs } from "./types";
 
@@ -273,29 +274,6 @@ export function writeHookJson(value: unknown): void {
 			throw error;
 		}
 	}
-}
-
-export function ensureHookLogDir(filePath?: string): string {
-	if (filePath?.trim()) {
-		const resolved = dirname(filePath);
-		if (!existsSync(resolved)) {
-			mkdirSync(resolved, { recursive: true });
-		}
-		return resolved;
-	}
-	const dir = join(resolveClineDataDir(), "hooks");
-	if (!existsSync(dir)) {
-		mkdirSync(dir, { recursive: true });
-	}
-	return dir;
-}
-
-function resolveClineDataDir(): string {
-	const envPath = process.env.CLINE_DATA_DIR?.trim();
-	if (envPath) {
-		return envPath;
-	}
-	return join(homedir(), ".cline", "data");
 }
 
 export function appendHookAudit(event: HookEventPayload): void {

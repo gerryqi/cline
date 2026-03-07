@@ -6,12 +6,14 @@
  */
 
 import { z } from "zod";
+import { getGeneratedModelsForProvider } from "../../models/generated-access";
 import {
 	DEFAULT_EXTERNAL_OCA_BASE_URL,
 	DEFAULT_INTERNAL_OCA_BASE_URL,
 } from "../../models/providers/oca";
 import { OPENAI_COMPATIBLE_PROVIDERS } from "../handlers/providers";
 import type { ProviderCapability, ProviderConfig, ProviderId } from "./config";
+import { normalizeProviderId } from "./provider-ids";
 
 // =============================================================================
 // Provider ID Schema
@@ -361,6 +363,21 @@ export function toProviderConfig(settings: ProviderSettings): ProviderConfig {
 
 	// Get provider defaults if available
 	const providerDefaults = OPENAI_COMPATIBLE_PROVIDERS[providerId];
+	const normalizedProviderId = normalizeProviderId(providerId);
+
+	const modelCatalogProviderId =
+		normalizedProviderId === "openai-native"
+			? "openai"
+			: normalizedProviderId === "claude-code"
+				? "anthropic"
+				: normalizedProviderId === "openai-codex"
+					? "openai"
+					: normalizedProviderId === "cline"
+						? "openrouter"
+						: normalizedProviderId;
+	const generatedKnownModels = getGeneratedModelsForProvider(
+		modelCatalogProviderId,
+	);
 
 	// Resolve API key: OAuth access token wins (most recent), then shorthand apiKey, then auth.apiKey
 	const apiKey =
@@ -380,7 +397,11 @@ export function toProviderConfig(settings: ProviderSettings): ProviderConfig {
 
 		// Model configuration
 		modelId: settings.model ?? providerDefaults?.modelId ?? "default",
-		knownModels: providerDefaults?.knownModels,
+		knownModels:
+			providerDefaults?.knownModels ??
+			(Object.keys(generatedKnownModels).length > 0
+				? generatedKnownModels
+				: undefined),
 
 		// Authentication
 		apiKey,

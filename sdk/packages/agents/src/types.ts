@@ -19,7 +19,6 @@ import { z } from "zod";
 
 export type {
 	BasicLogger,
-	JsonSchema,
 	Tool,
 	ToolApprovalRequest,
 	ToolApprovalResult,

@@ -1,9 +1,9 @@
-import type { JsonSchema, ToolContext } from "../types.js";
+import type { ToolContext } from "../types.js";
 
 export interface McpToolDescriptor {
 	name: string;
 	description?: string;
-	inputSchema: JsonSchema;
+	inputSchema: Record<string, unknown>;
 }
 
 export interface McpToolCallRequest {

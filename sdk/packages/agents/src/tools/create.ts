@@ -5,12 +5,7 @@
  */
 
 import type { providers as LlmsProviders } from "@cline/llms";
-import {
-	type JsonSchema,
-	type Tool,
-	type ToolContext,
-	zodToJsonSchema,
-} from "@cline/shared";
+import { type Tool, type ToolContext, zodToJsonSchema } from "@cline/shared";
 import { z } from "zod";
 
 /**
@@ -38,7 +33,7 @@ import { z } from "zod";
 export function createTool<TInput, TOutput>(config: {
 	name: string;
 	description: string;
-	inputSchema: JsonSchema;
+	inputSchema: Record<string, unknown>;
 	execute: (input: TInput, context: ToolContext) => Promise<TOutput>;
 	timeoutMs?: number;
 	retryable?: boolean;
@@ -56,7 +51,7 @@ export function createTool<TSchema extends z.ZodTypeAny, TOutput>(config: {
 export function createTool<TInput, TOutput>(config: {
 	name: string;
 	description: string;
-	inputSchema: JsonSchema | z.ZodTypeAny;
+	inputSchema: Record<string, unknown> | z.ZodTypeAny;
 	execute: (input: TInput, context: ToolContext) => Promise<TOutput>;
 	timeoutMs?: number;
 	retryable?: boolean;
@@ -91,8 +86,10 @@ export function toToolDefinition(tool: Tool): LlmsProviders.ToolDefinition {
 		inputSchema: {
 			type: "object",
 			properties: tool.inputSchema.properties as Record<string, unknown>,
-			required: tool.inputSchema.required,
-			additionalProperties: tool.inputSchema.additionalProperties,
+			required: tool.inputSchema.required as string[] | undefined,
+			additionalProperties: tool.inputSchema.additionalProperties as
+				| boolean
+				| undefined,
 		},
 	};
 }

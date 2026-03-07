@@ -5,7 +5,7 @@ import {
 	DOCUMENTS_HOOKS_DIRECTORY_PATH,
 	HOOKS_CONFIG_DIRECTORY_NAME,
 	resolveHooksConfigSearchPaths as resolveHooksConfigSearchPathsFromShared,
-} from "@cline/shared";
+} from "@cline/shared/storage";
 
 export { DOCUMENTS_HOOKS_DIRECTORY_PATH, HOOKS_CONFIG_DIRECTORY_NAME };
 

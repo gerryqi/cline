@@ -5,7 +5,12 @@ Package-level docs are centralized:
 - Overview: [`packages/README.md`](../README.md)
 - Architecture and interactions: [`packages/ARCHITECTURE.md`](../ARCHITECTURE.md)
 
-`@cline/shared` owns shared cross-package primitives (paths/session common types/utilities), including data path resolvers such as `resolveClineDataDir`, `resolveSessionDataDir`, and `resolveTeamDataDir`.
+`@cline/shared` owns shared cross-package primitives (session common types/utilities).
+
+Node-only filesystem path resolvers live under the storage subpath export:
+
+- `@cline/shared/storage`
+- examples: `resolveClineDataDir`, `resolveSessionDataDir`, `resolveTeamDataDir`
 
 It also exports cross-client logging contracts, including `BasicLogger`, so
 runtime, SDK, and host applications can share a single logger type.

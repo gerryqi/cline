@@ -306,6 +306,7 @@ Custom provider registry notes:
 - **Streaming output** - Responses stream in real-time
 - **Stable stream rendering** - Prefers structured agent events and avoids duplicate text/tool output when chunk mirrors are also emitted
 - **Sub-agent spawning** - `spawn_agent` is available by default unless disabled
+- **Recursive delegation** - Sub-agents spawned via `spawn_agent` also receive `spawn_agent` when spawn is enabled
 - **Agent teams runtime** - Team tools (tasks/mailbox/mission log) are available by default unless disabled
 - `team_member` payload rules: `action=spawn` requires `agentId` + `rolePrompt`; `action=shutdown` requires `agentId`
 - **Pipe support** - Accepts piped input for processing files

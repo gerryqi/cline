@@ -509,7 +509,7 @@ When a sub-agent ends (`onSubAgentEnd`):
 2. Appends the finish reason to the transcript
 3. Persists the sub-agent's full message history
 
-Sub-agents inherit the parent's provider, model, and working directory. They receive the same built-in tools but **not** the spawn tool (no recursive spawning by default).
+Sub-agents inherit the parent's provider, model, and working directory. They receive the same built-in tools and also receive `spawn_agent` when spawn is enabled, allowing recursive delegation.
 
 ---
 

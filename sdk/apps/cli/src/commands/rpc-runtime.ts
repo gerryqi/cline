@@ -32,9 +32,8 @@ import {
 	type RpcProviderListItem,
 	type RpcProviderModel,
 	type RpcProviderSettingsActionRequest,
-	setHomeDir,
-	setHomeDirIfUnset,
 } from "@cline/shared";
+import { setHomeDir, setHomeDirIfUnset } from "@cline/shared/storage";
 
 type OAuthProviderId = "cline" | "oca" | "openai-codex";
 type ProviderCapabilityInput =

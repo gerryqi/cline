@@ -110,7 +110,12 @@ export abstract class BaseHandler implements ApiHandler {
 		outputTokens: number,
 		cacheReadTokens = 0,
 	): number | undefined {
-		const pricing = this.config.modelInfo?.pricing;
+		const modelPricingSource =
+			this.config.modelInfo ??
+			(this.config.modelId
+				? this.config.knownModels?.[this.config.modelId]
+				: undefined);
+		const pricing = modelPricingSource?.pricing;
 		if (!pricing?.input || !pricing?.output) {
 			return undefined;
 		}

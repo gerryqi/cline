@@ -21,7 +21,6 @@ const TeamMemberInputSchema = z.object({
 		.string()
 		.optional()
 		.describe("System prompt describing teammate role (required for spawn)"),
-	modelId: z.string().optional().describe("Optional model override for spawn"),
 	maxIterations: z
 		.number()
 		.int()
@@ -193,6 +192,19 @@ const TeamLogUpdateInputSchema = z.object({
 
 const TeamCleanupInputSchema = z.object({});
 
+function stripNullProperties(input: unknown): unknown {
+	if (!input || typeof input !== "object" || Array.isArray(input)) {
+		return input;
+	}
+	const result: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+		if (value !== null) {
+			result[key] = value;
+		}
+	}
+	return result;
+}
+
 function formatTeamMemberInputError(input: unknown): string {
 	const action =
 		typeof input === "object" && input !== null && "action" in input
@@ -348,7 +360,9 @@ export function createAgentTeamsTools(
 				"Manage teammate lifecycle. action=spawn requires agentId+rolePrompt; action=shutdown requires agentId.",
 			inputSchema: zodToJsonSchema(TeamMemberInputSchema),
 			execute: async (input) => {
-				const validatedInputResult = TeamMemberInputSchema.safeParse(input);
+				const normalizedInput = stripNullProperties(input);
+				const validatedInputResult =
+					TeamMemberInputSchema.safeParse(normalizedInput);
 				if (!validatedInputResult.success) {
 					throw new Error(formatTeamMemberInputError(input));
 				}
@@ -359,7 +373,7 @@ export function createAgentTeamsTools(
 				switch (validatedInput.action) {
 					case "spawn": {
 						const spawnInputResult =
-							TeamMemberSpawnInputSchema.safeParse(input);
+							TeamMemberSpawnInputSchema.safeParse(normalizedInput);
 						if (!spawnInputResult.success) {
 							throw new Error(formatTeamMemberInputError(input));
 						}
@@ -372,7 +386,6 @@ export function createAgentTeamsTools(
 						const spec: TeamTeammateSpec = {
 							agentId: spawnInput.agentId,
 							rolePrompt: spawnInput.rolePrompt,
-							modelId: spawnInput.modelId,
 							maxIterations: spawnInput.maxIterations,
 						};
 						spawnTeamTeammate({
@@ -386,7 +399,7 @@ export function createAgentTeamsTools(
 					}
 					case "shutdown": {
 						const shutdownInputResult =
-							TeamMemberShutdownInputSchema.safeParse(input);
+							TeamMemberShutdownInputSchema.safeParse(normalizedInput);
 						if (!shutdownInputResult.success) {
 							throw new Error(formatTeamMemberInputError(input));
 						}

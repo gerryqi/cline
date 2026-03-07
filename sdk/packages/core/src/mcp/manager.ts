@@ -34,13 +34,7 @@ function cloneTools(
 	return tools.map((tool) => ({
 		name: tool.name,
 		description: tool.description,
-		inputSchema: {
-			...tool.inputSchema,
-			properties: { ...tool.inputSchema.properties },
-			required: tool.inputSchema.required
-				? [...tool.inputSchema.required]
-				: undefined,
-		},
+		inputSchema: tool.inputSchema,
 	}));
 }
 

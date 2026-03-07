@@ -2,4 +2,4 @@ export {
 	resolveClineDataDir,
 	resolveProviderSettingsPath,
 	resolveSessionDataDir,
-} from "@cline/shared";
+} from "@cline/shared/storage";

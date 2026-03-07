@@ -1,4 +1,4 @@
-import { resolveTeamDataDir } from "@cline/shared";
+import { resolveTeamDataDir } from "@cline/shared/storage";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentTeamsRuntime } from "./multi-agent";
 import { createAgentTeamsTools } from "./team-tools";
@@ -126,5 +126,39 @@ describe("createAgentTeamsTools schema surface", () => {
 				},
 			),
 		).rejects.toThrow('team_member requires "action" (spawn|shutdown)');
+	});
+
+	it("accepts strict-mode nulls for optional team_member spawn fields", async () => {
+		const runtime = new AgentTeamsRuntime({ teamName: "test-team" });
+		const tools = createAgentTeamsTools({
+			runtime,
+			requesterId: "lead",
+			teammateRuntime: {
+				providerId: "anthropic",
+				modelId: "claude-sonnet-4-5-20250929",
+			},
+		});
+		const teamMember = tools.find((tool) => tool.name === "team_member");
+		expect(teamMember).toBeDefined();
+
+		await expect(
+			teamMember?.execute(
+				{
+					action: "spawn",
+					agentId: "python-poet",
+					rolePrompt: "Write concise Python-focused haiku",
+					maxIterations: null,
+					reason: null,
+				},
+				{
+					agentId: "lead",
+					conversationId: "conv-1",
+					iteration: 1,
+				},
+			),
+		).resolves.toMatchObject({
+			agentId: "python-poet",
+			status: "spawned",
+		});
 	});
 });

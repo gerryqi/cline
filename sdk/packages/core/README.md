@@ -61,6 +61,8 @@ Session message history persistence now enriches the latest assistant message of
 - `metrics` (`inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `cost`)
 - `ts` (turn completion timestamp in epoch milliseconds)
 
+`metrics.cost` is optional. When model pricing metadata is unavailable for a turn, cost remains unset instead of being coerced to `0`.
+
 ## Session Host Factory
 
 `@cline/core/server` also exposes `createSessionHost(options?)`, a higher-level host entrypoint that builds a ready-to-use session manager with backend resolution:

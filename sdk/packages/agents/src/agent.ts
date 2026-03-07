@@ -37,6 +37,27 @@ import type {
 const DEFAULT_REMINDER_TEXT =
 	"REMINDER: If you have gathered enough information to answer the user's question, please provide your final answer now without using any more tools.";
 
+function resolveKnownModelsFromConfig(
+	config: AgentConfig,
+): Record<string, providers.ModelInfo> | undefined {
+	if (config.knownModels) {
+		return config.knownModels;
+	}
+
+	try {
+		const providerConfig = providers.toProviderConfig({
+			provider: config.providerId,
+			model: config.modelId,
+			apiKey: config.apiKey,
+			baseUrl: config.baseUrl,
+			headers: config.headers,
+		});
+		return providerConfig.knownModels;
+	} catch {
+		return undefined;
+	}
+}
+
 export class Agent {
 	private config: Required<
 		Pick<
@@ -337,7 +358,7 @@ export class Agent {
 			apiKey: config.apiKey,
 			baseUrl: config.baseUrl,
 			headers: config.headers,
-			knownModels: config.knownModels,
+			knownModels: resolveKnownModelsFromConfig(config),
 			maxOutputTokens: config.maxTokensPerTurn,
 			reasoningEffort: config.reasoningEffort,
 			thinkingBudgetTokens: config.thinkingBudgetTokens,
@@ -378,7 +399,7 @@ export class Agent {
 			outputTokens: 0,
 			cacheReadTokens: 0,
 			cacheWriteTokens: 0,
-			totalCost: 0,
+			totalCost: undefined,
 		};
 
 		try {
@@ -539,8 +560,9 @@ export class Agent {
 				totalUsage.cacheWriteTokens =
 					(totalUsage.cacheWriteTokens ?? 0) +
 					(turn.usage.cacheWriteTokens ?? 0);
-				totalUsage.totalCost =
-					(totalUsage.totalCost ?? 0) + (turn.usage.cost ?? 0);
+				if (typeof turn.usage.cost === "number") {
+					totalUsage.totalCost = (totalUsage.totalCost ?? 0) + turn.usage.cost;
+				}
 
 				this.emit({
 					type: "usage",
@@ -797,7 +819,7 @@ export class Agent {
 				outputTokens: 0,
 				cacheReadTokens: 0,
 				cacheWriteTokens: 0,
-				totalCost: 0,
+				totalCost: undefined,
 			},
 			messages: this.conversationStore.getMessages(),
 			toolCalls: [],

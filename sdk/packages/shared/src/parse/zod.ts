@@ -5,7 +5,6 @@
  */
 
 import { z } from "zod";
-import type { Tool } from "../llms/tools";
 
 /**
  * Validate input using a Zod schema
@@ -40,6 +39,6 @@ function stripNullProperties(input: unknown): unknown {
 	return result;
 }
 
-export function zodToJsonSchema(schema: z.ZodTypeAny): Tool["inputSchema"] {
-	return z.toJSONSchema(schema) as Tool["inputSchema"];
+export function zodToJsonSchema(schema: z.ZodTypeAny): Record<string, unknown> {
+	return z.toJSONSchema(schema);
 }
