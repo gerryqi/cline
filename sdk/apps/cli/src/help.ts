@@ -58,6 +58,10 @@ ${c.bold}ENVIRONMENT${c.reset}
   ANTHROPIC_API_KEY           API key for Anthropic
   CLINE_API_KEY               API key for CLINE (when using -p cline)
   CLINE_DATA_DIR              Base data directory (sessions/settings/teams/hooks)
+  CLINE_LOG_ENABLED           Set to 0/false to disable runtime file logging
+  CLINE_LOG_LEVEL             Runtime log level (trace/debug/info/warn/error/fatal/silent)
+  CLINE_LOG_PATH              Runtime log file path (default: <CLINE_DATA_DIR>/logs/clite.log)
+  CLINE_LOG_NAME              Logger name for runtime log records
   CLINE_SANDBOX               Set to 1 to force sandbox mode
   CLINE_SANDBOX_DATA_DIR      Override sandbox state directory
   CLINE_TEAM_DATA_DIR         Override team persistence directory

@@ -19,6 +19,7 @@ import { getRpcServerHealth, RpcSessionClient } from "@cline/rpc";
 import type {
 	RpcChatMessage,
 	RpcChatRunTurnRequest,
+	RpcChatRuntimeLoggerConfig,
 	RpcChatStartSessionRequest,
 	RpcChatTurnResult,
 } from "@cline/shared";
@@ -36,7 +37,9 @@ let initPromise:
 
 export interface CliSessionManager {
 	start(input: {
-		config: import("@cline/core/server").CoreSessionConfig;
+		config: import("@cline/core/server").CoreSessionConfig & {
+			loggerConfig?: RpcChatRuntimeLoggerConfig;
+		};
 		source?: import("@cline/core/server").SessionSource;
 		prompt?: string;
 		interactive?: boolean;
@@ -289,6 +292,7 @@ function toRpcStartRequest(
 		missionStepInterval: config.missionLogIntervalSteps ?? 3,
 		missionTimeIntervalMs: config.missionLogIntervalMs ?? 120000,
 		initialMessages: input.initialMessages as RpcChatMessage[] | undefined,
+		logger: config.loggerConfig as RpcChatRuntimeLoggerConfig | undefined,
 	};
 	(
 		request as RpcChatStartSessionRequest & {

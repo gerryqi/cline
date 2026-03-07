@@ -7,6 +7,7 @@ import {
 import type { providers as LlmsProviders } from "@cline/llms";
 import type { RpcRuntimeHandlers } from "@cline/rpc";
 import { RpcSessionClient } from "@cline/rpc";
+import { flushCliLoggerAdapters } from "../logging/adapter";
 import {
 	createRpcToolApprovalRequester,
 	subscribeRuntimeEventBridge,
@@ -113,6 +114,7 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 				}
 				return { resultJson: JSON.stringify(toRpcTurnResult(restoredResult)) };
 			} finally {
+				flushCliLoggerAdapters();
 				await cleanupMaterializedFiles(fileMaterialized.tempDir);
 			}
 		},
@@ -132,6 +134,7 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 			}
 			const known = activeSessions.has(id);
 			await sessionManager.stop(id);
+			flushCliLoggerAdapters();
 			activeSessions.delete(id);
 			sessionModes.delete(id);
 			return { applied: known };
@@ -141,6 +144,7 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 		dispose: async () => {
 			unsubscribeEventBridge();
 			await sessionManager.dispose("rpc_runtime_shutdown");
+			flushCliLoggerAdapters();
 			activeSessions.clear();
 			sessionModes.clear();
 			eventClient.close();

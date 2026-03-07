@@ -43,5 +43,5 @@ outside transport wiring:
   `RpcProviderCapability`, and `RpcOAuthProviderId`
 
 Chat runtime payload notes:
-- `RpcChatStartSessionRequest` supports `initialMessages`, optional `toolPolicies`, and optional `rules` for default system prompt assembly.
+- `RpcChatStartSessionRequest` supports `initialMessages`, optional `toolPolicies`, optional `rules` for default system prompt assembly, and optional `logger` runtime config (`RpcChatRuntimeLoggerConfig`) so hosts can pass serialized logger settings to remote runtimes.
 - `RpcChatRunTurnRequest` supports `promptPreformatted` for callers that already built CLI-style user input envelopes.

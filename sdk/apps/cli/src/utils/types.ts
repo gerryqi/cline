@@ -1,6 +1,11 @@
 import type { CoreSessionConfig, SessionManifest } from "@cline/core/server";
 import type { providers as LlmsProviders } from "@cline/llms";
-import type { AgentMode, SessionLineage, ToolPolicy } from "@cline/shared";
+import type {
+	AgentMode,
+	RpcChatRuntimeLoggerConfig,
+	SessionLineage,
+	ToolPolicy,
+} from "@cline/shared";
 
 export type CliOutputMode = "text" | "json";
 export type CliAgentMode = AgentMode;
@@ -8,6 +13,7 @@ export type CliAgentMode = AgentMode;
 export interface Config extends Omit<CoreSessionConfig, "apiKey" | "mode"> {
 	apiKey: string;
 	knownModels?: Record<string, LlmsProviders.ModelInfo>;
+	loggerConfig?: RpcChatRuntimeLoggerConfig;
 	sandbox: boolean;
 	sandboxDataDir?: string;
 	thinking: boolean;

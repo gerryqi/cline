@@ -13,6 +13,7 @@ export interface RpcSessionStorageOptions {
 export interface RpcChatRuntimeConfigBase extends SessionPromptConfig {
 	cwd?: string;
 	apiKey: string;
+	logger?: RpcChatRuntimeLoggerConfig;
 	enableTools: boolean;
 	enableSpawn: boolean;
 	enableTeams: boolean;
@@ -21,6 +22,13 @@ export interface RpcChatRuntimeConfigBase extends SessionPromptConfig {
 	missionStepInterval: number;
 	missionTimeIntervalMs: number;
 	toolPolicies?: SessionExecutionConfig["toolPolicies"];
+}
+
+export interface RpcChatRuntimeLoggerConfig {
+	enabled?: boolean;
+	level?: "trace" | "debug" | "info" | "warn" | "error" | "fatal" | "silent";
+	destination?: string;
+	name?: string;
 }
 
 export interface RpcChatStartSessionRequest extends RpcChatRuntimeConfigBase {

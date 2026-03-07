@@ -1,0 +1,204 @@
+import { join } from "node:path";
+import type { BasicLogger, RpcChatRuntimeLoggerConfig } from "@cline/shared";
+import { resolveClineDataDir } from "@cline/shared/storage";
+import pino, {
+	type DestinationStream,
+	type LevelWithSilent,
+	type Logger as PinoLogger,
+} from "pino";
+
+const loggerCache = new Map<
+	string,
+	{ logger: PinoLogger; destination?: DestinationStream }
+>();
+
+export interface CliLoggerAdapter {
+	readonly pino: PinoLogger;
+	readonly core: BasicLogger;
+	readonly runtimeConfig: RpcChatRuntimeLoggerConfig;
+	child(bindings: Record<string, unknown>): CliLoggerAdapter;
+}
+
+interface CreateCliLoggerAdapterInput {
+	runtime: "cli" | "rpc-runtime";
+	component?: string;
+	runtimeConfig?: RpcChatRuntimeLoggerConfig;
+}
+
+const LOG_LEVELS: ReadonlySet<LevelWithSilent> = new Set([
+	"trace",
+	"debug",
+	"info",
+	"warn",
+	"error",
+	"fatal",
+	"silent",
+]);
+
+function normalizeLogLevel(value: string | undefined): LevelWithSilent {
+	const candidate = value?.trim().toLowerCase() as LevelWithSilent | undefined;
+	if (!candidate || !LOG_LEVELS.has(candidate)) {
+		return "info";
+	}
+	return candidate;
+}
+
+function normalizeRuntimeConfig(input: {
+	runtime: "cli" | "rpc-runtime";
+	runtimeConfig?: RpcChatRuntimeLoggerConfig;
+}): Required<RpcChatRuntimeLoggerConfig> {
+	const base = input.runtimeConfig;
+	const defaultDestination = join(resolveClineDataDir(), "logs", "clite.log");
+	const enabledEnv = process.env.CLINE_LOG_ENABLED?.trim();
+	const enabled =
+		base?.enabled ??
+		!(enabledEnv === "0" || enabledEnv?.toLowerCase() === "false");
+	const level = normalizeLogLevel(base?.level ?? process.env.CLINE_LOG_LEVEL);
+	const destination =
+		base?.destination?.trim() ||
+		process.env.CLINE_LOG_PATH?.trim() ||
+		defaultDestination;
+	const name =
+		base?.name?.trim() ||
+		process.env.CLINE_LOG_NAME?.trim() ||
+		`clite.${input.runtime}`;
+
+	return {
+		enabled,
+		level,
+		destination,
+		name,
+	};
+}
+
+function getOrCreatePinoLogger(
+	config: Required<RpcChatRuntimeLoggerConfig>,
+): PinoLogger {
+	if (!config.enabled) {
+		return pino({
+			name: config.name,
+			level: "silent",
+			enabled: false,
+			timestamp: pino.stdTimeFunctions.isoTime,
+		});
+	}
+	const key = `${config.enabled}|${config.level}|${config.destination}|${config.name}`;
+	const cached = loggerCache.get(key);
+	if (cached) {
+		return cached.logger;
+	}
+
+	const destination = pino.destination({
+		dest: config.destination,
+		mkdir: true,
+		sync: false,
+	});
+	const created = pino(
+		{
+			name: config.name,
+			level: config.level,
+			timestamp: pino.stdTimeFunctions.isoTime,
+			enabled: config.enabled,
+		},
+		destination,
+	);
+	loggerCache.set(key, { logger: created, destination });
+	return created;
+}
+
+function toPinoFields(
+	metadata?: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+	if (!metadata) {
+		return undefined;
+	}
+	const { error, ...rest } = metadata;
+	if (error === undefined) {
+		return Object.keys(rest).length > 0 ? rest : undefined;
+	}
+	const fields: Record<string, unknown> = { ...rest, err: error };
+	return fields;
+}
+
+function createCoreLogger(logger: PinoLogger): BasicLogger {
+	return {
+		debug: (message, metadata) => {
+			const fields = toPinoFields(metadata);
+			if (fields) {
+				logger.debug(fields, message);
+				return;
+			}
+			logger.debug(message);
+		},
+		info: (message, metadata) => {
+			const fields = toPinoFields(metadata);
+			if (fields) {
+				logger.info(fields, message);
+				return;
+			}
+			logger.info(message);
+		},
+		warn: (message, metadata) => {
+			const fields = toPinoFields(metadata);
+			if (fields) {
+				logger.warn(fields, message);
+				return;
+			}
+			logger.warn(message);
+		},
+		error: (message, metadata) => {
+			const fields = toPinoFields(metadata);
+			if (fields) {
+				logger.error(fields, message);
+				return;
+			}
+			logger.error(message);
+		},
+	};
+}
+
+function createAdapterFromPino(
+	logger: PinoLogger,
+	runtimeConfig: Required<RpcChatRuntimeLoggerConfig>,
+): CliLoggerAdapter {
+	return {
+		pino: logger,
+		core: createCoreLogger(logger),
+		runtimeConfig,
+		child: (bindings) =>
+			createAdapterFromPino(logger.child(bindings), runtimeConfig),
+	};
+}
+
+export function createCliLoggerAdapter(
+	input: CreateCliLoggerAdapterInput,
+): CliLoggerAdapter {
+	const runtimeConfig = normalizeRuntimeConfig({
+		runtime: input.runtime,
+		runtimeConfig: input.runtimeConfig,
+	});
+	const baseLogger = getOrCreatePinoLogger(runtimeConfig);
+	const logger = input.component
+		? baseLogger.child({ component: input.component })
+		: baseLogger;
+	return createAdapterFromPino(logger, runtimeConfig);
+}
+
+export function flushCliLoggerAdapters(): void {
+	for (const { logger, destination } of loggerCache.values()) {
+		try {
+			const syncFlusher = destination as DestinationStream & {
+				flushSync?: () => void;
+			};
+			if (syncFlusher && typeof syncFlusher.flushSync === "function") {
+				syncFlusher.flushSync();
+				continue;
+			}
+			if (typeof logger.flush === "function") {
+				logger.flush();
+			}
+		} catch {
+			// no-op: shutdown flush is best-effort.
+		}
+	}
+}

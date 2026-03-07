@@ -324,12 +324,25 @@ bun install -g @cline/cli
 - `CLINE_RPC_ADDRESS` - Address used by `clite rpc start` (default `127.0.0.1:4317`)
 - `CLINE_TOOL_APPROVAL_MODE` - Approval mode (`desktop` uses file IPC; unset uses terminal prompt)
 - `CLINE_TOOL_APPROVAL_DIR` - Directory for desktop approval request/decision files
+- `CLINE_LOG_ENABLED` - Set to `0`/`false` to disable runtime file logging
+- `CLINE_LOG_LEVEL` - Runtime log level (`trace|debug|info|warn|error|fatal|silent`, default `info`)
+- `CLINE_LOG_PATH` - Runtime log file path (default `<CLINE_DATA_DIR>/logs/clite.log`)
+- `CLINE_LOG_NAME` - Logger name embedded in runtime log records
 - `OPENAI_API_KEY` - API key for OpenAI (when using `-p openai`)
 - `OPENROUTER_API_KEY` - API key for OpenRouter
 
 `--key` takes precedence over environment variables.
 
 For OAuth providers (`cline`, `openai-codex`, `oca`), you can either use `clite auth <provider>` or let `clite` prompt for OAuth automatically when no API key is configured.
+
+## Logging Adapter
+
+`clite` now uses a `pino`-backed adapter that targets the core `BasicLogger`
+contract:
+
+- CLI runtime passes `logger` directly into local `@cline/core` sessions.
+- RPC-backed sessions include a serialized logger payload in `RpcChatStartSessionRequest.logger`; the RPC runtime reconstructs the same `pino` settings and injects them into core.
+- This keeps logger behavior consistent between local and RPC runtime execution paths while preserving a transport-safe config boundary.
 
 After login, OAuth credentials are persisted with `auth.expiresAt`, and `@cline/core` refreshes these tokens automatically during session turns (including long-lived RPC runtime sessions).
 

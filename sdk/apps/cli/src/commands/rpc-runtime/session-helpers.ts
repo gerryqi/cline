@@ -12,6 +12,7 @@ import type {
 	RpcChatTurnResult,
 } from "@cline/shared";
 import { setHomeDir, setHomeDirIfUnset } from "@cline/shared/storage";
+import { createCliLoggerAdapter } from "../../logging/adapter";
 import { resolveSystemPrompt } from "../../runtime/prompt";
 
 function sanitizeFilename(name: string, index: number): string {
@@ -92,11 +93,16 @@ export async function buildSessionStartInput(input: {
 		explicitSystemPrompt: config.systemPrompt,
 		rules: config.rules,
 	});
+	const logger = createCliLoggerAdapter({
+		runtime: "rpc-runtime",
+		component: "session-runtime",
+		runtimeConfig: config.logger,
+	});
 
 	return {
 		mode,
 		sessionInput: {
-			source: SessionSource.DESKTOP_CHAT,
+			source: SessionSource.CLI,
 			interactive: true,
 			initialMessages: input.initialMessages,
 			config: {
@@ -115,6 +121,7 @@ export async function buildSessionStartInput(input: {
 				teamName: config.teamName,
 				missionLogIntervalSteps: config.missionStepInterval,
 				missionLogIntervalMs: config.missionTimeIntervalMs,
+				logger: logger.core,
 			},
 			toolPolicies: resolveToolPolicies(config),
 		},

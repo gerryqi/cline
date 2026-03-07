@@ -27,6 +27,7 @@ import {
 	runRpcStopCommand,
 } from "./commands/rpc";
 import { showHelp, showVersion } from "./help";
+import { createCliLoggerAdapter } from "./logging/adapter";
 import { resolveSystemPrompt } from "./runtime/prompt";
 import { runAgent } from "./runtime/run-agent";
 import { runInteractive } from "./runtime/run-interactive";
@@ -302,6 +303,10 @@ export async function runCli(): Promise<void> {
 			}
 		}
 		const knownModelIds = knownModels ? Object.keys(knownModels) : [];
+		const loggerAdapter = createCliLoggerAdapter({
+			runtime: "cli",
+			component: "main",
+		});
 
 		const config: Config = {
 			providerId: provider,
@@ -325,6 +330,8 @@ export async function runCli(): Promise<void> {
 			thinking: args.thinking,
 			outputMode: args.outputMode,
 			mode: args.mode,
+			logger: loggerAdapter.core,
+			loggerConfig: loggerAdapter.runtimeConfig,
 			defaultToolAutoApprove,
 			toolPolicies,
 			enableSpawnAgent: args.enableSpawnAgent,

@@ -29,6 +29,7 @@ export type {
 	RpcChatMessage,
 	RpcChatRunTurnRequest,
 	RpcChatRuntimeConfigBase,
+	RpcChatRuntimeLoggerConfig,
 	RpcChatStartSessionRequest,
 	RpcChatToolCallResult,
 	RpcChatTurnResult,
