@@ -61,7 +61,9 @@ export async function runCli(): Promise<void> {
 	installStreamErrorGuards();
 
 	const rawArgs = process.argv.slice(2);
-	let args = parseArgs(rawArgs);
+	const launchConfigView = rawArgs[0]?.trim().toLowerCase() === "config";
+	const parsedArgsInput = launchConfigView ? rawArgs.slice(1) : rawArgs;
+	let args = parseArgs(parsedArgsInput);
 	const cwd = args.cwd ?? process.cwd();
 	const sandboxEnabled =
 		args.sandbox || process.env.CLINE_SANDBOX?.trim() === "1";
@@ -193,6 +195,13 @@ export async function runCli(): Promise<void> {
 		};
 	} else {
 		delete process.env.CLINE_HOOK_AGENT_RESUME;
+	}
+	if (launchConfigView) {
+		args = {
+			...args,
+			interactive: true,
+			prompt: undefined,
+		};
 	}
 
 	if (args.invalidOutputMode) {
@@ -384,6 +393,7 @@ export async function runCli(): Promise<void> {
 			await runInteractive(config, userInstructionWatcher, resumeSessionId, {
 				clineApiBaseUrl: selectedProviderSettings?.baseUrl,
 				clineProviderSettings: selectedProviderSettings,
+				initialView: launchConfigView ? "config" : "chat",
 			});
 			return;
 		}

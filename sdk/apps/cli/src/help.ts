@@ -7,6 +7,7 @@ export function showHelp(): void {
 ${c.bold}USAGE${c.reset}
   clite [OPTIONS] [PROMPT]
   clite -i                    Interactive mode
+  clite config                Open interactive config view
   clite auth <provider>       Authenticate with a provider (cline|openai-codex|oca)
   clite hook < payload.json   Handle hook payload from stdin
   clite list <workflows|rules|skills|agents|history|hooks|mcp>
@@ -73,6 +74,7 @@ ${c.bold}EXAMPLES${c.reset}
   clite list agents
   clite list hooks
   clite list mcp
+  clite config
   clite auth
   clite auth openai-codex
   clite auth --provider anthropic --apikey sk-xxx --modelid claude-sonnet-4-6

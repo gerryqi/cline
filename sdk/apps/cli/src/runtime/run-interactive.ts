@@ -16,6 +16,7 @@ import { loadInteractiveResumeMessages } from "../utils/resume";
 import { createDefaultCliSessionManager } from "../utils/session";
 import type { Config } from "../utils/types";
 import { setActiveRuntimeAbort } from "./active-runtime";
+import { loadInteractiveConfigData } from "./interactive-config";
 import {
 	listInteractiveSlashCommands,
 	resolveClineWelcomeLine,
@@ -39,6 +40,7 @@ export async function runInteractive(
 	options?: {
 		clineApiBaseUrl?: string;
 		clineProviderSettings?: providers.ProviderSettings;
+		initialView?: "chat" | "config";
 	},
 ): Promise<void> {
 	if (config.outputMode === "json") {
@@ -157,7 +159,14 @@ export async function runInteractive(
 		React.createElement(InteractiveTui, {
 			config,
 			welcomeLine: clineWelcomeLine ?? undefined,
+			initialView: options?.initialView ?? "chat",
 			workflowSlashCommands,
+			loadConfigData: async () =>
+				loadInteractiveConfigData({
+					watcher: userInstructionWatcher,
+					cwd: config.cwd,
+					workspaceRoot: config.workspaceRoot?.trim() || config.cwd,
+				}),
 			subscribeToEvents: ({ onAgentEvent: onAgent, onTeamEvent: onTeam }) => {
 				uiEvents.on("agent", onAgent);
 				uiEvents.on("team", onTeam);

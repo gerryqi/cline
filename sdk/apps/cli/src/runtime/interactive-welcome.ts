@@ -11,6 +11,7 @@ import type { Config } from "../utils/types";
 export interface InteractiveSlashCommand {
 	name: string;
 	instructions: string;
+	description?: string;
 }
 
 function normalizeLimit(limit: number | undefined): number {
@@ -41,12 +42,35 @@ export function listInteractiveSlashCommands(
 	watcher?: UserInstructionConfigWatcher,
 ): InteractiveSlashCommand[] {
 	if (!watcher) {
-		return [];
+		return [
+			{
+				name: "config",
+				instructions: "",
+				description: "Open interactive config browser",
+			},
+			{
+				name: "settings",
+				instructions: "",
+				description: "Alias for /config",
+			},
+		];
 	}
-	return listAvailableWorkflowsFromWatcher(watcher).map((workflow) => ({
-		name: workflow.name,
-		instructions: workflow.instructions,
-	}));
+	return [
+		{
+			name: "config",
+			instructions: "",
+			description: "Open interactive config browser",
+		},
+		{
+			name: "settings",
+			instructions: "",
+			description: "Alias for /config",
+		},
+		...listAvailableWorkflowsFromWatcher(watcher).map((workflow) => ({
+			name: workflow.name,
+			instructions: workflow.instructions,
+		})),
+	];
 }
 
 export async function searchWorkspaceFilesForMention(input: {

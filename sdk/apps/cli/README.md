@@ -41,12 +41,16 @@ clite -s "You are a pirate" "Tell me about the sea"
 
 # Interactive mode
 clite -i
+# Open interactive config view directly
+clite config
 # Running `clite` with no prompt also enters interactive mode.
 # Interactive mode is rendered with the Ink TUI.
 # The initial screen now uses a WelcomeView-style layout before the first prompt.
 # Inline composer supports completion menus:
 # - `@` opens workspace file mention search (arrow keys to move, Enter/Tab to insert)
 # - `/` opens workflow slash command search (arrow keys to move, Enter/Tab to insert)
+# - `/config` (or `/settings`) opens the interactive config browser
+#   with tabs for workflows, rules, skills, hooks, and agents
 # Footer rows mirror the legacy CLI layout:
 # 1) command/file hint + Plan/Act badges (Tab)
 # 2) provider/model + context bar + token/cost
@@ -190,6 +194,7 @@ Subcommands:
 
 - `clite auth` - Run interactive auth setup TUI
 - `clite auth <provider>` - Run OAuth login for `cline`, `openai-codex`, or `oca`
+- `clite config` - Open interactive config view (workflows/rules/skills/hooks/agents)
 - `clite rpc start` - Start the RPC gateway
 - `clite rpc status` - Check whether the RPC gateway is healthy
 - `clite rpc stop` - Request graceful shutdown of the RPC gateway

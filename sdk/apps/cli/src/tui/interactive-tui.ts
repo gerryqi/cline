@@ -9,6 +9,10 @@ import React, {
 	useRef,
 	useState,
 } from "react";
+import type {
+	InteractiveConfigData,
+	InteractiveConfigTab,
+} from "../runtime/interactive-config";
 import {
 	type InteractiveSlashCommand,
 	searchWorkspaceFilesForMention,
@@ -30,7 +34,9 @@ interface InteractiveTurnResult {
 interface InteractiveTuiProps {
 	config: Config;
 	welcomeLine?: string;
+	initialView?: "chat" | "config";
 	workflowSlashCommands?: InteractiveSlashCommand[];
+	loadConfigData: () => Promise<InteractiveConfigData>;
 	subscribeToEvents: (handlers: {
 		onAgentEvent: (event: AgentEvent) => void;
 		onTeamEvent: (event: TeamEvent) => void;
@@ -73,6 +79,34 @@ const MOUSE_UPDATE_THROTTLE_MS = 33;
 const COMPLETION_DEBOUNCE_MS = 120;
 const MAX_COMPLETION_RESULTS = 8;
 const MAX_MENU_ITEMS_VISIBLE = 5;
+const MAX_CONFIG_ITEMS_VISIBLE = 12;
+const CONFIG_TABS: InteractiveConfigTab[] = [
+	"workflows",
+	"rules",
+	"skills",
+	"hooks",
+	"agents",
+];
+
+function toTabLabel(tab: InteractiveConfigTab): string {
+	switch (tab) {
+		case "workflows":
+			return "Workflows";
+		case "rules":
+			return "Rules";
+		case "skills":
+			return "Skills";
+		case "hooks":
+			return "Hooks";
+		case "agents":
+			return "Agents";
+	}
+}
+
+function isConfigCommand(text: string): boolean {
+	const normalized = text.trim().toLowerCase();
+	return normalized === "/config" || normalized === "/settings";
+}
 
 function isLikelyMouseEscapeSequence(input: string): boolean {
 	if (input.length === 0) {
@@ -281,12 +315,26 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 		additions: number;
 		deletions: number;
 	} | null>(null);
+	const [isConfigViewOpen, setIsConfigViewOpen] = useState(
+		props.initialView === "config",
+	);
+	const [isLoadingConfig, setIsLoadingConfig] = useState(false);
+	const [configData, setConfigData] = useState<InteractiveConfigData>({
+		workflows: [],
+		rules: [],
+		skills: [],
+		hooks: [],
+		agents: [],
+	});
+	const [configTab, setConfigTab] = useState<InteractiveConfigTab>("workflows");
+	const [configSelectedIndex, setConfigSelectedIndex] = useState(0);
 	const nextLineIdRef = useRef(props.welcomeLine ? 1 : 0);
 	const activeInlineStreamRef = useRef<InlineStream>(undefined);
 	const mentionSearchTimerRef = useRef<NodeJS.Timeout | null>(null);
 	const mentionSearchCounterRef = useRef(0);
 	const turnErrorReportedRef = useRef(false);
 	const lastMouseUpdateRef = useRef(0);
+	const configLoadCounterRef = useRef(0);
 
 	const workspaceName = useMemo(
 		() => basename(config.cwd) || config.cwd,
@@ -337,15 +385,78 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 		: slashInfo.inSlashMode
 			? "slash"
 			: undefined;
+	const activeConfigItems = useMemo(() => {
+		switch (configTab) {
+			case "workflows":
+				return configData.workflows;
+			case "rules":
+				return configData.rules;
+			case "skills":
+				return configData.skills;
+			case "hooks":
+				return configData.hooks;
+			case "agents":
+				return configData.agents;
+		}
+	}, [configData, configTab]);
 
 	const refreshRepoStatus = useCallback(() => {
 		setGitBranch(readGitBranch(config.cwd));
 		setGitDiffStats(readGitDiffStats(config.cwd));
 	}, [config.cwd]);
+	const closeConfigView = useCallback(() => {
+		setIsConfigViewOpen(false);
+		setConfigSelectedIndex(0);
+	}, []);
+	const loadConfig = useCallback(() => {
+		const loadId = ++configLoadCounterRef.current;
+		setIsLoadingConfig(true);
+		void props
+			.loadConfigData()
+			.then((nextData) => {
+				if (loadId !== configLoadCounterRef.current) {
+					return;
+				}
+				setConfigData(nextData);
+			})
+			.catch(() => {
+				if (loadId !== configLoadCounterRef.current) {
+					return;
+				}
+				setConfigData({
+					workflows: [],
+					rules: [],
+					skills: [],
+					hooks: [],
+					agents: [],
+				});
+			})
+			.finally(() => {
+				if (loadId !== configLoadCounterRef.current) {
+					return;
+				}
+				setIsLoadingConfig(false);
+			});
+	}, [props.loadConfigData]);
+	const openConfigView = useCallback(() => {
+		setIsConfigViewOpen(true);
+		setConfigTab("workflows");
+		setConfigSelectedIndex(0);
+		loadConfig();
+	}, [loadConfig]);
 
 	useEffect(() => {
 		onAutoApproveChange(autoApproveAll);
 	}, [autoApproveAll, onAutoApproveChange]);
+
+	useEffect(() => {
+		setConfigSelectedIndex(0);
+	}, []);
+	useEffect(() => {
+		if (props.initialView === "config") {
+			loadConfig();
+		}
+	}, [loadConfig, props.initialView]);
 
 	useEffect(() => {
 		refreshRepoStatus();
@@ -678,6 +789,55 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 			return;
 		}
 
+		if (isConfigViewOpen) {
+			if (key.escape || (key.ctrl && value === "d")) {
+				closeConfigView();
+				return;
+			}
+			if (key.ctrl && value === "c") {
+				closeConfigView();
+				return;
+			}
+			if (key.leftArrow || key.rightArrow) {
+				setConfigTab((prev) => {
+					const currentIndex = CONFIG_TABS.indexOf(prev);
+					if (currentIndex < 0) {
+						return CONFIG_TABS[0] ?? "workflows";
+					}
+					const delta = key.rightArrow ? 1 : -1;
+					const nextIndex =
+						(currentIndex + delta + CONFIG_TABS.length) % CONFIG_TABS.length;
+					return CONFIG_TABS[nextIndex] ?? prev;
+				});
+				return;
+			}
+			if (key.upArrow) {
+				if (activeConfigItems.length > 0) {
+					setConfigSelectedIndex((prev) =>
+						prev > 0 ? prev - 1 : activeConfigItems.length - 1,
+					);
+				}
+				return;
+			}
+			if (key.downArrow) {
+				if (activeConfigItems.length > 0) {
+					setConfigSelectedIndex((prev) =>
+						prev < activeConfigItems.length - 1 ? prev + 1 : 0,
+					);
+				}
+				return;
+			}
+			if (key.return) {
+				const selected = activeConfigItems[configSelectedIndex];
+				if (selected && configTab === "workflows") {
+					setInput(`/${selected.name} `);
+					closeConfigView();
+				}
+				return;
+			}
+			return;
+		}
+
 		const mentionResults = fileMentionResults;
 		const slashResults = filteredSlashCommands;
 		const hasMentionMenu =
@@ -779,6 +939,11 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 			if (!trimmed || isRunning) {
 				return;
 			}
+			if (isConfigCommand(trimmed)) {
+				setInput("");
+				openConfigView();
+				return;
+			}
 			void submitPrompt(trimmed);
 			return;
 		}
@@ -845,7 +1010,8 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 		() => lines.slice(-maxVisibleLines),
 		[lines, maxVisibleLines],
 	);
-	const shouldShowWelcome = !hasSubmitted && visibleLines.length <= 1;
+	const shouldShowWelcome =
+		!isConfigViewOpen && !hasSubmitted && visibleLines.length <= 1;
 	const visibleMentionResults = useMemo(
 		() => getVisibleWindow(fileMentionResults, fileMentionSelectedIndex),
 		[fileMentionResults, fileMentionSelectedIndex],
@@ -853,6 +1019,18 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 	const visibleSlashResults = useMemo(
 		() => getVisibleWindow(filteredSlashCommands, slashSelectedIndex),
 		[filteredSlashCommands, slashSelectedIndex],
+	);
+	const visibleConfigItems = useMemo(
+		() =>
+			getVisibleWindow(
+				activeConfigItems,
+				Math.min(
+					configSelectedIndex,
+					Math.max(activeConfigItems.length - 1, 0),
+				),
+				MAX_CONFIG_ITEMS_VISIBLE,
+			),
+		[activeConfigItems, configSelectedIndex],
 	);
 	const contextBar = useMemo(
 		() => createContextBar(lastTotalTokens, contextWindowSize),
@@ -871,19 +1049,97 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 					mouseOffsetY,
 				})
 			: null,
-		React.createElement(
-			Box,
-			{ flexDirection: "column", marginBottom: 1 },
-			visibleLines.map((line) =>
-				React.createElement(Text, { key: line.id }, line.text),
-			),
-		),
-		React.createElement(
-			Box,
-			{ borderStyle: "round", paddingX: 1 },
-			React.createElement(Text, null, `${c.green}>${c.reset} ${input}`),
-		),
-		mentionInfo.inMentionMode
+		!isConfigViewOpen
+			? React.createElement(
+					Box,
+					{ flexDirection: "column", marginBottom: 1 },
+					visibleLines.map((line) =>
+						React.createElement(Text, { key: line.id }, line.text),
+					),
+				)
+			: null,
+		!isConfigViewOpen
+			? React.createElement(
+					Box,
+					{ borderStyle: "round", paddingX: 1 },
+					React.createElement(Text, null, `${c.green}>${c.reset} ${input}`),
+				)
+			: null,
+		isConfigViewOpen
+			? React.createElement(
+					Box,
+					{
+						flexDirection: "column",
+						borderStyle: "round",
+						paddingX: 1,
+						marginBottom: 1,
+					},
+					React.createElement(Text, { color: "cyan" }, "Configuration"),
+					React.createElement(
+						Box,
+						{ marginBottom: 1, gap: 1 },
+						CONFIG_TABS.map((tab) =>
+							React.createElement(
+								Text,
+								{
+									key: tab,
+									color: tab === configTab ? "blue" : "gray",
+									bold: tab === configTab,
+								},
+								tab === configTab ? `[${toTabLabel(tab)}]` : toTabLabel(tab),
+							),
+						),
+					),
+					isLoadingConfig
+						? React.createElement(Text, { color: "gray" }, "Loading config...")
+						: activeConfigItems.length === 0
+							? React.createElement(
+									Text,
+									{ color: "gray" },
+									`No ${toTabLabel(configTab).toLowerCase()} found.`,
+								)
+							: visibleConfigItems.items.map((item, index) => {
+									const absoluteIndex = visibleConfigItems.startIndex + index;
+									const selected = absoluteIndex === configSelectedIndex;
+									const prefix = selected ? "❯" : " ";
+									const enabledTag =
+										typeof item.enabled === "boolean"
+											? item.enabled
+												? "enabled"
+												: "disabled"
+											: "";
+									const details = [
+										item.source,
+										enabledTag,
+										truncatePath(item.path, 42),
+									]
+										.filter((value) => value.length > 0)
+										.join(" · ");
+									return React.createElement(
+										Box,
+										{
+											flexDirection: "column",
+											key: `${item.id}:${absoluteIndex}`,
+										},
+										React.createElement(
+											Text,
+											{ color: selected ? "blue" : undefined },
+											`${prefix} ${item.name}`,
+										),
+										React.createElement(
+											Text,
+											{ color: "gray" },
+											`  ${details}`,
+										),
+									);
+								}),
+					activeConfigItems.length >
+						visibleConfigItems.startIndex + visibleConfigItems.items.length
+						? React.createElement(Text, { color: "gray" }, "  ▼")
+						: null,
+				)
+			: null,
+		!isConfigViewOpen && mentionInfo.inMentionMode
 			? React.createElement(
 					Box,
 					{ flexDirection: "column", marginTop: 1, paddingX: 1 },
@@ -918,7 +1174,7 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 						: null,
 				)
 			: null,
-		!mentionInfo.inMentionMode && slashInfo.inSlashMode
+		!isConfigViewOpen && !mentionInfo.inMentionMode && slashInfo.inSlashMode
 			? React.createElement(
 					Box,
 					{ flexDirection: "column", marginTop: 1, paddingX: 1 },
@@ -934,13 +1190,16 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 								const absoluteIndex = visibleSlashResults.startIndex + index;
 								const selected = absoluteIndex === slashSelectedIndex;
 								const prefix = selected ? "❯" : " ";
+								const summary = command.description
+									? `${prefix} /${command.name} - ${command.description}`
+									: `${prefix} /${command.name}`;
 								return React.createElement(
 									Text,
 									{
 										color: selected ? "blue" : undefined,
 										key: `${command.name}:${absoluteIndex}`,
 									},
-									`${prefix} /${command.name}`,
+									summary,
 								);
 							}),
 					filteredSlashCommands.length >
@@ -958,29 +1217,33 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 				React.createElement(
 					Text,
 					{ color: "gray" },
-					"/ for commands · @ for files",
+					isConfigViewOpen
+						? "Config mode: \u2190/\u2192 tabs \u00b7 \u2191/\u2193 navigate \u00b7 Esc close"
+						: "/ for commands · @ for files",
 				),
-				React.createElement(
-					Box,
-					{ gap: 1 },
-					React.createElement(
-						Text,
-						{
-							color: uiMode === "plan" ? "yellow" : "gray",
-							bold: uiMode === "plan",
-						},
-						`${uiMode === "plan" ? "●" : "○"} Plan`,
-					),
-					React.createElement(
-						Text,
-						{
-							color: uiMode === "act" ? "blue" : "gray",
-							bold: uiMode === "act",
-						},
-						`${uiMode === "act" ? "●" : "○"} Act`,
-					),
-					React.createElement(Text, { color: "gray" }, "(Tab)"),
-				),
+				isConfigViewOpen
+					? React.createElement(Text, { color: "gray" }, "(Esc)")
+					: React.createElement(
+							Box,
+							{ gap: 1 },
+							React.createElement(
+								Text,
+								{
+									color: uiMode === "plan" ? "yellow" : "gray",
+									bold: uiMode === "plan",
+								},
+								`${uiMode === "plan" ? "●" : "○"} Plan`,
+							),
+							React.createElement(
+								Text,
+								{
+									color: uiMode === "act" ? "blue" : "gray",
+									bold: uiMode === "act",
+								},
+								`${uiMode === "act" ? "●" : "○"} Act`,
+							),
+							React.createElement(Text, { color: "gray" }, "(Tab)"),
+						),
 			),
 			React.createElement(
 				Box,
