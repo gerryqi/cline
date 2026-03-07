@@ -2,7 +2,7 @@
 
 Fast CLI for running agentic loops with LLMs. Streams output in real time and includes built-in tools, sub-agent spawning, and team runtime support by default.
 
-Lifecycle note: active runs now install both `SIGINT` and `SIGTERM` abort handlers, and CLI runtime/session managers are disposed on shutdown paths to reduce orphaned subprocesses.
+Lifecycle note: active runs now install both `SIGINT` and `SIGTERM` abort handlers, CLI runtime/session managers are disposed on shutdown paths to reduce orphaned subprocesses, and one-shot (non-interactive) runs exit automatically when the turn finishes.
 Prompt note: CLI sends raw user prompt text to core runtime; `@cline/core` canonicalizes `<user_input ...>` formatting and mention-based file attachment resolution once per turn.
 
 ## Installation
@@ -324,7 +324,7 @@ The CLI entrypoint delegates to focused modules so `src/index.ts` acts as orches
 - `src/commands/hook.ts` - hook payload stdin handler and hook output formatting
 - `src/commands/list.ts` - `clite list ...` command handlers
 - `src/commands/rpc.ts` - `clite rpc start` lifecycle command
-- `src/runtime/prompt.ts` - default system prompt and user-input enrichment builders
+- `src/runtime/prompt.ts` - shared system-prompt resolver (CLI + RPC runtime) and user-input enrichment builders
 - `src/index.ts` - process/session lifecycle, streaming output, run loop orchestration
 
 ## Runtime Ownership
@@ -336,6 +336,7 @@ The CLI entrypoint delegates to focused modules so `src/index.ts` acts as orches
 - CLI no longer directly instantiates `Agent` for chat/task execution.
 - CLI does not perform direct file/db message persistence in run/interactive paths.
 - CLI owns the user-instruction watcher (rules/workflows/skills) because prompt assembly uses rule context before session start; the watcher is disposed on all exit paths.
+- RPC runtime uses the same prompt resolver and accepts optional `rules` in runtime config (or `systemPrompt` when fully prebuilt by the caller).
 
 ## Examples
 

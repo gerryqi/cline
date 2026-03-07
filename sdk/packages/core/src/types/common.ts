@@ -1,9 +1,6 @@
-export const SESSION_STATUSES = [
-	"running",
-	"completed",
-	"failed",
-	"cancelled",
-] as const;
+import { SESSION_STATUS_VALUES } from "@cline/shared";
+
+export const SESSION_STATUSES = SESSION_STATUS_VALUES;
 
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
 

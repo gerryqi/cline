@@ -1,33 +1,13 @@
+import type { SessionLineage, SessionRuntimeRecordShape } from "@cline/shared";
 import type { SessionSource, SessionStatus } from "./common";
 
-export interface SessionRef {
+export interface SessionRef extends SessionLineage {
 	sessionId: string;
-	parentSessionId?: string;
-	agentId?: string;
-	parentAgentId?: string;
-	conversationId?: string;
-	isSubagent: boolean;
 }
 
-export interface SessionRecord extends SessionRef {
+export interface SessionRecord
+	extends SessionRef,
+		Omit<SessionRuntimeRecordShape, "source" | "status"> {
 	source: SessionSource;
-	pid?: number;
-	startedAt: string;
-	endedAt?: string | null;
-	exitCode?: number | null;
 	status: SessionStatus;
-	interactive: boolean;
-	provider: string;
-	model: string;
-	cwd: string;
-	workspaceRoot: string;
-	teamName?: string;
-	enableTools: boolean;
-	enableSpawn: boolean;
-	enableTeams: boolean;
-	prompt?: string;
-	transcriptPath?: string;
-	hookPath?: string;
-	messagesPath?: string;
-	updatedAt: string;
 }

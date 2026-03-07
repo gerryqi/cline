@@ -2,14 +2,13 @@ import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { type AgentEvent, getClineDefaultSystemPrompt } from "@cline/agents";
+import type { AgentEvent } from "@cline/agents";
 import {
 	ClineAccountService,
 	CoreSessionService,
 	createOAuthClientCallbacks,
 	DefaultSessionManager,
 	executeRpcClineAccountAction,
-	generateWorkspaceInfo,
 	loginClineOAuth,
 	loginOcaOAuth,
 	loginOpenAICodex,
@@ -32,6 +31,7 @@ import type {
 	RpcProviderSettingsActionRequest,
 } from "@cline/shared";
 import { setHomeDir, setHomeDirIfUnset } from "@cline/shared/storage";
+import { resolveSystemPrompt } from "../runtime/prompt";
 
 type OAuthProviderId = "cline" | "oca" | "openai-codex";
 type ProviderCapabilityInput =
@@ -104,28 +104,80 @@ async function materializeUserFiles(
 	return { tempDir: resolvedTempDir, paths };
 }
 
-async function resolveSystemPrompt(
-	config: RpcChatStartSessionRequest,
-	cwd: string,
-): Promise<string> {
-	const explicit = config.systemPrompt?.trim();
-	if (explicit) {
-		return explicit;
-	}
-	const workspaceInfo = await generateWorkspaceInfo(cwd);
-	return getClineDefaultSystemPrompt(
-		"Terminal Shell",
-		cwd,
-		JSON.stringify(workspaceInfo, null, 2),
-	);
-}
-
 function resolveMode(config: RpcChatStartSessionRequest): "act" | "plan" {
 	return config.mode === "plan" ? "plan" : "act";
 }
 
 function resolveSessionCwd(config: RpcChatStartSessionRequest): string {
 	return (config.cwd?.trim() || config.workspaceRoot).trim();
+}
+
+type RpcToolPolicies = Record<
+	string,
+	{
+		enabled?: boolean;
+		autoApprove?: boolean;
+	}
+>;
+
+function resolveToolPolicies(
+	config: RpcChatStartSessionRequest,
+): RpcToolPolicies {
+	const explicit = (config as { toolPolicies?: RpcToolPolicies }).toolPolicies;
+	if (explicit) {
+		return explicit;
+	}
+	return {
+		"*": {
+			autoApprove: config.autoApproveTools !== false,
+		},
+	};
+}
+
+async function buildSessionStartInput(input: {
+	config: RpcChatStartSessionRequest;
+	sessionId?: string;
+	initialMessages?: LlmsProviders.Message[];
+}): Promise<{
+	mode: "act" | "plan";
+	sessionInput: Parameters<DefaultSessionManager["start"]>[0];
+}> {
+	const { config } = input;
+	const mode = resolveMode(config);
+	const cwd = resolveSessionCwd(config);
+	const providerId = providers.normalizeProviderId(config.provider);
+	const systemPrompt = await resolveSystemPrompt({
+		cwd,
+		explicitSystemPrompt: config.systemPrompt,
+		rules: config.rules,
+	});
+
+	return {
+		mode,
+		sessionInput: {
+			source: SessionSource.DESKTOP_CHAT,
+			interactive: true,
+			initialMessages: input.initialMessages,
+			config: {
+				...(input.sessionId ? { sessionId: input.sessionId } : {}),
+				providerId,
+				modelId: config.model,
+				mode,
+				apiKey: config.apiKey?.trim() || undefined,
+				cwd,
+				workspaceRoot: config.workspaceRoot,
+				systemPrompt,
+				maxIterations: config.maxIterations ?? 10,
+				enableTools: config.enableTools,
+				enableSpawnAgent: config.enableSpawn,
+				enableAgentTeams: config.enableTeams,
+				teamName: config.teamName,
+				missionLogIntervalSteps: config.missionStepInterval,
+				missionLogIntervalMs: config.missionTimeIntervalMs,
+			},
+			toolPolicies: resolveToolPolicies(config),
+		},
+	};
 }
 
 function applyHomeDir(config: RpcChatStartSessionRequest): void {
@@ -799,48 +851,14 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 		startSession: async (requestJson) => {
 			const config = parseStartPayload(requestJson);
 			applyHomeDir(config);
-			const mode = resolveMode(config);
-			const cwd = resolveSessionCwd(config);
-			const providerId = providers.normalizeProviderId(config.provider);
-			const systemPrompt = await resolveSystemPrompt(config, cwd);
-			const started = await sessionManager.start({
-				source: SessionSource.DESKTOP_CHAT,
-				interactive: true,
+			const startedConfig = await buildSessionStartInput({
+				config,
 				initialMessages: config.initialMessages as
 					| LlmsProviders.Message[]
 					| undefined,
-				config: {
-					providerId,
-					modelId: config.model,
-					mode,
-					apiKey: config.apiKey?.trim() || undefined,
-					cwd,
-					workspaceRoot: config.workspaceRoot,
-					systemPrompt,
-					maxIterations: config.maxIterations ?? 10,
-					enableTools: config.enableTools,
-					enableSpawnAgent: config.enableSpawn,
-					enableAgentTeams: config.enableTeams,
-					teamName: config.teamName,
-					missionLogIntervalSteps: config.missionStepInterval,
-					missionLogIntervalMs: config.missionTimeIntervalMs,
-				},
-				toolPolicies:
-					(
-						config as {
-							toolPolicies?: Record<
-								string,
-								{ enabled?: boolean; autoApprove?: boolean }
-							>;
-						}
-					).toolPolicies ??
-					({
-						"*": {
-							autoApprove: config.autoApproveTools !== false,
-						},
-					} as Record<string, { enabled?: boolean; autoApprove?: boolean }>),
 			});
-			sessionModes.set(started.sessionId, mode);
+			const started = await sessionManager.start(startedConfig.sessionInput);
+			sessionModes.set(started.sessionId, startedConfig.mode);
 			activeSessions.add(started.sessionId);
 			return {
 				sessionId: started.sessionId,
@@ -850,7 +868,6 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 		sendSession: async (sessionId, requestJson) => {
 			const request = parseSendPayload(requestJson);
 			applyHomeDir(request.config);
-			const cwd = resolveSessionCwd(request.config);
 			const input = request.prompt.trim();
 			const userImages = request.attachments?.userImages ?? [];
 			const fileMaterialized = await materializeUserFiles(
@@ -892,50 +909,15 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 					throw error;
 				}
 
-				const modeFromConfig = resolveMode(request.config);
-				const providerId = providers.normalizeProviderId(
-					request.config.provider,
-				);
-				const systemPrompt = await resolveSystemPrompt(request.config, cwd);
-				await sessionManager.start({
-					source: SessionSource.DESKTOP_CHAT,
-					interactive: true,
+				const restoredConfig = await buildSessionStartInput({
+					config: request.config,
+					sessionId,
 					initialMessages: request.messages as unknown as
 						| LlmsProviders.Message[]
 						| undefined,
-					config: {
-						sessionId,
-						providerId,
-						modelId: request.config.model,
-						mode: modeFromConfig,
-						apiKey: request.config.apiKey?.trim() || undefined,
-						cwd,
-						workspaceRoot: request.config.workspaceRoot,
-						systemPrompt,
-						maxIterations: request.config.maxIterations ?? 10,
-						enableTools: request.config.enableTools,
-						enableSpawnAgent: request.config.enableSpawn,
-						enableAgentTeams: request.config.enableTeams,
-						teamName: request.config.teamName,
-						missionLogIntervalSteps: request.config.missionStepInterval,
-						missionLogIntervalMs: request.config.missionTimeIntervalMs,
-					},
-					toolPolicies:
-						(
-							request.config as {
-								toolPolicies?: Record<
-									string,
-									{ enabled?: boolean; autoApprove?: boolean }
-								>;
-							}
-						).toolPolicies ??
-						({
-							"*": {
-								autoApprove: request.config.autoApproveTools !== false,
-							},
-						} as Record<string, { enabled?: boolean; autoApprove?: boolean }>),
 				});
-				sessionModes.set(sessionId, modeFromConfig);
+				await sessionManager.start(restoredConfig.sessionInput);
+				sessionModes.set(sessionId, restoredConfig.mode);
 				activeSessions.add(sessionId);
 				const restoredResult = await sessionManager.send({
 					sessionId,

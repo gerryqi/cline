@@ -59,6 +59,11 @@ Validation performed by loader:
 - `pluginPaths?: string[]` (file or directory paths; relative paths resolve from `config.cwd`)
 - `extensions?: AgentConfig["extensions"]` (already-loaded extension objects)
 
+`CoreSessionConfig` composes shared session primitives from `@cline/shared`
+(`AgentMode`, `SessionPromptConfig`, `SessionWorkspaceConfig`,
+`SessionExecutionConfig`) so host/runtime config fields stay aligned with RPC/UI
+session contracts.
+
 During `DefaultSessionManager.start(...)`, core resolves plugin modules from:
 
 - explicit `pluginPaths`
@@ -87,6 +92,23 @@ By default, plugin paths are loaded in an out-of-process sandbox (`resolveAndLoa
 `DefaultSessionManager.dispose(reason?)` now provides a manager-wide shutdown path that cancels and tears down all active sessions, ensuring tool/runtime resources are released on host shutdown.
 
 This is the primary API for host clients that should only consume runtime events and outputs without manually creating agents or persisting messages.
+
+## Session Telemetry Injection
+
+`@cline/core` now exposes a runtime-agnostic session telemetry contract:
+
+- `SessionTelemetry`
+- `NoOpSessionTelemetry`
+
+`DefaultSessionManager` accepts `telemetry?: SessionTelemetry` and records:
+
+- session start/end
+- user turns
+- assistant turns (including usage/cost fields)
+- tool result events
+- error events
+
+`createSessionHost(options)` forwards `options.telemetry` to `DefaultSessionManager`, so hosts (CLI/desktop/editor) can inject one telemetry adapter and reuse the same session lifecycle instrumentation.
 
 Session persistence behavior:
 

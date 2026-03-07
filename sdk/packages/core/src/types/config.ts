@@ -6,9 +6,15 @@ import type {
 	Tool,
 } from "@cline/agents";
 import type { providers as LlmsProviders } from "@cline/llms";
-import type { BasicLogger } from "@cline/shared";
+import type {
+	AgentMode,
+	BasicLogger,
+	SessionExecutionConfig,
+	SessionPromptConfig,
+	SessionWorkspaceConfig,
+} from "@cline/shared";
 
-export type CoreAgentMode = "act" | "plan";
+export type CoreAgentMode = AgentMode;
 
 export interface CoreModelConfig {
 	providerId: string;
@@ -30,13 +36,19 @@ export interface CoreRuntimeFeatures {
 
 export interface CoreSessionConfig
 	extends CoreModelConfig,
-		CoreRuntimeFeatures {
-	mode?: CoreAgentMode;
+		CoreRuntimeFeatures,
+		Omit<SessionWorkspaceConfig, "workspaceRoot">,
+		Omit<SessionPromptConfig, "systemPrompt">,
+		Omit<
+			SessionExecutionConfig,
+			| "enableTools"
+			| "teamName"
+			| "missionLogIntervalSteps"
+			| "missionLogIntervalMs"
+		> {
 	sessionId?: string;
-	cwd: string;
 	workspaceRoot?: string;
 	systemPrompt: string;
-	maxIterations?: number;
 	teamName?: string;
 	missionLogIntervalSteps?: number;
 	missionLogIntervalMs?: number;

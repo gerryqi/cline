@@ -7,6 +7,7 @@ export interface StartSessionRequest {
 	model: string;
 	apiKey: string;
 	systemPrompt?: string;
+	rules?: string;
 	maxIterations?: number;
 	enableTools: boolean;
 	enableSpawn: boolean;

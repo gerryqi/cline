@@ -162,6 +162,8 @@ class FileIndexWorkerClient {
 	>();
 
 	constructor() {
+		// Keep indexing opportunistic: this worker should never block process exit.
+		this.worker.unref();
 		this.worker.on("message", (message: IndexResponseMessage) => {
 			if (message.type !== "indexResult") {
 				return;

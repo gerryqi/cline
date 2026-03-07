@@ -1,18 +1,18 @@
-export type RpcAgentMode = "act" | "plan";
+import type {
+	AgentMode,
+	SessionExecutionConfig,
+	SessionPromptConfig,
+} from "../session/runtime-config";
+
+export type RpcAgentMode = AgentMode;
 
 export interface RpcSessionStorageOptions {
 	homeDir?: string;
 }
 
-export interface RpcChatStartSessionRequest {
-	workspaceRoot: string;
+export interface RpcChatRuntimeConfigBase extends SessionPromptConfig {
 	cwd?: string;
-	provider: string;
-	model: string;
-	mode?: RpcAgentMode;
 	apiKey: string;
-	systemPrompt?: string;
-	maxIterations?: number;
 	enableTools: boolean;
 	enableSpawn: boolean;
 	enableTeams: boolean;
@@ -20,15 +20,15 @@ export interface RpcChatStartSessionRequest {
 	teamName: string;
 	missionStepInterval: number;
 	missionTimeIntervalMs: number;
+	toolPolicies?: SessionExecutionConfig["toolPolicies"];
+}
+
+export interface RpcChatStartSessionRequest extends RpcChatRuntimeConfigBase {
+	workspaceRoot: string;
+	provider: string;
+	model: string;
 	sessions?: RpcSessionStorageOptions;
 	initialMessages?: RpcChatMessage[];
-	toolPolicies?: Record<
-		string,
-		{
-			enabled?: boolean;
-			autoApprove?: boolean;
-		}
-	>;
 }
 
 export interface RpcChatAttachmentFile {

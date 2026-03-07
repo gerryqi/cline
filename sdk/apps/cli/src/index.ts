@@ -15,7 +15,7 @@
 
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
-import type { AgentEvent, ToolPolicy } from "@cline/agents";
+import type { AgentEvent } from "@cline/agents";
 import {
 	ClineAccountService,
 	createTeamName,
@@ -28,6 +28,7 @@ import {
 	type UserInstructionConfigWatcher,
 } from "@cline/core/server";
 import { providers } from "@cline/llms";
+import type { ToolPolicy } from "@cline/shared";
 import { setHomeDir } from "@cline/shared/storage";
 import { version } from "../package.json";
 import { askQuestionInTerminal, requestToolApproval } from "./approval";
@@ -63,10 +64,7 @@ import {
 	writeErr,
 	writeln,
 } from "./output";
-import {
-	buildDefaultSystemPrompt,
-	buildUserInputMessage,
-} from "./runtime/prompt";
+import { buildUserInputMessage, resolveSystemPrompt } from "./runtime/prompt";
 import {
 	configureSandboxEnvironment,
 	parseArgs,
@@ -1025,12 +1023,11 @@ async function main(): Promise<void> {
 				"claude-sonnet-4-6",
 			apiKey: apiKey ?? "",
 			knownModels,
-			systemPrompt:
-				args.systemPrompt ??
-				(await buildDefaultSystemPrompt(
-					cwd,
-					loadRulesForSystemPromptFromWatcher(userInstructionWatcher),
-				)),
+			systemPrompt: await resolveSystemPrompt({
+				cwd,
+				explicitSystemPrompt: args.systemPrompt,
+				rules: loadRulesForSystemPromptFromWatcher(userInstructionWatcher),
+			}),
 			maxIterations: undefined,
 			sandbox: sandboxEnabled,
 			sandboxDataDir,

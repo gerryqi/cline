@@ -1,22 +1,16 @@
-import type { ToolPolicy } from "@cline/agents";
 import type { CoreSessionConfig, SessionManifest } from "@cline/core/server";
 import type { providers as LlmsProviders } from "@cline/llms";
+import type { AgentMode, SessionLineage, ToolPolicy } from "@cline/shared";
 
 export type CliOutputMode = "text" | "json";
-export type CliAgentMode = "act" | "plan";
+export type CliAgentMode = AgentMode;
 
-export interface Config extends CoreSessionConfig {
+export interface Config extends Omit<CoreSessionConfig, "apiKey" | "mode"> {
 	apiKey: string;
 	knownModels?: Record<string, LlmsProviders.ModelInfo>;
-	systemPrompt: string;
 	sandbox: boolean;
 	sandboxDataDir?: string;
 	thinking: boolean;
-	enableSpawnAgent: boolean;
-	enableAgentTeams: boolean;
-	enableTools: boolean;
-	cwd: string;
-	teamName?: string;
 	missionLogIntervalSteps: number;
 	missionLogIntervalMs: number;
 	showUsage: boolean;
@@ -54,10 +48,10 @@ export interface SessionDbRow {
 	prompt?: string | null;
 }
 
-export interface SubagentSessionInput {
-	agentId: string;
-	parentAgentId: string;
-	conversationId: string;
+export interface SubagentSessionInput
+	extends Required<
+		Pick<SessionLineage, "agentId" | "parentAgentId" | "conversationId">
+	> {
 	prompt?: string;
 	rootSessionId?: string;
 }

@@ -13,6 +13,7 @@ export interface StartSessionRequest {
 	apiKey: string;
 	prompt?: string;
 	systemPrompt?: string;
+	rules?: string;
 	maxIterations?: number;
 	enableTools: boolean;
 	enableSpawn: boolean;

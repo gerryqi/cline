@@ -7,6 +7,7 @@ export const ChatSessionConfigSchema = z.object({
 	model: z.string().min(1),
 	apiKey: z.string(),
 	systemPrompt: z.string().optional(),
+	rules: z.string().optional(),
 	maxIterations: z.number().int().positive().optional(),
 	enableTools: z.boolean(),
 	enableSpawn: z.boolean(),

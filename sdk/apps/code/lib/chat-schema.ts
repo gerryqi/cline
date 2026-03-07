@@ -8,6 +8,7 @@ export const ChatSessionConfigSchema = z.object({
 	mode: z.enum(["act", "plan"]).default("act"),
 	apiKey: z.string(),
 	systemPrompt: z.string().optional(),
+	rules: z.string().optional(),
 	maxIterations: z.number().int().positive().optional(),
 	enableTools: z.boolean(),
 	enableSpawn: z.boolean(),

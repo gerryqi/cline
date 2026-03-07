@@ -15,6 +15,14 @@ Node-only filesystem path resolvers live under the storage subpath export:
 It also exports cross-client logging contracts, including `BasicLogger`, so
 runtime, SDK, and host applications can share a single logger type.
 
+Session config primitives are also centralized here so hosts/runtimes can
+compose one base shape instead of redefining similar fields repeatedly:
+
+- `AgentMode`
+- `SessionPromptConfig`
+- `SessionWorkspaceConfig`
+- `SessionExecutionConfig` (includes canonical `ToolPolicy` map shape)
+
 It now also exports hook session context primitives used across agents/core/CLI:
 
 - `HookSessionContext`
@@ -32,5 +40,5 @@ outside transport wiring:
 - provider action requests include provider catalog/model operations plus provider add/save operations for settings hosts
 
 Chat runtime payload notes:
-- `RpcChatStartSessionRequest` supports `initialMessages` and optional `toolPolicies`.
+- `RpcChatStartSessionRequest` supports `initialMessages`, optional `toolPolicies`, and optional `rules` for default system prompt assembly.
 - `RpcChatRunTurnRequest` supports `promptPreformatted` for callers that already built CLI-style user input envelopes.

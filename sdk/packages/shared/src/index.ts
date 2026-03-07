@@ -23,6 +23,7 @@ export type {
 	RpcChatAttachments,
 	RpcChatMessage,
 	RpcChatRunTurnRequest,
+	RpcChatRuntimeConfigBase,
 	RpcChatStartSessionRequest,
 	RpcChatToolCallResult,
 	RpcChatTurnResult,
@@ -52,3 +53,15 @@ export {
 	resolveHookSessionContext,
 	resolveRootSessionId,
 } from "./session/hook-context";
+export type {
+	SessionLineage,
+	SessionRuntimeRecordShape,
+	SharedSessionStatus,
+} from "./session/records";
+export { SESSION_STATUS_VALUES } from "./session/records";
+export type {
+	AgentMode,
+	SessionExecutionConfig,
+	SessionPromptConfig,
+	SessionWorkspaceConfig,
+} from "./session/runtime-config";

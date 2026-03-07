@@ -5,12 +5,22 @@ import {
 	type UserInstructionConfigWatcher,
 } from "@cline/core/server";
 
-export async function buildDefaultSystemPrompt(
-	cwd: string,
-	rules = "",
-): Promise<string> {
-	const workspace = await buildWorkspaceMetadata(cwd);
-	return getClineDefaultSystemPrompt("Terminal Shell", cwd, workspace, rules);
+export async function resolveSystemPrompt(input: {
+	cwd: string;
+	explicitSystemPrompt?: string;
+	rules?: string;
+}): Promise<string> {
+	const explicit = input.explicitSystemPrompt?.trim();
+	if (explicit) {
+		return explicit;
+	}
+	const workspace = await buildWorkspaceMetadata(input.cwd);
+	return getClineDefaultSystemPrompt(
+		"Terminal Shell",
+		input.cwd,
+		workspace,
+		input.rules,
+	);
 }
 
 export async function buildUserInputMessage(
