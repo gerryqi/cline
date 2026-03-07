@@ -7,6 +7,9 @@
 import { createTool, type Tool } from "@cline/agents";
 import { validateWithZod, zodToJsonSchema } from "@cline/shared";
 import {
+	type ApplyPatchInput,
+	ApplyPatchInputSchema,
+	ApplyPatchInputUnionSchema,
 	type AskQuestionInput,
 	AskQuestionInputSchema,
 	type EditFileInput,
@@ -25,6 +28,7 @@ import {
 	SkillsInputSchema,
 } from "./schemas.js";
 import type {
+	ApplyPatchExecutor,
 	AskQuestionExecutor,
 	BashExecutor,
 	CreateDefaultToolsOptions,
@@ -66,6 +70,63 @@ function withTimeout<T>(
 		}),
 	]);
 }
+
+const APPLY_PATCH_TOOL_DESC = `This is a custom utility that makes it more convenient to add, remove, move, or edit code in a single file. \`apply_patch\` effectively allows you to execute a diff/patch against a file, but the format of the diff specification is unique to this task, so pay careful attention to these instructions. To use the \`apply_patch\` command, you should pass a message of the following structure as "input":
+
+%%bash
+apply_patch <<"EOF"
+*** Begin Patch
+[YOUR_PATCH]
+*** End Patch
+EOF
+
+Where [YOUR_PATCH] is the actual content of your patch, specified in the following V4A diff format.
+
+*** [ACTION] File: [path/to/file] -> ACTION can be one of Add, Update, or Delete. 
+
+In a Add File section, every line of the new file (including blank/empty lines) MUST start with a \`+\` prefix. Do not include any unprefixed lines inside an Add section
+In a Update/Delete section, repeat the following for each snippet of code that needs to be changed:
+[context_before] -> See below for further instructions on context.
+- [old_code] -> Precede the old code with a minus sign.
++ [new_code] -> Precede the new, replacement code with a plus sign.
+[context_after] -> See below for further instructions on context.
+
+For instructions on [context_before] and [context_after]:
+- By default, show 3 lines of code immediately above and 3 lines immediately below each change. If a change is within 3 lines of a previous change, do NOT duplicate the first change’s [context_after] lines in the second change’s [context_before] lines.
+- If 3 lines of context is insufficient to uniquely identify the snippet of code within the file, use the @@ operator to indicate the class or function to which the snippet belongs. For instance, we might have:
+@@ class BaseClass
+[3 lines of pre-context]
+- [old_code]
++ [new_code]
+[3 lines of post-context]
+
+- If a code block is repeated so many times in a class or function such that even a single @@ statement and 3 lines of context cannot uniquely identify the snippet of code, you can use multiple \`@@\` statements to jump to the right context. For instance:
+
+@@ class BaseClass
+@@ 	def method():
+[3 lines of pre-context]
+- [old_code]
++ [new_code]
+[3 lines of post-context]
+
+Note, then, that we do not use line numbers in this diff format, as the context is enough to uniquely identify code. An example of a message that you might pass as "input" to this function, in order to apply a patch, is shown below.
+
+%%bash
+apply_patch <<"EOF"
+*** Begin Patch
+*** Update File: pygorithm/searching/binary_search.py
+@@ class BaseClass
+@@     def search():
+-          pass
++          raise NotImplementedError()
+
+@@ class Subclass
+@@     def search():
+-          pass
++          raise NotImplementedError()
+
+*** End Patch
+EOF`;
 
 // =============================================================================
 // Tool Factory Functions
@@ -301,6 +362,55 @@ export function createWebFetchTool(
 }
 
 /**
+ * Create the apply_patch tool
+ *
+ * Applies the legacy Cline patch format to one or more files.
+ */
+export function createApplyPatchTool(
+	executor: ApplyPatchExecutor,
+	config: Pick<DefaultToolsConfig, "cwd" | "applyPatchTimeoutMs"> = {},
+): Tool<ApplyPatchInput, ToolOperationResult> {
+	const timeoutMs = config.applyPatchTimeoutMs ?? 30000;
+	const cwd = config.cwd ?? process.cwd();
+
+	return createTool<ApplyPatchInput, ToolOperationResult>({
+		name: "apply_patch",
+		description: APPLY_PATCH_TOOL_DESC,
+		inputSchema: zodToJsonSchema(ApplyPatchInputSchema),
+		timeoutMs,
+		retryable: false,
+		maxRetries: 0,
+		execute: async (input, context) => {
+			const validate = validateWithZod(ApplyPatchInputUnionSchema, input);
+			const patchInput =
+				typeof validate === "string" ? validate : validate.input;
+
+			try {
+				const result = await withTimeout(
+					executor({ input: patchInput }, cwd, context),
+					timeoutMs,
+					`apply_patch timed out after ${timeoutMs}ms`,
+				);
+
+				return {
+					query: "apply_patch",
+					result,
+					success: true,
+				};
+			} catch (error) {
+				const msg = formatError(error);
+				return {
+					query: "apply_patch",
+					result: "",
+					error: `apply_patch failed: ${msg}`,
+					success: false,
+				};
+			}
+		},
+	});
+}
+
+/**
  * Create the editor tool
  *
  * Supports controlled filesystem edits with create, replace, and insert commands.
@@ -469,6 +579,7 @@ export function createDefaultTools(options: CreateDefaultToolsOptions): Tool[] {
 		enableSearch = true,
 		enableBash = true,
 		enableWebFetch = true,
+		enableApplyPatch = false,
 		enableEditor = true,
 		enableSkills = true,
 		enableAskQuestion = true,
@@ -498,9 +609,13 @@ export function createDefaultTools(options: CreateDefaultToolsOptions): Tool[] {
 		tools.push(createWebFetchTool(executors.webFetch, config));
 	}
 
-	// Add editor tool if enabled and executor provided
+	// Add editor tool if enabled and executor provided,
+	// else check if apply_patch tool is enabled and executor provided
+	// NOTE: Do not enable two similar tools at the same time.
 	if (enableEditor && executors.editor) {
 		tools.push(createEditorTool(executors.editor, config));
+	} else if (enableApplyPatch && executors.applyPatch) {
+		tools.push(createApplyPatchTool(executors.applyPatch, config));
 	}
 
 	// Add skills tool if enabled and executor provided

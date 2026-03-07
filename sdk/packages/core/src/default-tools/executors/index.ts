@@ -7,6 +7,7 @@
  */
 
 import type { ToolExecutors } from "../types.js";
+import { createApplyPatchExecutor } from "./apply-patch.js";
 import { createBashExecutor } from "./bash.js";
 import { createEditorExecutor } from "./editor.js";
 import { createFileReadExecutor } from "./file-read.js";
@@ -14,6 +15,10 @@ import { createSearchExecutor } from "./search.js";
 import { createWebFetchExecutor } from "./web-fetch.js";
 
 // Re-export individual executors and their options types
+export {
+	type ApplyPatchExecutorOptions,
+	createApplyPatchExecutor,
+} from "./apply-patch.js";
 export { type BashExecutorOptions, createBashExecutor } from "./bash.js";
 export { createEditorExecutor, type EditorExecutorOptions } from "./editor.js";
 export {
@@ -34,6 +39,7 @@ export interface DefaultExecutorsOptions {
 	search?: import("./search.js").SearchExecutorOptions;
 	bash?: import("./bash.js").BashExecutorOptions;
 	webFetch?: import("./web-fetch.js").WebFetchExecutorOptions;
+	applyPatch?: import("./apply-patch.js").ApplyPatchExecutorOptions;
 	editor?: import("./editor.js").EditorExecutorOptions;
 }
 
@@ -63,6 +69,7 @@ export function createDefaultExecutors(
 		search: createSearchExecutor(options.search),
 		bash: createBashExecutor(options.bash),
 		webFetch: createWebFetchExecutor(options.webFetch),
+		applyPatch: createApplyPatchExecutor(options.applyPatch),
 		editor: createEditorExecutor(options.editor),
 	};
 }

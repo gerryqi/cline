@@ -5,7 +5,7 @@
  */
 
 import type { ToolContext } from "@cline/agents";
-import type { EditFileInput } from "./schemas";
+import type { ApplyPatchInput, EditFileInput } from "./schemas";
 
 // =============================================================================
 // Tool Result Types
@@ -100,6 +100,20 @@ export type EditorExecutor = (
 ) => Promise<string>;
 
 /**
+ * Executor for apply_patch operations
+ *
+ * @param input - apply_patch command payload
+ * @param cwd - Current working directory for filesystem operations
+ * @param context - Tool execution context
+ * @returns A formatted operation result string
+ */
+export type ApplyPatchExecutor = (
+	input: ApplyPatchInput,
+	cwd: string,
+	context: ToolContext,
+) => Promise<string>;
+
+/**
  * Executor for invoking configured skills
  *
  * @param skill - Skill name to invoke
@@ -167,6 +181,8 @@ export interface ToolExecutors {
 	webFetch?: WebFetchExecutor;
 	/** Filesystem editor implementation */
 	editor?: EditorExecutor;
+	/** Apply patch implementation */
+	applyPatch?: ApplyPatchExecutor;
 	/** Skill invocation implementation */
 	skills?: SkillsExecutorWithMetadata;
 	/** Follow-up question implementation */
@@ -185,6 +201,7 @@ export type DefaultToolName =
 	| "search_codebase"
 	| "run_commands"
 	| "fetch_web_content"
+	| "apply_patch"
 	| "editor"
 	| "skills"
 	| "ask_question";
@@ -216,6 +233,12 @@ export interface DefaultToolsConfig {
 	 * @default true
 	 */
 	enableWebFetch?: boolean;
+
+	/**
+	 * Enable the apply_patch tool
+	 * @default true
+	 */
+	enableApplyPatch?: boolean;
 
 	/**
 	 * Enable the editor tool
@@ -263,6 +286,12 @@ export interface DefaultToolsConfig {
 	 * @default 30000
 	 */
 	searchTimeoutMs?: number;
+
+	/**
+	 * Timeout for apply_patch operations in milliseconds
+	 * @default 30000
+	 */
+	applyPatchTimeoutMs?: number;
 
 	/**
 	 * Timeout for editor operations in milliseconds

@@ -10,6 +10,7 @@ export { validateWithZod, zodToJsonSchema } from "@cline/shared";
 export { ALL_DEFAULT_TOOL_NAMES, DefaultToolNames } from "./constants.js";
 // Tool Definitions
 export {
+	createApplyPatchTool,
 	createAskQuestionTool,
 	createBashTool,
 	createDefaultTools,
@@ -21,7 +22,9 @@ export {
 } from "./definitions.js";
 // Built-in Executors
 export {
+	type ApplyPatchExecutorOptions,
 	type BashExecutorOptions,
+	createApplyPatchExecutor,
 	createBashExecutor,
 	createDefaultExecutors,
 	createEditorExecutor,
@@ -44,6 +47,8 @@ export {
 } from "./presets.js";
 // Schemas
 export {
+	type ApplyPatchInput,
+	ApplyPatchInputSchema,
 	type AskQuestionInput,
 	AskQuestionInputSchema,
 	type EditFileInput,
@@ -63,6 +68,7 @@ export {
 } from "./schemas.js";
 // Types
 export type {
+	ApplyPatchExecutor,
 	AskQuestionExecutor,
 	BashExecutor,
 	CreateDefaultToolsOptions,

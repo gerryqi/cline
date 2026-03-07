@@ -146,6 +146,73 @@ describe("default ask_question tool", () => {
 	});
 });
 
+describe("default apply_patch tool", () => {
+	it("is included only when enabled with an applyPatch executor", () => {
+		const toolsWithoutExecutor = createDefaultTools({
+			executors: {},
+			enableApplyPatch: true,
+		});
+		expect(toolsWithoutExecutor.map((tool) => tool.name)).not.toContain(
+			"apply_patch",
+		);
+
+		const toolsWithExecutor = createDefaultTools({
+			executors: {
+				applyPatch: async () => "ok",
+			},
+			enableApplyPatch: true,
+		});
+		expect(toolsWithExecutor.map((tool) => tool.name)).toContain("apply_patch");
+	});
+
+	it("validates and executes apply_patch input", async () => {
+		const execute = vi.fn(async () => "patched");
+		const tools = createDefaultTools({
+			executors: {
+				applyPatch: execute,
+			},
+			enableReadFiles: false,
+			enableSearch: false,
+			enableBash: false,
+			enableWebFetch: false,
+			enableEditor: false,
+			enableSkills: false,
+			enableAskQuestion: false,
+			enableApplyPatch: true,
+		});
+
+		const applyPatchTool = tools.find((tool) => tool.name === "apply_patch");
+		expect(applyPatchTool).toBeDefined();
+		if (!applyPatchTool) {
+			throw new Error("Expected apply_patch tool to be defined.");
+		}
+
+		const result = await applyPatchTool.execute(
+			{ input: "*** Begin Patch\n*** End Patch" },
+			{
+				agentId: "agent-1",
+				conversationId: "conv-1",
+				iteration: 1,
+			},
+		);
+
+		expect(result).toEqual({
+			query: "apply_patch",
+			result: "patched",
+			success: true,
+		});
+		expect(execute).toHaveBeenCalledWith(
+			{ input: "*** Begin Patch\n*** End Patch" },
+			process.cwd(),
+			expect.objectContaining({
+				agentId: "agent-1",
+				conversationId: "conv-1",
+				iteration: 1,
+			}),
+		);
+	});
+});
+
 describe("zod schema conversion", () => {
 	it("preserves read_files required properties in generated JSON schema", () => {
 		const tool = createReadFilesTool(async () => "ok");

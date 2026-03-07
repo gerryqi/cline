@@ -130,6 +130,20 @@ export const EditFileInputSchema = z
 	});
 
 /**
+ * Schema for apply_patch tool input
+ */
+export const ApplyPatchInputSchema = z.object({
+	input: z
+		.string()
+		.min(1)
+		.describe("The apply_patch text payload, including patch instructions"),
+});
+export const ApplyPatchInputUnionSchema = z.union([
+	ApplyPatchInputSchema,
+	z.string(),
+]);
+
+/**
  * Schema for skills tool input
  */
 export const SkillsInputSchema = z.object({
@@ -194,6 +208,11 @@ export type FetchWebContentInput = z.infer<typeof FetchWebContentInputSchema>;
  * Input for the editor tool
  */
 export type EditFileInput = z.infer<typeof EditFileInputSchema>;
+
+/**
+ * Input for the apply_patch tool
+ */
+export type ApplyPatchInput = z.infer<typeof ApplyPatchInputSchema>;
 
 /**
  * Input for the skills tool
