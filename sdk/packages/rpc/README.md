@@ -3,7 +3,7 @@
 Package-level docs are centralized:
 
 - Overview: [`packages/README.md`](../README.md)
-- Architecture and interactions: [`packages/ARCHITECTURE.md`](../ARCHITECTURE.md)
+- Architecture and interactions: [`ARCHITECTURE.md`](/Users/beatrix/dev/clinee/sdk-wip/ARCHITECTURE.md)
 
 `@cline/rpc` provides transport/control-plane APIs for sessions, tasks, events, spawn queues, and tool approvals.
 It also exposes runtime session execution RPCs:

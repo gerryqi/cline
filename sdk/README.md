@@ -2,7 +2,8 @@
 
 This repository contains the SDK packages that power Cline agent runtimes.
 
-Contributor onboarding and architecture guidance is centralized in [`AGENTS.md`](/Users/beatrix/dev/clinee/sdk-wip/AGENTS.md).
+Contributor onboarding guidance is in [`AGENTS.md`](/Users/beatrix/dev/clinee/sdk-wip/AGENTS.md).
+Repository architecture guidance is in [`ARCHITECTURE.md`](/Users/beatrix/dev/clinee/sdk-wip/ARCHITECTURE.md).
 
 ## Prerequisites
 
@@ -28,10 +29,12 @@ node --version
 bun install
 # Build all the SDK packages
 bun run build
+
 # Start the CLI in dev mode with a prompt argument
-bun run dev:cli -- "your prompt here"
+bun run cli -- "your prompt here"
+
 # Start the code app in dev mode
-bun run dev:code
+bun run code
 ```
 
 Useful workspace scripts (root `package.json`):
@@ -41,10 +44,10 @@ Useful workspace scripts (root `package.json`):
 - `bun run build:apps` - build app targets (`cli` + `desktop` + `code`)
 - `bun run build:shared|build:llms|build:agents|build:rpc|build:core|build:cli|build:code|build:desktop` - build one workspace package
 - `bun run build:models` - regenerate model metadata in `llms`
-- `bun run dev:cli -- "your prompt"` - run CLI from source (direct entrypoint, no workspace log prefixing)
+- `bun run cli -- "your prompt"` - run CLI from source (direct entrypoint, no workspace log prefixing)
 - `bun run dev` - build SDK packages + CLI, then run CLI interactively (dev mode)
-- `bun run dev:code` - launch code app directly
-- `bun run dev:desktop` - launch desktop app directly
+- `bun run code` - launch code app directly
+- `bun run desktop` - launch desktop app directly
 - `bun run types` - typecheck all packages
 - `bun run clean` - remove build outputs across packages
 
@@ -152,6 +155,7 @@ Keep these boundaries in mind when adding imports — cross-boundary deep import
 .
 ├── README.md
 ├── AGENTS.md
+├── ARCHITECTURE.md
 ├── package.json
 ├── biome.json
 ├── packages/
@@ -207,7 +211,6 @@ Keep these boundaries in mind when adding imports — cross-boundary deep import
 └── apps/
     ├── cli/
     │   ├── README.md
-    │   ├── ARCHITECTURE.md
     │   └── src/
     │       ├── index.ts
     │       └── utils/
@@ -325,7 +328,7 @@ Use this package to see how the SDK packages are composed in a real app:
 Docs:
 
 - `apps/cli/README.md` (usage-oriented)
-- `apps/cli/ARCHITECTURE.md`
+- `ARCHITECTURE.md` (`@cline/cli` section)
 
 ### `apps/code` (`@cline/code`)
 
@@ -340,7 +343,7 @@ The code app combines:
 Common commands:
 
 - from repo root: `bun run dev` (recommended; builds SDK packages + CLI first, then starts code app dev)
-- from repo root: `bun run dev:code` (starts code app directly)
+- from repo root: `bun run code` (starts code app directly)
 - from `apps/code/`: `bun run dev:web` (frontend-only Next.js dev server on port `3125`)
 - from `apps/code/`: `bun run build` (build web assets)
 - from `apps/code/`: `bun run build:binary` (build desktop binary with Tauri)
@@ -357,7 +360,7 @@ The desktop package combines:
 
 Common commands:
 
-- from repo root: `bun run dev:desktop` (starts desktop app directly)
+- from repo root: `bun run desktop` (starts desktop app directly)
 - from `apps/desktop/`: `bun run dev:web` (frontend-only Next.js dev server on port `3124`)
 - from `apps/desktop/`: `bun run build` (build web assets)
 - from `apps/desktop/`: `bun run build:binary` (build desktop binary with Tauri)

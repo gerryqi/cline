@@ -6,22 +6,22 @@
 		"apps/*"
 	],
 	"scripts": {
+		"prepare": "husky",
 		"build": "bun install && bun run build:sdk && bun -F @cline/cli build",
 		"build:sdk": "bun -F @cline/shared build && bun -F @cline/llms build && bun -F @cline/rpc build && bun -F @cline/agents build && bun -F @cline/core build",
 		"build:apps": "bun build:models && bun -F './apps/**' build",
 		"build:models": "bun -F @cline/llms generate:models && bun format --write",
-		"dev": "bun dev:cli",
-		"dev:cli": "bun --conditions=development --cwd apps/cli ./src/index.ts",
-		"dev:code": "bun --conditions=development -F @cline/code dev",
-		"dev:desktop": "bun --conditions=development -F @cline/desktop dev",
+		"dev": "bun cli",
+		"cli": "bun --conditions=development --cwd apps/cli ./src/index.ts",
+		"code": "bun --conditions=development -F @cline/code dev",
+		"desktop": "bun --conditions=development -F @cline/desktop dev",
 		"clean": "bun --parallel -F '*' clean",
 		"types": "bun --parallel -F '*' typecheck",
 		"test": "bun --parallel -F './packages/**' test & bun -F './apps/cli' test",
 		"biome": "bunx --bun @biomejs/biome",
 		"format": "bun biome format",
 		"lint": "bun biome lint",
-		"fix": "bun biome check --write --unsafe --diagnostic-level=error",
-		"prepare": "husky"
+		"fix": "bun biome check --write --unsafe --diagnostic-level=error"
 	},
 	"lint-staged": {
 		"*": [

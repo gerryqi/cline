@@ -5,6 +5,7 @@ import {
 	ChevronDown,
 	Filter,
 	Loader2,
+	MessageSquare,
 	Plus,
 	Search,
 	Settings,
@@ -17,6 +18,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -24,14 +26,15 @@ import {
 	DropdownMenuRadioItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useSidebar } from "@/components/ui/sidebar";
+import { normalizeTitle } from "@/components/utils";
 import type {
 	SessionHistoryItem,
 	SessionHistoryStatus,
 } from "@/lib/session-history";
 import { cn } from "@/lib/utils";
-import { Button } from "./ui/button";
-import { normalizeTitle } from "./utils";
 
 type CliDiscoveredSession = Omit<SessionHistoryItem, "status"> & {
 	status: string;
@@ -372,6 +375,8 @@ export function AgentSidebar({
 	setView: (view: "chat" | "settings") => void;
 	activeSessionId?: string | null;
 }) {
+	const { isMobile, state } = useSidebar();
+	const isCollapsed = !isMobile && state === "collapsed";
 	const [sessions, setSessions] = useState<SessionHistoryItem[]>([]);
 	const [threads, setThreads] = useState<Thread[]>([]);
 	const activeThread = activeSessionId ?? "";
@@ -395,6 +400,12 @@ export function AgentSidebar({
 	useEffect(() => {
 		threadsRef.current = threads;
 	}, [threads]);
+
+	useEffect(() => {
+		if (isCollapsed && searchOpen) {
+			setSearchOpen(false);
+		}
+	}, [isCollapsed, searchOpen]);
 
 	const refreshSessions = useCallback(async () => {
 		const limit = fetchLimitRef.current;
@@ -697,14 +708,15 @@ export function AgentSidebar({
 	const showShowMore =
 		recentThreads.length + filteredThreads.length > showMoreCount ||
 		mayHaveMoreSessions;
+
 	const filterMenu = (
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>
 				<Button
 					aria-label="Filter sessions"
-					className="flex items-center gap-1 rounded-md p-1 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-					size="icon-sm"
+					className="inline-flex items-center justify-center rounded-md m-0! p-0! text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
 					variant="ghost"
+					size="icon"
 				>
 					<Filter className="size-3 stroke-2" />
 				</Button>
@@ -728,27 +740,32 @@ export function AgentSidebar({
 	);
 
 	return (
-		<div className="flex h-full min-h-0 min-w-0 shrink-0 gap-1 flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
-			<div className="flex flex-col gap-1 w-full mt-2">
+		<div className="flex h-full min-h-0 w-full min-w-0 shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
+			<div className="mt-2 flex w-full min-w-0 flex-col gap-1">
 				<Button
-					className="justify-start"
+					className={cn(
+						"justify-start min-w-0",
+						isCollapsed && "mx-auto size-9 justify-center px-0",
+					)}
 					onClick={() => onNewThread?.()}
+					title="New Session"
 					variant="sidebar"
 				>
 					<Plus className="size-4" />
-					New Session
+					{!isCollapsed ? "New Session" : null}
 				</Button>
 			</div>
 
-			<div className="pb-2 w-full">
-				{searchOpen ? (
-					<div className="flex items-center gap-2 rounded-md bg-sidebar-accent py-1.5">
-						<Search className="size-3" />
-						<input
-							className="flex-1 bg-transparent text-sm text-sidebar-foreground outline-none placeholder:text-muted-foreground"
+			<div className="flex w-full min-w-0 flex-col gap-1">
+				{searchOpen && !isCollapsed ? (
+					<div className="flex min-w-0 items-center gap-2 overflow-hidden rounded-md bg-sidebar-accent px-2 py-1.5">
+						<Search className="size-4 shrink-0" />
+						<Input
+							className="min-w-0 flex-1 bg-transparent text-sm text-sidebar-foreground outline-none placeholder:text-muted-foreground"
 							onBlur={() => {
 								if (!searchQuery) setSearchOpen(false);
 							}}
+							autoFocus={true}
 							onChange={(e) => setSearchQuery(e.target.value)}
 							placeholder="Search sessions..."
 							value={searchQuery}
@@ -756,20 +773,24 @@ export function AgentSidebar({
 					</div>
 				) : (
 					<Button
-						className="py-1.5"
+						className={cn(
+							"py-1.5 min-w-0",
+							isCollapsed && "mx-auto size-9 justify-center px-0",
+						)}
 						onClick={() => setSearchOpen(true)}
+						title="Search sessions"
 						type="button"
 						variant="sidebarItem"
 					>
-						<Search className="h-3.5 w-3.5" />
-						<span>Search</span>
+						<Search className="size-4 shrink-0" />
+						{!isCollapsed ? <span>Search</span> : null}
 					</Button>
 				)}
 			</div>
 
-			<div className="min-h-0 flex-1 w-full">
-				<ScrollArea className="h-full min-h-0 min-w-0 max-w-svw">
-					<div className="flex min-w-0 flex-col gap-0.5 overflow-x-hidden pb-3">
+			<div className="mt-2 min-h-0 w-full flex-1">
+				<ScrollArea className="h-full min-h-0 w-full min-w-0">
+					<div className="flex min-w-0 flex-col gap-0.5 pb-3 px-3">
 						{isLoadingHistory && threads.length === 0 ? (
 							<div className="p-4 text-xs text-muted-foreground">
 								Loading session history...
@@ -777,9 +798,10 @@ export function AgentSidebar({
 						) : filter === "All" ? (
 							<>
 								{pinnedThreads.length > 0 && (
-									<ThreadSection label="Pinned">
+									<ThreadSection collapsed={isCollapsed} label="Pinned">
 										{pinnedThreads.map((thread) => (
 											<ThreadItem
+												collapsed={isCollapsed}
 												isActive={activeThread === thread.id}
 												key={thread.id}
 												onClick={() => {
@@ -797,9 +819,10 @@ export function AgentSidebar({
 								)}
 
 								{runningThreads.length > 0 && (
-									<ThreadSection label="Running">
+									<ThreadSection collapsed={isCollapsed} label="Running">
 										{runningThreads.map((thread) => (
 											<ThreadItem
+												collapsed={isCollapsed}
 												isActive={activeThread === thread.id}
 												key={thread.id}
 												onClick={() => {
@@ -817,9 +840,14 @@ export function AgentSidebar({
 								)}
 
 								{recentThreads.length > 0 && (
-									<ThreadSection action={filterMenu} label="Sessions">
+									<ThreadSection
+										action={filterMenu}
+										collapsed={isCollapsed}
+										label="Sessions"
+									>
 										{recentThreads.slice(0, showMoreCount).map((thread) => (
 											<ThreadItem
+												collapsed={isCollapsed}
 												isActive={activeThread === thread.id}
 												key={thread.id}
 												onClick={() => {
@@ -845,9 +873,14 @@ export function AgentSidebar({
 								)}
 							</>
 						) : (
-							<ThreadSection action={filterMenu} label={filter}>
+							<ThreadSection
+								action={filterMenu}
+								collapsed={isCollapsed}
+								label={filter}
+							>
 								{displayedThreads?.map((thread) => (
 									<ThreadItem
+										collapsed={isCollapsed}
 										isActive={activeThread === thread.id}
 										key={thread.id}
 										onClick={() => {
@@ -865,6 +898,9 @@ export function AgentSidebar({
 						)}
 						{showShowMore && (
 							<Button
+								className={cn(
+									isCollapsed && "mx-auto justify-center rounded-md p-0",
+								)}
 								disabled={isLoadingMore}
 								onClick={() => {
 									const nextCount = showMoreCount + 10;
@@ -883,11 +919,11 @@ export function AgentSidebar({
 								{isLoadingMore ? (
 									<>
 										<Loader2 className="size-3 animate-spin" />
-										Loading...
+										{!isCollapsed ? "Loading..." : null}
 									</>
 								) : (
 									<>
-										Show more
+										{!isCollapsed ? "Show more" : null}
 										<ChevronDown className="size-3" />
 									</>
 								)}
@@ -897,14 +933,19 @@ export function AgentSidebar({
 				</ScrollArea>
 			</div>
 
-			<div className="shrink-0 border-t border-sidebar-border bg-sidebar p-3">
+			<div className="shrink-0 px-2 py-3">
 				<Button
 					type="button"
 					variant="sidebarItem"
+					className={cn(
+						"justify-start min-w-0",
+						isCollapsed && "mx-auto size-9 justify-center px-0",
+					)}
 					onClick={() => setView("settings")}
+					title="Settings"
 				>
-					<Settings className="h-4 w-4" />
-					Settings
+					<Settings className="size-4" />
+					{!isCollapsed ? "Settings" : null}
 				</Button>
 			</div>
 		</div>
@@ -913,18 +954,27 @@ export function AgentSidebar({
 
 function ThreadSection({
 	label,
+	collapsed,
 	action,
 	children,
 }: {
 	label: string;
+	collapsed?: boolean;
 	action?: ReactNode;
 	children: ReactNode;
 }) {
 	return (
-		<div className="mb-1 w-full min-w-0 max-w-full overflow-x-hidden mx-3">
-			<div className="flex min-w-0 max-w-60 items-center justify-between py-1.5 text-xs uppercase tracking-wider text-muted-foreground">
-				<span>{label}</span>
-				{action}
+		<div className={cn("mb-1 min-w-0")}>
+			<div
+				className={cn(
+					"flex w-full min-w-0 flex-nowrap items-center gap-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground",
+					collapsed && "hidden",
+				)}
+			>
+				<div className="block min-w-0 flex-1 truncate">{label}</div>
+				{action ? (
+					<div className="shrink-0 flex justify-end">{action}</div>
+				) : null}
 			</div>
 			{children}
 		</div>
@@ -933,56 +983,77 @@ function ThreadSection({
 
 function ThreadItem({
 	thread,
+	collapsed,
 	isActive,
 	onClick,
 }: {
 	thread: Thread;
+	collapsed?: boolean;
 	isActive: boolean;
 	onClick: () => void;
 }) {
 	const tokenLabel = formatTokenCount(thread.inputTokens, thread.outputTokens);
 	const costLabel = formatCostUsd(thread.totalCostUsd);
+	if (collapsed) {
+		return (
+			<Button
+				className={cn(
+					"mx-auto inline-flexitems-center justify-center rounded-md p-0",
+					isActive
+						? "bg-sidebar-accent text-sidebar-accent-foreground"
+						: "text-sidebar-foreground/80 hover:bg-sidebar-accent/50",
+				)}
+				onClick={onClick}
+				title={normalizeTitle(thread.title)}
+				type="button"
+				variant="ghost"
+			>
+				<MessageSquare className="size-3" />
+			</Button>
+		);
+	}
 
 	return (
-		<Button
+		<button
 			className={cn(
-				"font-normal justify-start px-1 flex col w-full items-center",
+				"group flex h-auto w-full min-w-0 items-start justify-start rounded-md py-2 px-0 text-left text-sm font-normal transition-colors",
 				isActive
 					? "bg-sidebar-accent text-sidebar-accent-foreground"
 					: "text-sidebar-foreground/80 hover:bg-sidebar-accent/50",
 			)}
 			onClick={onClick}
 			type="button"
-			variant="session"
 		>
-			<div className="flex flex-col w-[90%] min-w-0 items-center gap-1.5 overflow-hidden">
-				<div className="flex min-w-0 overflow-hidden justify-between w-full">
-					<div className="text-ellipsis whitespace-nowrap text-sm font-semibold leading-tight">
+			<div className="flex w-full min-w-0 flex-col gap-1.5 overflow-hidden">
+				<div className="flex w-full min-w-0 flex-nowrap items-center justify-between gap-2">
+					<div className="block min-w-0 flex-1 truncate whitespace-nowrap text-sm font-semibold leading-tight">
 						{normalizeTitle(thread.title)}
 					</div>
-					<div className="text-xs hidden">{thread.time}</div>
+					<span className="ml-2 shrink-0 whitespace-nowrap text-right text-[10px] text-muted-foreground tabular-nums">
+						{thread.time}
+					</span>
 				</div>
-				<div className="mt-0.5 flex w-full items-center gap-1 text-xs text-muted-foreground">
-					<span className="truncate rounded bg-secondary py-0.5 font-mono text-xs px-1">
+				<div className="flex w-full min-w-0 flex-nowrap items-center gap-1 overflow-hidden text-xs text-muted-foreground">
+					<span className="block min-w-0 max-w-[40%] shrink truncate rounded bg-secondary px-1 py-0.5 font-mono text-xs">
 						{thread.codebase}
 					</span>
 					{thread.model && (
-						<span className="truncate max-w-28 rounded border border-sidebar-border px-1 py-0.5 font-mono text-[10px]">
+						<span className="block min-w-0 max-w-[55%] shrink truncate rounded border border-sidebar-border px-1 py-0.5 font-mono text-[10px]">
 							{thread.model}
 						</span>
 					)}
 					{tokenLabel ? (
-						<span className="rounded border border-sidebar-border px-1 py-0.5 font-mono text-[10px]">
+						<span className="block min-w-0 shrink truncate rounded border border-sidebar-border px-1 py-0.5 font-mono text-[10px]">
 							{tokenLabel}
 						</span>
 					) : null}
 					{costLabel ? (
-						<span className="rounded border border-sidebar-border px-1 py-0.5 font-mono text-[10px]">
+						<span className="block min-w-0 shrink truncate rounded border border-sidebar-border px-1 py-0.5 font-mono text-[10px]">
 							{costLabel}
 						</span>
 					) : null}
 				</div>
 			</div>
-		</Button>
+		</button>
 	);
 }

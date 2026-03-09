@@ -3,10 +3,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
 	ArrowUp,
+	Brain,
 	ChevronDown,
 	CircleStop,
 	Coins,
-	GitBranch,
 	Mic,
 	Paperclip,
 	RotateCcw,
@@ -28,6 +28,7 @@ import {
 	writeModelSelectionStorageToWindow,
 } from "@/lib/model-selection";
 import { cn } from "@/lib/utils";
+import { GitBranchSelector } from "./workspace-selector";
 
 type ActiveMention = {
 	start: number;
@@ -145,6 +146,8 @@ export function ChatInputBar({
 	);
 	const canSend =
 		(promptInput.trim().length > 0 || attachments.length > 0) && !isBusy;
+	const effortLevels = ["Low", "Medium", "High"] as const;
+	const [effortIndex, setEffortIndex] = useState(1);
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const promptInputRef = useRef<HTMLInputElement | null>(null);
 	const [cursorIndex, setCursorIndex] = useState(() => promptInput.length);
@@ -164,6 +167,13 @@ export function ChatInputBar({
 		}
 		return `${total.toLocaleString()} tokens`;
 	}, [summary.tokensIn, summary.tokensOut]);
+	const effortLabel = effortLevels[effortIndex];
+	const handleEffortCycle = useCallback(() => {
+		if (!modelSupportsReasoning) {
+			return;
+		}
+		setEffortIndex((current) => (current + 1) % effortLevels.length);
+	}, [effortLevels.length, modelSupportsReasoning]);
 
 	useEffect(() => {
 		setCursorIndex((prev) => Math.min(prev, promptInput.length));
@@ -352,7 +362,9 @@ export function ChatInputBar({
 								)
 							}
 							placeholder={
-								isBusy ? "Agent is working..." : "Ask follow-up questions"
+								isBusy
+									? "Agent is working..."
+									: "Enter your question or type / for workflow or @ to attach files"
 							}
 							ref={promptInputRef}
 							value={promptInput}
@@ -413,8 +425,6 @@ export function ChatInputBar({
 						onProviderChange={onProviderChange}
 						provider={provider}
 					/>
-
-					<EffortSelector disabled={!modelSupportsReasoning} />
 				</div>
 
 				<div className="flex items-center gap-1">
@@ -446,7 +456,15 @@ export function ChatInputBar({
 						label={mode === "act" ? "Act" : "Plan"}
 						onClick={onModeToggle}
 					/>
-					{tokensSummary && <StatusItem icon={Coins} label={tokensSummary} />}
+					<StatusItem
+						disabled={!modelSupportsReasoning}
+						icon={Brain}
+						label={effortLabel}
+						onClick={handleEffortCycle}
+					/>
+					{tokensSummary && (
+						<StatusItem icon={Coins} label={tokensSummary} hasOption={false} />
+					)}
 				</div>
 				{/* GIT BRANCH */}
 				<div className="flex items-center gap-3">
@@ -474,220 +492,6 @@ export function ChatInputBar({
 					</button>
 				</div>
 			</div>
-		</div>
-	);
-}
-
-function GitBranchSelector({
-	currentBranch,
-	workspaceRoot,
-	onListGitBranches,
-	onListWorkspaces,
-	onSwitchGitBranch,
-	onSwitchWorkspace,
-}: {
-	currentBranch: string;
-	workspaceRoot: string;
-	onListGitBranches: () => Promise<{ current: string; branches: string[] }>;
-	onListWorkspaces: () => Promise<string[]>;
-	onSwitchGitBranch: (branch: string) => Promise<boolean>;
-	onSwitchWorkspace: (workspacePath: string) => Promise<boolean>;
-}) {
-	const [open, setOpen] = useState(false);
-	const [branches, setBranches] = useState<string[]>([]);
-	const [workspaces, setWorkspaces] = useState<string[]>([]);
-	const [loadingBranches, setLoadingBranches] = useState(false);
-	const [switching, setSwitching] = useState(false);
-	const [switchingWorkspace, setSwitchingWorkspace] = useState(false);
-
-	const workspaceName = useMemo(() => {
-		const trimmed = workspaceRoot.trim().replace(/[\\/]+$/, "");
-		if (!trimmed) {
-			return "workspace";
-		}
-		const parts = trimmed.split(/[\\/]/);
-		return parts[parts.length - 1] || "workspace";
-	}, [workspaceRoot]);
-
-	const formatWorkspaceLabel = useCallback((workspacePath: string): string => {
-		const trimmed = workspacePath.trim();
-		if (!trimmed) {
-			return workspacePath;
-		}
-		const unixHome = trimmed.match(/^\/Users\/[^/]+\/(.*)$/);
-		if (unixHome) {
-			return unixHome[1] ? `~/${unixHome[1]}` : "~";
-		}
-		const linuxHome = trimmed.match(/^\/home\/[^/]+\/(.*)$/);
-		if (linuxHome) {
-			return linuxHome[1] ? `~/${linuxHome[1]}` : "~";
-		}
-		const windowsHome = trimmed.match(/^[A-Za-z]:\\Users\\[^\\]+\\(.*)$/);
-		if (windowsHome) {
-			const tail = windowsHome[1]?.replaceAll("\\", "/") || "";
-			return tail ? `~/${tail}` : "~";
-		}
-		return workspacePath;
-	}, []);
-
-	// Preload workspaces on mount so the dropdown is instant
-	useEffect(() => {
-		let cancelled = false;
-		onListWorkspaces()
-			.then((results) => {
-				if (!cancelled) setWorkspaces(results);
-			})
-			.catch(() => {});
-		return () => {
-			cancelled = true;
-		};
-	}, [onListWorkspaces]);
-
-	const openMenu = async () => {
-		setOpen(true);
-		setLoadingBranches(true);
-		try {
-			const branchPayload = await onListGitBranches();
-			setBranches(branchPayload.branches);
-		} finally {
-			setLoadingBranches(false);
-		}
-	};
-
-	const handleSelect = async (branch: string) => {
-		if (branch === currentBranch || switching) {
-			setOpen(false);
-			return;
-		}
-		setSwitching(true);
-		const switched = await onSwitchGitBranch(branch);
-		setSwitching(false);
-		if (switched) {
-			setOpen(false);
-		}
-	};
-
-	const handleWorkspaceSelect = async (nextWorkspacePath: string) => {
-		const next = nextWorkspacePath.trim();
-		if (!next || next === workspaceRoot || switchingWorkspace) {
-			return;
-		}
-		setSwitchingWorkspace(true);
-		const switched = await onSwitchWorkspace(next);
-		setSwitchingWorkspace(false);
-		if (switched) {
-			setOpen(false);
-		}
-	};
-
-	return (
-		<div className="relative">
-			<button
-				className="flex items-center gap-1 hover:text-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-				disabled={switching}
-				id="git-branch-btn"
-				onClick={() => {
-					if (open) {
-						setOpen(false);
-						return;
-					}
-					void openMenu();
-				}}
-				type="button"
-			>
-				<GitBranch className="h-3 w-3" />
-				<span className="max-w-20 truncate">{workspaceName}</span>
-				<span className="text-muted-foreground">/</span>
-				<span className="max-w-20 truncate">{currentBranch}</span>
-				<ChevronDown className="h-2.5 w-2.5" />
-			</button>
-			{open && (
-				<div className="absolute bottom-full right-0 z-50 mb-1 w-56 rounded-lg border border-border bg-popover p-1 shadow-xl">
-					{loadingBranches ? (
-						<div className="px-3 py-2 text-xs text-muted-foreground">
-							Loading branches...
-						</div>
-					) : (
-						<div className="space-y-1">
-							<div className="px-2 pt-1 text-[10px] uppercase text-muted-foreground">
-								Workspaces
-							</div>
-							<div className="max-h-28 overflow-y-auto">
-								{workspaces.length === 0 ? (
-									<div className="px-3 py-2 text-xs text-muted-foreground">
-										No workspaces found
-									</div>
-								) : (
-									workspaces.map((workspacePath) => (
-										<button
-											className={cn(
-												"flex w-full items-center justify-between rounded-md px-3 py-2 text-xs transition-colors",
-												workspacePath === workspaceRoot
-													? "bg-accent text-foreground"
-													: "text-muted-foreground hover:bg-accent hover:text-foreground",
-											)}
-											key={workspacePath}
-											onClick={() => {
-												void handleWorkspaceSelect(workspacePath);
-											}}
-											type="button"
-										>
-											<span className="truncate">
-												{formatWorkspaceLabel(workspacePath)}
-											</span>
-										</button>
-									))
-								)}
-							</div>
-							<button
-								className="flex w-full items-center rounded-md px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-								disabled={switchingWorkspace}
-								onClick={() => {
-									const proposed = window.prompt(
-										"Enter workspace path",
-										workspaceRoot,
-									);
-									if (!proposed) {
-										return;
-									}
-									void handleWorkspaceSelect(proposed);
-								}}
-								type="button"
-							>
-								Switch workspace path...
-							</button>
-							<div className="px-2 pt-1 text-[10px] uppercase text-muted-foreground">
-								Branches
-							</div>
-							<div className="max-h-28 overflow-y-auto">
-								{branches.length === 0 ? (
-									<div className="px-3 py-2 text-xs text-muted-foreground">
-										No branches found
-									</div>
-								) : (
-									branches.map((branch) => (
-										<button
-											className={cn(
-												"flex w-full items-center justify-between rounded-md px-3 py-2 text-xs transition-colors",
-												branch === currentBranch
-													? "bg-accent text-foreground"
-													: "text-muted-foreground hover:bg-accent hover:text-foreground",
-											)}
-											key={branch}
-											onClick={() => {
-												void handleSelect(branch);
-											}}
-											type="button"
-										>
-											<span className="truncate">{branch}</span>
-										</button>
-									))
-								)}
-							</div>
-						</div>
-					)}
-				</div>
-			)}
 		</div>
 	);
 }
@@ -938,60 +742,32 @@ function ModelSelector({
 	);
 }
 
-function EffortSelector({ disabled }: { disabled: boolean }) {
-	const effortLevels = ["Low", "Medium", "High"];
-	const [effort, setEffort] = useState("Medium");
-
-	return (
-		<Combobox
-			items={effortLevels}
-			onValueChange={(value) => {
-				if (!value) {
-					return;
-				}
-				setEffort(value);
-			}}
-			value={effort}
-		>
-			<ComboboxInput
-				className="h-7"
-				disabled={disabled}
-				readOnly
-				showClear={false}
-				showTrigger
-			/>
-			<ComboboxContent>
-				<ComboboxEmpty>No options found.</ComboboxEmpty>
-				<ComboboxList>
-					{(item) => (
-						<ComboboxItem className="text-xxs" key={item} value={item}>
-							{item}
-						</ComboboxItem>
-					)}
-				</ComboboxList>
-			</ComboboxContent>
-		</Combobox>
-	);
-}
-
 function StatusItem({
 	icon: Icon,
 	label,
 	onClick,
+	disabled,
+	hasOption = true,
 }: {
 	icon?: React.ComponentType<{ className?: string }>;
 	label: string;
 	onClick?: () => void;
+	disabled?: boolean;
+	hasOption?: boolean;
 }) {
 	return (
 		<button
-			className="flex items-center gap-1 hover:text-foreground transition-colors"
+			className={cn(
+				"flex items-center gap-1 transition-colors",
+				disabled ? "cursor-not-allowed opacity-60" : "hover:text-foreground",
+			)}
+			disabled={disabled}
 			onClick={onClick}
 			type="button"
 		>
 			{Icon ? <Icon className="h-3 w-3" /> : null}
 			<span>{label}</span>
-			<ChevronDown className="h-2.5 w-2.5" />
+			{hasOption ? <ChevronDown className="h-2.5 w-2.5" /> : null}
 		</button>
 	);
 }

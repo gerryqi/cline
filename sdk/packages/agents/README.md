@@ -3,7 +3,7 @@
 Package-level docs are centralized:
 
 - Overview: [`packages/README.md`](../README.md)
-- Architecture and interactions: [`packages/ARCHITECTURE.md`](../ARCHITECTURE.md)
+- Architecture and interactions: [`ARCHITECTURE.md`](/Users/beatrix/dev/clinee/sdk-wip/ARCHITECTURE.md)
 
 For extended agent API details, see [`packages/agents/DOC.md`](./DOC.md).
 For execution flow and state behavior, see

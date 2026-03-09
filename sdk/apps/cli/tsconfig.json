@@ -3,7 +3,6 @@
 		"target": "ES2022",
 		"module": "ESNext",
 		"moduleResolution": "bundler",
-		"baseUrl": ".",
 		"paths": {
 			"@cline/agents": ["../../packages/agents/src/index.ts"],
 			"@cline/agents/node": ["../../packages/agents/src/index.node.ts"],

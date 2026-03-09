@@ -16,9 +16,9 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ChatMessage, ChatSessionStatus } from "@/lib/chat-schema";
 import { cn } from "@/lib/utils";
-import { MemoizedMarkdown } from "./ui/markdown";
-import { normalizeTitle } from "./utils";
-import { WelcomeScreen } from "./views/chat/welcome-chat";
+import { MemoizedMarkdown } from "../../ui/markdown";
+import { normalizeTitle } from "../../utils";
+import { WelcomeScreen } from "./welcome-chat";
 
 type ChatMessagesProps = {
 	sessionId: string | null;
@@ -366,6 +366,13 @@ function formatToolValue(value: unknown): string {
 	if (typeof normalized === "string") {
 		return normalized;
 	}
+	if (
+		typeof normalized === "object" &&
+		"error" in normalized &&
+		typeof normalized.error === "string"
+	) {
+		return normalized.error;
+	}
 	try {
 		return JSON.stringify(normalized, null, 2);
 	} catch {
@@ -662,11 +669,17 @@ function ToolMessageBlock({ message }: { message: ChatMessage }) {
 							</div>
 						) : null}
 						{resultPreview ? (
-							<div className="space-y-1">
-								<pre className="max-h-64 overflow-auto rounded-md border border-border/70 bg-background/60 p-2 text-xxs leading-relaxed text-foreground whitespace-pre-wrap break-all">
-									{resultPreview}
-								</pre>
-							</div>
+							payload?.isError ? (
+								<div className="mt-1">
+									<span className="text-destructive">{resultPreview}</span>
+								</div>
+							) : (
+								<div className="space-y-1">
+									<pre className="max-h-64 overflow-auto rounded-md border border-border/70 bg-background/60 p-2 text-xxs leading-relaxed text-foreground whitespace-pre-wrap break-all">
+										{resultPreview}
+									</pre>
+								</div>
+							)
 						) : null}
 					</div>
 				) : null}

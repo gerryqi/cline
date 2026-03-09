@@ -358,4 +358,4 @@ console.log(result.text);
 
 - package overview: [`packages/agents/README.md`](./README.md)
 - API details: [`packages/agents/DOC.md`](./DOC.md)
-- workspace architecture: [`packages/ARCHITECTURE.md`](../ARCHITECTURE.md)
+- workspace architecture: [`ARCHITECTURE.md`](/Users/beatrix/dev/clinee/sdk-wip/ARCHITECTURE.md)

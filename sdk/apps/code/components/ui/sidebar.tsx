@@ -26,17 +26,41 @@ import { cn } from "@/lib/utils";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
-const SIDEBAR_WIDTH = "16rem";
+const SIDEBAR_WIDTH = 256;
 const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
+const SIDEBAR_WIDTH_COOKIE_NAME = "sidebar_width";
+const SIDEBAR_MIN_WIDTH = 224;
+const SIDEBAR_MAX_WIDTH = 560;
+
+function clampSidebarWidth(value: number): number {
+	return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, value));
+}
+
+function getCookieValue(name: string): string | null {
+	if (typeof document === "undefined") {
+		return null;
+	}
+	const encoded = `${encodeURIComponent(name)}=`;
+	const found = document.cookie
+		.split(";")
+		.map((part) => part.trim())
+		.find((part) => part.startsWith(encoded));
+	if (!found) {
+		return null;
+	}
+	return decodeURIComponent(found.slice(encoded.length));
+}
 
 type SidebarContextProps = {
 	state: "expanded" | "collapsed";
 	open: boolean;
-	setOpen: (open: boolean) => void;
+	setOpen: (open: boolean | ((open: boolean) => boolean)) => void;
+	desktopWidth: number;
+	setDesktopWidth: (width: number) => void;
 	openMobile: boolean;
-	setOpenMobile: (open: boolean) => void;
+	setOpenMobile: (open: boolean | ((open: boolean) => boolean)) => void;
 	isMobile: boolean;
 	toggleSidebar: () => void;
 };
@@ -67,6 +91,13 @@ function SidebarProvider({
 }) {
 	const isMobile = useIsMobile();
 	const [openMobile, setOpenMobile] = React.useState(false);
+	const [desktopWidth, setDesktopWidthState] = React.useState<number>(() => {
+		const cookieValue = getCookieValue(SIDEBAR_WIDTH_COOKIE_NAME);
+		const parsedWidth = Number(cookieValue);
+		return Number.isFinite(parsedWidth)
+			? clampSidebarWidth(parsedWidth)
+			: SIDEBAR_WIDTH;
+	});
 
 	// This is the internal state of the sidebar.
 	// We use openProp and setOpenProp for control from outside the component.
@@ -91,6 +122,12 @@ function SidebarProvider({
 	const toggleSidebar = React.useCallback(() => {
 		return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open);
 	}, [isMobile, setOpen]);
+
+	const setDesktopWidth = React.useCallback((width: number) => {
+		const next = clampSidebarWidth(width);
+		setDesktopWidthState(next);
+		document.cookie = `${SIDEBAR_WIDTH_COOKIE_NAME}=${next}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+	}, []);
 
 	// Adds a keyboard shortcut to toggle the sidebar.
 	React.useEffect(() => {
@@ -117,12 +154,23 @@ function SidebarProvider({
 			state,
 			open,
 			setOpen,
+			desktopWidth,
+			setDesktopWidth,
 			isMobile,
 			openMobile,
 			setOpenMobile,
 			toggleSidebar,
 		}),
-		[state, open, setOpen, isMobile, openMobile, toggleSidebar],
+		[
+			state,
+			open,
+			setOpen,
+			desktopWidth,
+			setDesktopWidth,
+			isMobile,
+			openMobile,
+			toggleSidebar,
+		],
 	);
 
 	return (
@@ -132,7 +180,7 @@ function SidebarProvider({
 					data-slot="sidebar-wrapper"
 					style={
 						{
-							"--sidebar-width": SIDEBAR_WIDTH,
+							"--sidebar-width": `${desktopWidth}px`,
 							"--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
 							...style,
 						} as React.CSSProperties
@@ -279,7 +327,60 @@ function SidebarTrigger({
 }
 
 function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
-	const { toggleSidebar } = useSidebar();
+	const { setOpen, setDesktopWidth, desktopWidth } = useSidebar();
+	const didDragRef = React.useRef(false);
+
+	const handlePointerDown = React.useCallback(
+		(event: React.PointerEvent<HTMLButtonElement>) => {
+			if (event.button !== 0) {
+				return;
+			}
+			event.preventDefault();
+			const sidebarRoot = event.currentTarget.closest(
+				'[data-slot="sidebar"]',
+			) as HTMLElement | null;
+			const side = sidebarRoot?.dataset.side === "right" ? "right" : "left";
+			const startX = event.clientX;
+			const startWidth = desktopWidth;
+			didDragRef.current = false;
+			setOpen(true);
+
+			const previousCursor = document.body.style.cursor;
+			const previousUserSelect = document.body.style.userSelect;
+			document.body.style.cursor = "ew-resize";
+			document.body.style.userSelect = "none";
+
+			const handlePointerMove = (moveEvent: PointerEvent) => {
+				const delta =
+					side === "left"
+						? moveEvent.clientX - startX
+						: startX - moveEvent.clientX;
+				if (Math.abs(delta) > 2) {
+					didDragRef.current = true;
+				}
+				setDesktopWidth(startWidth + delta);
+			};
+
+			const cleanup = () => {
+				document.body.style.cursor = previousCursor;
+				document.body.style.userSelect = previousUserSelect;
+				window.removeEventListener("pointermove", handlePointerMove);
+				window.removeEventListener("pointerup", cleanup);
+			};
+
+			window.addEventListener("pointermove", handlePointerMove);
+			window.addEventListener("pointerup", cleanup);
+		},
+		[desktopWidth, setDesktopWidth, setOpen],
+	);
+
+	const handleClick = React.useCallback(() => {
+		if (didDragRef.current) {
+			didDragRef.current = false;
+			return;
+		}
+		setOpen((open) => !open);
+	}, [setOpen]);
 
 	return (
 		<button
@@ -287,8 +388,9 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
 			data-slot="sidebar-rail"
 			aria-label="Toggle Sidebar"
 			tabIndex={-1}
-			onClick={toggleSidebar}
-			title="Toggle Sidebar"
+			onClick={handleClick}
+			onPointerDown={handlePointerDown}
+			title="Drag to resize or click to toggle sidebar"
 			className={cn(
 				"hover:after:bg-sidebar-border absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] sm:flex",
 				"in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",

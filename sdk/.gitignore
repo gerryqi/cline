@@ -43,4 +43,5 @@ pnpm-lock.yaml
 
 # Protobuf generated code
 packages/rpc/src/proto/generated
-src-tauri/gen/schemas
+*/src-tauri/gen/schemas
+gen

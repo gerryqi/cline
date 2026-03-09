@@ -11,16 +11,16 @@ import type {
 	ProviderModelsResponse,
 } from "@/lib/provider-schema";
 import { cn } from "@/lib/utils";
-import { McpServersContent } from "./mcp-view";
 import {
 	ProviderDetailContent,
 	ProviderListContent,
 } from "./provider-list-view";
-import { RulesView } from "./rules-view";
 import {
 	AddProviderContent,
 	type AddProviderPayload,
 } from "./views/settings/add-provider";
+import { RulesView } from "./views/settings/extensions.view";
+import { McpServersContent } from "./views/settings/mcp-view";
 
 // -----------------------------------------------------------
 // Settings nav categories

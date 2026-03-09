@@ -3,7 +3,7 @@
 Package-level docs are centralized:
 
 - Overview: [`packages/README.md`](../README.md)
-- Architecture and interactions: [`packages/ARCHITECTURE.md`](../ARCHITECTURE.md)
+- Architecture and interactions: [`ARCHITECTURE.md`](/Users/beatrix/dev/clinee/sdk-wip/ARCHITECTURE.md)
 
 `@cline/llms` remains the canonical source for model/provider cataloging and provider settings schema.
 
