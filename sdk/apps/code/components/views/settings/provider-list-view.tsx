@@ -15,11 +15,11 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
 import type { Provider } from "@/lib/provider-schema";
 import { cn } from "@/lib/utils";
-import { Input } from "./ui/input";
-import { Switch } from "./ui/switch";
 
 // -----------------------------------------------------------
 // Provider LIST content (the grid of all providers)

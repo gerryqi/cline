@@ -4,7 +4,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentHeader } from "@/components/agent-header";
 import { AgentSidebar } from "@/components/agent-sidebar";
-import { SettingsView } from "@/components/settings-view";
 import {
 	Sidebar,
 	SidebarInset,
@@ -14,6 +13,7 @@ import {
 import { ChatInputBar } from "@/components/views/chat/chat-input-bar";
 import { ChatMessages } from "@/components/views/chat/chat-messages";
 import { DiffView } from "@/components/views/chat/diff-view";
+import { SettingsView } from "@/components/views/settings/settings-view";
 import { WorkspaceProvider } from "@/contexts/workspace-context";
 import { useChatSession } from "@/hooks/use-chat-session";
 import type { SessionHistoryItem } from "@/lib/session-history";

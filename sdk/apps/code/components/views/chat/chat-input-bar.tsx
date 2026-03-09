@@ -28,7 +28,7 @@ import {
 	writeModelSelectionStorageToWindow,
 } from "@/lib/model-selection";
 import { cn } from "@/lib/utils";
-import { GitBranchSelector } from "./workspace-selector";
+import { WorkspaceSelector } from "./workspace-selector";
 
 type ActiveMention = {
 	start: number;
@@ -468,7 +468,7 @@ export function ChatInputBar({
 				</div>
 				{/* GIT BRANCH */}
 				<div className="flex items-center gap-3">
-					<GitBranchSelector
+					<WorkspaceSelector
 						currentBranch={gitBranch}
 						onListGitBranches={onListGitBranches}
 						onListWorkspaces={onListWorkspaces}
