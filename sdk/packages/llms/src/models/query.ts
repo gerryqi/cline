@@ -5,18 +5,14 @@
  * Uses the registry and schema validation for type-safe queries.
  */
 
-import {
-	getAllModels,
-	getModelsForProvider,
-	getProviderIds,
-} from "./registry.js";
+import { getAllModels, getModelsForProvider, getProviderIds } from "./registry";
 import {
 	type ModelMatch,
 	type ModelQueryConfig,
 	ModelQueryConfigSchema,
 	matchesQuery,
 	sortModels,
-} from "./schemas/index.js";
+} from "./schemas/index";
 
 // =============================================================================
 // Query Execution

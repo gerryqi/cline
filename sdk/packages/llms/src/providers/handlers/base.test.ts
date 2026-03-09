@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ApiStream, ProviderConfig } from "../types/index.js";
-import { BaseHandler } from "./base.js";
+import type { ApiStream, ProviderConfig } from "../types/index";
+import { BaseHandler } from "./base";
 
 class TestHandler extends BaseHandler {
 	getMessages(): unknown {

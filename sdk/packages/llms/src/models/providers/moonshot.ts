@@ -2,8 +2,8 @@
  * Moonshot Provider
  */
 
-import { getGeneratedModelsForProvider } from "../generated-access.js";
-import type { ModelCollection, ModelInfo } from "../schemas/index.js";
+import { getGeneratedModelsForProvider } from "../generated-access";
+import type { ModelCollection, ModelInfo } from "../schemas/index";
 
 const DEFAULT_MOONSHOT_MODEL_ID = "kimi-k2-0905-preview";
 

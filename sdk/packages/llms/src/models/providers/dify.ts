@@ -2,7 +2,7 @@
  * Dify Provider
  */
 
-import type { ModelCollection } from "../schemas/index.js";
+import type { ModelCollection } from "../schemas/index";
 
 export const DIFY_PROVIDER: ModelCollection = {
 	provider: {

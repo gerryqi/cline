@@ -1,8 +1,8 @@
 import { resolveProviderModelCatalogKeys } from "@cline/shared";
 import { describe, expect, it } from "vitest";
-import { getGeneratedModelsForProvider } from "../../models/generated-access.js";
-import type { ProviderSettings } from "./settings.js";
-import { toProviderConfig } from "./settings.js";
+import { getGeneratedModelsForProvider } from "../../models/generated-access";
+import type { ProviderSettings } from "./settings";
+import { toProviderConfig } from "./settings";
 
 describe("toProviderConfig", () => {
 	it("backfills knownModels from generated catalogs for anthropic", () => {

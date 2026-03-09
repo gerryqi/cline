@@ -2,8 +2,8 @@
  * Qwen Code Provider
  */
 
-import { getGeneratedModelsForProvider } from "../generated-access.js";
-import type { ModelCollection, ModelInfo } from "../schemas/index.js";
+import { getGeneratedModelsForProvider } from "../generated-access";
+import type { ModelCollection, ModelInfo } from "../schemas/index";
 
 const DEFAULT_QWEN_CODE_MODEL_ID = "qwen3-coder-plus";
 

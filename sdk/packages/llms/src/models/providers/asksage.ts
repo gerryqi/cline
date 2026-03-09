@@ -2,7 +2,7 @@
  * AskSage Provider
  */
 
-import type { ModelCollection } from "../schemas/index.js";
+import type { ModelCollection } from "../schemas/index";
 
 export const ASKSAGE_PROVIDER: ModelCollection = {
 	provider: {

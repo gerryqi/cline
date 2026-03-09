@@ -7,11 +7,7 @@
  * Uses lazy loading - providers are only loaded when first accessed.
  */
 
-import type {
-	ModelCollection,
-	ModelInfo,
-	ProviderInfo,
-} from "./schemas/index.js";
+import type { ModelCollection, ModelInfo, ProviderInfo } from "./schemas/index";
 
 // =============================================================================
 // Types
@@ -58,154 +54,134 @@ const CUSTOM_PROVIDERS: Map<string, ModelCollection> = new Map();
  * Register built-in provider loaders (does not load the providers)
  */
 const BUILT_IN_PROVIDER_LOADER_ENTRIES: ProviderLoaderEntry[] = [
-	["cline", async () => (await import("./providers/cline.js")).CLINE_PROVIDER],
+	["cline", async () => (await import("./providers/cline")).CLINE_PROVIDER],
 	[
 		"asksage",
-		async () => (await import("./providers/asksage.js")).ASKSAGE_PROVIDER,
+		async () => (await import("./providers/asksage")).ASKSAGE_PROVIDER,
 	],
 	[
 		"claude-code",
-		async () =>
-			(await import("./providers/claude-code.js")).CLAUDE_CODE_PROVIDER,
+		async () => (await import("./providers/claude-code")).CLAUDE_CODE_PROVIDER,
 	],
 	[
 		"anthropic",
-		async () => (await import("./providers/anthropic.js")).ANTHROPIC_PROVIDER,
+		async () => (await import("./providers/anthropic")).ANTHROPIC_PROVIDER,
 	],
 	[
 		"bedrock",
-		async () => (await import("./providers/bedrock.js")).BEDROCK_PROVIDER,
+		async () => (await import("./providers/bedrock")).BEDROCK_PROVIDER,
 	],
-	[
-		"gemini",
-		async () => (await import("./providers/gemini.js")).GEMINI_PROVIDER,
-	],
-	[
-		"vertex",
-		async () => (await import("./providers/vertex.js")).VERTEX_PROVIDER,
-	],
-	[
-		"openai",
-		async () => (await import("./providers/openai.js")).OPENAI_PROVIDER,
-	],
+	["gemini", async () => (await import("./providers/gemini")).GEMINI_PROVIDER],
+	["vertex", async () => (await import("./providers/vertex")).VERTEX_PROVIDER],
+	["openai", async () => (await import("./providers/openai")).OPENAI_PROVIDER],
 	[
 		"openai-native",
-		async () => (await import("./providers/openai.js")).OPENAI_PROVIDER,
+		async () => (await import("./providers/openai")).OPENAI_PROVIDER,
 	],
 	[
 		"openai-codex",
 		async () =>
-			(await import("./providers/openai-codex.js")).OPENAI_CODEX_PROVIDER,
+			(await import("./providers/openai-codex")).OPENAI_CODEX_PROVIDER,
 	],
 	[
 		"opencode",
-		async () => (await import("./providers/opencode.js")).OPENCODE_PROVIDER,
+		async () => (await import("./providers/opencode")).OPENCODE_PROVIDER,
 	],
 	[
 		"deepseek",
-		async () => (await import("./providers/deepseek.js")).DEEPSEEK_PROVIDER,
+		async () => (await import("./providers/deepseek")).DEEPSEEK_PROVIDER,
 	],
-	[
-		"doubao",
-		async () => (await import("./providers/doubao.js")).DOUBAO_PROVIDER,
-	],
-	["xai", async () => (await import("./providers/xai.js")).XAI_PROVIDER],
+	["doubao", async () => (await import("./providers/doubao")).DOUBAO_PROVIDER],
+	["xai", async () => (await import("./providers/xai")).XAI_PROVIDER],
 	[
 		"together",
-		async () => (await import("./providers/together.js")).TOGETHER_PROVIDER,
+		async () => (await import("./providers/together")).TOGETHER_PROVIDER,
 	],
-	["groq", async () => (await import("./providers/groq.js")).GROQ_PROVIDER],
+	["groq", async () => (await import("./providers/groq")).GROQ_PROVIDER],
 	[
 		"fireworks",
-		async () => (await import("./providers/fireworks.js")).FIREWORKS_PROVIDER,
+		async () => (await import("./providers/fireworks")).FIREWORKS_PROVIDER,
 	],
 	[
 		"cerebras",
-		async () => (await import("./providers/cerebras.js")).CEREBRAS_PROVIDER,
+		async () => (await import("./providers/cerebras")).CEREBRAS_PROVIDER,
 	],
 	[
 		"sambanova",
-		async () => (await import("./providers/sambanova.js")).SAMBANOVA_PROVIDER,
+		async () => (await import("./providers/sambanova")).SAMBANOVA_PROVIDER,
 	],
-	[
-		"nebius",
-		async () => (await import("./providers/nebius.js")).NEBIUS_PROVIDER,
-	],
+	["nebius", async () => (await import("./providers/nebius")).NEBIUS_PROVIDER],
 	[
 		"nousResearch",
 		async () =>
-			(await import("./providers/nous-research.js")).NOUS_RESEARCH_PROVIDER,
+			(await import("./providers/nous-research")).NOUS_RESEARCH_PROVIDER,
 	],
-	["oca", async () => (await import("./providers/oca.js")).OCA_PROVIDER],
+	["oca", async () => (await import("./providers/oca")).OCA_PROVIDER],
 	[
 		"requesty",
-		async () => (await import("./providers/requesty.js")).REQUESTY_PROVIDER,
+		async () => (await import("./providers/requesty")).REQUESTY_PROVIDER,
 	],
 	[
 		"litellm",
-		async () => (await import("./providers/litellm.js")).LITELLM_PROVIDER,
+		async () => (await import("./providers/litellm")).LITELLM_PROVIDER,
 	],
 	[
 		"vercel-ai-gateway",
 		async () =>
-			(await import("./providers/vercel-ai-gateway.js"))
+			(await import("./providers/vercel-ai-gateway"))
 				.VERCEL_AI_GATEWAY_PROVIDER,
 	],
-	[
-		"ollama",
-		async () => (await import("./providers/ollama.js")).OLLAMA_PROVIDER,
-	],
+	["ollama", async () => (await import("./providers/ollama")).OLLAMA_PROVIDER],
 	[
 		"lmstudio",
-		async () => (await import("./providers/lmstudio.js")).LMSTUDIO_PROVIDER,
+		async () => (await import("./providers/lmstudio")).LMSTUDIO_PROVIDER,
 	],
 	[
 		"baseten",
-		async () => (await import("./providers/baseten.js")).BASETEN_PROVIDER,
+		async () => (await import("./providers/baseten")).BASETEN_PROVIDER,
 	],
 	[
 		"huggingface",
-		async () =>
-			(await import("./providers/huggingface.js")).HUGGINGFACE_PROVIDER,
+		async () => (await import("./providers/huggingface")).HUGGINGFACE_PROVIDER,
 	],
 	[
 		"aihubmix",
-		async () => (await import("./providers/aihubmix.js")).AIHUBMIX_PROVIDER,
+		async () => (await import("./providers/aihubmix")).AIHUBMIX_PROVIDER,
 	],
-	["hicap", async () => (await import("./providers/hicap.js")).HICAP_PROVIDER],
+	["hicap", async () => (await import("./providers/hicap")).HICAP_PROVIDER],
 	[
 		"huawei-cloud-maas",
 		async () =>
-			(await import("./providers/huawei-cloud-maas.js"))
+			(await import("./providers/huawei-cloud-maas"))
 				.HUAWEI_CLOUD_MAAS_PROVIDER,
 	],
 	[
 		"minimax",
-		async () => (await import("./providers/minimax.js")).MINIMAX_PROVIDER,
+		async () => (await import("./providers/minimax")).MINIMAX_PROVIDER,
 	],
 	[
 		"mistral",
-		async () => (await import("./providers/mistral.js")).MISTRAL_PROVIDER,
+		async () => (await import("./providers/mistral")).MISTRAL_PROVIDER,
 	],
 	[
 		"moonshot",
-		async () => (await import("./providers/moonshot.js")).MOONSHOT_PROVIDER,
+		async () => (await import("./providers/moonshot")).MOONSHOT_PROVIDER,
 	],
-	["dify", async () => (await import("./providers/dify.js")).DIFY_PROVIDER],
+	["dify", async () => (await import("./providers/dify")).DIFY_PROVIDER],
 	[
 		"openrouter",
-		async () => (await import("./providers/openrouter.js")).OPENROUTER_PROVIDER,
+		async () => (await import("./providers/openrouter")).OPENROUTER_PROVIDER,
 	],
-	["qwen", async () => (await import("./providers/qwen.js")).QWEN_PROVIDER],
+	["qwen", async () => (await import("./providers/qwen")).QWEN_PROVIDER],
 	[
 		"qwen-code",
-		async () => (await import("./providers/qwen-code.js")).QWEN_CODE_PROVIDER,
+		async () => (await import("./providers/qwen-code")).QWEN_CODE_PROVIDER,
 	],
 	[
 		"sapaicore",
-		async () => (await import("./providers/sapaicore.js")).SAP_AI_CORE_PROVIDER,
+		async () => (await import("./providers/sapaicore")).SAP_AI_CORE_PROVIDER,
 	],
-	["zai", async () => (await import("./providers/zai.js")).ZAI_PROVIDER],
+	["zai", async () => (await import("./providers/zai")).ZAI_PROVIDER],
 ];
 
 function registerBuiltInProviderLoaders(): void {

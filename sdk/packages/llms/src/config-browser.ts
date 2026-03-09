@@ -1,4 +1,4 @@
-import type { LlmsConfig } from "./types.js";
+import type { LlmsConfig } from "./types";
 
 export function defineLlmsConfig(config: LlmsConfig): LlmsConfig {
 	return config;

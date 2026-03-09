@@ -5,9 +5,9 @@
  * sync for model availability.
  */
 
-import { getGeneratedModelsForProvider } from "../generated-access.js";
-import type { ModelCollection, ModelInfo } from "../schemas/index.js";
-import { OPENAI_MODELS } from "./openai.js";
+import { getGeneratedModelsForProvider } from "../generated-access";
+import type { ModelCollection, ModelInfo } from "../schemas/index";
+import { OPENAI_MODELS } from "./openai";
 
 export const OPENAI_CODEX_MODELS: Record<string, ModelInfo> =
 	getGeneratedModelsForProvider("openai");

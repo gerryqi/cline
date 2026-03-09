@@ -13,17 +13,17 @@ import {
 import {
 	fetchModelsDevProviderModels,
 	sortModelsByReleaseDate,
-} from "../../models/models-dev-catalog.js";
+} from "../../models/models-dev-catalog";
 import {
 	buildOpenAICompatibleProviderDefaults,
 	type OpenAICompatibleProviderDefaults,
-} from "../shared/openai-compatible.js";
+} from "../shared/openai-compatible";
 import type {
 	ModelCatalogConfig,
 	ModelInfo,
 	ProviderCapability,
 	ProviderConfig,
-} from "../types/index.js";
+} from "../types/index";
 
 /**
  * Provider defaults for OpenAI-compatible providers
@@ -67,7 +67,7 @@ let generatedModelsLoader:
 async function loadGeneratedProviderModels(): Promise<
 	Record<string, Record<string, ModelInfo>>
 > {
-	generatedModelsLoader ??= import("../../models/generated-access.js").then(
+	generatedModelsLoader ??= import("../../models/generated-access").then(
 		({ getGeneratedProviderModels }) => getGeneratedProviderModels(),
 	);
 	return generatedModelsLoader;

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ModelInfo, ProviderConfig } from "../types/index.js";
+import type { ModelInfo, ProviderConfig } from "../types/index";
 import {
 	clearLiveModelsCatalogCache,
 	clearPrivateModelsCatalogCache,

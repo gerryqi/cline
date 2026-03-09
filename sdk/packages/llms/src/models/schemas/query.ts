@@ -13,7 +13,7 @@ import {
 	ModelCapabilitySchema,
 	type ModelInfo,
 	ModelStatusSchema,
-} from "./model.js";
+} from "./model";
 
 // =============================================================================
 // Query Configuration

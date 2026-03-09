@@ -1,11 +1,11 @@
-import type { ModelCollection, ModelInfo } from "./models/index.js";
+import type { ModelCollection, ModelInfo } from "./models/index";
 import type {
 	ApiHandler,
 	HandlerFactory,
 	LazyHandlerFactory,
 	ProviderCapability,
 	ProviderConfig,
-} from "./providers/index.js";
+} from "./providers/index";
 
 export type ProviderConfigDefaults = Omit<
 	ProviderConfig,

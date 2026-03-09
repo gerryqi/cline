@@ -2,8 +2,8 @@
  * MiniMax Provider
  */
 
-import { getGeneratedModelsForProvider } from "../generated-access.js";
-import type { ModelCollection, ModelInfo } from "../schemas/index.js";
+import { getGeneratedModelsForProvider } from "../generated-access";
+import type { ModelCollection, ModelInfo } from "../schemas/index";
 
 const DEFAULT_MINIMAX_MODEL_ID = "MiniMax-M2.5";
 

@@ -1,6 +1,6 @@
-import { GENERATED_PROVIDER_MODELS } from "./generated.js";
-import { sortModelsByReleaseDate } from "./models-dev-catalog.js";
-import type { ModelInfo } from "./schemas/index.js";
+import { GENERATED_PROVIDER_MODELS } from "./generated";
+import { sortModelsByReleaseDate } from "./models-dev-catalog";
+import type { ModelInfo } from "./schemas/index";
 
 let sortedGeneratedProviderModelsCache:
 	| Record<string, Record<string, ModelInfo>>

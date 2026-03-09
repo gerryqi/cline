@@ -2,8 +2,8 @@
  * Together AI Models
  */
 
-import { getGeneratedModelsForProvider } from "../generated-access.js";
-import type { ModelCollection, ModelInfo } from "../schemas/index.js";
+import { getGeneratedModelsForProvider } from "../generated-access";
+import type { ModelCollection, ModelInfo } from "../schemas/index";
 
 export const TOGETHER_MODELS: Record<string, ModelInfo> =
 	getGeneratedModelsForProvider("together");

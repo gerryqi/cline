@@ -91,7 +91,7 @@ export {
 	ThinkingConfigSchema,
 	validateModelInfo,
 	validateQueryConfig,
-} from "./schemas/index.js";
+} from "./schemas/index";
 
 // =============================================================================
 // Registry Exports
@@ -121,7 +121,7 @@ export {
 	unregisterProvider,
 	// Updates
 	updateModel,
-} from "./registry.js";
+} from "./registry";
 
 // =============================================================================
 // Query API Exports
@@ -147,7 +147,7 @@ export {
 	// Main Query Function
 	queryModels,
 	searchModels,
-} from "./query.js";
+} from "./query";
 
 // =============================================================================
 // Generated Catalog Exports
@@ -156,7 +156,7 @@ export {
 export {
 	getGeneratedModelsForProvider,
 	getGeneratedProviderModels,
-} from "./generated-access.js";
+} from "./generated-access";
 
 // =============================================================================
 // Provider Model Exports
@@ -267,4 +267,4 @@ export {
 	// xAI
 	XAI_MODELS,
 	XAI_PROVIDER,
-} from "./providers/index.js";
+} from "./providers/index";

@@ -2,13 +2,13 @@ export {
 	OPENAI_COMPATIBLE_PROVIDERS,
 	type ProviderDefaults,
 	resolveProviderConfig,
-} from "./handlers/providers.js";
+} from "./handlers/providers";
 export {
 	BUILT_IN_PROVIDERS,
 	createHandler,
 	createHandlerAsync,
 	isProviderSupported,
-} from "./index.js";
+} from "./index";
 
 export {
 	type ApiHandler,
@@ -48,4 +48,4 @@ export {
 	type ToolResultContent,
 	type ToolUseContent,
 	toProviderConfig,
-} from "./types/index.js";
+} from "./types/index";

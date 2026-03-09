@@ -2,14 +2,14 @@ import {
 	hasProvider,
 	registerModel as registerModelInCatalog,
 	registerProvider as registerProviderInCatalog,
-} from "./models/index.js";
+} from "./models/index";
 import {
 	type ApiHandler,
 	createHandler as createProviderHandler,
 	createHandlerAsync as createProviderHandlerAsync,
 	registerAsyncHandler,
 	registerHandler,
-} from "./providers/index.js";
+} from "./providers/index";
 import type {
 	CreateHandlerInput,
 	LlmsConfig,
@@ -18,7 +18,7 @@ import type {
 	RegisteredProviderSummary,
 	RegisterModelInput,
 	RegisterProviderInput,
-} from "./types.js";
+} from "./types";
 
 interface InternalProviderConfig {
 	id: string;

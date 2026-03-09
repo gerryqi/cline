@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "vitest";
-import { providers } from "./index.js";
+import { providers } from "./index";
 
 type ProviderConfig = providers.ProviderConfig;
 type ProviderSettings = providers.ProviderSettings;

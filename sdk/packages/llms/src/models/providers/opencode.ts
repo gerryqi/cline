@@ -5,8 +5,8 @@
  * like "openai/gpt-5.3-codex" and "anthropic/claude-sonnet-4-5-20250929".
  */
 
-import { getGeneratedModelsForProvider } from "../generated-access.js";
-import type { ModelCollection, ModelInfo } from "../schemas/index.js";
+import { getGeneratedModelsForProvider } from "../generated-access";
+import type { ModelCollection, ModelInfo } from "../schemas/index";
 
 export const OPENCODE_MODELS: Record<string, ModelInfo> =
 	getGeneratedModelsForProvider("opencode");

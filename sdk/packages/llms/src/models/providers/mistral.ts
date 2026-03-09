@@ -2,7 +2,7 @@
  * Mistral Provider
  */
 
-import type { ModelCollection } from "../schemas/index.js";
+import type { ModelCollection } from "../schemas/index";
 
 export const MISTRAL_PROVIDER: ModelCollection = {
 	provider: {

@@ -1,5 +1,5 @@
-import * as modelProviderExports from "../../models/providers/index.js";
-import type { ModelCollection } from "../../models/schemas/index.js";
+import * as modelProviderExports from "../../models/providers/index";
+import type { ModelCollection } from "../../models/schemas/index";
 import { BUILT_IN_PROVIDER, normalizeProviderId } from "../types/provider-ids";
 
 const DEFAULT_FALLBACK_PROVIDER_IDS = [

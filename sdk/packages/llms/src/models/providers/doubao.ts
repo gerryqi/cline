@@ -2,8 +2,8 @@
  * Doubao Provider
  */
 
-import { getGeneratedModelsForProvider } from "../generated-access.js";
-import type { ModelCollection, ModelInfo } from "../schemas/index.js";
+import { getGeneratedModelsForProvider } from "../generated-access";
+import type { ModelCollection, ModelInfo } from "../schemas/index";
 
 const DEFAULT_DOUBAO_MODEL_ID = "doubao-1-5-pro-256k-250115";
 

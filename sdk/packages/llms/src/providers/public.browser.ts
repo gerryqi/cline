@@ -1,7 +1,7 @@
 export {
 	OPENAI_COMPATIBLE_PROVIDERS,
 	type ProviderDefaults,
-} from "./handlers/providers.js";
+} from "./handlers/providers";
 
 export {
 	getModelPricing,
@@ -17,4 +17,4 @@ export {
 	parseSettings,
 	supportsModelThinking,
 	toProviderConfig,
-} from "./types/index.js";
+} from "./types/index";

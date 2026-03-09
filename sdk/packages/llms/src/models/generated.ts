@@ -8,7 +8,7 @@
  * - ./scripts/generate-models-dev.ts
  */
 
-import type { ModelInfo } from "./schemas/index.js";
+import type { ModelInfo } from "./schemas/index";
 
 export const GENERATED_PROVIDER_MODELS: Record<
 	string,

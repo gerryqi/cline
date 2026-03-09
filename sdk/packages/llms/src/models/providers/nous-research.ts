@@ -2,7 +2,7 @@
  * Nous Research Provider
  */
 
-import type { ModelCollection, ModelInfo } from "../schemas/index.js";
+import type { ModelCollection, ModelInfo } from "../schemas/index";
 
 export const NOUS_RESEARCH_MODELS: Record<string, ModelInfo> = {};
 export const NOUS_RESEARCH_DEFAULT_MODEL = "DeepHermes-3-Llama-3-3-70B-Preview";

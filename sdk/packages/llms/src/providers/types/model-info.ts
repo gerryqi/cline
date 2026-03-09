@@ -10,12 +10,12 @@ import type {
 	ModelInfo,
 	ModelPricing,
 	ThinkingConfig,
-} from "../../models/schemas/model.js";
-import { ApiFormat } from "../../models/schemas/model.js";
+} from "../../models/schemas/model";
+import { ApiFormat } from "../../models/schemas/model";
 
 export type { ModelCapability, ModelInfo, ModelPricing, ThinkingConfig };
 export { ApiFormat };
-export type { ApiFormat as ApiFormatType } from "../../models/schemas/model.js";
+export type { ApiFormat as ApiFormatType } from "../../models/schemas/model";
 
 // =============================================================================
 // Helper Functions

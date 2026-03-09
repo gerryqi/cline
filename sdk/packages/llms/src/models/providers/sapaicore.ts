@@ -2,8 +2,8 @@
  * SAP AI Core Provider
  */
 
-import { getGeneratedModelsForProvider } from "../generated-access.js";
-import type { ModelCollection, ModelInfo } from "../schemas/index.js";
+import { getGeneratedModelsForProvider } from "../generated-access";
+import type { ModelCollection, ModelInfo } from "../schemas/index";
 
 const DEFAULT_SAP_AI_CORE_MODEL_ID = "anthropic--claude-3.5-sonnet";
 

@@ -43,7 +43,7 @@ export {
 	// Thinking Config
 	ThinkingConfigSchema,
 	validateModelInfo,
-} from "./model.js";
+} from "./model";
 
 export {
 	// Query Match
@@ -59,4 +59,4 @@ export {
 	safeValidateQueryConfig,
 	sortModels,
 	validateQueryConfig,
-} from "./query.js";
+} from "./query";

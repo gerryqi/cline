@@ -13,7 +13,7 @@ Package-level docs are centralized:
 - Node/runtime explicit entrypoint: `@cline/llms/node`
 
 The default export map resolves to a browser-safe bundle under browser/react-server conditions, and to the Node runtime bundle under standard Node import conditions.
-The package `development` export conditions also resolve to `dist/*` to avoid Turbopack source-resolution issues with `.js` specifiers in workspace TypeScript sources.
+The package `development` export conditions resolve to `src/*` for workspace dev loops; source entrypoints use extensionless relative imports so Turbopack can resolve them in monorepo source mode.
 The build emits both `dist/index.js` (Node/default) and `dist/index.browser.js` (browser/react-server) to match this export map.
 
 Vertex Claude routing in the Node runtime uses `@ai-sdk/google-vertex/anthropic`.

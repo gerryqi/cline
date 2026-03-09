@@ -2,8 +2,8 @@
  * Baseten Provider
  */
 
-import { getGeneratedModelsForProvider } from "../generated-access.js";
-import type { ModelCollection } from "../schemas/index.js";
+import { getGeneratedModelsForProvider } from "../generated-access";
+import type { ModelCollection } from "../schemas/index";
 
 const BASETEN_MODELS = getGeneratedModelsForProvider("baseten");
 

@@ -1,10 +1,10 @@
-import * as modelProviderExports from "../../models/providers/index.js";
+import * as modelProviderExports from "../../models/providers/index";
 import type {
 	ModelCollection,
 	ModelInfo,
 	ProviderCapability,
 	ProviderProtocol,
-} from "../../models/schemas/index.js";
+} from "../../models/schemas/index";
 
 export interface OpenAICompatibleProviderDefaults {
 	baseUrl: string;

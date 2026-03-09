@@ -5,8 +5,8 @@
  * https://docs.anthropic.com/en/docs/about-claude/models
  */
 
-import { getGeneratedModelsForProvider } from "../generated-access.js";
-import type { ModelCollection, ModelInfo } from "../schemas/index.js";
+import { getGeneratedModelsForProvider } from "../generated-access";
+import type { ModelCollection, ModelInfo } from "../schemas/index";
 
 /**
  * Anthropic model definitions
