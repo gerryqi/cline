@@ -58,6 +58,7 @@ Generated models imported from models.dev now exclude entries marked with `statu
 - Registry loader registration is consolidated through one `BUILT_IN_PROVIDER_LOADER_ENTRIES` table in `src/models/registry.ts` to reduce duplicated `PROVIDER_LOADERS.set(...)` boilerplate.
 - Built-in provider ID drift is guarded by `src/providers/types/provider-ids.test.ts`, which checks `BUILT_IN_PROVIDER_IDS` against `getProviderIds()` from the model registry.
 - Fetch-based providers can share `FetchBaseHandler` (`src/providers/handlers/fetch-base.ts`) for common JSON request plumbing, error handling, and retry behavior; `AskSageHandler` is implemented on top of this base.
+- Handler base classes (`FetchBaseHandler`, `AiSdkProviderHandler`) use proper abstract methods; retry behavior is composed explicitly in `createMessage` via `retryStream(...)` instead of method decorators.
 - `openai-codex`, `claude-code`, `opencode`, `mistral`, `dify`, `sapaicore`, and Vertex Claude routes share a common AI SDK runtime bridge (`handlers/ai-sdk-community.ts`) for message mapping and stream normalization.
 - `openai-codex`, `claude-code`, `opencode`, `mistral`, `dify`, and `sapaicore` are consolidated in `handlers/community-sdk.ts` and share a common SDK-backed handler base (`handlers/ai-sdk-provider-base.ts`) for provider loading, model resolution, and stream wiring.
 - Tests for Claude Code, OpenCode, Mistral, Dify, and SAP AI Core community handlers are consolidated in `handlers/community-sdk.test.ts`.
@@ -80,7 +81,7 @@ Generated models imported from models.dev now exclude entries marked with `statu
 - Anthropic message conversion now normalizes malformed historical `tool_use.input` payloads (for example, top-level arrays) into object-shaped arguments before replaying them to Anthropic/Bedrock APIs.
 - Provider transform converters now coerce internal `file` content blocks into provider-native text payloads for both user messages and `tool_result` replay content (OpenAI, Gemini, Anthropic, R1).
 - AI SDK community-provider message conversion (`toAiSdkMessages`) now lives in `src/providers/transform/ai-sdk-community-format.ts` and applies the same `file` block coercion for user/tool-result replay payloads.
-- Retry decorator utility (`withRetry`) uses stage-3 decorators (no legacy decorator mode).
+- Retry utility uses explicit function composition: `retryAsync(...)` for promises and `retryStream(...)` for async generators.
 
 ## Legacy Provider Migration Status
 

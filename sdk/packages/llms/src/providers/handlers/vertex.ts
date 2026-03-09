@@ -18,7 +18,7 @@ import {
 	type ProviderConfig,
 } from "../types";
 import type { Message, ToolDefinition } from "../types/messages";
-import { withRetry } from "../utils/retry";
+import { retryStream } from "../utils/retry";
 import {
 	emitAiSdkStream,
 	loadAiSdkModule,
@@ -193,8 +193,17 @@ export class VertexHandler extends BaseHandler {
 		return convertToAnthropicMessages(messages, supportsPromptCache);
 	}
 
-	@withRetry()
 	async *createMessage(
+		systemPrompt: string,
+		messages: Message[],
+		tools?: ToolDefinition[],
+	): ApiStream {
+		yield* retryStream(() =>
+			this.createMessageInternal(systemPrompt, messages, tools),
+		);
+	}
+
+	private async *createMessageInternal(
 		systemPrompt: string,
 		messages: Message[],
 		tools?: ToolDefinition[],

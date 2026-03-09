@@ -1,6 +1,6 @@
 import type { ApiStream } from "../types";
 import type { Message, ToolDefinition } from "../types/messages";
-import { withRetry } from "../utils/retry";
+import { retryStream } from "../utils/retry";
 import { BaseHandler } from "./base";
 
 type JsonRecord = Record<string, unknown>;
@@ -50,14 +50,15 @@ export abstract class FetchBaseHandler extends BaseHandler {
 		return (await response.json()) as T;
 	}
 
-	@withRetry()
 	async *createMessage(
 		systemPrompt: string,
 		messages: Message[],
 		tools?: ToolDefinition[],
 	): ApiStream {
 		void tools;
-		yield* this.createMessageWithFetch(systemPrompt, messages);
+		yield* retryStream(() =>
+			this.createMessageWithFetch(systemPrompt, messages),
+		);
 	}
 
 	protected abstract createMessageWithFetch(

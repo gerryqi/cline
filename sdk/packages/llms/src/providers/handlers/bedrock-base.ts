@@ -6,7 +6,7 @@ import {
 	supportsModelThinking,
 } from "../types";
 import type { Message, ToolDefinition } from "../types/messages";
-import { withRetry } from "../utils/retry";
+import { retryStream } from "../utils/retry";
 import { BaseHandler } from "./base";
 import { createBedrockClient } from "./bedrock-client";
 
@@ -79,8 +79,18 @@ export class BedrockHandler extends BaseHandler {
 		return toModelMessages(systemPrompt, messages);
 	}
 
-	@withRetry({ maxRetries: 4 })
 	async *createMessage(
+		systemPrompt: string,
+		messages: Message[],
+		tools?: ToolDefinition[],
+	): ApiStream {
+		yield* retryStream(
+			() => this.createMessageInternal(systemPrompt, messages, tools),
+			{ maxRetries: 4 },
+		);
+	}
+
+	private async *createMessageInternal(
 		systemPrompt: string,
 		messages: Message[],
 		tools?: ToolDefinition[],

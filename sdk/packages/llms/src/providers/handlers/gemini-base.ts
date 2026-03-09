@@ -23,7 +23,7 @@ import {
 	supportsModelThinking,
 } from "../types";
 import type { Message, ToolDefinition } from "../types/messages";
-import { RetriableError, withRetry } from "../utils/retry";
+import { RetriableError, retryStream } from "../utils/retry";
 import { BaseHandler } from "./base";
 
 const DEFAULT_THINKING_BUDGET_TOKENS = 1024;
@@ -78,8 +78,18 @@ export class GeminiHandler extends BaseHandler {
 		return convertToGeminiMessages(messages);
 	}
 
-	@withRetry({ maxRetries: 4, baseDelay: 2000, maxDelay: 15000 })
 	async *createMessage(
+		systemPrompt: string,
+		messages: Message[],
+		tools?: ToolDefinition[],
+	): ApiStream {
+		yield* retryStream(
+			() => this.createMessageInternal(systemPrompt, messages, tools),
+			{ maxRetries: 4, baseDelay: 2000, maxDelay: 15000 },
+		);
+	}
+
+	private async *createMessageInternal(
 		systemPrompt: string,
 		messages: Message[],
 		tools?: ToolDefinition[],

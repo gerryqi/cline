@@ -1,7 +1,7 @@
 import { toAiSdkMessages } from "../transform/ai-sdk-community-format";
 import type { ApiStream, HandlerModelInfo, ProviderConfig } from "../types";
 import type { Message, ToolDefinition } from "../types/messages";
-import { withRetry } from "../utils/retry";
+import { retryStream } from "../utils/retry";
 import {
 	type EmitAiSdkStreamOptions,
 	emitAiSdkStream,
@@ -149,8 +149,17 @@ export abstract class AiSdkProviderHandler extends BaseHandler {
 		});
 	}
 
-	@withRetry()
 	async *createMessage(
+		systemPrompt: string,
+		messages: Message[],
+		tools?: ToolDefinition[],
+	): ApiStream {
+		yield* retryStream(() =>
+			this.createMessageInternal(systemPrompt, messages, tools),
+		);
+	}
+
+	private async *createMessageInternal(
 		systemPrompt: string,
 		messages: Message[],
 		tools?: ToolDefinition[],

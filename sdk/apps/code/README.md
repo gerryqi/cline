@@ -44,3 +44,4 @@ Chat transport envelope:
 
 - If live updates stall, verify the UI websocket is connected and `chat_event` messages are arriving.
 - If package changes are not reflected, rebuild SDK packages (`bun run build:sdk`) and restart the RPC server.
+- Provider settings updates are patch-style: only fields you edit are changed. Unset fields are preserved instead of being cleared.

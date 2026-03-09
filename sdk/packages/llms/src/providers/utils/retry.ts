@@ -110,58 +110,42 @@ export function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Decorator for retrying async generator methods
- *
- * Usage:
- * ```typescript
- * class MyHandler {
- *   @withRetry({ maxRetries: 3 })
- *   async *createMessage(...) {
- *     // ...
- *   }
- * }
- * ```
+ * Retry an async generator factory using the same retry policy as retryAsync.
  */
-export function withRetry(options: RetryOptions = {}) {
-	const wrap = <T extends (...args: any[]) => AsyncGenerator<any, any, any>>(
-		originalMethod: T,
-	): T =>
-		async function* (this: any, ...args: Parameters<T>) {
-			const { maxRetries = DEFAULT_OPTIONS.maxRetries, onRetryAttempt } =
-				options;
+export async function* retryStream<T>(
+	createStream: () => AsyncGenerator<T, void, unknown>,
+	options: RetryOptions = {},
+): AsyncGenerator<T, void, unknown> {
+	const { maxRetries = DEFAULT_OPTIONS.maxRetries, onRetryAttempt } = options;
 
-			for (let attempt = 0; attempt <= maxRetries; attempt++) {
-				try {
-					yield* originalMethod.apply(this, args);
-					return;
-				} catch (error) {
-					const isLastAttempt = attempt === maxRetries;
-					const shouldRetry = !isLastAttempt && isRetriableError(error);
+	for (let attempt = 0; attempt <= maxRetries; attempt++) {
+		try {
+			yield* createStream();
+			return;
+		} catch (error) {
+			const isLastAttempt = attempt === maxRetries;
+			const shouldRetry = !isLastAttempt && isRetriableError(error);
 
-					if (!shouldRetry) {
-						throw error;
-					}
-
-					let delay: number;
-					if (error instanceof RetriableError && error.retryAfterSeconds) {
-						delay = error.retryAfterSeconds * 1000;
-					} else {
-						delay = calculateRetryDelay(attempt, options);
-					}
-
-					if (onRetryAttempt) {
-						onRetryAttempt(attempt + 1, maxRetries, delay, error);
-					}
-
-					await sleep(delay);
-				}
+			if (!shouldRetry) {
+				throw error;
 			}
-		} as unknown as T;
 
-	return <T extends (...args: any[]) => AsyncGenerator<any, any, any>>(
-		value: T,
-		_context: { kind: string },
-	): T => wrap(value);
+			let delay: number;
+			if (error instanceof RetriableError && error.retryAfterSeconds) {
+				delay = error.retryAfterSeconds * 1000;
+			} else {
+				delay = calculateRetryDelay(attempt, options);
+			}
+
+			if (onRetryAttempt) {
+				onRetryAttempt(attempt + 1, maxRetries, delay, error);
+			}
+
+			await sleep(delay);
+		}
+	}
+
+	throw new Error("Retry logic exhausted without returning or throwing");
 }
 
 /**

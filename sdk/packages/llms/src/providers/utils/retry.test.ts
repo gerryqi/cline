@@ -4,7 +4,7 @@ import {
 	isRetriableError,
 	RetriableError,
 	retryAsync,
-	withRetry,
+	retryStream,
 } from "./retry";
 
 describe("retry utils", () => {
@@ -117,32 +117,24 @@ describe("retry utils", () => {
 		expect(fn).toHaveBeenCalledTimes(1);
 	});
 
-	it("retries decorated async generators and preserves yielded chunks", async () => {
-		class RetryHarness {
-			attempts = 0;
-
-			@withRetry({
-				maxRetries: 3,
-				baseDelay: 0,
-				maxDelay: 0,
-			})
-			async *stream() {
-				this.attempts++;
-				if (this.attempts < 3) {
+	it("retries async generators and preserves yielded chunks", async () => {
+		let attempts = 0;
+		const chunks: Array<{ type: string; text?: string }> = [];
+		for await (const chunk of retryStream(
+			async function* () {
+				attempts++;
+				if (attempts < 3) {
 					throw new RetriableError("temporary");
 				}
 				yield { type: "text", text: "hello" };
 				yield { type: "done" };
-			}
-		}
-
-		const harness = new RetryHarness();
-		const chunks: Array<{ type: string; text?: string }> = [];
-		for await (const chunk of harness.stream()) {
+			},
+			{ maxRetries: 3, baseDelay: 0, maxDelay: 0 },
+		)) {
 			chunks.push(chunk);
 		}
 
 		expect(chunks).toEqual([{ type: "text", text: "hello" }, { type: "done" }]);
-		expect(harness.attempts).toBe(3);
+		expect(attempts).toBe(3);
 	});
 });

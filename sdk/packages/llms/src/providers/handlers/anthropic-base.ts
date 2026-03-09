@@ -22,7 +22,7 @@ import {
 	supportsModelThinking,
 } from "../types";
 import type { Message, ToolDefinition } from "../types/messages";
-import { withRetry } from "../utils/retry";
+import { retryStream } from "../utils/retry";
 import { getMissingApiKeyError, resolveApiKeyForProvider } from "./auth";
 import { BaseHandler } from "./base";
 
@@ -86,8 +86,17 @@ export class AnthropicHandler extends BaseHandler {
 		) as Anthropic.MessageParam[];
 	}
 
-	@withRetry()
 	async *createMessage(
+		systemPrompt: string,
+		messages: Message[],
+		tools?: ToolDefinition[],
+	): ApiStream {
+		yield* retryStream(() =>
+			this.createMessageInternal(systemPrompt, messages, tools),
+		);
+	}
+
+	private async *createMessageInternal(
 		systemPrompt: string,
 		messages: Message[],
 		tools?: ToolDefinition[],

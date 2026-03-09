@@ -21,7 +21,7 @@ import type {
 	ProviderConfig,
 } from "../types";
 import type { Message, ToolDefinition } from "../types/messages";
-import { withRetry } from "../utils/retry";
+import { retryStream } from "../utils/retry";
 import { ToolCallProcessor } from "../utils/tool-processor";
 import { getMissingApiKeyError, resolveApiKeyForProvider } from "./auth";
 import { BaseHandler } from "./base";
@@ -123,8 +123,17 @@ export class R1BaseHandler extends BaseHandler {
 	/**
 	 * Create a streaming message
 	 */
-	@withRetry()
 	async *createMessage(
+		systemPrompt: string,
+		messages: Message[],
+		tools?: ToolDefinition[],
+	): ApiStream {
+		yield* retryStream(() =>
+			this.createMessageInternal(systemPrompt, messages, tools),
+		);
+	}
+
+	private async *createMessageInternal(
 		systemPrompt: string,
 		messages: Message[],
 		tools?: ToolDefinition[],

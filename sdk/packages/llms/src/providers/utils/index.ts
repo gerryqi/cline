@@ -8,8 +8,8 @@ export {
 	isRetriableError,
 	RetriableError,
 	retryAsync,
+	retryStream,
 	sleep,
-	withRetry,
 } from "./retry";
 
 export {

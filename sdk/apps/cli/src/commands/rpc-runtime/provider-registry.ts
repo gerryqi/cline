@@ -452,7 +452,9 @@ export function saveProviderSettings(
 		provider: providerId,
 	};
 
-	if ("apiKey" in request) {
+	const hasApiKeyUpdate =
+		Object.hasOwn(request, "apiKey") && typeof request.apiKey === "string";
+	if (hasApiKeyUpdate) {
 		const apiKey = request.apiKey?.trim() ?? "";
 		if (apiKey.length === 0) {
 			delete nextSettings.apiKey;
@@ -461,7 +463,9 @@ export function saveProviderSettings(
 		}
 	}
 
-	if ("baseUrl" in request) {
+	const hasBaseUrlUpdate =
+		Object.hasOwn(request, "baseUrl") && typeof request.baseUrl === "string";
+	if (hasBaseUrlUpdate) {
 		const baseUrl = request.baseUrl?.trim() ?? "";
 		if (baseUrl.length === 0) {
 			delete nextSettings.baseUrl;

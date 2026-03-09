@@ -229,12 +229,12 @@ export {
 	RetriableError,
 	type RetryOptions,
 	retryAsync,
+	retryStream,
 	// Stream processor
 	StreamResponseProcessor,
 	sleep,
 	ToolCallProcessor,
 	type UsageInfo,
-	withRetry,
 } from "./utils";
 
 import { CLINE_PROVIDER } from "../models";
