@@ -21,6 +21,7 @@ function sortObjectByKey<T>(
 
 async function generate(): Promise<void> {
 	const providerModels: Record<string, Record<string, ModelInfo>> = {};
+	const generatedModelsVersion = Date.now();
 	let loadError: Error | undefined;
 
 	try {
@@ -51,7 +52,13 @@ async function generate(): Promise<void> {
 
 import type { ModelInfo } from "./schemas/index.js"
 
-export const GENERATED_PROVIDER_MODELS: Record<string, Record<string, ModelInfo>> = ${JSON.stringify(sortedProviders, null, 2)}
+export const GENERATED_PROVIDER_MODELS: {
+  version: number
+  providers: Record<string, Record<string, ModelInfo>>
+} = {
+  version: ${JSON.stringify(generatedModelsVersion)},
+  providers: ${JSON.stringify(sortedProviders, null, 2)}
+}
 `;
 
 	const __filename = fileURLToPath(import.meta.url);

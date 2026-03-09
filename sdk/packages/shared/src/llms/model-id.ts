@@ -73,19 +73,18 @@ export const MODELS_DEV_PROVIDER_KEY_ENTRIES: ReadonlyArray<{
 	},
 	{
 		modelsDevKey: "openrouter",
-		runtimeProviderId: "openrouter",
+		runtimeProviderId: "cline",
 		generatedProviderId: "openrouter",
 	},
 	{ modelsDevKey: "ollama", runtimeProviderId: "ollama-cloud" },
 	{ modelsDevKey: "ollama-cloud", generatedProviderId: "ollama" },
 	{
 		modelsDevKey: "vercel",
-		runtimeProviderId: "vercel-ai-gateway",
+		runtimeProviderId: "dify",
 		generatedProviderId: "vercel-ai-gateway",
 	},
 	{
 		modelsDevKey: "vercel",
-		runtimeProviderId: "cline",
 		generatedProviderId: "vercel-ai-gateway",
 	},
 	{

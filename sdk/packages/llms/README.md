@@ -49,6 +49,7 @@ Provider model-catalog key remapping is centralized in `@cline/shared` (`src/llm
 - `src/providers/handlers/providers.ts` (`mergeKnownModels`) for runtime generated/live/private model merging
 
 Generated models imported from models.dev now exclude entries marked with `status: "deprecated"` at normalization time, so `src/models/generated.ts` only contains non-deprecated tool-capable entries.
+`src/models/generated.ts` exports `GENERATED_PROVIDER_MODELS` as `{ version, providers }`, where `version` is an epoch-milliseconds number refreshed on every `bun run build:models` generation run; callers can read it via `getGeneratedModelsVersion()` from `src/models/generated-access.ts`.
 
 ## Provider Runtime Notes
 

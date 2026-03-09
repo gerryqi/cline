@@ -15,12 +15,15 @@ export function getGeneratedProviderModels(): Record<
 	Record<string, ModelInfo>
 > {
 	sortedGeneratedProviderModelsCache ??= Object.fromEntries(
-		Object.entries(GENERATED_PROVIDER_MODELS).map(([providerId, models]) => [
-			providerId,
-			sortModelsByReleaseDate(models),
-		]),
+		Object.entries(GENERATED_PROVIDER_MODELS.providers).map(
+			([providerId, models]) => [providerId, sortModelsByReleaseDate(models)],
+		),
 	);
 	return sortedGeneratedProviderModelsCache;
+}
+
+export function getGeneratedModelsVersion(): number {
+	return GENERATED_PROVIDER_MODELS.version;
 }
 
 export function getGeneratedModelsForProvider(
@@ -31,7 +34,7 @@ export function getGeneratedModelsForProvider(
 		return cached;
 	}
 	const sorted = sortModelsByReleaseDate(
-		GENERATED_PROVIDER_MODELS[providerId] ?? {},
+		GENERATED_PROVIDER_MODELS.providers[providerId] ?? {},
 	);
 	sortedGeneratedModelsByProviderCache.set(providerId, sorted);
 	return sorted;

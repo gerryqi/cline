@@ -155,6 +155,7 @@ export {
 
 export {
 	getGeneratedModelsForProvider,
+	getGeneratedModelsVersion,
 	getGeneratedProviderModels,
 } from "./generated-access";
 
