@@ -5,7 +5,7 @@
  * A plugin can register custom tools and hook into the agent lifecycle.
  *
  * Usage:
- *   ANTHROPIC_API_KEY=sk-... bun run apps/examples/custom-plugin/index.ts
+ *   ANTHROPIC_API_KEY=sk-... bun run apps/examples/cline-plugin/index.ts
  */
 
 import { Agent, type AgentConfig, createTool } from "@cline/agents";

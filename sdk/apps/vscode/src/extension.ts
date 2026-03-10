@@ -10,62 +10,13 @@ import type {
 } from "@cline/shared";
 import * as vscode from "vscode";
 import { getWebviewHtml } from "./webview-html";
+import type {
+	WebviewInboundMessage,
+	WebviewOutboundMessage,
+} from "./webview-messages";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_RPC_ADDRESS = "127.0.0.1:4317";
-
-type WebviewInboundMessage =
-	| { type: "ready" }
-	| {
-			type: "send";
-			prompt: string;
-			config?: {
-				provider?: string;
-				model?: string;
-				systemPrompt?: string;
-				maxIterations?: number;
-				enableTools?: boolean;
-				enableSpawn?: boolean;
-				enableTeams?: boolean;
-				autoApproveTools?: boolean;
-			};
-	  }
-	| { type: "abort" }
-	| { type: "reset" }
-	| { type: "loadModels"; providerId: string };
-
-type WebviewOutboundMessage =
-	| { type: "status"; text: string }
-	| { type: "error"; text: string }
-	| { type: "session_started"; sessionId: string }
-	| { type: "assistant_delta"; text: string }
-	| { type: "tool_event"; text: string }
-	| {
-			type: "turn_done";
-			finishReason: string;
-			iterations: number;
-			usage?: RpcChatTurnResult["usage"];
-	  }
-	| {
-			type: "providers";
-			providers: Array<{
-				id: string;
-				name: string;
-				enabled: boolean;
-				defaultModelId?: string;
-			}>;
-	  }
-	| { type: "models"; providerId: string; models: RpcProviderModel[] }
-	| {
-			type: "defaults";
-			defaults: {
-				provider?: string;
-				model?: string;
-				workspaceRoot: string;
-				cwd: string;
-			};
-	  }
-	| { type: "reset_done" };
 
 export function activate(context: vscode.ExtensionContext): void {
 	const openChat = vscode.commands.registerCommand(

@@ -158,13 +158,13 @@ const sessionManager = await createSessionHost({});
 sessionManager.subscribe((event) => {
   if (event.type === "chunk") {
     // Stream assistant response
-    process.stdout.write(event.payload.content);
+    process.stdout.write(event.payload.chunk);
   }
   
   if (event.type === "agent_event") {
     const agentEvent = event.payload.event;
-    if (agentEvent.type === "tool_call_start") {
-      console.log(`Tool: ${agentEvent.name}`);
+    if (agentEvent.type === "content_start" && agentEvent.contentType === "tool") {
+      console.log(`Tool: ${agentEvent.toolName}`);
     }
   }
 });
