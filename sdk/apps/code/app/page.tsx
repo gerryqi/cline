@@ -126,41 +126,43 @@ export default function Home() {
 	const activeThread =
 		threads.find((thread) => thread.id === activeThreadId) ?? threads[0];
 
-	if (view === "settings") {
-		return (
-			<div className="fixed inset-0 z-50 bg-background text-foreground">
-				<SettingsView onClose={() => setView("chat")} />
-			</div>
-		);
-	}
-
 	return (
-		<SidebarProvider>
-			<div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
-				<Sidebar className="border-r border-sidebar-border" collapsible="icon">
-					<AgentSidebar
-						activeSessionId={activeHistorySessionId}
-						onNewThread={handleNewThread}
-						onOpenSession={handleOpenSession}
-						setView={setView}
-					/>
-					<SidebarRail />
-				</Sidebar>
-				<SidebarInset className="min-h-0 min-w-0 overflow-hidden">
-					{activeThread ? (
-						<div className="flex min-h-0 flex-1 flex-col">
-							<ChatThreadPane
-								historySession={activeThread.historySession}
-								onUpdateSessionMetadata={handleUpdateSessionMetadata}
-								threadId={activeThread.id}
-								onDeleteSession={handleDeleteSession}
-								onNewThread={handleNewThread}
-							/>
-						</div>
-					) : null}
-				</SidebarInset>
-			</div>
-		</SidebarProvider>
+		<>
+			<SidebarProvider>
+				<div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
+					<Sidebar
+						className="border-r border-sidebar-border"
+						collapsible="icon"
+					>
+						<AgentSidebar
+							activeSessionId={activeHistorySessionId}
+							onNewThread={handleNewThread}
+							onOpenSession={handleOpenSession}
+							setView={setView}
+						/>
+						<SidebarRail />
+					</Sidebar>
+					<SidebarInset className="min-h-0 min-w-0 overflow-hidden">
+						{activeThread ? (
+							<div className="flex min-h-0 flex-1 flex-col">
+								<ChatThreadPane
+									historySession={activeThread.historySession}
+									onUpdateSessionMetadata={handleUpdateSessionMetadata}
+									threadId={activeThread.id}
+									onDeleteSession={handleDeleteSession}
+									onNewThread={handleNewThread}
+								/>
+							</div>
+						) : null}
+					</SidebarInset>
+				</div>
+			</SidebarProvider>
+			{view === "settings" ? (
+				<div className="fixed inset-0 z-50 bg-background text-foreground">
+					<SettingsView onClose={() => setView("chat")} />
+				</div>
+			) : null}
+		</>
 	);
 }
 

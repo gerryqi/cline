@@ -74,6 +74,21 @@ type UserInstructionListsResponse = {
 	warnings: string[];
 };
 
+const EXTENSION_LISTS_CACHE_TTL_MS = 60_000;
+const EXTENSION_HOOK_STATS_CACHE_TTL_MS = 30_000;
+
+let extensionListsCache:
+	| (UserInstructionListsResponse & {
+			fetchedAt: number;
+	  })
+	| null = null;
+
+let extensionHookStatsCache: {
+	hookExecutionByEvent: Record<string, HookExecutionSummary>;
+	hookExecutionSessionId: string | null;
+	fetchedAt: number;
+} | null = null;
+
 function previewText(input: string, maxLength = 150): string {
 	const compact = input.replace(/\s+/g, " ").trim();
 	if (compact.length <= maxLength) {
@@ -86,31 +101,81 @@ function normalizePath(path: string): string {
 	return path.replaceAll("\\", "/");
 }
 
+async function fetchUserInstructionLists(): Promise<UserInstructionListsResponse> {
+	return invoke<UserInstructionListsResponse>("list_user_instruction_configs");
+}
+
+export async function primeExtensionsListsCache(): Promise<void> {
+	const now = Date.now();
+	if (
+		extensionListsCache &&
+		now - extensionListsCache.fetchedAt < EXTENSION_LISTS_CACHE_TTL_MS
+	) {
+		return;
+	}
+	const response = await fetchUserInstructionLists();
+	extensionListsCache = {
+		...response,
+		fetchedAt: now,
+	};
+}
+
 export function RulesView() {
 	const [activeTab, setActiveTab] = useState<ShortcutTab>("Rules");
-	const [isLoading, setIsLoading] = useState(true);
+	const [isLoading, setIsLoading] = useState(() => !extensionListsCache);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
-	const [workspaceRoot, setWorkspaceRoot] = useState("");
-	const [rules, setRules] = useState<RuleItem[]>([]);
-	const [workflows, setWorkflows] = useState<WorkflowItem[]>([]);
-	const [skills, setSkills] = useState<SkillItem[]>([]);
-	const [agents, setAgents] = useState<AgentItem[]>([]);
-	const [hooks, setHooks] = useState<HookItem[]>([]);
-	const [warnings, setWarnings] = useState<string[]>([]);
+	const [workspaceRoot, setWorkspaceRoot] = useState(
+		() => extensionListsCache?.workspaceRoot ?? "",
+	);
+	const [rules, setRules] = useState<RuleItem[]>(
+		() => extensionListsCache?.rules ?? [],
+	);
+	const [workflows, setWorkflows] = useState<WorkflowItem[]>(
+		() => extensionListsCache?.workflows ?? [],
+	);
+	const [skills, setSkills] = useState<SkillItem[]>(
+		() => extensionListsCache?.skills ?? [],
+	);
+	const [agents, setAgents] = useState<AgentItem[]>(
+		() => extensionListsCache?.agents ?? [],
+	);
+	const [hooks, setHooks] = useState<HookItem[]>(
+		() => extensionListsCache?.hooks ?? [],
+	);
+	const [warnings, setWarnings] = useState<string[]>(
+		() => extensionListsCache?.warnings ?? [],
+	);
 	const [hookExecutionByEvent, setHookExecutionByEvent] = useState<
 		Record<string, HookExecutionSummary>
-	>({});
+	>(() => extensionHookStatsCache?.hookExecutionByEvent ?? {});
 	const [hookExecutionSessionId, setHookExecutionSessionId] = useState<
 		string | null
-	>(null);
+	>(() => extensionHookStatsCache?.hookExecutionSessionId ?? null);
+	const [hookExecutionLoading, setHookExecutionLoading] = useState(false);
 
-	const refresh = useCallback(async () => {
+	const refresh = useCallback(async (force = false) => {
+		const now = Date.now();
+		if (
+			!force &&
+			extensionListsCache &&
+			now - extensionListsCache.fetchedAt < EXTENSION_LISTS_CACHE_TTL_MS
+		) {
+			setWorkspaceRoot(extensionListsCache.workspaceRoot);
+			setRules(extensionListsCache.rules);
+			setWorkflows(extensionListsCache.workflows);
+			setSkills(extensionListsCache.skills);
+			setAgents(extensionListsCache.agents);
+			setHooks(extensionListsCache.hooks);
+			setWarnings(extensionListsCache.warnings);
+			setErrorMessage(null);
+			setIsLoading(false);
+			return;
+		}
+
 		setIsLoading(true);
 		setErrorMessage(null);
 		try {
-			const response = await invoke<UserInstructionListsResponse>(
-				"list_user_instruction_configs",
-			);
+			const response = await fetchUserInstructionLists();
 			setWorkspaceRoot(response.workspaceRoot);
 			setRules(response.rules);
 			setWorkflows(response.workflows);
@@ -118,7 +183,33 @@ export function RulesView() {
 			setAgents(response.agents);
 			setHooks(response.hooks);
 			setWarnings(response.warnings);
+			extensionListsCache = {
+				...response,
+				fetchedAt: Date.now(),
+			};
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			setErrorMessage(message);
+		} finally {
+			setIsLoading(false);
+		}
+	}, []);
 
+	const loadHookExecutionStats = useCallback(async (force = false) => {
+		const now = Date.now();
+		if (
+			!force &&
+			extensionHookStatsCache &&
+			now - extensionHookStatsCache.fetchedAt <
+				EXTENSION_HOOK_STATS_CACHE_TTL_MS
+		) {
+			setHookExecutionByEvent(extensionHookStatsCache.hookExecutionByEvent);
+			setHookExecutionSessionId(extensionHookStatsCache.hookExecutionSessionId);
+			return;
+		}
+
+		setHookExecutionLoading(true);
+		try {
 			const sessions = await invoke<CliDiscoveredSession[]>(
 				"list_cli_sessions",
 				{
@@ -137,6 +228,11 @@ export function RulesView() {
 			if (!latestSession?.sessionId) {
 				setHookExecutionByEvent({});
 				setHookExecutionSessionId(null);
+				extensionHookStatsCache = {
+					hookExecutionByEvent: {},
+					hookExecutionSessionId: null,
+					fetchedAt: Date.now(),
+				};
 				return;
 			}
 
@@ -162,11 +258,15 @@ export function RulesView() {
 			}
 			setHookExecutionByEvent(next);
 			setHookExecutionSessionId(latestSession.sessionId);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			setErrorMessage(message);
+			extensionHookStatsCache = {
+				hookExecutionByEvent: next,
+				hookExecutionSessionId: latestSession.sessionId,
+				fetchedAt: Date.now(),
+			};
+		} catch {
+			// Keep existing execution status when lookup fails.
 		} finally {
-			setIsLoading(false);
+			setHookExecutionLoading(false);
 		}
 	}, []);
 
@@ -185,8 +285,15 @@ export function RulesView() {
 	}, []);
 
 	useEffect(() => {
-		void refresh();
+		void refresh(false);
 	}, [refresh]);
+
+	useEffect(() => {
+		if (activeTab !== "Hooks") {
+			return;
+		}
+		void loadHookExecutionStats(false);
+	}, [activeTab, loadHookExecutionStats]);
 
 	const tabs: ShortcutTab[] = [
 		"Rules",
@@ -242,7 +349,12 @@ export function RulesView() {
 					<Button
 						variant="outline"
 						size="sm"
-						onClick={() => void refresh()}
+						onClick={() => {
+							void refresh(true);
+							if (activeTab === "Hooks") {
+								void loadHookExecutionStats(true);
+							}
+						}}
 						disabled={isLoading}
 					>
 						<RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
@@ -409,6 +521,11 @@ export function RulesView() {
 							Hook config files discovered from workspace and global hook
 							directories.
 						</p>
+						{hookExecutionLoading ? (
+							<p className="mb-4 text-xs text-muted-foreground">
+								Loading hook execution status...
+							</p>
+						) : null}
 						{hookExecutionSessionId ? (
 							<p className="mb-4 text-xs text-muted-foreground">
 								Execution status is based on hook events in session{" "}

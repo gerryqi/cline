@@ -13,6 +13,15 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+	Combobox,
+	ComboboxContent,
+	ComboboxEmpty,
+	ComboboxInput,
+	ComboboxItem,
+	ComboboxList,
+} from "@/components/ui/combobox";
 import {
 	Dialog,
 	DialogContent,
@@ -33,6 +42,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { readModelSelectionStorageFromWindow } from "@/lib/model-selection";
 import { cn } from "@/lib/utils";
 
 interface RoutineSchedule {
@@ -77,14 +87,68 @@ interface RoutineOverviewResponse {
 	upcomingRuns: RoutineUpcomingRun[];
 }
 
+const ROUTINE_OVERVIEW_CACHE_TTL_MS = 30_000;
+
+let routineOverviewCache:
+	| (RoutineOverviewResponse & {
+			fetchedAt: number;
+	  })
+	| null = null;
+
+async function fetchRoutineOverview(): Promise<RoutineOverviewResponse> {
+	const response = await invoke<RoutineOverviewResponse>(
+		"list_routine_schedules",
+	);
+	return {
+		schedules: response.schedules ?? [],
+		activeExecutions: response.activeExecutions ?? [],
+		upcomingRuns: response.upcomingRuns ?? [],
+	};
+}
+
+export async function primeRoutineOverviewCache(): Promise<void> {
+	const now = Date.now();
+	if (
+		routineOverviewCache &&
+		now - routineOverviewCache.fetchedAt < ROUTINE_OVERVIEW_CACHE_TTL_MS
+	) {
+		return;
+	}
+	const response = await fetchRoutineOverview();
+	routineOverviewCache = {
+		...response,
+		fetchedAt: now,
+	};
+}
+
 interface ProcessContext {
 	workspaceRoot: string;
 	cwd: string;
 }
 
+const FALLBACK_PROVIDER_MODELS: Record<string, string[]> = {
+	cline: ["anthropic/claude-sonnet-4.6"],
+	anthropic: ["claude-sonnet-4-6"],
+	openai: ["gpt-5.3-codex"],
+	openrouter: ["anthropic/claude-sonnet-4.6"],
+	gemini: ["gemini-2.5-pro"],
+};
+
+const WEEKDAY_OPTIONS = [
+	{ label: "Mon", value: "MON" },
+	{ label: "Tue", value: "TUE" },
+	{ label: "Wed", value: "WED" },
+	{ label: "Thu", value: "THU" },
+	{ label: "Fri", value: "FRI" },
+	{ label: "Sat", value: "SAT" },
+	{ label: "Sun", value: "SUN" },
+] as const;
+
 interface RoutineFormState {
 	name: string;
-	cronPattern: string;
+	scheduleHour: string;
+	scheduleMinute: string;
+	scheduleDays: string[];
 	prompt: string;
 	provider: string;
 	model: string;
@@ -130,21 +194,66 @@ function parseTags(text: string): string[] | undefined {
 	return tags.length > 0 ? tags : undefined;
 }
 
-export function RoutineSchedulesContent() {
-	const [schedules, setSchedules] = useState<RoutineSchedule[]>([]);
-	const [activeExecutions, setActiveExecutions] = useState<RoutineExecution[]>(
-		[],
+function normalizeScheduleDays(days: string[]): string[] {
+	const selected = new Set(days);
+	return WEEKDAY_OPTIONS.map((option) => option.value).filter((value) =>
+		selected.has(value),
 	);
-	const [upcomingRuns, setUpcomingRuns] = useState<RoutineUpcomingRun[]>([]);
-	const [isLoading, setIsLoading] = useState(true);
+}
+
+function buildCronPattern(
+	days: string[],
+	hour: string,
+	minute: string,
+): string {
+	const normalizedDays = normalizeScheduleDays(days);
+	if (normalizedDays.length === 0) {
+		return "";
+	}
+	const normalizedHour = Number.parseInt(hour, 10);
+	const normalizedMinute = Number.parseInt(minute, 10);
+	const cronHour = Number.isFinite(normalizedHour)
+		? Math.min(Math.max(normalizedHour, 0), 23)
+		: 9;
+	const cronMinute = Number.isFinite(normalizedMinute)
+		? Math.min(Math.max(normalizedMinute, 0), 59)
+		: 0;
+	if (normalizedDays.length === WEEKDAY_OPTIONS.length) {
+		return `${cronMinute} ${cronHour} * * *`;
+	}
+	return `${cronMinute} ${cronHour} * * ${normalizedDays.join(",")}`;
+}
+
+export function RoutineSchedulesContent() {
+	const [schedules, setSchedules] = useState<RoutineSchedule[]>(
+		() => routineOverviewCache?.schedules ?? [],
+	);
+	const [activeExecutions, setActiveExecutions] = useState<RoutineExecution[]>(
+		() => routineOverviewCache?.activeExecutions ?? [],
+	);
+	const [upcomingRuns, setUpcomingRuns] = useState<RoutineUpcomingRun[]>(
+		() => routineOverviewCache?.upcomingRuns ?? [],
+	);
+	const [isLoading, setIsLoading] = useState(() => !routineOverviewCache);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [busyScheduleId, setBusyScheduleId] = useState<string | null>(null);
 	const [isCreateOpen, setIsCreateOpen] = useState(false);
 	const [isCreating, setIsCreating] = useState(false);
 	const [createFormError, setCreateFormError] = useState<string | null>(null);
+	const [providerModels, setProviderModels] = useState<
+		Record<string, string[]>
+	>(FALLBACK_PROVIDER_MODELS);
+	const [enabledProviderIds, setEnabledProviderIds] = useState<string[]>(() =>
+		Object.keys(FALLBACK_PROVIDER_MODELS),
+	);
+	const [lastModelSelection] = useState(() =>
+		readModelSelectionStorageFromWindow(),
+	);
 	const [createForm, setCreateForm] = useState<RoutineFormState>({
 		name: "",
-		cronPattern: "0 9 * * MON-FRI",
+		scheduleHour: "9",
+		scheduleMinute: "0",
+		scheduleDays: ["MON", "TUE", "WED", "THU", "FRI"],
 		prompt: "Review PRs opened yesterday and summarize issues.",
 		provider: "cline",
 		model: "openai/gpt-5.3-codex",
@@ -159,16 +268,177 @@ export function RoutineSchedulesContent() {
 		enabled: true,
 	});
 
+	const visibleProviderModels = useMemo(() => {
+		if (enabledProviderIds.length === 0) {
+			return providerModels;
+		}
+		const next: Record<string, string[]> = {};
+		for (const providerId of enabledProviderIds) {
+			next[providerId] = providerModels[providerId] ?? [];
+		}
+		return next;
+	}, [enabledProviderIds, providerModels]);
+
+	const availableProviders = useMemo(
+		() => Object.keys(visibleProviderModels),
+		[visibleProviderModels],
+	);
+
+	const availableModelsForProvider = useMemo(
+		() => visibleProviderModels[createForm.provider] ?? [],
+		[createForm.provider, visibleProviderModels],
+	);
+
+	const cronPreview = useMemo(
+		() =>
+			buildCronPattern(
+				createForm.scheduleDays,
+				createForm.scheduleHour,
+				createForm.scheduleMinute,
+			),
+		[
+			createForm.scheduleDays,
+			createForm.scheduleHour,
+			createForm.scheduleMinute,
+		],
+	);
+
+	useEffect(() => {
+		const abortController = new AbortController();
+
+		async function loadModelCatalog() {
+			try {
+				const response = await fetch("/api/models-catalog", {
+					signal: abortController.signal,
+					cache: "no-store",
+				});
+				if (!response.ok) {
+					return;
+				}
+				const payload = (await response.json()) as {
+					providerModels?: Record<string, string[]>;
+				};
+				const nextProviderModels = payload.providerModels;
+				if (
+					!nextProviderModels ||
+					Object.keys(nextProviderModels).length === 0
+				) {
+					return;
+				}
+				setProviderModels(nextProviderModels);
+			} catch {
+				// Keep fallback values if model catalog is unavailable.
+			}
+		}
+
+		void loadModelCatalog();
+		return () => abortController.abort();
+	}, []);
+
+	useEffect(() => {
+		let cancelled = false;
+
+		async function loadEnabledProviders() {
+			try {
+				const payload = await invoke<{
+					providers?: Array<{ id?: string; enabled?: boolean }>;
+				}>("list_provider_catalog");
+				if (cancelled) {
+					return;
+				}
+				const enabled = (payload.providers ?? [])
+					.filter((item) => item?.enabled && typeof item.id === "string")
+					.map((item) => item.id as string);
+				if (enabled.length > 0) {
+					setEnabledProviderIds(enabled);
+				}
+			} catch {
+				// Keep fallback provider list if provider catalog is unavailable.
+			}
+		}
+
+		void loadEnabledProviders();
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	useEffect(() => {
+		if (availableProviders.length === 0) {
+			return;
+		}
+		if (!availableProviders.includes(createForm.provider)) {
+			const nextProvider =
+				lastModelSelection.lastProvider &&
+				availableProviders.includes(lastModelSelection.lastProvider)
+					? lastModelSelection.lastProvider
+					: availableProviders[0];
+			const models = visibleProviderModels[nextProvider] ?? [];
+			const rememberedModel =
+				lastModelSelection.lastModelByProvider[nextProvider];
+			const nextModel =
+				rememberedModel && models.includes(rememberedModel)
+					? rememberedModel
+					: (models[0] ?? "");
+			setCreateForm((prev) => ({
+				...prev,
+				provider: nextProvider,
+				model: nextModel,
+			}));
+			return;
+		}
+		const models = visibleProviderModels[createForm.provider] ?? [];
+		if (models.length === 0) {
+			return;
+		}
+		if (!models.includes(createForm.model)) {
+			const rememberedModel =
+				lastModelSelection.lastModelByProvider[createForm.provider];
+			const nextModel =
+				rememberedModel && models.includes(rememberedModel)
+					? rememberedModel
+					: models[0];
+			setCreateForm((prev) => ({ ...prev, model: nextModel }));
+		}
+	}, [
+		availableProviders,
+		createForm.model,
+		createForm.provider,
+		lastModelSelection.lastModelByProvider,
+		lastModelSelection.lastProvider,
+		visibleProviderModels,
+	]);
+
 	const refreshSchedules = useCallback(async () => {
+		const now = Date.now();
+		if (
+			routineOverviewCache &&
+			now - routineOverviewCache.fetchedAt < ROUTINE_OVERVIEW_CACHE_TTL_MS
+		) {
+			setSchedules(routineOverviewCache.schedules);
+			setActiveExecutions(routineOverviewCache.activeExecutions);
+			setUpcomingRuns(routineOverviewCache.upcomingRuns);
+			setErrorMessage(null);
+			setIsLoading(false);
+			return;
+		}
+
 		setIsLoading(true);
 		setErrorMessage(null);
 		try {
-			const response = await invoke<RoutineOverviewResponse>(
-				"list_routine_schedules",
-			);
-			setSchedules(response.schedules ?? []);
-			setActiveExecutions(response.activeExecutions ?? []);
-			setUpcomingRuns(response.upcomingRuns ?? []);
+			const response = await fetchRoutineOverview();
+			const schedules = response.schedules;
+			const activeExecutions = response.activeExecutions;
+			const upcomingRuns = response.upcomingRuns;
+			setSchedules(schedules);
+			setActiveExecutions(activeExecutions);
+			setUpcomingRuns(upcomingRuns);
+			routineOverviewCache = {
+				schedules,
+				activeExecutions,
+				upcomingRuns,
+				fetchedAt: now,
+			};
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			setErrorMessage(message);
@@ -247,12 +517,26 @@ export function RoutineSchedulesContent() {
 		} catch {
 			// Use empty defaults when context lookup fails.
 		}
+		const preferredProvider =
+			lastModelSelection.lastProvider &&
+			availableProviders.includes(lastModelSelection.lastProvider)
+				? lastModelSelection.lastProvider
+				: (availableProviders[0] ?? "cline");
+		const modelsForProvider = visibleProviderModels[preferredProvider] ?? [];
+		const rememberedModel =
+			lastModelSelection.lastModelByProvider[preferredProvider];
+		const preferredModel =
+			rememberedModel && modelsForProvider.includes(rememberedModel)
+				? rememberedModel
+				: (modelsForProvider[0] ?? createForm.model);
 		setCreateForm({
 			name: "",
-			cronPattern: "0 9 * * MON-FRI",
+			scheduleHour: "9",
+			scheduleMinute: "0",
+			scheduleDays: ["MON", "TUE", "WED", "THU", "FRI"],
 			prompt: "Review PRs opened yesterday and summarize issues.",
-			provider: "cline",
-			model: "openai/gpt-5.3-codex",
+			provider: preferredProvider,
+			model: preferredModel,
 			mode: "act",
 			workspaceRoot: context.workspaceRoot || context.cwd,
 			cwd: context.cwd || "",
@@ -272,9 +556,13 @@ export function RoutineSchedulesContent() {
 			setCreateFormError("Routine name is required.");
 			return;
 		}
-		const cronPattern = createForm.cronPattern.trim();
+		const cronPattern = buildCronPattern(
+			createForm.scheduleDays,
+			createForm.scheduleHour,
+			createForm.scheduleMinute,
+		);
 		if (!cronPattern) {
-			setCreateFormError("Cron pattern is required.");
+			setCreateFormError("Select at least one day and a valid time.");
 			return;
 		}
 		const prompt = createForm.prompt.trim();
@@ -290,12 +578,18 @@ export function RoutineSchedulesContent() {
 		setCreateFormError(null);
 		setIsCreating(true);
 		try {
+			const provider =
+				createForm.provider.trim() || availableProviders[0] || "cline";
+			const model =
+				createForm.model.trim() ||
+				(visibleProviderModels[provider] ?? [])[0] ||
+				"openai/gpt-5.3-codex";
 			await invoke("create_routine_schedule", {
 				name,
 				cron_pattern: cronPattern,
 				prompt,
-				provider: createForm.provider.trim() || "cline",
-				model: createForm.model.trim() || "openai/gpt-5.3-codex",
+				provider,
+				model,
 				mode: createForm.mode,
 				workspace_root: workspaceRoot,
 				cwd: createForm.cwd.trim() || undefined,
@@ -591,19 +885,107 @@ export function RoutineSchedulesContent() {
 							/>
 						</div>
 
-						<div className="sm:col-span-2">
-							<Label htmlFor="routine-cron">Cron pattern</Label>
-							<Input
-								id="routine-cron"
-								value={createForm.cronPattern}
-								onChange={(event) =>
-									setCreateForm((prev) => ({
-										...prev,
-										cronPattern: event.target.value,
-									}))
-								}
-								placeholder="0 9 * * MON-FRI"
-							/>
+						<div className="sm:col-span-2 space-y-3">
+							<Label>Schedule</Label>
+							<div className="grid grid-cols-1 gap-3 rounded-md border border-border p-3 sm:grid-cols-2">
+								<div>
+									<Label htmlFor="routine-hour">Hour</Label>
+									<Select
+										value={createForm.scheduleHour}
+										onValueChange={(value) =>
+											setCreateForm((prev) => ({
+												...prev,
+												scheduleHour: value,
+											}))
+										}
+									>
+										<SelectTrigger className="w-full" id="routine-hour">
+											<SelectValue placeholder="Hour" />
+										</SelectTrigger>
+										<SelectContent>
+											{Array.from({ length: 24 }, (_, idx) => (
+												<SelectItem key={`hour-${idx}`} value={`${idx}`}>
+													{idx.toString().padStart(2, "0")}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
+								<div>
+									<Label htmlFor="routine-minute">Minute</Label>
+									<Select
+										value={createForm.scheduleMinute}
+										onValueChange={(value) =>
+											setCreateForm((prev) => ({
+												...prev,
+												scheduleMinute: value,
+											}))
+										}
+									>
+										<SelectTrigger className="w-full" id="routine-minute">
+											<SelectValue placeholder="Minute" />
+										</SelectTrigger>
+										<SelectContent>
+											{Array.from({ length: 60 }, (_, minute) => {
+												return (
+													<SelectItem
+														key={`minute-${minute}`}
+														value={`${minute}`}
+													>
+														{minute.toString().padStart(2, "0")}
+													</SelectItem>
+												);
+											})}
+										</SelectContent>
+									</Select>
+								</div>
+								<div className="sm:col-span-2">
+									<Label>Days of week</Label>
+									<div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+										{WEEKDAY_OPTIONS.map((day) => {
+											const inputId = `routine-day-${day.value.toLowerCase()}`;
+											const checked = createForm.scheduleDays.includes(
+												day.value,
+											);
+											return (
+												<Label
+													className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5 text-sm"
+													htmlFor={inputId}
+													key={day.value}
+												>
+													<Checkbox
+														checked={checked}
+														id={inputId}
+														onCheckedChange={(value) =>
+															setCreateForm((prev) => {
+																const nextSet = new Set(prev.scheduleDays);
+																if (value === true) {
+																	nextSet.add(day.value);
+																} else {
+																	nextSet.delete(day.value);
+																}
+																return {
+																	...prev,
+																	scheduleDays: normalizeScheduleDays([
+																		...nextSet,
+																	]),
+																};
+															})
+														}
+													/>
+													{day.label}
+												</Label>
+											);
+										})}
+									</div>
+								</div>
+								<div className="sm:col-span-2 rounded-md border border-border bg-muted/30 px-2 py-1.5 text-xs text-muted-foreground">
+									Cron:{" "}
+									<span className="font-mono text-foreground">
+										{cronPreview || "Select one or more days"}
+									</span>
+								</div>
+							</div>
 						</div>
 
 						<div className="sm:col-span-2">
@@ -622,33 +1004,78 @@ export function RoutineSchedulesContent() {
 						</div>
 
 						<div>
-							<Label htmlFor="routine-provider">Provider</Label>
-							<Input
-								id="routine-provider"
-								value={createForm.provider}
-								onChange={(event) =>
+							<Label>Provider</Label>
+							<Combobox
+								items={availableProviders}
+								onValueChange={(value) => {
+									if (!value) {
+										return;
+									}
+									const providerModelsForNext =
+										visibleProviderModels[value] ?? [];
+									const rememberedModel =
+										lastModelSelection.lastModelByProvider[value];
+									const nextModel =
+										rememberedModel &&
+										providerModelsForNext.includes(rememberedModel)
+											? rememberedModel
+											: (providerModelsForNext[0] ?? "");
 									setCreateForm((prev) => ({
 										...prev,
-										provider: event.target.value,
-									}))
-								}
-								placeholder="cline"
-							/>
+										provider: value,
+										model: nextModel,
+									}));
+								}}
+								value={createForm.provider}
+							>
+								<ComboboxInput
+									className="h-9 w-full"
+									readOnly
+									showClear={false}
+									showTrigger
+								/>
+								<ComboboxContent>
+									<ComboboxEmpty>No providers found.</ComboboxEmpty>
+									<ComboboxList>
+										{(item) => (
+											<ComboboxItem key={item} value={item}>
+												{item}
+											</ComboboxItem>
+										)}
+									</ComboboxList>
+								</ComboboxContent>
+							</Combobox>
 						</div>
 
 						<div>
-							<Label htmlFor="routine-model">Model</Label>
-							<Input
-								id="routine-model"
+							<Label>Model</Label>
+							<Combobox
+								items={availableModelsForProvider}
+								onValueChange={(value) => {
+									if (!value) {
+										return;
+									}
+									setCreateForm((prev) => ({ ...prev, model: value }));
+								}}
 								value={createForm.model}
-								onChange={(event) =>
-									setCreateForm((prev) => ({
-										...prev,
-										model: event.target.value,
-									}))
-								}
-								placeholder="openai/gpt-5.3-codex"
-							/>
+							>
+								<ComboboxInput
+									className="h-9 w-full"
+									readOnly
+									showClear={false}
+									showTrigger
+								/>
+								<ComboboxContent>
+									<ComboboxEmpty>No models found.</ComboboxEmpty>
+									<ComboboxList>
+										{(item) => (
+											<ComboboxItem key={item} value={item}>
+												{item}
+											</ComboboxItem>
+										)}
+									</ComboboxList>
+								</ComboboxContent>
+							</Combobox>
 						</div>
 
 						<div>

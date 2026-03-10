@@ -12,13 +12,16 @@ import type {
 } from "@/lib/provider-schema";
 import { cn } from "@/lib/utils";
 import { AddProviderContent, type AddProviderPayload } from "./add-provider";
-import { RulesView } from "./extensions.view";
+import { primeExtensionsListsCache, RulesView } from "./extensions.view";
 import { McpServersContent } from "./mcp-view";
 import {
 	ProviderDetailContent,
 	ProviderListContent,
 } from "./provider-list-view";
-import { RoutineSchedulesContent } from "./routine-view";
+import {
+	primeRoutineOverviewCache,
+	RoutineSchedulesContent,
+} from "./routine-view";
 
 // -----------------------------------------------------------
 // Settings nav categories
@@ -36,6 +39,13 @@ const navCategories = [
 
 type NavCategory = (typeof navCategories)[number];
 
+const PROVIDER_CATALOG_CACHE_TTL_MS = 60_000;
+
+let providerCatalogCache: {
+	providers: Provider[];
+	fetchedAt: number;
+} | null = null;
+
 // -----------------------------------------------------------
 // Component
 // -----------------------------------------------------------
@@ -43,8 +53,12 @@ type NavCategory = (typeof navCategories)[number];
 export function SettingsView({ onClose }: { onClose: () => void }) {
 	const [activeNav, setActiveNav] = useState<NavCategory>("Providers");
 	const [providersExpanded, setProvidersExpanded] = useState(true);
-	const [providers, setProviders] = useState<Provider[]>([]);
-	const [providersLoading, setProvidersLoading] = useState(true);
+	const [providers, setProviders] = useState<Provider[]>(
+		() => providerCatalogCache?.providers ?? [],
+	);
+	const [providersLoading, setProvidersLoading] = useState(
+		() => !providerCatalogCache,
+	);
 	const [providerCatalogError, setProviderCatalogError] = useState<
 		string | null
 	>(null);
@@ -62,14 +76,42 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 	);
 	const [addingProvider, setAddingProvider] = useState(false);
 
+	const setProvidersWithCache = useCallback(
+		(next: Provider[] | ((prev: Provider[]) => Provider[])) => {
+			setProviders((prev) => {
+				const resolved =
+					typeof next === "function"
+						? (next as (prev: Provider[]) => Provider[])(prev)
+						: next;
+				providerCatalogCache = {
+					providers: resolved,
+					fetchedAt: Date.now(),
+				};
+				return resolved;
+			});
+		},
+		[],
+	);
+
 	const loadProviderCatalog = useCallback(async () => {
+		const now = Date.now();
+		if (
+			providerCatalogCache &&
+			now - providerCatalogCache.fetchedAt < PROVIDER_CATALOG_CACHE_TTL_MS
+		) {
+			setProviders(providerCatalogCache.providers);
+			setProvidersLoading(false);
+			setProviderCatalogError(null);
+			return;
+		}
+
 		setProvidersLoading(true);
 		setProviderCatalogError(null);
 		try {
 			const payload = await invoke<ProviderCatalogResponse>(
 				"list_provider_catalog",
 			);
-			setProviders(payload.providers);
+			setProvidersWithCache(payload.providers);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			setProviderCatalogError(message);
@@ -77,10 +119,16 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 		} finally {
 			setProvidersLoading(false);
 		}
-	}, []);
+	}, [setProvidersWithCache]);
 
 	useEffect(() => {
 		void loadProviderCatalog();
+		void primeRoutineOverviewCache().catch(() => {
+			// Keep settings responsive even if routine prefetch fails.
+		});
+		void primeExtensionsListsCache().catch(() => {
+			// Keep settings responsive even if extension prefetch fails.
+		});
 	}, [loadProviderCatalog]);
 
 	const persistProviderSettings = useCallback(
@@ -109,7 +157,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 
 	const toggleProvider = useCallback(
 		(id: string) => {
-			setProviders((prev) =>
+			setProvidersWithCache((prev) =>
 				prev.map((p) => {
 					if (p.id !== id) {
 						return p;
@@ -120,12 +168,12 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 				}),
 			);
 		},
-		[persistProviderSettings],
+		[persistProviderSettings, setProvidersWithCache],
 	);
 
 	const updateProvider = useCallback(
 		(id: string, updates: Partial<Provider>) => {
-			setProviders((prev) =>
+			setProvidersWithCache((prev) =>
 				prev.map((p) => (p.id === id ? { ...p, ...updates } : p)),
 			);
 			void persistProviderSettings(id, {
@@ -133,37 +181,40 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 				baseUrl: updates.baseUrl,
 			});
 		},
-		[persistProviderSettings],
+		[persistProviderSettings, setProvidersWithCache],
 	);
 
-	const loadProviderModels = useCallback(async (id: string) => {
-		setModelsLoadingByProvider((prev) => ({ ...prev, [id]: true }));
-		setModelsErrorByProvider((prev) => ({ ...prev, [id]: null }));
-		try {
-			const payload = await invoke<ProviderModelsResponse>(
-				"list_provider_models",
-				{
-					provider: id,
-				},
-			);
-			setProviders((prev) =>
-				prev.map((provider) =>
-					provider.id === id
-						? {
-								...provider,
-								modelList: payload.models,
-								models: payload.models.length,
-							}
-						: provider,
-				),
-			);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			setModelsErrorByProvider((prev) => ({ ...prev, [id]: message }));
-		} finally {
-			setModelsLoadingByProvider((prev) => ({ ...prev, [id]: false }));
-		}
-	}, []);
+	const loadProviderModels = useCallback(
+		async (id: string) => {
+			setModelsLoadingByProvider((prev) => ({ ...prev, [id]: true }));
+			setModelsErrorByProvider((prev) => ({ ...prev, [id]: null }));
+			try {
+				const payload = await invoke<ProviderModelsResponse>(
+					"list_provider_models",
+					{
+						provider: id,
+					},
+				);
+				setProvidersWithCache((prev) =>
+					prev.map((provider) =>
+						provider.id === id
+							? {
+									...provider,
+									modelList: payload.models,
+									models: payload.models.length,
+								}
+							: provider,
+					),
+				);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				setModelsErrorByProvider((prev) => ({ ...prev, [id]: message }));
+			} finally {
+				setModelsLoadingByProvider((prev) => ({ ...prev, [id]: false }));
+			}
+		},
+		[setProvidersWithCache],
+	);
 
 	const enabledProviders = providers.filter((p) => p.enabled);
 	const selectedProvider = selectedProviderId
@@ -182,7 +233,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 					provider: id,
 				},
 			);
-			setProviders((prev) =>
+			setProvidersWithCache((prev) =>
 				prev.map((provider) =>
 					provider.id === id
 						? { ...provider, enabled: true, apiKey: result.apiKey }
