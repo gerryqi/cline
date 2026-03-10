@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type {
 	RpcChatRunTurnRequest,
 	RpcChatStartSessionRequest,
+	RpcChatTurnResult,
 } from "@cline/shared";
 import { nowIso } from "@cline/shared/db";
 import { assertValidCronPattern } from "./cron";
@@ -26,37 +27,27 @@ function toErrorMessage(error: unknown): string {
 	return String(error);
 }
 
-function parseTurnMetrics(resultJson: string): {
+function parseTurnMetrics(result: RpcChatTurnResult): {
 	iterations?: number;
 	tokensUsed?: number;
 	costUsd?: number;
 } {
-	try {
-		const parsed = JSON.parse(resultJson) as {
-			iterations?: unknown;
-			usage?: { totalCost?: unknown };
-			inputTokens?: unknown;
-			outputTokens?: unknown;
-		};
-		const inputTokens =
-			typeof parsed.inputTokens === "number" ? parsed.inputTokens : undefined;
-		const outputTokens =
-			typeof parsed.outputTokens === "number" ? parsed.outputTokens : undefined;
-		return {
-			iterations:
-				typeof parsed.iterations === "number" ? parsed.iterations : undefined,
-			tokensUsed:
-				inputTokens !== undefined && outputTokens !== undefined
-					? inputTokens + outputTokens
-					: undefined,
-			costUsd:
-				typeof parsed.usage?.totalCost === "number"
-					? parsed.usage.totalCost
-					: undefined,
-		};
-	} catch {
-		return {};
-	}
+	const inputTokens =
+		typeof result.inputTokens === "number" ? result.inputTokens : undefined;
+	const outputTokens =
+		typeof result.outputTokens === "number" ? result.outputTokens : undefined;
+	return {
+		iterations:
+			typeof result.iterations === "number" ? result.iterations : undefined,
+		tokensUsed:
+			inputTokens !== undefined && outputTokens !== undefined
+				? inputTokens + outputTokens
+				: undefined,
+		costUsd:
+			typeof result.usage?.totalCost === "number"
+				? result.usage.totalCost
+				: undefined,
+	};
 }
 
 class TimeoutError extends Error {
@@ -297,9 +288,8 @@ export class SchedulerService {
 
 		try {
 			const startRequest = this.buildStartRequest(schedule);
-			const startResponse = await this.options.runtimeHandlers.startSession(
-				JSON.stringify(startRequest),
-			);
+			const startResponse =
+				await this.options.runtimeHandlers.startSession(startRequest);
 			sessionId = startResponse.sessionId.trim();
 			if (!sessionId) {
 				throw new Error("runtime start returned empty sessionId");
@@ -341,13 +331,13 @@ export class SchedulerService {
 			};
 			const sendPromise = this.options.runtimeHandlers.sendSession(
 				sessionId,
-				JSON.stringify(turnRequest),
+				turnRequest,
 			);
 			const sendResult = await withTimeout(
 				sendPromise,
 				(schedule.timeoutSeconds ?? 0) * 1000,
 			);
-			const metrics = parseTurnMetrics(sendResult.resultJson);
+			const metrics = parseTurnMetrics(sendResult.result);
 			const completed: ScheduleExecutionRecord = {
 				...runningState,
 				status: "success",

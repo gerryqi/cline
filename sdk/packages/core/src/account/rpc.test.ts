@@ -40,8 +40,8 @@ describe("executeRpcClineAccountAction", () => {
 
 describe("RpcClineAccountService", () => {
 	it("sends provider action payload and parses response", async () => {
-		const runProviderAction = vi.fn(async (requestJson: string) => {
-			const parsed = JSON.parse(requestJson) as {
+		const runProviderAction = vi.fn(async (request: unknown) => {
+			const parsed = request as {
 				action: string;
 				operation: string;
 			};
@@ -50,7 +50,7 @@ describe("RpcClineAccountService", () => {
 				operation: "fetchMe",
 			});
 			return {
-				resultJson: JSON.stringify({ id: "u2", email: "u2@example.com" }),
+				result: { id: "u2", email: "u2@example.com" },
 			};
 		});
 		const service = new RpcClineAccountService({ runProviderAction });

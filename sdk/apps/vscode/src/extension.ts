@@ -237,12 +237,10 @@ class RpcChatWebviewController implements vscode.Disposable {
 
 	private async loadProviders(preferredProvider?: string): Promise<void> {
 		const client = await this.getClient();
-		const response = await client.runProviderAction(
-			JSON.stringify({ action: "listProviders" }),
-		);
-		const parsed = JSON.parse(
-			response.resultJson,
-		) as RpcProviderCatalogResponse;
+		const response = await client.runProviderAction({
+			action: "listProviders",
+		});
+		const parsed = response.result as RpcProviderCatalogResponse;
 		const providers = (parsed.providers ?? []).map((provider) => ({
 			id: provider.id,
 			name: provider.name,
@@ -267,10 +265,11 @@ class RpcChatWebviewController implements vscode.Disposable {
 			return;
 		}
 		const client = await this.getClient();
-		const response = await client.runProviderAction(
-			JSON.stringify({ action: "getProviderModels", providerId: provider }),
-		);
-		const parsed = JSON.parse(response.resultJson) as {
+		const response = await client.runProviderAction({
+			action: "getProviderModels",
+			providerId: provider,
+		});
+		const parsed = response.result as {
 			models?: RpcProviderModel[];
 		};
 		await this.post({
@@ -316,9 +315,9 @@ class RpcChatWebviewController implements vscode.Disposable {
 			};
 			const response = await client.sendRuntimeSession(
 				this.sessionId as string,
-				JSON.stringify(request),
+				request,
 			);
-			const parsed = JSON.parse(response.resultJson) as RpcChatTurnResult;
+			const parsed = response.result as RpcChatTurnResult;
 			this.emitRemainder(parsed.text);
 			await this.post({
 				type: "turn_done",
@@ -390,7 +389,7 @@ class RpcChatWebviewController implements vscode.Disposable {
 			missionTimeIntervalMs: 120000,
 		};
 		const client = await this.getClient();
-		const response = await client.startRuntimeSession(JSON.stringify(request));
+		const response = await client.startRuntimeSession(request);
 		const sessionId = response.sessionId.trim();
 		if (!sessionId) {
 			throw new Error("RPC runtime returned an empty session id");
@@ -416,7 +415,7 @@ class RpcChatWebviewController implements vscode.Disposable {
 			{
 				onEvent: (event) => {
 					if (event.eventType === "runtime.chat.text_delta") {
-						const payload = safeParseJson(event.payloadJson);
+						const payload = event.payload;
 						const accumulated =
 							typeof payload.accumulated === "string"
 								? payload.accumulated
@@ -438,7 +437,7 @@ class RpcChatWebviewController implements vscode.Disposable {
 						return;
 					}
 					if (event.eventType === "runtime.chat.tool_call_start") {
-						const payload = safeParseJson(event.payloadJson);
+						const payload = event.payload;
 						const toolName =
 							typeof payload.toolName === "string" ? payload.toolName : "tool";
 						void this.post({
@@ -448,7 +447,7 @@ class RpcChatWebviewController implements vscode.Disposable {
 						return;
 					}
 					if (event.eventType === "runtime.chat.tool_call_end") {
-						const payload = safeParseJson(event.payloadJson);
+						const payload = event.payload;
 						const toolName =
 							typeof payload.toolName === "string" ? payload.toolName : "tool";
 						const error =
@@ -519,16 +518,5 @@ class RpcChatWebviewController implements vscode.Disposable {
 	private async postError(error: unknown): Promise<void> {
 		const text = error instanceof Error ? error.message : String(error);
 		await this.post({ type: "error", text });
-	}
-}
-
-function safeParseJson(raw: string): Record<string, unknown> {
-	if (!raw.trim()) {
-		return {};
-	}
-	try {
-		return JSON.parse(raw) as Record<string, unknown>;
-	} catch {
-		return {};
 	}
 }

@@ -30,17 +30,19 @@ export interface RpcClientRegistrationResult {
 }
 
 export interface RpcRuntimeHandlers {
-	startSession?: (requestJson: string) => Promise<{
+	startSession?: (request: RpcChatStartSessionRequest) => Promise<{
 		sessionId: string;
-		startResultJson?: string;
+		startResult?: Record<string, unknown>;
 	}>;
 	sendSession?: (
 		sessionId: string,
-		requestJson: string,
-	) => Promise<{ resultJson: string }>;
+		request: RpcChatRunTurnRequest,
+	) => Promise<{ result: RpcChatTurnResult }>;
 	stopSession?: (sessionId: string) => Promise<{ applied: boolean }>;
 	abortSession?: (sessionId: string) => Promise<{ applied: boolean }>;
-	runProviderAction?: (requestJson: string) => Promise<{ resultJson: string }>;
+	runProviderAction?: (
+		request: RpcProviderActionRequest,
+	) => Promise<{ result: unknown }>;
 	runProviderOAuthLogin?: (provider: string) => Promise<{
 		provider: string;
 		accessToken: string;
@@ -53,7 +55,7 @@ export interface RoutedEvent {
 	sessionId: string;
 	taskId?: string;
 	eventType: string;
-	payloadJson: string;
+	payload: Record<string, unknown>;
 	sourceClientId?: string;
 	ts: string;
 }
@@ -202,3 +204,10 @@ export interface RpcSessionBackend {
 		parentAgentId: string,
 	): RpcSpawnQueueItem | undefined;
 }
+
+import type {
+	RpcChatRunTurnRequest,
+	RpcChatStartSessionRequest,
+	RpcChatTurnResult,
+	RpcProviderActionRequest,
+} from "@cline/shared";

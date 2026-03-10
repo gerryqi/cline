@@ -1,4 +1,8 @@
 import { createInterface } from "node:readline";
+import type {
+	RpcChatRunTurnRequest,
+	RpcChatStartSessionRequest,
+} from "@cline/shared";
 import { RpcRuntimeChatClient } from "./runtime-chat-client.js";
 import {
 	createRpcRuntimeStreamRelay,
@@ -56,14 +60,6 @@ export type RpcRuntimeBridgeCommandOutputLine =
 			message: string;
 	  };
 
-function parseResultPayload(raw: string): unknown {
-	try {
-		return JSON.parse(raw) as unknown;
-	} catch {
-		return raw;
-	}
-}
-
 function getSendTimeoutMs(): number {
 	const raw = process.env.CLINE_RPC_RUNTIME_SEND_TIMEOUT_MS?.trim();
 	const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
@@ -78,7 +74,7 @@ export async function runRpcRuntimeCommandBridge(options: {
 	writeLine: (line: RpcRuntimeBridgeCommandOutputLine) => void;
 	onBeforeStart?: (config: unknown) => void;
 	onBeforeSend?: (request: unknown) => void;
-	parseSendResult?: (resultRaw: string) => unknown;
+	parseSendResult?: (resultRaw: unknown) => unknown;
 }): Promise<void> {
 	const client = new RpcRuntimeChatClient();
 	const relay = createRpcRuntimeStreamRelay({
@@ -99,7 +95,9 @@ export async function runRpcRuntimeCommandBridge(options: {
 	): Promise<boolean> => {
 		if (command.action === "start") {
 			options.onBeforeStart?.(command.config);
-			const sessionId = await client.startSession(command.config);
+			const sessionId = await client.startSession(
+				command.config as RpcChatStartSessionRequest,
+			);
 			respond({
 				type: "response",
 				requestId,
@@ -110,9 +108,12 @@ export async function runRpcRuntimeCommandBridge(options: {
 		if (command.action === "send") {
 			options.onBeforeSend?.(command.request);
 			const sendTimeoutMs = getSendTimeoutMs();
-			const resultRaw = await Promise.race<string>([
-				client.sendSession(command.sessionId, command.request),
-				new Promise<string>((_resolve, reject) => {
+			const resultRaw = await Promise.race<unknown>([
+				client.sendSession(
+					command.sessionId,
+					command.request as RpcChatRunTurnRequest,
+				),
+				new Promise<unknown>((_resolve, reject) => {
 					setTimeout(() => {
 						reject(
 							new Error(
@@ -124,7 +125,7 @@ export async function runRpcRuntimeCommandBridge(options: {
 			]);
 			const parsedResult = options.parseSendResult
 				? options.parseSendResult(resultRaw)
-				: parseResultPayload(resultRaw);
+				: resultRaw;
 			respond({
 				type: "response",
 				requestId,

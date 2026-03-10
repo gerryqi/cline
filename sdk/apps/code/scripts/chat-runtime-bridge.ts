@@ -79,7 +79,7 @@ async function main() {
 			setRuntimeHomeDir(config);
 			addRuntimeLoggerContext(config);
 		},
-		parseSendResult: (resultRaw) => JSON.parse(resultRaw) as RpcChatTurnResult,
+		parseSendResult: (resultRaw) => resultRaw as RpcChatTurnResult,
 	});
 }
 

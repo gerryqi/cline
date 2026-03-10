@@ -3,9 +3,9 @@ import type {
 	SchedulerService,
 	UpdateScheduleInput,
 } from "@cline/scheduler";
+import { fromProtoStruct } from "../proto/serde.js";
 import {
 	parseJsonArrayString,
-	parseJsonObjectString,
 	safeString,
 	scheduleExecutionToMessage,
 	scheduleToMessage,
@@ -69,7 +69,7 @@ export class RuntimeScheduleService {
 			enabled: request.enabled !== false,
 			createdBy: safeString(request.createdBy).trim() || undefined,
 			tags: parseJsonArrayString(safeString(request.tagsJson)),
-			metadata: parseJsonObjectString(safeString(request.metadataJson)),
+			metadata: fromProtoStruct(request.metadata),
 		};
 		if (
 			!input.name ||
@@ -172,9 +172,8 @@ export class RuntimeScheduleService {
 		if (request.hasTagsJson) {
 			updates.tags = parseJsonArrayString(safeString(request.tagsJson)) ?? [];
 		}
-		if (request.hasMetadataJson) {
-			updates.metadata =
-				parseJsonObjectString(safeString(request.metadataJson)) ?? {};
+		if (request.hasMetadata) {
+			updates.metadata = fromProtoStruct(request.metadata) ?? {};
 		}
 		const updated = scheduler.updateSchedule(scheduleId, updates);
 		return {

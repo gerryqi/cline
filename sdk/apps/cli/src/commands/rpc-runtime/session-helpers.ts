@@ -139,9 +139,9 @@ export function applyHomeDir(config: RpcChatStartSessionRequest): void {
 }
 
 export function parseStartPayload(
-	requestJson: string,
+	request: RpcChatStartSessionRequest,
 ): RpcChatStartSessionRequest {
-	const parsed = JSON.parse(requestJson) as RpcChatStartSessionRequest & {
+	const parsed = request as RpcChatStartSessionRequest & {
 		maxIterations?: unknown;
 	};
 	const normalizedMaxIterations =
@@ -156,8 +156,10 @@ export function parseStartPayload(
 	};
 }
 
-export function parseSendPayload(requestJson: string): RpcChatRunTurnRequest {
-	const parsed = JSON.parse(requestJson) as RpcChatRunTurnRequest & {
+export function parseSendPayload(
+	request: RpcChatRunTurnRequest,
+): RpcChatRunTurnRequest {
+	const parsed = request as RpcChatRunTurnRequest & {
 		config?: RpcChatRunTurnRequest["config"] & {
 			maxIterations?: unknown;
 		};

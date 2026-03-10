@@ -76,11 +76,11 @@ export const scenarios: Record<string, Scenario> = {
 			{
 				title: "Start Runtime Session",
 				summary:
-					"CLI sends StartRuntimeSession request with serialized config; server creates session with metadata.",
+					"CLI sends StartRuntimeSession request with typed RuntimeSessionConfig; server creates session with metadata.",
 				transport: "rpc",
 				packages: ["@cline/cli", "@cline/rpc", "@cline/core", "RPC Server"],
 				methods: [
-					"StartRuntimeSession(requestJson)",
+					"StartRuntimeSession(request)",
 					"RpcSessionClient.startRuntimeSession()",
 					"gRPC StartRuntimeSession",
 				],
@@ -112,11 +112,11 @@ export const scenarios: Record<string, Scenario> = {
 			{
 				title: "Send Prompt Turn",
 				summary:
-					"CLI sends actual prompt turn via SendRuntimeSession with requestJson payload.",
+					"CLI sends actual prompt turn via SendRuntimeSession with typed RuntimeTurnRequest payload.",
 				transport: "rpc",
 				packages: ["@cline/cli", "@cline/rpc", "RPC Server"],
 				methods: [
-					"SendRuntimeSession(sessionId, requestJson)",
+					"SendRuntimeSession(sessionId, request)",
 					"gRPC SendRuntimeSession",
 				],
 			},
@@ -151,13 +151,10 @@ export const scenarios: Record<string, Scenario> = {
 			{
 				title: "Turn Completion",
 				summary:
-					"Runtime completes turn, RPC returns final resultJson in SendRuntimeSessionResponse.",
+					"Runtime completes turn, RPC returns typed RuntimeTurnResult in SendRuntimeSessionResponse.",
 				transport: "rpc",
 				packages: ["@cline/rpc", "@cline/core", "@cline/agents", "RPC Server"],
-				methods: [
-					"final turn result",
-					"SendRuntimeSessionResponse(resultJson)",
-				],
+				methods: ["final turn result", "SendRuntimeSessionResponse(result)"],
 			},
 			{
 				title: "Stream Cleanup",

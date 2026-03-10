@@ -11,12 +11,8 @@ async function main() {
 	const address = process.env.CLINE_RPC_ADDRESS?.trim() || "127.0.0.1:4317";
 	const client = new RpcSessionClient({ address });
 	try {
-		const response = await client.runProviderAction(JSON.stringify(parsed));
-		const payload = response.resultJson?.trim();
-		if (!payload) {
-			throw new Error("provider action returned an empty response");
-		}
-		process.stdout.write(`${payload}\n`);
+		const response = await client.runProviderAction(parsed);
+		process.stdout.write(`${JSON.stringify(response.result)}\n`);
 	} finally {
 		client.close();
 	}

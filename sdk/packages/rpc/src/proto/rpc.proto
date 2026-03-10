@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 package cline.rpc.v1;
+import "google/protobuf/struct.proto";
 
 service ClineGateway {
   rpc Health(HealthRequest) returns (HealthResponse);
@@ -95,7 +96,7 @@ message SessionRecord {
   string hook_path = 25;
   string messages_path = 26;
   string updated_at = 27;
-  string metadata_json = 28;
+  google.protobuf.Struct metadata = 28;
 }
 
 message EnsureSessionRequest {
@@ -103,7 +104,7 @@ message EnsureSessionRequest {
   string client_id = 2;
   string workspace_root = 3;
   string status = 4;
-  string metadata_json = 5;
+  google.protobuf.Struct metadata = 5;
 }
 
 message EnsureSessionResponse {
@@ -157,8 +158,8 @@ message UpdateSessionRequest {
   int32 expected_status_lock = 16;
   bool has_expected_status_lock = 17;
   bool set_running = 18;
-  string metadata_json = 19;
-  bool has_metadata_json = 20;
+  google.protobuf.Struct metadata = 19;
+  bool has_metadata = 20;
 }
 
 message UpdateSessionResponse {
@@ -205,22 +206,121 @@ message ClaimSpawnRequestResponse {
   SpawnQueueItem item = 1;
 }
 
+message RuntimeToolPolicy {
+  bool enabled = 1;
+  bool auto_approve = 2;
+}
+
+message RuntimeChatMessage {
+  string role = 1;
+  google.protobuf.Value content = 2;
+}
+
+message RuntimeLoggerConfig {
+  bool enabled = 1;
+  string level = 2;
+  string destination = 3;
+  string name = 4;
+  google.protobuf.Struct bindings = 5;
+}
+
+message RuntimeSessionConfig {
+  string workspace_root = 1;
+  string cwd = 2;
+  string provider = 3;
+  string model = 4;
+  string mode = 5;
+  string api_key = 6;
+  string system_prompt = 7;
+  int32 max_iterations = 8;
+  bool has_max_iterations = 9;
+  bool enable_tools = 10;
+  bool enable_spawn = 11;
+  bool enable_teams = 12;
+  bool auto_approve_tools = 13;
+  bool has_auto_approve_tools = 14;
+  string team_name = 15;
+  int32 mission_step_interval = 16;
+  int32 mission_time_interval_ms = 17;
+  map<string, RuntimeToolPolicy> tool_policies = 18;
+  repeated RuntimeChatMessage initial_messages = 19;
+  RuntimeLoggerConfig logger = 20;
+}
+
+message RuntimeAttachmentFile {
+  string name = 1;
+  string content = 2;
+}
+
+message RuntimeAttachments {
+  repeated string user_images = 1;
+  repeated RuntimeAttachmentFile user_files = 2;
+}
+
+message RuntimeTurnRequest {
+  RuntimeSessionConfig config = 1;
+  repeated RuntimeChatMessage messages = 2;
+  string prompt = 3;
+  RuntimeAttachments attachments = 4;
+}
+
+message RuntimeUsage {
+  int32 input_tokens = 1;
+  int32 output_tokens = 2;
+  int32 cache_read_tokens = 3;
+  bool has_cache_read_tokens = 4;
+  int32 cache_write_tokens = 5;
+  bool has_cache_write_tokens = 6;
+  double total_cost = 7;
+  bool has_total_cost = 8;
+}
+
+message RuntimeToolCallResult {
+  string name = 1;
+  google.protobuf.Value input = 2;
+  bool has_input = 3;
+  google.protobuf.Value output = 4;
+  bool has_output = 5;
+  string error = 6;
+  int32 duration_ms = 7;
+  bool has_duration_ms = 8;
+}
+
+message RuntimeTurnResult {
+  string text = 1;
+  RuntimeUsage usage = 2;
+  int32 input_tokens = 3;
+  int32 output_tokens = 4;
+  int32 iterations = 5;
+  string finish_reason = 6;
+  repeated RuntimeChatMessage messages = 7;
+  repeated RuntimeToolCallResult tool_calls = 8;
+}
+
+message RuntimeStartResult {
+  string session_id = 1;
+  string manifest_path = 2;
+  string transcript_path = 3;
+  string hook_path = 4;
+  string messages_path = 5;
+}
+
 message StartRuntimeSessionRequest {
-  string request_json = 1;
+  RuntimeSessionConfig request = 1;
 }
 
 message StartRuntimeSessionResponse {
   string session_id = 1;
-  string start_result_json = 2;
+  RuntimeStartResult start_result = 2;
 }
 
 message SendRuntimeSessionRequest {
   string session_id = 1;
-  string request_json = 2;
+  RuntimeTurnRequest request = 2;
 }
 
 message SendRuntimeSessionResponse {
-  string result_json = 1;
+  RuntimeTurnResult result = 1;
 }
 
 message StopRuntimeSessionRequest {
@@ -239,12 +339,60 @@ message AbortRuntimeSessionResponse {
   bool applied = 1;
 }
 
+message ProviderActionListProvidersRequest {}
+
+message ProviderActionGetProviderModelsRequest {
+  string provider_id = 1;
+}
+
+message ProviderActionAddProviderRequest {
+  string provider_id = 1;
+  string name = 2;
+  string base_url = 3;
+  string api_key = 4;
+  map<string, string> headers = 5;
+  int32 timeout_ms = 6;
+  bool has_timeout_ms = 7;
+  repeated string models = 8;
+  string default_model_id = 9;
+  string models_source_url = 10;
+  repeated string capabilities = 11;
+}
+
+message ProviderActionSaveProviderSettingsRequest {
+  string provider_id = 1;
+  bool enabled = 2;
+  bool has_enabled = 3;
+  string api_key = 4;
+  bool has_api_key = 5;
+  string base_url = 6;
+  bool has_base_url = 7;
+}
+
+message ProviderActionClineAccountRequest {
+  string operation = 1;
+  string user_id = 2;
+  string organization_id = 3;
+  string member_id = 4;
+  bool clear_organization_id = 5;
+}
+
+message ProviderActionRequest {
+  oneof action {
+    ProviderActionListProvidersRequest list_providers = 1;
+    ProviderActionGetProviderModelsRequest get_provider_models = 2;
+    ProviderActionAddProviderRequest add_provider = 3;
+    ProviderActionSaveProviderSettingsRequest save_provider_settings = 4;
+    ProviderActionClineAccountRequest cline_account = 5;
+  }
+}
+
 message RunProviderActionRequest {
-  string request_json = 1;
+  ProviderActionRequest request = 1;
 }
 
 message RunProviderActionResponse {
-  string result_json = 1;
+  google.protobuf.Value result = 1;
 }
 
 message RunProviderOAuthLoginRequest {
@@ -260,14 +408,14 @@ message StartTaskRequest {
   string session_id = 1;
   string task_id = 2;
   string title = 3;
-  string payload_json = 4;
+  google.protobuf.Struct payload = 4;
 }
 
 message CompleteTaskRequest {
   string session_id = 1;
   string task_id = 2;
   string status = 3;
-  string result_json = 4;
+  google.protobuf.Struct result = 4;
 }
 
 message TaskResponse {
@@ -282,7 +430,7 @@ message PublishEventRequest {
   string session_id = 2;
   string task_id = 3;
   string event_type = 4;
-  string payload_json = 5;
+  google.protobuf.Struct payload = 5;
   string source_client_id = 6;
 }
 
@@ -301,7 +449,7 @@ message RoutedEvent {
   string session_id = 2;
   string task_id = 3;
   string event_type = 4;
-  string payload_json = 5;
+  google.protobuf.Struct payload = 5;
   string source_client_id = 6;
   string ts = 7;
 }
@@ -378,7 +526,7 @@ message Schedule {
   string next_run_at = 20;
   string created_by = 21;
   string tags_json = 22;
-  string metadata_json = 23;
+  google.protobuf.Struct metadata = 23;
 }
 
 message ScheduleExecution {
@@ -418,7 +566,7 @@ message CreateScheduleRequest {
   bool enabled = 15;
   string created_by = 16;
   string tags_json = 17;
-  string metadata_json = 18;
+  google.protobuf.Struct metadata = 18;
 }
 
 message CreateScheduleResponse {
@@ -479,8 +627,8 @@ message UpdateScheduleRequest {
   bool clear_created_by = 32;
   string tags_json = 33;
   bool has_tags_json = 34;
-  string metadata_json = 35;
-  bool has_metadata_json = 36;
+  google.protobuf.Struct metadata = 35;
+  bool has_metadata = 36;
 }
 
 message UpdateScheduleResponse {

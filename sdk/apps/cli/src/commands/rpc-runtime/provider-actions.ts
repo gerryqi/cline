@@ -23,11 +23,11 @@ import {
 } from "./provider-registry";
 
 export async function runProviderAction(
-	requestJson: string,
-): Promise<{ resultJson: string }> {
+	request: RpcProviderActionRequest,
+): Promise<{ result: unknown }> {
 	const manager = new ProviderSettingsManager();
 	await ensureCustomProvidersLoaded(manager);
-	const parsed = JSON.parse(requestJson) as RpcProviderActionRequest;
+	const parsed = request;
 
 	if (parsed.action === "clineAccount") {
 		const settings = manager.getProviderSettings("cline");
@@ -36,31 +36,23 @@ export async function runProviderAction(
 			getAuthToken: async () => resolveClineAuthToken(settings),
 		});
 		return {
-			resultJson: JSON.stringify(
-				await executeRpcClineAccountAction(
-					parsed as RpcClineAccountActionRequest,
-					accountService,
-				),
+			result: await executeRpcClineAccountAction(
+				parsed as RpcClineAccountActionRequest,
+				accountService,
 			),
 		};
 	}
 	if (parsed.action === "listProviders") {
-		return { resultJson: JSON.stringify(await listProviders(manager)) };
+		return { result: await listProviders(manager) };
 	}
 	if (parsed.action === "getProviderModels") {
-		return {
-			resultJson: JSON.stringify(await getProviderModels(parsed.providerId)),
-		};
+		return { result: await getProviderModels(parsed.providerId) };
 	}
 	if (parsed.action === "addProvider") {
-		return {
-			resultJson: JSON.stringify(await addProvider(manager, parsed)),
-		};
+		return { result: await addProvider(manager, parsed) };
 	}
 	if (parsed.action === "saveProviderSettings") {
-		return {
-			resultJson: JSON.stringify(saveProviderSettings(manager, parsed)),
-		};
+		return { result: saveProviderSettings(manager, parsed) };
 	}
 	throw new Error(`unsupported provider action: ${String(parsed)}`);
 }

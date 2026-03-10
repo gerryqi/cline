@@ -1,9 +1,14 @@
+import type {
+	RpcChatRunTurnRequest,
+	RpcChatStartSessionRequest,
+	RpcChatTurnResult,
+} from "@cline/shared";
 import { RpcSessionClient } from "./client.js";
 
 export type RpcRuntimeEvent = {
 	sessionId: string;
 	eventType: string;
-	payloadJson: string;
+	payload: Record<string, unknown>;
 };
 
 export type RpcRuntimeStreamStop = () => void;
@@ -19,10 +24,8 @@ export class RpcRuntimeChatClient {
 		return process.env.CLINE_RPC_ADDRESS?.trim() || "127.0.0.1:4317";
 	}
 
-	async startSession(config: unknown): Promise<string> {
-		const response = await this.client.startRuntimeSession(
-			JSON.stringify(config),
-		);
+	async startSession(config: RpcChatStartSessionRequest): Promise<string> {
+		const response = await this.client.startRuntimeSession(config);
 		const sessionId = response.sessionId?.trim();
 		if (!sessionId) {
 			throw new Error("runtime start returned an empty session id");
@@ -30,16 +33,12 @@ export class RpcRuntimeChatClient {
 		return sessionId;
 	}
 
-	async sendSession(sessionId: string, request: unknown): Promise<string> {
-		const response = await this.client.sendRuntimeSession(
-			sessionId,
-			JSON.stringify(request),
-		);
-		const resultRaw = response.resultJson?.trim();
-		if (!resultRaw) {
-			throw new Error("runtime send returned an empty result payload");
-		}
-		return resultRaw;
+	async sendSession(
+		sessionId: string,
+		request: RpcChatRunTurnRequest,
+	): Promise<RpcChatTurnResult> {
+		const response = await this.client.sendRuntimeSession(sessionId, request);
+		return response.result;
 	}
 
 	async abortSession(sessionId: string): Promise<boolean> {

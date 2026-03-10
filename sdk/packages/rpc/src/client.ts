@@ -1,6 +1,10 @@
 import {
 	RPC_TEAM_LIFECYCLE_EVENT_TYPE,
 	RPC_TEAM_PROGRESS_EVENT_TYPE,
+	type RpcChatRunTurnRequest,
+	type RpcChatStartSessionRequest,
+	type RpcChatTurnResult,
+	type RpcProviderActionRequest,
 	type TeamProgressLifecycleEvent,
 	type TeamProgressProjectionEvent,
 } from "@cline/shared";
@@ -49,6 +53,12 @@ import type { UpdateScheduleResponse__Output } from "./proto/generated/cline/rpc
 import type { UpdateSessionRequest } from "./proto/generated/cline/rpc/v1/UpdateSessionRequest.js";
 import type { UpdateSessionResponse__Output } from "./proto/generated/cline/rpc/v1/UpdateSessionResponse.js";
 import type { UpsertSessionRequest } from "./proto/generated/cline/rpc/v1/UpsertSessionRequest.js";
+import {
+	fromProtoStruct,
+	fromProtoValue,
+	toProtoStruct,
+	toProtoValue,
+} from "./proto/serde.js";
 import type {
 	RpcScheduleExecution,
 	RpcScheduleRecord,
@@ -85,7 +95,7 @@ function toMessage(row: RpcSessionRow): SessionRecord {
 		hookPath: row.hookPath,
 		messagesPath: row.messagesPath ?? "",
 		updatedAt: row.updatedAt,
-		metadataJson: row.metadata ? JSON.stringify(row.metadata) : "",
+		metadata: toProtoStruct(row.metadata),
 	};
 }
 
@@ -114,7 +124,7 @@ function fromMessage(message: SessionRecord__Output): RpcSessionRow {
 		conversationId: message.conversationId || undefined,
 		isSubagent: message.isSubagent === true,
 		prompt: message.prompt || undefined,
-		metadata: parseJsonObject(message.metadataJson ?? undefined),
+		metadata: fromProtoStruct(message.metadata),
 		transcriptPath: message.transcriptPath ?? "",
 		hookPath: message.hookPath ?? "",
 		messagesPath: message.messagesPath || undefined,
@@ -139,24 +149,6 @@ function parseJsonArray(raw: string | undefined): string[] | undefined {
 	} catch {
 		return undefined;
 	}
-}
-
-function parseJsonObject(
-	raw: string | undefined,
-): Record<string, unknown> | undefined {
-	const value = raw?.trim();
-	if (!value) {
-		return undefined;
-	}
-	try {
-		const parsed = JSON.parse(value) as unknown;
-		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-			return parsed as Record<string, unknown>;
-		}
-	} catch {
-		// ignore malformed payload
-	}
-	return undefined;
 }
 
 function fromSchedule(message: Schedule__Output): RpcScheduleRecord {
@@ -186,7 +178,7 @@ function fromSchedule(message: Schedule__Output): RpcScheduleRecord {
 		nextRunAt: message.nextRunAt?.trim() || undefined,
 		createdBy: message.createdBy?.trim() || undefined,
 		tags: parseJsonArray(message.tagsJson ?? undefined),
-		metadata: parseJsonObject(message.metadataJson ?? undefined),
+		metadata: fromProtoStruct(message.metadata),
 	};
 }
 
@@ -232,7 +224,7 @@ export interface RpcStreamEventsHandlers {
 		sessionId: string;
 		taskId?: string;
 		eventType: string;
-		payloadJson: string;
+		payload: Record<string, unknown>;
 		sourceClientId?: string;
 		ts: string;
 	}) => void;
@@ -310,10 +302,8 @@ export class RpcSessionClient {
 			request.prompt = input.prompt ?? "";
 		}
 		if (input.metadata !== undefined) {
-			request.hasMetadataJson = true;
-			request.metadataJson = input.metadata
-				? JSON.stringify(input.metadata)
-				: "";
+			request.hasMetadata = true;
+			request.metadata = toProtoStruct(input.metadata ?? undefined);
 		}
 		if (input.parentSessionId !== undefined) {
 			request.hasParentSessionId = true;
@@ -387,29 +377,183 @@ export class RpcSessionClient {
 	}
 
 	public async startRuntimeSession(
-		requestJson: string,
-	): Promise<{ sessionId: string; startResultJson: string }> {
+		request: RpcChatStartSessionRequest,
+	): Promise<{ sessionId: string; startResult?: Record<string, unknown> }> {
+		const runtimeRequest = {
+			workspaceRoot: request.workspaceRoot,
+			cwd: request.cwd ?? "",
+			provider: request.provider,
+			model: request.model,
+			mode: request.mode,
+			apiKey: request.apiKey,
+			systemPrompt: request.systemPrompt ?? "",
+			maxIterations: request.maxIterations ?? 0,
+			hasMaxIterations: typeof request.maxIterations === "number",
+			enableTools: request.enableTools,
+			enableSpawn: request.enableSpawn,
+			enableTeams: request.enableTeams,
+			autoApproveTools: request.autoApproveTools ?? false,
+			hasAutoApproveTools: typeof request.autoApproveTools === "boolean",
+			teamName: request.teamName,
+			missionStepInterval: request.missionStepInterval,
+			missionTimeIntervalMs: request.missionTimeIntervalMs,
+			toolPolicies: Object.fromEntries(
+				Object.entries(request.toolPolicies ?? {}).map(([name, policy]) => [
+					name,
+					{
+						enabled: policy.enabled ?? false,
+						autoApprove: policy.autoApprove ?? false,
+					},
+				]),
+			),
+			initialMessages: (request.initialMessages ?? []).map((message) => ({
+				role: message.role ?? "",
+				content: toProtoValue(message.content),
+			})),
+			logger: request.logger
+				? {
+						enabled: request.logger.enabled ?? false,
+						level: request.logger.level ?? "",
+						destination: request.logger.destination ?? "",
+						name: request.logger.name ?? "",
+						bindings: toProtoStruct(
+							request.logger.bindings as Record<string, unknown> | undefined,
+						),
+					}
+				: undefined,
+		};
 		const response = await this.unary<StartRuntimeSessionResponse__Output>(
 			(callback) => {
-				this.client.StartRuntimeSession({ requestJson }, callback);
+				this.client.StartRuntimeSession({ request: runtimeRequest }, callback);
 			},
 		);
 		return {
 			sessionId: response.sessionId ?? "",
-			startResultJson: response.startResultJson ?? "",
+			startResult: response.startResult
+				? {
+						sessionId: response.startResult.sessionId ?? "",
+						manifestPath: response.startResult.manifestPath ?? "",
+						transcriptPath: response.startResult.transcriptPath ?? "",
+						hookPath: response.startResult.hookPath ?? "",
+						messagesPath: response.startResult.messagesPath ?? "",
+					}
+				: undefined,
 		};
 	}
 
 	public async sendRuntimeSession(
 		sessionId: string,
-		requestJson: string,
-	): Promise<{ resultJson: string }> {
+		request: RpcChatRunTurnRequest,
+	): Promise<{ result: RpcChatTurnResult }> {
+		const runtimeRequest = {
+			config: {
+				workspaceRoot: request.config.workspaceRoot,
+				cwd: request.config.cwd ?? "",
+				provider: request.config.provider,
+				model: request.config.model,
+				mode: request.config.mode,
+				apiKey: request.config.apiKey,
+				systemPrompt: request.config.systemPrompt ?? "",
+				maxIterations: request.config.maxIterations ?? 0,
+				hasMaxIterations: typeof request.config.maxIterations === "number",
+				enableTools: request.config.enableTools,
+				enableSpawn: request.config.enableSpawn,
+				enableTeams: request.config.enableTeams,
+				autoApproveTools: request.config.autoApproveTools ?? false,
+				hasAutoApproveTools:
+					typeof request.config.autoApproveTools === "boolean",
+				teamName: request.config.teamName,
+				missionStepInterval: request.config.missionStepInterval,
+				missionTimeIntervalMs: request.config.missionTimeIntervalMs,
+				toolPolicies: Object.fromEntries(
+					Object.entries(request.config.toolPolicies ?? {}).map(
+						([name, policy]) => [
+							name,
+							{
+								enabled: policy.enabled ?? false,
+								autoApprove: policy.autoApprove ?? false,
+							},
+						],
+					),
+				),
+				initialMessages: (request.config.initialMessages ?? []).map(
+					(message) => ({
+						role: message.role ?? "",
+						content: toProtoValue(message.content),
+					}),
+				),
+				logger: request.config.logger
+					? {
+							enabled: request.config.logger.enabled ?? false,
+							level: request.config.logger.level ?? "",
+							destination: request.config.logger.destination ?? "",
+							name: request.config.logger.name ?? "",
+							bindings: toProtoStruct(
+								request.config.logger.bindings as
+									| Record<string, unknown>
+									| undefined,
+							),
+						}
+					: undefined,
+			},
+			messages: (request.messages ?? []).map((message) => ({
+				role: message.role ?? "",
+				content: toProtoValue(message.content),
+			})),
+			prompt: request.prompt,
+			attachments: request.attachments
+				? {
+						userImages: request.attachments.userImages ?? [],
+						userFiles: (request.attachments.userFiles ?? []).map((file) => ({
+							name: file.name,
+							content: file.content,
+						})),
+					}
+				: undefined,
+		};
 		const response = await this.unary<SendRuntimeSessionResponse__Output>(
 			(callback) => {
-				this.client.SendRuntimeSession({ sessionId, requestJson }, callback);
+				this.client.SendRuntimeSession(
+					{ sessionId, request: runtimeRequest },
+					callback,
+				);
 			},
 		);
-		return { resultJson: response.resultJson ?? "" };
+		return {
+			result: {
+				text: response.result?.text ?? "",
+				usage: {
+					inputTokens: Number(response.result?.usage?.inputTokens ?? 0),
+					outputTokens: Number(response.result?.usage?.outputTokens ?? 0),
+					cacheReadTokens: response.result?.usage?.hasCacheReadTokens
+						? Number(response.result?.usage?.cacheReadTokens ?? 0)
+						: undefined,
+					cacheWriteTokens: response.result?.usage?.hasCacheWriteTokens
+						? Number(response.result?.usage?.cacheWriteTokens ?? 0)
+						: undefined,
+					totalCost: response.result?.usage?.hasTotalCost
+						? Number(response.result?.usage?.totalCost ?? 0)
+						: undefined,
+				},
+				inputTokens: Number(response.result?.inputTokens ?? 0),
+				outputTokens: Number(response.result?.outputTokens ?? 0),
+				iterations: Number(response.result?.iterations ?? 0),
+				finishReason: response.result?.finishReason ?? "",
+				messages: (response.result?.messages ?? []).map((message) => ({
+					role: message.role ?? "",
+					content: fromProtoValue(message.content),
+				})),
+				toolCalls: (response.result?.toolCalls ?? []).map((call) => ({
+					name: call.name ?? "",
+					input: call.hasInput ? fromProtoValue(call.input) : undefined,
+					output: call.hasOutput ? fromProtoValue(call.output) : undefined,
+					error: call.error?.trim() || undefined,
+					durationMs: call.hasDurationMs
+						? Number(call.durationMs ?? 0)
+						: undefined,
+				})),
+			},
+		};
 	}
 
 	public async abortRuntimeSession(
@@ -553,7 +697,7 @@ export class RpcSessionClient {
 						enabled: input.enabled ?? true,
 						createdBy: input.createdBy,
 						tagsJson: input.tags ? JSON.stringify(input.tags) : "",
-						metadataJson: input.metadata ? JSON.stringify(input.metadata) : "",
+						metadata: toProtoStruct(input.metadata),
 					},
 					callback,
 				);
@@ -685,8 +829,8 @@ export class RpcSessionClient {
 			request.tagsJson = JSON.stringify(updates.tags);
 		}
 		if (updates.metadata !== undefined) {
-			request.hasMetadataJson = true;
-			request.metadataJson = JSON.stringify(updates.metadata);
+			request.hasMetadata = true;
+			request.metadata = toProtoStruct(updates.metadata);
 		}
 
 		const response = await this.unary<UpdateScheduleResponse__Output>(
@@ -835,14 +979,62 @@ export class RpcSessionClient {
 	}
 
 	public async runProviderAction(
-		requestJson: string,
-	): Promise<{ resultJson: string }> {
+		request: RpcProviderActionRequest,
+	): Promise<{ result: unknown }> {
+		const rpcRequest =
+			request.action === "listProviders"
+				? { listProviders: {} }
+				: request.action === "getProviderModels"
+					? { getProviderModels: { providerId: request.providerId } }
+					: request.action === "addProvider"
+						? {
+								addProvider: {
+									providerId: request.providerId,
+									name: request.name,
+									baseUrl: request.baseUrl,
+									apiKey: request.apiKey ?? "",
+									headers: request.headers ?? {},
+									timeoutMs: request.timeoutMs ?? 0,
+									hasTimeoutMs: typeof request.timeoutMs === "number",
+									models: request.models ?? [],
+									defaultModelId: request.defaultModelId ?? "",
+									modelsSourceUrl: request.modelsSourceUrl ?? "",
+									capabilities: request.capabilities ?? [],
+								},
+							}
+						: request.action === "saveProviderSettings"
+							? {
+									saveProviderSettings: {
+										providerId: request.providerId,
+										enabled: request.enabled ?? false,
+										hasEnabled: typeof request.enabled === "boolean",
+										apiKey: request.apiKey ?? "",
+										hasApiKey: request.apiKey !== undefined,
+										baseUrl: request.baseUrl ?? "",
+										hasBaseUrl: request.baseUrl !== undefined,
+									},
+								}
+							: {
+									clineAccount: {
+										operation: request.operation,
+										userId: "userId" in request ? (request.userId ?? "") : "",
+										organizationId:
+											"organizationId" in request
+												? (request.organizationId ?? "")
+												: "",
+										memberId:
+											"memberId" in request ? (request.memberId ?? "") : "",
+										clearOrganizationId:
+											"organizationId" in request &&
+											request.organizationId === null,
+									},
+								};
 		const response = await this.unary<RunProviderActionResponse__Output>(
 			(callback) => {
-				this.client.RunProviderAction({ requestJson }, callback);
+				this.client.RunProviderAction({ request: rpcRequest }, callback);
 			},
 		);
-		return { resultJson: response.resultJson ?? "" };
+		return { result: fromProtoValue(response.result) };
 	}
 
 	public async runProviderOAuthLogin(
@@ -864,12 +1056,22 @@ export class RpcSessionClient {
 		sessionId: string;
 		taskId?: string;
 		eventType: string;
-		payloadJson: string;
+		payload: Record<string, unknown>;
 		sourceClientId?: string;
 	}): Promise<{ eventId: string; accepted: boolean }> {
 		const response = await this.unary<PublishEventResponse__Output>(
 			(callback) => {
-				this.client.PublishEvent(input, callback);
+				this.client.PublishEvent(
+					{
+						eventId: input.eventId,
+						sessionId: input.sessionId,
+						taskId: input.taskId,
+						eventType: input.eventType,
+						payload: toProtoStruct(input.payload),
+						sourceClientId: input.sourceClientId,
+					},
+					callback,
+				);
 			},
 		);
 		return {
@@ -893,7 +1095,7 @@ export class RpcSessionClient {
 				sessionId: event.sessionId ?? "",
 				taskId: event.taskId?.trim() ? event.taskId : undefined,
 				eventType: event.eventType ?? "",
-				payloadJson: event.payloadJson ?? "",
+				payload: fromProtoStruct(event.payload) ?? {},
 				sourceClientId: event.sourceClientId?.trim()
 					? event.sourceClientId
 					: undefined,
@@ -931,9 +1133,8 @@ export class RpcSessionClient {
 			onEvent: (event) => {
 				if (event.eventType === RPC_TEAM_PROGRESS_EVENT_TYPE) {
 					try {
-						const parsed = JSON.parse(
-							event.payloadJson,
-						) as TeamProgressProjectionEvent;
+						const parsed =
+							event.payload as unknown as TeamProgressProjectionEvent;
 						if (
 							parsed.type === "team_progress_projection" &&
 							parsed.version === 1
@@ -948,7 +1149,7 @@ export class RpcSessionClient {
 				if (event.eventType === RPC_TEAM_LIFECYCLE_EVENT_TYPE) {
 					try {
 						handlers.onLifecycle?.(
-							JSON.parse(event.payloadJson) as TeamProgressLifecycleEvent,
+							event.payload as unknown as TeamProgressLifecycleEvent,
 						);
 					} catch {
 						// Ignore malformed payloads; event stream remains best effort.

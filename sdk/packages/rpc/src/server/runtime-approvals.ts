@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { toProtoStruct } from "../proto/serde.js";
 import type { PendingApproval } from "../types.js";
 import { nowIso, safeString } from "./helpers.js";
 import type {
@@ -65,7 +66,7 @@ export class RuntimeApprovalService {
 				sessionId,
 				taskId: state.taskId,
 				eventType: "approval.requested",
-				payloadJson: JSON.stringify(state),
+				payload: toProtoStruct(state as unknown as Record<string, unknown>),
 				sourceClientId: state.requesterClientId,
 			});
 		}
@@ -140,7 +141,7 @@ export class RuntimeApprovalService {
 			sessionId: approval.sessionId,
 			taskId: approval.taskId,
 			eventType: "approval.decided",
-			payloadJson: JSON.stringify({
+			payload: toProtoStruct({
 				approvalId,
 				approved: decided.approved,
 				reason: decided.reason ?? "",

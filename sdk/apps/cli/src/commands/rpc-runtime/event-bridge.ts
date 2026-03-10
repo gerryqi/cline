@@ -58,7 +58,7 @@ function publishRuntimeEvent(input: {
 		.publishEvent({
 			sessionId: trimmedSessionId,
 			eventType: input.eventType,
-			payloadJson: JSON.stringify(input.payload),
+			payload: (input.payload ?? {}) as Record<string, unknown>,
 			sourceClientId: "cli-rpc-runtime",
 		})
 		.catch(() => {

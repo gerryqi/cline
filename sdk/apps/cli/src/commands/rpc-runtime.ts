@@ -46,8 +46,8 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 	});
 
 	return {
-		startSession: async (requestJson) => {
-			const config = parseStartPayload(requestJson);
+		startSession: async (request) => {
+			const config = parseStartPayload(request);
 			applyHomeDir(config);
 			const runtimeLogger = createCliLoggerAdapter({
 				runtime: "rpc-runtime",
@@ -77,11 +77,11 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 			activeSessions.add(started.sessionId);
 			return {
 				sessionId: started.sessionId,
-				startResultJson: JSON.stringify(started),
+				startResult: started as unknown as Record<string, unknown>,
 			};
 		},
-		sendSession: async (sessionId, requestJson) => {
-			const request = parseSendPayload(requestJson);
+		sendSession: async (sessionId, requestInput) => {
+			const request = parseSendPayload(requestInput);
 			applyHomeDir(request.config);
 			const runtimeLogger = createCliLoggerAdapter({
 				runtime: "rpc-runtime",
@@ -113,7 +113,7 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 					finishReason: result.finishReason,
 					iterations: result.iterations,
 				});
-				return { resultJson: JSON.stringify(toRpcTurnResult(result)) };
+				return { result: toRpcTurnResult(result) };
 			} catch (error) {
 				if (!shouldRestoreSession(error)) {
 					runtimeLogger.error?.("RPC runtime turn send failed", { error });
@@ -150,7 +150,7 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 					finishReason: restoredResult.finishReason,
 					iterations: restoredResult.iterations,
 				});
-				return { resultJson: JSON.stringify(toRpcTurnResult(restoredResult)) };
+				return { result: toRpcTurnResult(restoredResult) };
 			} finally {
 				flushCliLoggerAdapters();
 				await cleanupMaterializedFiles(fileMaterialized.tempDir);
@@ -191,7 +191,7 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 			sessionModes.delete(id);
 			return { applied: known };
 		},
-		runProviderAction: async (requestJson) => runProviderAction(requestJson),
+		runProviderAction: async (request) => runProviderAction(request),
 		runProviderOAuthLogin: async (provider) => runProviderOAuthLogin(provider),
 		dispose: async () => {
 			unsubscribeEventBridge();

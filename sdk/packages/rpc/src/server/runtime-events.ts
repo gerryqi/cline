@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type * as grpc from "@grpc/grpc-js";
+import { fromProtoStruct, toProtoStruct } from "../proto/serde.js";
 import type { RoutedEvent } from "../types.js";
 import { normalizeSessionIds, nowIso, safeString } from "./helpers.js";
 import type {
@@ -28,7 +29,7 @@ export class RuntimeEventService {
 			sessionId,
 			taskId: safeString(request.taskId).trim() || undefined,
 			eventType: safeString(request.eventType).trim() || "unknown",
-			payloadJson: safeString(request.payloadJson),
+			payload: fromProtoStruct(request.payload) ?? {},
 			sourceClientId: safeString(request.sourceClientId).trim() || undefined,
 			ts: nowIso(),
 		};
@@ -59,7 +60,6 @@ export class RuntimeEventService {
 
 	public broadcastServerEvent(eventType: string, payload: unknown): void {
 		const eventId = `evt_${randomUUID()}`;
-		const payloadJson = JSON.stringify(payload);
 		const ts = nowIso();
 		for (const subscriber of this.subscribers.values()) {
 			subscriber.call.write({
@@ -67,7 +67,7 @@ export class RuntimeEventService {
 				sessionId: "__rpc__",
 				taskId: "",
 				eventType,
-				payloadJson,
+				payload: toProtoStruct(payload as Record<string, unknown>),
 				sourceClientId: "rpc-server",
 				ts,
 			});
@@ -87,7 +87,7 @@ export class RuntimeEventService {
 				sessionId: event.sessionId,
 				taskId: event.taskId ?? "",
 				eventType: event.eventType,
-				payloadJson: event.payloadJson,
+				payload: toProtoStruct(event.payload),
 				sourceClientId: event.sourceClientId ?? "",
 				ts: event.ts,
 			});

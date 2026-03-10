@@ -9,6 +9,7 @@ import {
 	startRpcServer,
 	stopRpcServer,
 } from "@cline/rpc";
+import type { RpcChatStartSessionRequest } from "@cline/shared";
 import { createCliLoggerAdapter } from "../logging/adapter";
 import { createRpcRuntimeHandlers } from "./rpc-runtime";
 
@@ -84,7 +85,7 @@ function isUnimplementedError(error: unknown): boolean {
 async function hasRuntimeMethods(address: string): Promise<boolean> {
 	const client = new RpcSessionClient({ address });
 	try {
-		const probeRequest = {
+		const probeRequest: RpcChatStartSessionRequest = {
 			workspaceRoot: process.cwd(),
 			cwd: process.cwd(),
 			provider: "cline",
@@ -99,10 +100,8 @@ async function hasRuntimeMethods(address: string): Promise<boolean> {
 			missionStepInterval: 3,
 			missionTimeIntervalMs: 120000,
 		};
-		const started = await client.startRuntimeSession(
-			JSON.stringify(probeRequest),
-		);
-		if (!started.sessionId.trim() || !started.startResultJson.trim()) {
+		const started = await client.startRuntimeSession(probeRequest);
+		if (!started.sessionId.trim() || !started.startResult) {
 			return false;
 		}
 		let stopSupported = true;

@@ -14,7 +14,7 @@ async function main() {
 	await runRpcRuntimeCommandBridge({
 		clientId,
 		writeLine,
-		parseSendResult: (resultRaw) => JSON.parse(resultRaw) as unknown,
+		parseSendResult: (resultRaw) => resultRaw,
 	});
 }
 

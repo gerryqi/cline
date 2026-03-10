@@ -286,17 +286,6 @@ function toAgentResult(
 	};
 }
 
-function parseEventPayload(payloadJson: string): Record<string, unknown> {
-	if (!payloadJson.trim()) {
-		return {};
-	}
-	try {
-		return JSON.parse(payloadJson) as Record<string, unknown>;
-	} catch {
-		return {};
-	}
-}
-
 function parseToolApprovalInput(inputJson: unknown): unknown {
 	if (typeof inputJson !== "string" || !inputJson.trim()) {
 		return undefined;
@@ -306,6 +295,46 @@ function parseToolApprovalInput(inputJson: unknown): unknown {
 	} catch {
 		return undefined;
 	}
+}
+
+function normalizeStartResult(
+	sessionId: string,
+	startResult: Record<string, unknown> | undefined,
+): StartSessionOutput {
+	const readString = (key: string): string => {
+		const value = startResult?.[key];
+		return typeof value === "string" ? value : "";
+	};
+	const manifestPath = readString("manifestPath");
+	const transcriptPath = readString("transcriptPath");
+	const hookPath = readString("hookPath");
+	const messagesPath = readString("messagesPath");
+	let manifest = startResult?.manifest as SessionManifest | undefined;
+	if (!manifest && manifestPath && existsSync(manifestPath)) {
+		try {
+			manifest = JSON.parse(
+				readFileSync(manifestPath, "utf8"),
+			) as SessionManifest;
+		} catch {
+			manifest = undefined;
+		}
+	}
+	if (!manifest) {
+		throw new Error("rpc runtime start returned no manifest");
+	}
+	if (!manifestPath || !transcriptPath || !hookPath || !messagesPath) {
+		throw new Error(
+			"rpc runtime start returned incomplete session artifact paths",
+		);
+	}
+	return {
+		sessionId,
+		manifest,
+		manifestPath,
+		transcriptPath,
+		hookPath,
+		messagesPath,
+	};
 }
 
 function resolveAttachmentPath(filePath: string, cwd: string): string {
@@ -384,19 +413,13 @@ function createRpcRuntimeCliSessionManager(
 	return {
 		start: async (input) => {
 			const request = toRpcStartRequest(input, options?.toolPolicies);
-			const response = await client.startRuntimeSession(
-				JSON.stringify(request),
-			);
+			const response = await client.startRuntimeSession(request);
 			const sessionId = response.sessionId.trim();
 			if (!sessionId) {
 				throw new Error("rpc runtime start returned empty session id");
 			}
 			sessionConfigs.set(sessionId, request);
-			const startResultRaw = response.startResultJson.trim();
-			if (!startResultRaw) {
-				throw new Error("rpc runtime start returned no session metadata");
-			}
-			return JSON.parse(startResultRaw) as StartSessionOutput;
+			return normalizeStartResult(sessionId, response.startResult);
 		},
 		send: async (input) => {
 			const config = sessionConfigs.get(input.sessionId);
@@ -429,7 +452,7 @@ function createRpcRuntimeCliSessionManager(
 				},
 				{
 					onEvent: (event) => {
-						const payload = parseEventPayload(event.payloadJson);
+						const payload = event.payload;
 						if (event.eventType === "approval.requested") {
 							const approvalId =
 								typeof payload.approvalId === "string"
@@ -527,15 +550,11 @@ function createRpcRuntimeCliSessionManager(
 				},
 			);
 			const response = await client
-				.sendRuntimeSession(input.sessionId, JSON.stringify(request))
+				.sendRuntimeSession(input.sessionId, request)
 				.finally(() => {
 					stopStreaming();
 				});
-			const resultRaw = response.resultJson.trim();
-			if (!resultRaw) {
-				throw new Error("rpc runtime send returned empty result");
-			}
-			const result = JSON.parse(resultRaw) as RpcChatTurnResult;
+			const result = response.result as RpcChatTurnResult;
 			if (result.text) {
 				if (result.text.startsWith(streamedText)) {
 					const remainder = result.text.slice(streamedText.length);

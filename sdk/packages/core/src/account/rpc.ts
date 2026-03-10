@@ -73,7 +73,9 @@ export async function executeRpcClineAccountAction(
 }
 
 export interface RpcProviderActionExecutor {
-	runProviderAction(requestJson: string): Promise<{ resultJson: string }>;
+	runProviderAction(request: RpcProviderActionRequest): Promise<{
+		result: unknown;
+	}>;
 }
 
 export class RpcClineAccountService implements ClineAccountOperations {
@@ -164,13 +166,7 @@ export class RpcClineAccountService implements ClineAccountOperations {
 	}
 
 	private async request<T>(request: RpcClineAccountActionRequest): Promise<T> {
-		const response = await this.executor.runProviderAction(
-			JSON.stringify(request),
-		);
-		const payload = response.resultJson?.trim();
-		if (!payload) {
-			throw new Error("provider action returned an empty response payload");
-		}
-		return JSON.parse(payload) as T;
+		const response = await this.executor.runProviderAction(request);
+		return response.result as T;
 	}
 }

@@ -37,17 +37,6 @@ export type RpcRuntimeStreamRelay = {
 	stop: () => void;
 };
 
-function parsePayload(payloadJson: string): Record<string, unknown> {
-	if (!payloadJson.trim()) {
-		return {};
-	}
-	try {
-		return JSON.parse(payloadJson) as Record<string, unknown>;
-	} catch {
-		return {};
-	}
-}
-
 function normalizeSessionIds(sessionIds: string[]): string[] {
 	const seen = new Set<string>();
 	const out: string[] = [];
@@ -128,7 +117,7 @@ export function createRpcRuntimeStreamRelay(options: {
 			activeSessionIds,
 			{
 				onEvent: (event: RpcRuntimeEvent) => {
-					const payload = parsePayload(event.payloadJson);
+					const payload = event.payload;
 					if (event.eventType === "runtime.chat.text_delta") {
 						const prev = accumulatedBySession.get(event.sessionId) ?? "";
 						const resolved = resolveTextDelta(payload, prev);

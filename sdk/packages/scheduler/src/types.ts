@@ -106,18 +106,20 @@ export interface ScheduleExecutionStats {
 
 export interface SchedulerRuntimeStartResult {
 	sessionId: string;
-	startResultJson?: string;
+	startResult?: Record<string, unknown>;
 }
 
 export interface SchedulerRuntimeSendResult {
-	resultJson: string;
+	result: RpcChatTurnResult;
 }
 
 export interface SchedulerRuntimeHandlers {
-	startSession(requestJson: string): Promise<SchedulerRuntimeStartResult>;
+	startSession(
+		request: RpcChatStartSessionRequest,
+	): Promise<SchedulerRuntimeStartResult>;
 	sendSession(
 		sessionId: string,
-		requestJson: string,
+		request: RpcChatRunTurnRequest,
 	): Promise<SchedulerRuntimeSendResult>;
 	abortSession(sessionId: string): Promise<{ applied: boolean }>;
 	stopSession(sessionId: string): Promise<{ applied: boolean }>;
@@ -149,3 +151,9 @@ export interface UpcomingScheduledRun {
 	name: string;
 	nextRunAt: string;
 }
+
+import type {
+	RpcChatRunTurnRequest,
+	RpcChatStartSessionRequest,
+	RpcChatTurnResult,
+} from "@cline/shared";

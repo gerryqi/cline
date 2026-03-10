@@ -1,13 +1,18 @@
 import { randomUUID } from "node:crypto";
 import type { SchedulerService } from "@cline/scheduler";
+import type { RpcProviderActionRequest } from "@cline/shared";
 import type * as grpc from "@grpc/grpc-js";
+import {
+	fromProtoStruct,
+	fromProtoValue,
+	toProtoValue,
+} from "../proto/serde.js";
 import type { RpcRuntimeHandlers, RpcSessionBackend } from "../types.js";
 import {
 	messageToRow,
 	normalizeMetadataMap,
 	normalizeStatus,
 	nowIso,
-	parseJsonObjectString,
 	rowToMessage,
 	safeString,
 } from "./helpers.js";
@@ -90,7 +95,7 @@ interface SessionState {
 	status: string;
 	workspaceRoot?: string;
 	clientId?: string;
-	metadataJson?: string;
+	metadata?: Record<string, unknown>;
 }
 
 interface TaskState {
@@ -98,8 +103,8 @@ interface TaskState {
 	taskId: string;
 	title?: string;
 	status: string;
-	payloadJson?: string;
-	resultJson?: string;
+	payload?: Record<string, unknown>;
+	result?: Record<string, unknown>;
 }
 
 interface RegisteredClientState {
@@ -203,8 +208,8 @@ export class ClineGatewayRuntime {
 				safeString(request.workspaceRoot).trim() || existing.workspaceRoot;
 			existing.clientId =
 				safeString(request.clientId).trim() || existing.clientId;
-			existing.metadataJson =
-				safeString(request.metadataJson).trim() || existing.metadataJson;
+			existing.metadata =
+				fromProtoStruct(request.metadata) ?? existing.metadata;
 			return { sessionId, created: false, status: existing.status };
 		}
 		const status = safeString(request.status).trim() || "running";
@@ -213,7 +218,7 @@ export class ClineGatewayRuntime {
 			status,
 			workspaceRoot: safeString(request.workspaceRoot).trim() || undefined,
 			clientId: safeString(request.clientId).trim() || undefined,
-			metadataJson: safeString(request.metadataJson).trim() || undefined,
+			metadata: fromProtoStruct(request.metadata),
 		});
 		return { sessionId, created: true, status };
 	}
@@ -262,8 +267,11 @@ export class ClineGatewayRuntime {
 			endedAt: request.endedAt ? request.endedAt : undefined,
 			exitCode: request.hasExitCode ? (request.exitCode ?? null) : undefined,
 			prompt: request.hasPrompt ? (request.prompt ?? null) : undefined,
-			metadata: request.hasMetadataJson
-				? (parseJsonObjectString(safeString(request.metadataJson)) ?? null)
+			metadata: request.hasMetadata
+				? ((fromProtoStruct(request.metadata) ?? null) as Record<
+						string,
+						unknown
+					> | null)
 				: undefined,
 			parentSessionId: request.hasParentSessionId
 				? (request.parentSessionId ?? null)
@@ -343,7 +351,68 @@ export class ClineGatewayRuntime {
 		if (!handler) {
 			throw new Error("runtime start handler is not configured");
 		}
-		const payload = safeString(request.requestJson);
+		const payload = request.request
+			? {
+					workspaceRoot: safeString(request.request.workspaceRoot),
+					cwd: safeString(request.request.cwd),
+					provider: safeString(request.request.provider),
+					model: safeString(request.request.model),
+					mode: safeString(request.request.mode) as "act" | "plan",
+					apiKey: safeString(request.request.apiKey),
+					systemPrompt: safeString(request.request.systemPrompt),
+					maxIterations: request.request.hasMaxIterations
+						? request.request.maxIterations
+						: undefined,
+					enableTools: request.request.enableTools === true,
+					enableSpawn: request.request.enableSpawn === true,
+					enableTeams: request.request.enableTeams === true,
+					autoApproveTools: request.request.hasAutoApproveTools
+						? request.request.autoApproveTools === true
+						: undefined,
+					teamName: safeString(request.request.teamName),
+					missionStepInterval: request.request.missionStepInterval ?? 3,
+					missionTimeIntervalMs:
+						request.request.missionTimeIntervalMs ?? 120000,
+					toolPolicies: Object.fromEntries(
+						Object.entries(request.request.toolPolicies ?? {}).map(
+							([name, policy]) => [
+								name,
+								{
+									enabled: policy?.enabled === true,
+									autoApprove: policy?.autoApprove === true,
+								},
+							],
+						),
+					),
+					initialMessages: (request.request.initialMessages ?? []).map(
+						(message) => ({
+							role: safeString(message.role),
+							content: fromProtoValue(message.content),
+						}),
+					),
+					logger: request.request.logger
+						? {
+								enabled: request.request.logger.enabled === true,
+								level: safeString(request.request.logger.level) as
+									| "trace"
+									| "debug"
+									| "info"
+									| "warn"
+									| "error"
+									| "fatal"
+									| "silent",
+								destination: safeString(request.request.logger.destination),
+								name: safeString(request.request.logger.name),
+								bindings: fromProtoStruct(request.request.logger.bindings) as
+									| Record<string, string | number | boolean>
+									| undefined,
+							}
+						: undefined,
+				}
+			: undefined;
+		if (!payload) {
+			throw new Error("runtime start request is required");
+		}
 		const result = await handler(payload);
 		const sessionId = safeString(result.sessionId).trim();
 		if (!sessionId) {
@@ -351,7 +420,15 @@ export class ClineGatewayRuntime {
 		}
 		return {
 			sessionId,
-			startResultJson: safeString(result.startResultJson),
+			startResult: result.startResult
+				? {
+						sessionId: safeString(result.startResult.sessionId),
+						manifestPath: safeString(result.startResult.manifestPath),
+						transcriptPath: safeString(result.startResult.transcriptPath),
+						hookPath: safeString(result.startResult.hookPath),
+						messagesPath: safeString(result.startResult.messagesPath),
+					}
+				: undefined,
 		};
 	}
 
@@ -366,9 +443,125 @@ export class ClineGatewayRuntime {
 		if (!sessionId) {
 			throw new Error("sessionId is required");
 		}
-		const payload = safeString(request.requestJson);
+		const payload = request.request
+			? {
+					config: {
+						workspaceRoot: safeString(request.request.config?.workspaceRoot),
+						cwd: safeString(request.request.config?.cwd),
+						provider: safeString(request.request.config?.provider),
+						model: safeString(request.request.config?.model),
+						mode: safeString(request.request.config?.mode) as "act" | "plan",
+						apiKey: safeString(request.request.config?.apiKey),
+						systemPrompt: safeString(request.request.config?.systemPrompt),
+						maxIterations: request.request.config?.hasMaxIterations
+							? request.request.config?.maxIterations
+							: undefined,
+						enableTools: request.request.config?.enableTools === true,
+						enableSpawn: request.request.config?.enableSpawn === true,
+						enableTeams: request.request.config?.enableTeams === true,
+						autoApproveTools: request.request.config?.hasAutoApproveTools
+							? request.request.config?.autoApproveTools === true
+							: undefined,
+						teamName: safeString(request.request.config?.teamName),
+						missionStepInterval:
+							request.request.config?.missionStepInterval ?? 3,
+						missionTimeIntervalMs:
+							request.request.config?.missionTimeIntervalMs ?? 120000,
+						toolPolicies: Object.fromEntries(
+							Object.entries(request.request.config?.toolPolicies ?? {}).map(
+								([name, policy]) => [
+									name,
+									{
+										enabled: policy?.enabled === true,
+										autoApprove: policy?.autoApprove === true,
+									},
+								],
+							),
+						),
+						initialMessages: (
+							request.request.config?.initialMessages ?? []
+						).map((message) => ({
+							role: safeString(message.role),
+							content: fromProtoValue(message.content),
+						})),
+						logger: request.request.config?.logger
+							? {
+									enabled: request.request.config.logger.enabled === true,
+									level: safeString(request.request.config.logger.level) as
+										| "trace"
+										| "debug"
+										| "info"
+										| "warn"
+										| "error"
+										| "fatal"
+										| "silent",
+									destination: safeString(
+										request.request.config.logger.destination,
+									),
+									name: safeString(request.request.config.logger.name),
+									bindings: fromProtoStruct(
+										request.request.config.logger.bindings,
+									) as Record<string, string | number | boolean> | undefined,
+								}
+							: undefined,
+					},
+					messages: (request.request.messages ?? []).map((message) => ({
+						role: safeString(message.role),
+						content: fromProtoValue(message.content),
+					})),
+					prompt: safeString(request.request.prompt),
+					attachments: request.request.attachments
+						? {
+								userImages: request.request.attachments.userImages ?? [],
+								userFiles: (request.request.attachments.userFiles ?? []).map(
+									(file) => ({
+										name: safeString(file.name),
+										content: safeString(file.content),
+									}),
+								),
+							}
+						: undefined,
+				}
+			: undefined;
+		if (!payload) {
+			throw new Error("runtime send request is required");
+		}
 		const result = await handler(sessionId, payload);
-		return { resultJson: safeString(result.resultJson) };
+		return {
+			result: {
+				text: safeString(result.result.text),
+				usage: {
+					inputTokens: result.result.usage.inputTokens,
+					outputTokens: result.result.usage.outputTokens,
+					cacheReadTokens: result.result.usage.cacheReadTokens ?? 0,
+					hasCacheReadTokens:
+						typeof result.result.usage.cacheReadTokens === "number",
+					cacheWriteTokens: result.result.usage.cacheWriteTokens ?? 0,
+					hasCacheWriteTokens:
+						typeof result.result.usage.cacheWriteTokens === "number",
+					totalCost: result.result.usage.totalCost ?? 0,
+					hasTotalCost: typeof result.result.usage.totalCost === "number",
+				},
+				inputTokens: result.result.inputTokens,
+				outputTokens: result.result.outputTokens,
+				iterations: result.result.iterations,
+				finishReason: safeString(result.result.finishReason),
+				messages: (result.result.messages ?? []).map((message) => ({
+					role: safeString(message.role),
+					content: toProtoValue(message.content),
+				})),
+				toolCalls: (result.result.toolCalls ?? []).map((toolCall) => ({
+					name: safeString(toolCall.name),
+					input: toProtoValue(toolCall.input),
+					hasInput: toolCall.input !== undefined,
+					output: toProtoValue(toolCall.output),
+					hasOutput: toolCall.output !== undefined,
+					error: safeString(toolCall.error),
+					durationMs: toolCall.durationMs ?? 0,
+					hasDurationMs: typeof toolCall.durationMs === "number",
+				})),
+			},
+		};
 	}
 
 	public async stopRuntimeSession(
@@ -408,9 +601,111 @@ export class ClineGatewayRuntime {
 		if (!handler) {
 			throw new Error("provider action handler is not configured");
 		}
-		const payload = safeString(request.requestJson);
+		if (!request.request) {
+			throw new Error("provider action request is required");
+		}
+		let payload: RpcProviderActionRequest;
+		if (request.request.listProviders) {
+			payload = { action: "listProviders" };
+		} else if (request.request.getProviderModels) {
+			payload = {
+				action: "getProviderModels",
+				providerId: safeString(request.request.getProviderModels.providerId),
+			};
+		} else if (request.request.addProvider) {
+			payload = {
+				action: "addProvider",
+				providerId: safeString(request.request.addProvider.providerId),
+				name: safeString(request.request.addProvider.name),
+				baseUrl: safeString(request.request.addProvider.baseUrl),
+				apiKey: safeString(request.request.addProvider.apiKey) || undefined,
+				headers: request.request.addProvider.headers ?? undefined,
+				timeoutMs: request.request.addProvider.hasTimeoutMs
+					? request.request.addProvider.timeoutMs
+					: undefined,
+				models: request.request.addProvider.models ?? undefined,
+				defaultModelId:
+					safeString(request.request.addProvider.defaultModelId) || undefined,
+				modelsSourceUrl:
+					safeString(request.request.addProvider.modelsSourceUrl) || undefined,
+				capabilities: request.request.addProvider.capabilities as
+					| Array<
+							"reasoning" | "prompt-cache" | "streaming" | "tools" | "vision"
+					  >
+					| undefined,
+			};
+		} else if (request.request.saveProviderSettings) {
+			payload = {
+				action: "saveProviderSettings",
+				providerId: safeString(request.request.saveProviderSettings.providerId),
+				enabled: request.request.saveProviderSettings.hasEnabled
+					? request.request.saveProviderSettings.enabled
+					: undefined,
+				apiKey: request.request.saveProviderSettings.hasApiKey
+					? request.request.saveProviderSettings.apiKey
+					: undefined,
+				baseUrl: request.request.saveProviderSettings.hasBaseUrl
+					? request.request.saveProviderSettings.baseUrl
+					: undefined,
+			};
+		} else {
+			const operation = safeString(request.request.clineAccount?.operation);
+			if (operation === "fetchMe") {
+				payload = { action: "clineAccount", operation: "fetchMe" };
+			} else if (operation === "fetchBalance") {
+				payload = {
+					action: "clineAccount",
+					operation: "fetchBalance",
+					userId: safeString(request.request.clineAccount?.userId) || undefined,
+				};
+			} else if (operation === "fetchUsageTransactions") {
+				payload = {
+					action: "clineAccount",
+					operation: "fetchUsageTransactions",
+					userId: safeString(request.request.clineAccount?.userId) || undefined,
+				};
+			} else if (operation === "fetchPaymentTransactions") {
+				payload = {
+					action: "clineAccount",
+					operation: "fetchPaymentTransactions",
+					userId: safeString(request.request.clineAccount?.userId) || undefined,
+				};
+			} else if (operation === "fetchUserOrganizations") {
+				payload = {
+					action: "clineAccount",
+					operation: "fetchUserOrganizations",
+				};
+			} else if (operation === "fetchOrganizationBalance") {
+				payload = {
+					action: "clineAccount",
+					operation: "fetchOrganizationBalance",
+					organizationId: safeString(
+						request.request.clineAccount?.organizationId,
+					),
+				};
+			} else if (operation === "fetchOrganizationUsageTransactions") {
+				payload = {
+					action: "clineAccount",
+					operation: "fetchOrganizationUsageTransactions",
+					organizationId: safeString(
+						request.request.clineAccount?.organizationId,
+					),
+					memberId:
+						safeString(request.request.clineAccount?.memberId) || undefined,
+				};
+			} else {
+				payload = {
+					action: "clineAccount",
+					operation: "switchAccount",
+					organizationId: request.request.clineAccount?.clearOrganizationId
+						? null
+						: safeString(request.request.clineAccount?.organizationId) ||
+							undefined,
+				};
+			}
+		}
 		const result = await handler(payload);
-		return { resultJson: safeString(result.resultJson) };
+		return { result: toProtoValue(result.result) };
 	}
 
 	public async runProviderOAuthLogin(
@@ -443,14 +738,14 @@ export class ClineGatewayRuntime {
 			taskId,
 			title: safeString(request.title).trim() || undefined,
 			status: "running",
-			payloadJson: safeString(request.payloadJson).trim() || undefined,
+			payload: fromProtoStruct(request.payload) ?? undefined,
 		});
 		this.eventService.publishEvent({
 			eventId: "",
 			sessionId,
 			taskId,
 			eventType: "task.started",
-			payloadJson: safeString(request.payloadJson),
+			payload: fromProtoStruct(request.payload) ?? {},
 			sourceClientId: "",
 		});
 		return { sessionId, taskId, status: "running", updated: true };
@@ -469,13 +764,13 @@ export class ClineGatewayRuntime {
 			return { sessionId, taskId, status: nextStatus, updated: false };
 		}
 		existing.status = nextStatus;
-		existing.resultJson = safeString(request.resultJson).trim() || undefined;
+		existing.result = fromProtoStruct(request.result) ?? undefined;
 		this.eventService.publishEvent({
 			eventId: "",
 			sessionId,
 			taskId,
 			eventType: "task.completed",
-			payloadJson: safeString(request.resultJson),
+			payload: fromProtoStruct(request.result) ?? {},
 			sourceClientId: "",
 		});
 		return { sessionId, taskId, status: nextStatus, updated: true };
