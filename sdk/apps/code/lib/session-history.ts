@@ -5,6 +5,11 @@ export type SessionHistoryStatus =
 	| "cancelled"
 	| "idle";
 
+export type SessionMetadata = {
+	title?: string;
+	[key: string]: unknown;
+};
+
 export interface SessionHistoryItem {
 	sessionId: string;
 	status: SessionHistoryStatus;
@@ -17,4 +22,12 @@ export interface SessionHistoryItem {
 	prompt?: string;
 	startedAt: string;
 	endedAt?: string;
+	metadata?: SessionMetadata;
+}
+
+export function getSessionMetadataTitle(metadata?: SessionMetadata): string {
+	if (!metadata) {
+		return "";
+	}
+	return typeof metadata.title === "string" ? metadata.title.trim() : "";
 }

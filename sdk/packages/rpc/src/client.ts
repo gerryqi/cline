@@ -85,6 +85,7 @@ function toMessage(row: RpcSessionRow): SessionRecord {
 		hookPath: row.hookPath,
 		messagesPath: row.messagesPath ?? "",
 		updatedAt: row.updatedAt,
+		metadataJson: row.metadata ? JSON.stringify(row.metadata) : "",
 	};
 }
 
@@ -113,6 +114,7 @@ function fromMessage(message: SessionRecord__Output): RpcSessionRow {
 		conversationId: message.conversationId || undefined,
 		isSubagent: message.isSubagent === true,
 		prompt: message.prompt || undefined,
+		metadata: parseJsonObject(message.metadataJson ?? undefined),
 		transcriptPath: message.transcriptPath ?? "",
 		hookPath: message.hookPath ?? "",
 		messagesPath: message.messagesPath || undefined,
@@ -306,6 +308,12 @@ export class RpcSessionClient {
 		if (input.prompt !== undefined) {
 			request.hasPrompt = true;
 			request.prompt = input.prompt ?? "";
+		}
+		if (input.metadata !== undefined) {
+			request.hasMetadataJson = true;
+			request.metadataJson = input.metadata
+				? JSON.stringify(input.metadata)
+				: "";
 		}
 		if (input.parentSessionId !== undefined) {
 			request.hasParentSessionId = true;

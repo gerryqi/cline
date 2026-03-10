@@ -58,6 +58,7 @@ export interface SessionRowShape {
 	conversation_id?: string | null;
 	is_subagent: number;
 	prompt?: string | null;
+	metadata_json?: string | null;
 	transcript_path: string;
 	hook_path: string;
 	messages_path?: string | null;
@@ -79,6 +80,7 @@ export interface CreateRootSessionInput {
 	enableSpawn: boolean;
 	enableTeams: boolean;
 	prompt?: string;
+	metadata?: Record<string, unknown>;
 	transcriptPath: string;
 	hookPath: string;
 	messagesPath: string;
@@ -98,6 +100,7 @@ export interface CreateRootSessionWithArtifactsInput {
 	enableSpawn: boolean;
 	enableTeams: boolean;
 	prompt?: string;
+	metadata?: Record<string, unknown>;
 	startedAt?: string;
 }
 
@@ -173,6 +176,15 @@ function sanitizeTeamName(name: string): string {
 		.toLowerCase()
 		.replace(/[^a-z0-9._-]+/g, "-")
 		.replace(/^-+|-+$/g, "");
+}
+
+function stringifyMetadataJson(
+	metadata: Record<string, unknown> | null | undefined,
+): string | null {
+	if (!metadata || Object.keys(metadata).length === 0) {
+		return null;
+	}
+	return JSON.stringify(metadata);
 }
 
 interface PersistedTeamEnvelope {
@@ -461,6 +473,7 @@ export class CoreSessionService {
 			enable_spawn: input.enableSpawn,
 			enable_teams: input.enableTeams,
 			prompt: input.prompt?.trim() || undefined,
+			metadata: input.metadata,
 			messages_path: messagesPath,
 		});
 		this.createRootSession({
@@ -478,6 +491,7 @@ export class CoreSessionService {
 			enableSpawn: input.enableSpawn,
 			enableTeams: input.enableTeams,
 			prompt: manifest.prompt,
+			metadata: manifest.metadata,
 			transcriptPath,
 			hookPath,
 			messagesPath,
@@ -507,8 +521,8 @@ export class CoreSessionService {
 				session_id, source, pid, started_at, ended_at, exit_code, status, status_lock, interactive,
 				provider, model, cwd, workspace_root, team_name, enable_tools, enable_spawn, enable_teams,
 				parent_session_id, parent_agent_id, agent_id, conversation_id, is_subagent, prompt,
-				transcript_path, hook_path, messages_path, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				metadata_json, transcript_path, hook_path, messages_path, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			[
 				input.sessionId,
 				input.source,
@@ -533,6 +547,7 @@ export class CoreSessionService {
 				null,
 				0,
 				input.prompt ?? null,
+				stringifyMetadataJson(input.metadata),
 				input.transcriptPath,
 				input.hookPath,
 				input.messagesPath,
@@ -577,6 +592,59 @@ export class CoreSessionService {
 			}
 		}
 		return { updated: false };
+	}
+
+	updateSession(input: {
+		sessionId: string;
+		prompt?: string | null;
+		metadata?: Record<string, unknown> | null;
+	}): { updated: boolean } {
+		const row = this.store.queryOne<{ session_id?: string }>(
+			`SELECT session_id FROM sessions WHERE session_id = ?`,
+			[input.sessionId],
+		);
+		if (!row?.session_id) {
+			return { updated: false };
+		}
+
+		const fields: string[] = [];
+		const params: unknown[] = [];
+		if (input.prompt !== undefined) {
+			fields.push("prompt = ?");
+			params.push(input.prompt ?? null);
+		}
+		if (input.metadata !== undefined) {
+			fields.push("metadata_json = ?");
+			params.push(stringifyMetadataJson(input.metadata));
+		}
+		if (fields.length > 0) {
+			fields.push("updated_at = ?");
+			params.push(nowIso(), input.sessionId);
+			this.store.run(
+				`UPDATE sessions SET ${fields.join(", ")} WHERE session_id = ?`,
+				params,
+			);
+		}
+
+		const manifestPath = this.sessionManifestPath(input.sessionId, false);
+		if (existsSync(manifestPath)) {
+			try {
+				const parsed = SessionManifestSchema.parse(
+					JSON.parse(readFileSync(manifestPath, "utf8")) as SessionManifest,
+				);
+				if (input.prompt !== undefined) {
+					parsed.prompt = input.prompt ?? undefined;
+				}
+				if (input.metadata !== undefined) {
+					parsed.metadata = input.metadata ?? undefined;
+				}
+				this.writeSessionManifestFile(manifestPath, parsed);
+			} catch {
+				// Ignore malformed manifests and keep DB as source of truth.
+			}
+		}
+
+		return { updated: true };
 	}
 
 	queueSpawnRequest(event: HookEventPayload): void {
@@ -677,8 +745,8 @@ export class CoreSessionService {
 					session_id, source, pid, started_at, ended_at, exit_code, status, status_lock, interactive,
 					provider, model, cwd, workspace_root, team_name, enable_tools, enable_spawn, enable_teams,
 					parent_session_id, parent_agent_id, agent_id, conversation_id, is_subagent, prompt,
-					transcript_path, hook_path, messages_path, updated_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					metadata_json, transcript_path, hook_path, messages_path, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				[
 					sessionId,
 					SUBSESSION_SOURCE,
@@ -703,6 +771,7 @@ export class CoreSessionService {
 					input.conversationId,
 					1,
 					prompt,
+					null,
 					transcriptPath,
 					hookPath,
 					messagesPath,
@@ -873,8 +942,8 @@ export class CoreSessionService {
 				session_id, source, pid, started_at, ended_at, exit_code, status, status_lock, interactive,
 				provider, model, cwd, workspace_root, team_name, enable_tools, enable_spawn, enable_teams,
 				parent_session_id, parent_agent_id, agent_id, conversation_id, is_subagent, prompt,
-				transcript_path, hook_path, messages_path, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				metadata_json, transcript_path, hook_path, messages_path, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			[
 				sessionId,
 				SUBSESSION_SOURCE,
@@ -899,6 +968,7 @@ export class CoreSessionService {
 				null,
 				1,
 				message || `Team task for ${agentId}`,
+				null,
 				transcriptPath,
 				hookPath,
 				messagesPath,
@@ -1019,7 +1089,7 @@ export class CoreSessionService {
 			`SELECT session_id, source, pid, started_at, ended_at, exit_code, status, status_lock, interactive,
 					provider, model, cwd, workspace_root, team_name, enable_tools, enable_spawn, enable_teams,
 					parent_session_id, parent_agent_id, agent_id, conversation_id, is_subagent, prompt,
-					transcript_path, hook_path, messages_path, updated_at
+					metadata_json, transcript_path, hook_path, messages_path, updated_at
 			 FROM sessions
 			 ORDER BY started_at DESC
 			 LIMIT ?`,
@@ -1036,7 +1106,7 @@ export class CoreSessionService {
 				`SELECT session_id, source, pid, started_at, ended_at, exit_code, status, status_lock, interactive,
 						provider, model, cwd, workspace_root, team_name, enable_tools, enable_spawn, enable_teams,
 						parent_session_id, parent_agent_id, agent_id, conversation_id, is_subagent, prompt,
-						transcript_path, hook_path, messages_path, updated_at
+						metadata_json, transcript_path, hook_path, messages_path, updated_at
 				 FROM sessions
 				 ORDER BY started_at DESC
 				 LIMIT ?`,

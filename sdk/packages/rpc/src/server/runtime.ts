@@ -7,6 +7,7 @@ import {
 	normalizeMetadataMap,
 	normalizeStatus,
 	nowIso,
+	parseJsonObjectString,
 	rowToMessage,
 	safeString,
 } from "./helpers.js";
@@ -261,6 +262,9 @@ export class ClineGatewayRuntime {
 			endedAt: request.endedAt ? request.endedAt : undefined,
 			exitCode: request.hasExitCode ? (request.exitCode ?? null) : undefined,
 			prompt: request.hasPrompt ? (request.prompt ?? null) : undefined,
+			metadata: request.hasMetadataJson
+				? (parseJsonObjectString(safeString(request.metadataJson)) ?? null)
+				: undefined,
 			parentSessionId: request.hasParentSessionId
 				? (request.parentSessionId ?? null)
 				: undefined,

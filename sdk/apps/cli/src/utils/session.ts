@@ -641,3 +641,16 @@ export async function deleteSession(
 ): Promise<{ deleted: boolean }> {
 	return await (await getCoreSessions()).deleteSession(sessionId);
 }
+
+export async function updateSession(
+	sessionId: string,
+	updates: {
+		prompt?: string | null;
+		metadata?: Record<string, unknown> | null;
+	},
+): Promise<{ updated: boolean }> {
+	return await (await getCoreSessions()).updateSession({
+		sessionId,
+		...updates,
+	});
+}

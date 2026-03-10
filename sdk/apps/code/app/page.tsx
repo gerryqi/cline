@@ -16,7 +16,11 @@ import { DiffView } from "@/components/views/chat/diff-view";
 import { SettingsView } from "@/components/views/settings/settings-view";
 import { WorkspaceProvider } from "@/contexts/workspace-context";
 import { useChatSession } from "@/hooks/use-chat-session";
-import type { SessionHistoryItem } from "@/lib/session-history";
+import {
+	getSessionMetadataTitle,
+	type SessionHistoryItem,
+	type SessionMetadata,
+} from "@/lib/session-history";
 
 function makeThreadId(): string {
 	return `thread_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -32,8 +36,12 @@ type WorkspaceSessionItem = {
 	workspaceRoot?: string;
 };
 
-function toThreadTitle(prompt?: string): string {
-	const line = prompt?.trim().split("\n")[0]?.trim();
+function toThreadTitle(options: { title?: string; prompt?: string }): string {
+	const preferredTitle = options.title?.trim();
+	if (preferredTitle) {
+		return preferredTitle.slice(0, 70);
+	}
+	const line = options.prompt?.trim().split("\n")[0]?.trim();
 	if (line) return line.slice(0, 70);
 	return "New session";
 }
@@ -92,6 +100,26 @@ export default function Home() {
 		[activeThreadId],
 	);
 
+	const handleUpdateSessionMetadata = useCallback(
+		(sessionId: string, metadata: SessionMetadata) => {
+			setThreads((prev) =>
+				prev.map((thread) => {
+					if (thread.historySession?.sessionId !== sessionId) {
+						return thread;
+					}
+					return {
+						...thread,
+						historySession: {
+							...thread.historySession,
+							metadata,
+						},
+					};
+				}),
+			);
+		},
+		[],
+	);
+
 	const activeHistorySessionId =
 		threads.find((thread) => thread.id === activeThreadId)?.historySession
 			?.sessionId ?? null;
@@ -123,6 +151,7 @@ export default function Home() {
 						<div className="flex min-h-0 flex-1 flex-col">
 							<ChatThreadPane
 								historySession={activeThread.historySession}
+								onUpdateSessionMetadata={handleUpdateSessionMetadata}
 								threadId={activeThread.id}
 								onDeleteSession={handleDeleteSession}
 								onNewThread={handleNewThread}
@@ -138,11 +167,16 @@ export default function Home() {
 function ChatThreadPane({
 	threadId,
 	historySession,
+	onUpdateSessionMetadata,
 	onDeleteSession,
 	onNewThread,
 }: {
 	threadId: string;
 	historySession?: SessionHistoryItem;
+	onUpdateSessionMetadata?: (
+		sessionId: string,
+		metadata: SessionMetadata,
+	) => void;
 	onDeleteSession?: (sessionId: string) => void;
 	onNewThread?: () => void;
 }) {
@@ -170,6 +204,8 @@ function ChatThreadPane({
 	const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
 	const [showDiffView, setShowDiffView] = useState(false);
 	const [deletingSession, setDeletingSession] = useState(false);
+	const [renamingSession, setRenamingSession] = useState(false);
+	const [manualTitle, setManualTitle] = useState("");
 	const [gitBranch, setGitBranch] = useState("no-git");
 	const [providerCredentials, setProviderCredentials] = useState<
 		Record<string, { apiKey: string }>
@@ -315,16 +351,12 @@ function ChatThreadPane({
 		}
 
 		try {
-			const [cliDiscovered, chatDiscovered] = await Promise.all([
-				invoke<WorkspaceSessionItem[]>("list_cli_sessions", {
-					limit: 10,
-				}).catch(() => []),
-				invoke<WorkspaceSessionItem[]>("list_chat_sessions", {
-					limit: 10,
-				}).catch(() => []),
-			]);
+			const discovered = await invoke<WorkspaceSessionItem[]>(
+				"list_discovered_sessions",
+				{ limit: 20 },
+			).catch(() => []);
 
-			for (const session of [...chatDiscovered, ...cliDiscovered]) {
+			for (const session of discovered) {
 				const candidate = (session.workspaceRoot || session.cwd || "").trim();
 				if (candidate) {
 					roots.add(candidate);
@@ -390,6 +422,7 @@ function ChatThreadPane({
 	useEffect(() => {
 		if (historySession) {
 			resetThreadRef.current = null;
+			setManualTitle(getSessionMetadataTitle(historySession.metadata));
 			return;
 		}
 		if (resetThreadRef.current === threadId) {
@@ -399,6 +432,7 @@ function ChatThreadPane({
 		hydratedSessionRef.current = null;
 		setPromptInput("");
 		setPendingAttachments([]);
+		setManualTitle("");
 		void reset();
 	}, [historySession, reset, threadId]);
 
@@ -412,6 +446,7 @@ function ChatThreadPane({
 		hydratedSessionRef.current = historySession.sessionId;
 		setPromptInput("");
 		setPendingAttachments([]);
+		setManualTitle(getSessionMetadataTitle(historySession.metadata));
 		void hydrateSession(historySession);
 	}, [historySession, hydrateSession]);
 
@@ -474,8 +509,52 @@ function ChatThreadPane({
 	const firstUserMessage = messages.find(
 		(message) => message.role === "user",
 	)?.content;
-	const threadTitle = toThreadTitle(historySession?.prompt ?? firstUserMessage);
+	const metadataTitle =
+		getSessionMetadataTitle(historySession?.metadata) || manualTitle;
+	const threadTitle = toThreadTitle({
+		title: metadataTitle,
+		prompt: historySession?.prompt ?? firstUserMessage,
+	});
 	const hasDiffChanges = summary.additions + summary.deletions > 0;
+
+	const activeSessionForTitle = sessionId ?? historySession?.sessionId ?? null;
+
+	const handleRenameTitle = useCallback(
+		async (nextTitle: string) => {
+			if (!activeSessionForTitle || renamingSession) {
+				return;
+			}
+			setRenamingSession(true);
+			try {
+				await invoke("update_chat_session_title", {
+					sessionId: activeSessionForTitle,
+					title: nextTitle,
+				});
+				const normalizedTitle = nextTitle.trim();
+				setManualTitle(normalizedTitle);
+				onUpdateSessionMetadata?.(activeSessionForTitle, {
+					...(historySession?.metadata ?? {}),
+					title: normalizedTitle || undefined,
+				});
+				window.dispatchEvent(
+					new CustomEvent("cline:session-title-updated", {
+						detail: {
+							sessionId: activeSessionForTitle,
+							title: normalizedTitle,
+						},
+					}),
+				);
+			} finally {
+				setRenamingSession(false);
+			}
+		},
+		[
+			activeSessionForTitle,
+			historySession?.metadata,
+			onUpdateSessionMetadata,
+			renamingSession,
+		],
+	);
 
 	useEffect(() => {
 		if (!hasDiffChanges) {
@@ -518,6 +597,7 @@ function ChatThreadPane({
 			<div className="grid h-full min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
 				<div className="z-20">
 					<AgentHeader
+						canEditTitle={Boolean(activeSessionForTitle)}
 						canDeleteSession={Boolean(activeSessionToDelete)}
 						deletingSession={deletingSession}
 						diff={{
@@ -531,6 +611,8 @@ function ChatThreadPane({
 								setShowDiffView(true);
 							}
 						}}
+						onRenameTitle={handleRenameTitle}
+						renamingTitle={renamingSession}
 						status={status}
 						title={threadTitle}
 					/>

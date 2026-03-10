@@ -22,6 +22,7 @@ export const SessionManifestSchema = z.object({
 	enable_spawn: z.boolean(),
 	enable_teams: z.boolean(),
 	prompt: z.string().optional(),
+	metadata: z.record(z.string(), z.unknown()).optional(),
 	messages_path: z.string().min(1).optional(),
 });
 

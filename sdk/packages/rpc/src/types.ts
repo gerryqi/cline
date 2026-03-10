@@ -95,6 +95,7 @@ export interface RpcSessionRow {
 	conversationId?: string;
 	isSubagent: boolean;
 	prompt?: string;
+	metadata?: Record<string, unknown>;
 	transcriptPath: string;
 	hookPath: string;
 	messagesPath?: string;
@@ -166,6 +167,7 @@ export interface RpcSessionUpdateInput {
 	endedAt?: string | null;
 	exitCode?: number | null;
 	prompt?: string | null;
+	metadata?: Record<string, unknown> | null;
 	parentSessionId?: string | null;
 	parentAgentId?: string | null;
 	agentId?: string | null;

@@ -45,7 +45,7 @@ import {
 	writeErr,
 	writeln,
 } from "./utils/output";
-import { deleteSession, listSessions } from "./utils/session";
+import { deleteSession, listSessions, updateSession } from "./utils/session";
 import type { Config } from "./utils/types";
 
 function mergeToolPolicies(
@@ -188,6 +188,57 @@ export async function runCli(): Promise<void> {
 			process.exit(1);
 		}
 		process.stdout.write(JSON.stringify(await deleteSession(sessionId)));
+		process.exit(0);
+	}
+	if (rawArgs[0] === "sessions" && rawArgs[1] === "update") {
+		const idIndex = rawArgs.indexOf("--session-id");
+		const sessionId =
+			idIndex >= 0 && idIndex + 1 < rawArgs.length ? rawArgs[idIndex + 1] : "";
+		if (!sessionId) {
+			writeErr("sessions update requires --session-id <id>");
+			process.exit(1);
+		}
+		const titleIndex = rawArgs.indexOf("--title");
+		const title =
+			titleIndex >= 0 && titleIndex + 1 < rawArgs.length
+				? rawArgs[titleIndex + 1]
+				: undefined;
+		const metadataJsonIndex = rawArgs.indexOf("--metadata-json");
+		const metadataJson =
+			metadataJsonIndex >= 0 && metadataJsonIndex + 1 < rawArgs.length
+				? rawArgs[metadataJsonIndex + 1]
+				: undefined;
+		let metadata: Record<string, unknown> | null | undefined;
+		if (metadataJson !== undefined) {
+			try {
+				const parsed = JSON.parse(metadataJson) as unknown;
+				if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+					writeErr("--metadata-json must be a JSON object");
+					process.exit(1);
+				}
+				metadata = parsed as Record<string, unknown>;
+			} catch {
+				writeErr("--metadata-json must be valid JSON");
+				process.exit(1);
+			}
+		}
+		if (title !== undefined) {
+			const trimmedTitle = title.trim();
+			const base = { ...(metadata ?? {}) };
+			if (trimmedTitle.length > 0) {
+				base.title = trimmedTitle;
+			} else {
+				delete base.title;
+			}
+			metadata = base;
+		}
+		process.stdout.write(
+			JSON.stringify(
+				await updateSession(sessionId, {
+					metadata,
+				}),
+			),
+		);
 		process.exit(0);
 	}
 	let resumeSessionId: string | undefined;

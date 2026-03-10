@@ -115,6 +115,7 @@ export function ensureSessionSchema(
 			conversation_id TEXT,
 			is_subagent INTEGER NOT NULL DEFAULT 0,
 			prompt TEXT,
+			metadata_json TEXT,
 			transcript_path TEXT NOT NULL,
 			hook_path TEXT NOT NULL,
 			messages_path TEXT,
@@ -216,5 +217,8 @@ export function ensureSessionSchema(
 	}
 	if (!hasColumn("messages_path")) {
 		db.exec("ALTER TABLE sessions ADD COLUMN messages_path TEXT;");
+	}
+	if (!hasColumn("metadata_json")) {
+		db.exec("ALTER TABLE sessions ADD COLUMN metadata_json TEXT;");
 	}
 }

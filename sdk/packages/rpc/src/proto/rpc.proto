@@ -95,6 +95,7 @@ message SessionRecord {
   string hook_path = 25;
   string messages_path = 26;
   string updated_at = 27;
+  string metadata_json = 28;
 }
 
 message EnsureSessionRequest {
@@ -156,6 +157,8 @@ message UpdateSessionRequest {
   int32 expected_status_lock = 16;
   bool has_expected_status_lock = 17;
   bool set_running = 18;
+  string metadata_json = 19;
+  bool has_metadata_json = 20;
 }
 
 message UpdateSessionResponse {

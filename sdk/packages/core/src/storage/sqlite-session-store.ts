@@ -83,8 +83,8 @@ export class SqliteSessionStore implements SessionStore {
 				session_id, source, pid, started_at, ended_at, exit_code, status, status_lock, interactive,
 				provider, model, cwd, workspace_root, team_name, enable_tools, enable_spawn, enable_teams,
 				parent_session_id, parent_agent_id, agent_id, conversation_id, is_subagent, prompt,
-				transcript_path, hook_path, messages_path, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				metadata_json, transcript_path, hook_path, messages_path, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			[
 				record.sessionId,
 				record.source,
@@ -109,6 +109,7 @@ export class SqliteSessionStore implements SessionStore {
 				record.conversationId ?? null,
 				toBoolInt(record.isSubagent),
 				record.prompt ?? null,
+				record.metadata ? JSON.stringify(record.metadata) : null,
 				record.transcriptPath ?? "",
 				record.hookPath ?? "",
 				record.messagesPath ?? null,
@@ -135,6 +136,10 @@ export class SqliteSessionStore implements SessionStore {
 		if (record.prompt !== undefined) {
 			fields.push("prompt = ?");
 			params.push(record.prompt);
+		}
+		if (record.metadata !== undefined) {
+			fields.push("metadata_json = ?");
+			params.push(record.metadata ? JSON.stringify(record.metadata) : null);
 		}
 		if (record.parentSessionId !== undefined) {
 			fields.push("parent_session_id = ?");
@@ -186,7 +191,7 @@ export class SqliteSessionStore implements SessionStore {
 				provider, model, cwd, workspace_root, team_name,
 				enable_tools, enable_spawn, enable_teams,
 				parent_session_id, parent_agent_id, agent_id, conversation_id, is_subagent,
-				prompt, transcript_path, hook_path, messages_path, updated_at
+				prompt, metadata_json, transcript_path, hook_path, messages_path, updated_at
 			 FROM sessions WHERE session_id = ?`,
 			[sessionId],
 		);
@@ -216,6 +221,21 @@ export class SqliteSessionStore implements SessionStore {
 			conversationId: asOptionalString(row.conversation_id),
 			isSubagent: asBool(row.is_subagent),
 			prompt: asOptionalString(row.prompt),
+			metadata: (() => {
+				const raw = asOptionalString(row.metadata_json);
+				if (!raw) {
+					return undefined;
+				}
+				try {
+					const parsed = JSON.parse(raw) as unknown;
+					if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+						return parsed as Record<string, unknown>;
+					}
+				} catch {
+					// Ignore malformed metadata payloads.
+				}
+				return undefined;
+			})(),
 			transcriptPath: asOptionalString(row.transcript_path),
 			hookPath: asOptionalString(row.hook_path),
 			messagesPath: asOptionalString(row.messages_path),

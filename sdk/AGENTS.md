@@ -120,6 +120,12 @@ flowchart LR
 - Stream event envelope:
   - `{ "type": "chat_event", "event": StreamChunkEvent }`
 
+### Session title metadata (`apps/code`)
+
+- User-edited session titles are persisted in each session manifest as `metadata.title`.
+- Title updates are routed through backend session services (`clite sessions update` → `@cline/core` / RPC backend), which persist metadata in both session storage and manifests.
+- Session discovery APIs (`list_chat_sessions`, `list_cli_sessions`) include parsed metadata for frontend consumers, so clients should prefer `metadata.title` over deriving titles from prompts/messages.
+
 ## Design System (UI apps)
 
 For `apps/code` and `apps/desktop`:

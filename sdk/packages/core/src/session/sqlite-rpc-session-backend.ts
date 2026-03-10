@@ -35,8 +35,8 @@ export class SqliteRpcSessionBackend implements RpcSessionBackend {
 				session_id, source, pid, started_at, ended_at, exit_code, status, status_lock, interactive,
 				provider, model, cwd, workspace_root, team_name, enable_tools, enable_spawn, enable_teams,
 				parent_session_id, parent_agent_id, agent_id, conversation_id, is_subagent, prompt,
-				transcript_path, hook_path, messages_path, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				metadata_json, transcript_path, hook_path, messages_path, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			[
 				row.sessionId,
 				row.source,
@@ -61,6 +61,7 @@ export class SqliteRpcSessionBackend implements RpcSessionBackend {
 				row.conversationId ?? null,
 				toBoolInt(row.isSubagent),
 				row.prompt ?? null,
+				row.metadata ? JSON.stringify(row.metadata) : null,
 				row.transcriptPath,
 				row.hookPath,
 				row.messagesPath ?? null,
@@ -74,7 +75,7 @@ export class SqliteRpcSessionBackend implements RpcSessionBackend {
 			`SELECT session_id, source, pid, started_at, ended_at, exit_code, status, status_lock, interactive,
 				provider, model, cwd, workspace_root, team_name, enable_tools, enable_spawn, enable_teams,
 				parent_session_id, parent_agent_id, agent_id, conversation_id, is_subagent, prompt,
-				transcript_path, hook_path, messages_path, updated_at
+				metadata_json, transcript_path, hook_path, messages_path, updated_at
 			 FROM sessions WHERE session_id = ?`,
 			[sessionId],
 		);
@@ -105,6 +106,21 @@ export class SqliteRpcSessionBackend implements RpcSessionBackend {
 			conversationId: asOptionalString(row.conversation_id),
 			isSubagent: asBool(row.is_subagent),
 			prompt: asOptionalString(row.prompt),
+			metadata: (() => {
+				const raw = asOptionalString(row.metadata_json);
+				if (!raw) {
+					return undefined;
+				}
+				try {
+					const parsed = JSON.parse(raw) as unknown;
+					if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+						return parsed as Record<string, unknown>;
+					}
+				} catch {
+					// Ignore malformed metadata payloads.
+				}
+				return undefined;
+			})(),
 			transcriptPath: asString(row.transcript_path),
 			hookPath: asString(row.hook_path),
 			messagesPath: asOptionalString(row.messages_path),
@@ -180,10 +196,14 @@ export class SqliteRpcSessionBackend implements RpcSessionBackend {
 			input.prompt !== undefined
 				? (input.prompt ?? undefined)
 				: existing.prompt;
+		const nextMetadata =
+			input.metadata !== undefined
+				? (input.metadata ?? undefined)
+				: existing.metadata;
 
 		this.store.run(
 			`UPDATE sessions
-			 SET status = ?, ended_at = ?, exit_code = ?, prompt = ?,
+			 SET status = ?, ended_at = ?, exit_code = ?, prompt = ?, metadata_json = ?,
 				 parent_session_id = ?, parent_agent_id = ?, agent_id = ?, conversation_id = ?,
 				 status_lock = ?, updated_at = ?
 			 WHERE session_id = ?`,
@@ -192,6 +212,7 @@ export class SqliteRpcSessionBackend implements RpcSessionBackend {
 				nextEndedAt,
 				nextExitCode,
 				nextPrompt ?? null,
+				nextMetadata ? JSON.stringify(nextMetadata) : null,
 				input.parentSessionId !== undefined
 					? (input.parentSessionId ?? null)
 					: (existing.parentSessionId ?? null),

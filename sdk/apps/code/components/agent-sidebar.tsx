@@ -33,7 +33,9 @@ import { normalizeTitle } from "@/components/utils";
 import type {
 	SessionHistoryItem,
 	SessionHistoryStatus,
+	SessionMetadata,
 } from "@/lib/session-history";
+import { getSessionMetadataTitle } from "@/lib/session-history";
 import { cn } from "@/lib/utils";
 
 type CliDiscoveredSession = Omit<SessionHistoryItem, "status"> & {
@@ -74,6 +76,11 @@ type SessionMessage = {
 	content?: string;
 	meta?: SessionMessageMeta;
 };
+
+type SessionTitleUpdatedEvent = CustomEvent<{
+	sessionId: string;
+	title: string;
+}>;
 
 const filterOptions = ["All", "Running", "Recent", "Pinned"] as const;
 type FilterOption = (typeof filterOptions)[number];
@@ -154,6 +161,10 @@ function basenamePath(input?: string): string {
 }
 
 function toTitle(session: SessionHistoryItem): string {
+	const metadataTitle = getSessionMetadataTitle(session.metadata);
+	if (metadataTitle) {
+		return metadataTitle.slice(0, 70);
+	}
 	const line = normalizeTitle(session.prompt).trim().split("\n")[0]?.trim();
 	if (line) return line.slice(0, 70);
 	return `Session ${session.sessionId.slice(-6)}`;
@@ -289,6 +300,8 @@ function areSessionsEquivalent(
 			a.startedAt !== b.startedAt ||
 			a.endedAt !== b.endedAt ||
 			a.prompt !== b.prompt ||
+			getSessionMetadataTitle(a.metadata) !==
+				getSessionMetadataTitle(b.metadata) ||
 			a.workspaceRoot !== b.workspaceRoot ||
 			a.cwd !== b.cwd ||
 			a.provider !== b.provider ||
@@ -407,36 +420,63 @@ export function AgentSidebar({
 		}
 	}, [isCollapsed, searchOpen]);
 
+	useEffect(() => {
+		const handleTitleUpdated = (event: Event) => {
+			const detail = (event as SessionTitleUpdatedEvent).detail;
+			const sessionId = detail?.sessionId?.trim();
+			if (!sessionId) {
+				return;
+			}
+			const nextTitle = detail.title.trim();
+			setSessions((current) =>
+				updateSessionById(current, sessionId, (session) => ({
+					...session,
+					metadata: {
+						...(session.metadata ?? {}),
+						title: nextTitle || undefined,
+					},
+				})),
+			);
+			setThreads((current) =>
+				updateThreadById(current, sessionId, (thread) => ({
+					...thread,
+					title: nextTitle || `Session ${sessionId.slice(-6)}`,
+				})),
+			);
+		};
+
+		window.addEventListener(
+			"cline:session-title-updated",
+			handleTitleUpdated as EventListener,
+		);
+		return () => {
+			window.removeEventListener(
+				"cline:session-title-updated",
+				handleTitleUpdated as EventListener,
+			);
+		};
+	}, []);
+
 	const refreshSessions = useCallback(async () => {
 		const limit = fetchLimitRef.current;
 		setIsLoadingHistory(true);
 		try {
-			const [cliDiscovered, chatDiscovered] = await Promise.all([
-				invoke<CliDiscoveredSession[]>("list_cli_sessions", {
-					limit,
-				}).catch(() => []),
-				invoke<CliDiscoveredSession[]>("list_chat_sessions", {
-					limit,
-				}).catch(() => []),
-			]);
-			const discovered = [...chatDiscovered, ...cliDiscovered];
-			const topLevelById = new Map<string, SessionHistoryItem>();
-			for (const session of discovered) {
-				const normalized: SessionHistoryItem = {
-					...session,
-					status: normalizeDiscoveredStatus(session.status, session.prompt),
-				};
-				const existing = topLevelById.get(normalized.sessionId);
-				if (!existing) {
-					topLevelById.set(normalized.sessionId, normalized);
-					continue;
-				}
-				// Keep the canonical top-level session with the newer start time.
-				if (compareSessionsByStartedAtDesc(normalized, existing) < 0) {
-					topLevelById.set(normalized.sessionId, normalized);
-				}
-			}
-			const topLevelSessions = Array.from(topLevelById.values())
+			const discovered = await invoke<CliDiscoveredSession[]>(
+				"list_discovered_sessions",
+				{ limit },
+			).catch(() => []);
+			const topLevelSessions = discovered
+				.map((session) => {
+					const normalized: SessionHistoryItem = {
+						...session,
+						status: normalizeDiscoveredStatus(session.status, session.prompt),
+						metadata:
+							session.metadata && typeof session.metadata === "object"
+								? (session.metadata as SessionMetadata)
+								: undefined,
+					};
+					return normalized;
+				})
 				.filter((session) => !session.isSubagent && !session.parentSessionId)
 				.sort(compareSessionsByStartedAtDesc);
 
@@ -618,12 +658,13 @@ export function AgentSidebar({
 			const lastHydratedStatus =
 				messageHydratedStatusRef.current.get(sessionId);
 			const shouldHydrateTitle = existing.title.startsWith("Session ");
+			const hasManualTitle = Boolean(getSessionMetadataTitle(session.metadata));
 			const shouldHydrateStatus =
 				existing.status === "failed" ||
 				existing.status === "completed" ||
 				existing.status === "idle" ||
 				lastHydratedStatus !== session.status;
-			if (!shouldHydrateTitle && !shouldHydrateStatus) {
+			if ((!shouldHydrateTitle || hasManualTitle) && !shouldHydrateStatus) {
 				continue;
 			}
 			titleLoadingRef.current.add(sessionId);
@@ -632,7 +673,7 @@ export function AgentSidebar({
 				maxMessages: 80,
 			})
 				.then((messages) => {
-					const nextTitle = titleFromMessages(messages);
+					const nextTitle = hasManualTitle ? null : titleFromMessages(messages);
 					setThreads((current) =>
 						updateThreadById(current, sessionId, (thread) => {
 							const nextStatus = inferStatusFromMessages(

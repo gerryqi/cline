@@ -1,4 +1,10 @@
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import {
+	appendFileSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import type {
 	HookEventPayload,
 	SubAgentEndContext,
@@ -60,6 +66,7 @@ function toShape(row: RpcSessionRow): SessionRowShape {
 		conversation_id: row.conversationId ?? null,
 		is_subagent: row.isSubagent ? 1 : 0,
 		prompt: row.prompt ?? null,
+		metadata_json: row.metadata ? JSON.stringify(row.metadata) : null,
 		transcript_path: row.transcriptPath,
 		hook_path: row.hookPath,
 		messages_path: row.messagesPath ?? null,
@@ -97,6 +104,7 @@ function fromRootInput(
 		enableTeams: input.enableTeams,
 		isSubagent: false,
 		prompt: input.prompt,
+		metadata: input.metadata,
 		transcriptPath: input.transcriptPath,
 		hookPath: input.hookPath,
 		messagesPath: input.messagesPath,
@@ -226,6 +234,7 @@ export class RpcCoreSessionService {
 			enable_spawn: input.enableSpawn,
 			enable_teams: input.enableTeams,
 			prompt: input.prompt?.trim() || undefined,
+			metadata: input.metadata,
 			messages_path: messagesPath,
 		});
 
@@ -238,6 +247,7 @@ export class RpcCoreSessionService {
 				hookPath,
 				messagesPath,
 				prompt: manifest.prompt,
+				metadata: manifest.metadata,
 			}),
 		);
 
@@ -284,6 +294,47 @@ export class RpcCoreSessionService {
 				}
 				return { updated: true, endedAt };
 			}
+		}
+		return { updated: false };
+	}
+
+	async updateSession(input: {
+		sessionId: string;
+		prompt?: string | null;
+		metadata?: Record<string, unknown> | null;
+	}): Promise<{ updated: boolean }> {
+		for (let attempt = 0; attempt < 4; attempt++) {
+			const row = await this.client.getSession(input.sessionId);
+			if (!row) {
+				return { updated: false };
+			}
+			const changed = await this.client.updateSession({
+				sessionId: input.sessionId,
+				prompt: input.prompt,
+				metadata: input.metadata,
+				expectedStatusLock: row.statusLock,
+			});
+			if (!changed.updated) {
+				continue;
+			}
+			const manifestPath = this.sessionManifestPath(input.sessionId, false);
+			if (existsSync(manifestPath)) {
+				try {
+					const manifest = SessionManifestSchema.parse(
+						JSON.parse(readFileSync(manifestPath, "utf8")) as SessionManifest,
+					);
+					if (input.prompt !== undefined) {
+						manifest.prompt = input.prompt ?? undefined;
+					}
+					if (input.metadata !== undefined) {
+						manifest.metadata = input.metadata ?? undefined;
+					}
+					this.writeSessionManifestFile(manifestPath, manifest);
+				} catch {
+					// Ignore malformed manifests and keep RPC session state as source of truth.
+				}
+			}
+			return { updated: true };
 		}
 		return { updated: false };
 	}

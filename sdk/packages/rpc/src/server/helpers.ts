@@ -90,6 +90,7 @@ export function rowToMessage(row: RpcSessionRow): SessionRecordMessage {
 		hookPath: row.hookPath,
 		messagesPath: row.messagesPath ?? "",
 		updatedAt: row.updatedAt,
+		metadataJson: row.metadata ? JSON.stringify(row.metadata) : "",
 	};
 }
 
@@ -146,6 +147,9 @@ export function messageToRow(message: SessionRecordMessage): RpcSessionRow {
 		conversationId: safeString(message.conversationId).trim() || undefined,
 		isSubagent: message.isSubagent === true,
 		prompt: safeString(message.prompt).trim() || undefined,
+		metadata:
+			parseJsonObjectString(safeString(message.metadataJson).trim()) ??
+			undefined,
 		transcriptPath,
 		hookPath,
 		messagesPath: safeString(message.messagesPath).trim() || undefined,

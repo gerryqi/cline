@@ -215,6 +215,24 @@ function withLatestAssistantTurnMetadata(
 }
 
 function toSessionRecord(row: SessionRowShape): SessionRecord {
+	const metadata =
+		typeof row.metadata_json === "string" && row.metadata_json.trim().length > 0
+			? (() => {
+					try {
+						const parsed = JSON.parse(row.metadata_json) as unknown;
+						if (
+							parsed &&
+							typeof parsed === "object" &&
+							!Array.isArray(parsed)
+						) {
+							return parsed as Record<string, unknown>;
+						}
+					} catch {
+						// Ignore malformed metadata payloads.
+					}
+					return undefined;
+				})()
+			: undefined;
 	return {
 		sessionId: row.session_id,
 		source: row.source as SessionSource,
@@ -238,6 +256,7 @@ function toSessionRecord(row: SessionRowShape): SessionRecord {
 		conversationId: row.conversation_id ?? undefined,
 		isSubagent: row.is_subagent === 1,
 		prompt: row.prompt ?? undefined,
+		metadata,
 		transcriptPath: row.transcript_path,
 		hookPath: row.hook_path,
 		messagesPath: row.messages_path ?? undefined,

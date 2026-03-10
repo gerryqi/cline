@@ -325,6 +325,7 @@ struct ChatRuntimeSession {
     ended_at: Option<u64>,
     status: String,
     prompt: Option<String>,
+    title: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -493,7 +494,7 @@ struct ToolApprovalRequestItem {
     conversation_id: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CliDiscoveredSession {
     session_id: String,
@@ -509,9 +510,132 @@ struct CliDiscoveredSession {
     conversation_id: Option<String>,
     is_subagent: bool,
     prompt: Option<String>,
+    metadata: Option<Value>,
     started_at: String,
     ended_at: Option<String>,
     interactive: bool,
+}
+
+fn session_started_at_rank(value: &str) -> i128 {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return i128::MIN;
+    }
+    if let Ok(raw) = trimmed.parse::<i128>() {
+        if trimmed.len() == 10 {
+            return raw.saturating_mul(1000);
+        }
+        return raw;
+    }
+    i128::MIN
+}
+
+fn session_metadata_title(metadata: &Option<Value>) -> Option<String> {
+    let object = metadata.as_ref()?.as_object()?;
+    normalize_session_title(object.get("title").and_then(|value| value.as_str()))
+}
+
+fn merge_session_metadata(preferred: &Option<Value>, fallback: &Option<Value>) -> Option<Value> {
+    let mut merged = serde_json::Map::new();
+    if let Some(Value::Object(map)) = fallback {
+        for (key, value) in map {
+            merged.insert(key.clone(), value.clone());
+        }
+    }
+    if let Some(Value::Object(map)) = preferred {
+        for (key, value) in map {
+            merged.insert(key.clone(), value.clone());
+        }
+    }
+    let preferred_title = session_metadata_title(preferred);
+    let fallback_title = session_metadata_title(fallback);
+    if let Some(title) = preferred_title.or(fallback_title) {
+        merged.insert("title".to_string(), Value::String(title));
+    }
+    if merged.is_empty() {
+        None
+    } else {
+        Some(Value::Object(merged))
+    }
+}
+
+fn pick_non_empty(primary: String, fallback: String) -> String {
+    if primary.trim().is_empty() {
+        fallback
+    } else {
+        primary
+    }
+}
+
+fn pick_option_non_empty(primary: Option<String>, fallback: Option<String>) -> Option<String> {
+    match primary {
+        Some(value) if !value.trim().is_empty() => Some(value),
+        _ => fallback,
+    }
+}
+
+fn merge_discovered_session_pair(
+    existing: CliDiscoveredSession,
+    incoming: CliDiscoveredSession,
+) -> CliDiscoveredSession {
+    let existing_rank = session_started_at_rank(&existing.started_at);
+    let incoming_rank = session_started_at_rank(&incoming.started_at);
+    let incoming_is_newer = if incoming_rank == existing_rank {
+        incoming.session_id >= existing.session_id
+    } else {
+        incoming_rank > existing_rank
+    };
+    let (newer, older) = if incoming_is_newer {
+        (incoming, existing)
+    } else {
+        (existing, incoming)
+    };
+
+    CliDiscoveredSession {
+        session_id: newer.session_id.clone(),
+        status: pick_non_empty(newer.status, older.status),
+        provider: pick_non_empty(newer.provider, older.provider),
+        model: pick_non_empty(newer.model, older.model),
+        cwd: pick_non_empty(newer.cwd, older.cwd),
+        workspace_root: pick_non_empty(newer.workspace_root, older.workspace_root),
+        team_name: pick_option_non_empty(newer.team_name, older.team_name),
+        parent_session_id: pick_option_non_empty(newer.parent_session_id, older.parent_session_id),
+        parent_agent_id: pick_option_non_empty(newer.parent_agent_id, older.parent_agent_id),
+        agent_id: pick_option_non_empty(newer.agent_id, older.agent_id),
+        conversation_id: pick_option_non_empty(newer.conversation_id, older.conversation_id),
+        is_subagent: newer.is_subagent || older.is_subagent,
+        prompt: pick_option_non_empty(newer.prompt, older.prompt),
+        metadata: merge_session_metadata(&newer.metadata, &older.metadata),
+        started_at: pick_non_empty(newer.started_at, older.started_at),
+        ended_at: pick_option_non_empty(newer.ended_at, older.ended_at),
+        interactive: newer.interactive || older.interactive,
+    }
+}
+
+fn merge_discovered_session_lists(
+    chat_sessions: Vec<CliDiscoveredSession>,
+    cli_sessions: Vec<CliDiscoveredSession>,
+    max: usize,
+) -> Vec<CliDiscoveredSession> {
+    let mut by_id: HashMap<String, CliDiscoveredSession> = HashMap::new();
+    for session in chat_sessions.into_iter().chain(cli_sessions.into_iter()) {
+        let id = session.session_id.clone();
+        if let Some(existing) = by_id.remove(&id) {
+            by_id.insert(id, merge_discovered_session_pair(existing, session));
+        } else {
+            by_id.insert(id, session);
+        }
+    }
+    let mut out: Vec<CliDiscoveredSession> = by_id.into_values().collect();
+    out.sort_by(|a, b| {
+        session_started_at_rank(&b.started_at)
+            .cmp(&session_started_at_rank(&a.started_at))
+            .then_with(|| b.session_id.cmp(&a.session_id))
+    });
+    if out.len() > max {
+        out.truncate(max);
+    }
+    out
 }
 
 #[derive(Debug, Serialize)]
@@ -734,6 +858,43 @@ fn json_bool_field(value: &Value, keys: &[&str]) -> Option<bool> {
     None
 }
 
+fn json_object_field(value: &Value, keys: &[&str]) -> Option<Value> {
+    for key in keys {
+        let next = value.get(key).and_then(|entry| {
+            if entry.is_object() {
+                Some(entry.clone())
+            } else {
+                None
+            }
+        });
+        if next.is_some() {
+            return next;
+        }
+    }
+    None
+}
+
+fn normalize_session_title(title: Option<&str>) -> Option<String> {
+    let raw = title.unwrap_or_default().trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let mut out = raw.to_string();
+    if out.chars().count() > 140 {
+        out = out.chars().take(140).collect();
+    }
+    Some(out)
+}
+
+fn parse_json_object_string(raw: &str) -> Option<Value> {
+    let parsed = serde_json::from_str::<Value>(raw).ok()?;
+    if parsed.is_object() {
+        Some(parsed)
+    } else {
+        None
+    }
+}
+
 fn normalize_chat_finish_status(status: Option<&str>) -> String {
     let Some(raw) = status else {
         return "completed".to_string();
@@ -836,15 +997,13 @@ fn persist_usage_in_messages(
     result: &ChatTurnResult,
 ) -> Vec<Value> {
     let mut next = messages.to_vec();
-    let assistant_index = next
-        .iter()
-        .rposition(|message| {
-            message
-                .get("role")
-                .and_then(|value| value.as_str())
-                .map(|role| role == "assistant")
-                .unwrap_or(false)
-        });
+    let assistant_index = next.iter().rposition(|message| {
+        message
+            .get("role")
+            .and_then(|value| value.as_str())
+            .map(|role| role == "assistant")
+            .unwrap_or(false)
+    });
 
     let Some(index) = assistant_index else {
         return next;
@@ -889,7 +1048,10 @@ fn persist_usage_in_messages(
     let provider_id = config.provider.trim();
     let model_id = config.model.trim();
     if !provider_id.is_empty() {
-        assistant_message.insert("providerId".to_string(), Value::String(provider_id.to_string()));
+        assistant_message.insert(
+            "providerId".to_string(),
+            Value::String(provider_id.to_string()),
+        );
     }
     if !model_id.is_empty() {
         assistant_message.insert("modelId".to_string(), Value::String(model_id.to_string()));
@@ -1263,6 +1425,36 @@ fn shared_session_artifact_path(session_id: &str, suffix: &str) -> Option<PathBu
     None
 }
 
+fn shared_session_manifest_path(session_id: &str) -> Option<PathBuf> {
+    shared_session_artifact_path(session_id, "json")
+}
+
+fn read_session_manifest(session_id: &str) -> Option<(PathBuf, Value)> {
+    let path = shared_session_manifest_path(session_id)?;
+    let raw = fs::read_to_string(&path).ok()?;
+    let parsed = serde_json::from_str::<Value>(&raw).ok()?;
+    if !parsed.is_object() {
+        return None;
+    }
+    Some((path, parsed))
+}
+
+fn read_session_metadata(session_id: &str) -> Option<Value> {
+    let (_, manifest) = read_session_manifest(session_id)?;
+    manifest.get("metadata").and_then(|value| {
+        if value.is_object() {
+            Some(value.clone())
+        } else {
+            None
+        }
+    })
+}
+
+fn read_session_metadata_title(session_id: &str) -> Option<String> {
+    let metadata = read_session_metadata(session_id)?;
+    normalize_session_title(metadata.get("title").and_then(|value| value.as_str()))
+}
+
 fn resolve_cli_entrypoint_path(context: &AppContext) -> Option<PathBuf> {
     let candidates = [
         PathBuf::from(&context.workspace_root)
@@ -1353,12 +1545,11 @@ fn run_cli_rpc_output_command(
         .map_err(|e| format!("failed running `{clite_cmd} rpc {}`: {e}", args.join(" ")))
 }
 
-fn ensure_rpc_server(
-    workspace_root: &str,
-    rpc_address: &str,
-) -> Result<String, String> {
-    let output =
-        run_cli_rpc_output_command(workspace_root, &["ensure", "--address", rpc_address, "--json"])?;
+fn ensure_rpc_server(workspace_root: &str, rpc_address: &str) -> Result<String, String> {
+    let output = run_cli_rpc_output_command(
+        workspace_root,
+        &["ensure", "--address", rpc_address, "--json"],
+    )?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(if stderr.is_empty() {
@@ -1379,10 +1570,7 @@ fn ensure_rpc_server(
     Ok(ensured)
 }
 
-fn register_rpc_client(
-    workspace_root: &str,
-    rpc_address: &str,
-) -> Result<(), String> {
+fn register_rpc_client(workspace_root: &str, rpc_address: &str) -> Result<(), String> {
     let output = run_cli_rpc_output_command(
         workspace_root,
         &[
@@ -2299,7 +2487,12 @@ fn ensure_chat_runtime_bridge_started(
                             "level": "error",
                             "message": parsed.message.unwrap_or_else(|| "chat runtime bridge error".to_string()),
                         });
-                        emit_chunk(&stdout_app, session_id, "chat_core_log", payload.to_string());
+                        emit_chunk(
+                            &stdout_app,
+                            session_id,
+                            "chat_core_log",
+                            payload.to_string(),
+                        );
                     } else if let Some(message) = parsed.message {
                         eprintln!("[chat-runtime-bridge] {message}");
                     }
@@ -2377,7 +2570,9 @@ fn run_chat_runtime_bridge_command(
                 .lock()
                 .ok()
                 .and_then(|mut pending_map| pending_map.remove(&request_id));
-            return Err(format!("failed writing chat runtime bridge command: {error}"));
+            return Err(format!(
+                "failed writing chat runtime bridge command: {error}"
+            ));
         }
         request_id
     };
@@ -2388,34 +2583,30 @@ fn run_chat_runtime_bridge_command(
         Ok(Ok(value)) => Ok(value),
         Ok(Err(error)) => Err(error),
         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-            let _ = state
-                .runtime_bridge
-                .lock()
-                .ok()
-                .and_then(|mut guard| guard.as_mut().and_then(|bridge| {
+            let _ = state.runtime_bridge.lock().ok().and_then(|mut guard| {
+                guard.as_mut().and_then(|bridge| {
                     bridge
                         .pending
                         .lock()
                         .ok()
                         .and_then(|mut pending_map| pending_map.remove(&request_id))
-                }));
+                })
+            });
             Err(format!(
                 "chat runtime bridge request timed out after {}ms",
                 CHAT_RUNTIME_BRIDGE_RESPONSE_TIMEOUT_MS
             ))
         }
         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-            let _ = state
-                .runtime_bridge
-                .lock()
-                .ok()
-                .and_then(|mut guard| guard.as_mut().and_then(|bridge| {
+            let _ = state.runtime_bridge.lock().ok().and_then(|mut guard| {
+                guard.as_mut().and_then(|bridge| {
                     bridge
                         .pending
                         .lock()
                         .ok()
                         .and_then(|mut pending_map| pending_map.remove(&request_id))
-                }));
+                })
+            });
             Err("chat runtime bridge response channel closed".to_string())
         }
     }
@@ -2785,15 +2976,14 @@ fn team_history_path(team_name: &str) -> Option<PathBuf> {
     Some(base.join(safe).join("task-history.jsonl"))
 }
 
-#[tauri::command]
-fn list_cli_sessions(
-    context: State<'_, AppContext>,
+fn discover_cli_sessions(
+    context: &AppContext,
     limit: Option<usize>,
 ) -> Result<Vec<CliDiscoveredSession>, String> {
-    let Some(cli_entrypoint) = resolve_cli_entrypoint_path(&context) else {
+    let Some(cli_entrypoint) = resolve_cli_entrypoint_path(context) else {
         return Ok(vec![]);
     };
-    let cli_workdir = resolve_cli_workdir(&cli_entrypoint, &context);
+    let cli_workdir = resolve_cli_workdir(&cli_entrypoint, context);
 
     let limit_value = limit.unwrap_or(300).max(1).to_string();
     let output = Command::new("bun")
@@ -2820,11 +3010,14 @@ fn list_cli_sessions(
     };
 
     for item in items {
-        let session_id =
-            json_string_field(item, &["session_id", "sessionId"]).unwrap_or_default();
+        let session_id = json_string_field(item, &["session_id", "sessionId"]).unwrap_or_default();
         if session_id.is_empty() {
             continue;
         }
+        let metadata = json_object_field(item, &["metadata"]).or_else(|| {
+            json_string_field(item, &["metadata_json", "metadataJson"])
+                .and_then(|raw| parse_json_object_string(raw.trim()))
+        });
         let cwd = json_string_field(item, &["cwd"]).unwrap_or_default();
         let workspace_root = json_string_field(item, &["workspace_root", "workspaceRoot"])
             .or_else(|| {
@@ -2837,8 +3030,7 @@ fn list_cli_sessions(
             .unwrap_or_default();
         out.push(CliDiscoveredSession {
             session_id,
-            status: json_string_field(item, &["status"])
-                .unwrap_or_else(|| "running".to_string()),
+            status: json_string_field(item, &["status"]).unwrap_or_else(|| "running".to_string()),
             provider: json_string_field(item, &["provider"])
                 .unwrap_or_else(|| "anthropic".to_string()),
             model: json_string_field(item, &["model"])
@@ -2847,15 +3039,13 @@ fn list_cli_sessions(
             cwd,
             workspace_root,
             team_name: json_string_field(item, &["team_name", "teamName"]),
-            parent_session_id: json_string_field(
-                item,
-                &["parent_session_id", "parentSessionId"],
-            ),
+            parent_session_id: json_string_field(item, &["parent_session_id", "parentSessionId"]),
             parent_agent_id: json_string_field(item, &["parent_agent_id", "parentAgentId"]),
             agent_id: json_string_field(item, &["agent_id", "agentId"]),
             conversation_id: json_string_field(item, &["conversation_id", "conversationId"]),
             is_subagent: json_bool_field(item, &["is_subagent", "isSubagent"]).unwrap_or(false),
             prompt: json_string_field(item, &["prompt"]),
+            metadata,
             started_at: json_string_field(item, &["started_at", "startedAt"]).unwrap_or_default(),
             ended_at: json_string_field(item, &["ended_at", "endedAt"]),
             interactive: json_bool_field(item, &["interactive"]).unwrap_or(false),
@@ -2863,6 +3053,14 @@ fn list_cli_sessions(
     }
 
     Ok(out)
+}
+
+#[tauri::command]
+fn list_cli_sessions(
+    context: State<'_, AppContext>,
+    limit: Option<usize>,
+) -> Result<Vec<CliDiscoveredSession>, String> {
+    discover_cli_sessions(&context, limit)
 }
 
 #[tauri::command]
@@ -2916,10 +3114,7 @@ fn list_provider_catalog(context: State<'_, AppContext>) -> Result<Value, String
 }
 
 #[tauri::command]
-fn list_provider_models(
-    context: State<'_, AppContext>,
-    provider: String,
-) -> Result<Value, String> {
+fn list_provider_models(context: State<'_, AppContext>, provider: String) -> Result<Value, String> {
     let Some(script_path) = resolve_provider_settings_script_path(&context) else {
         return Err(format!(
             "provider settings script not found. checked workspace_root={} and launch_cwd={}",
@@ -3603,6 +3798,7 @@ async fn handle_chat_session_command(
                     ended_at: None,
                     status: "idle".to_string(),
                     prompt: None,
+                    title: None,
                 },
             );
             Ok(ChatSessionCommandResponse {
@@ -3650,6 +3846,7 @@ async fn handle_chat_session_command(
                     .or_insert(ChatRuntimeSession {
                         config,
                         prompt: derive_prompt_from_messages(&messages),
+                        title: read_session_metadata_title(&session_id),
                         messages,
                         busy: false,
                         started_at: now_ms(),
@@ -3688,12 +3885,7 @@ async fn handle_chat_session_command(
             let app_for_turn = app.clone();
             let state_for_turn = state.clone();
             let context_for_turn = context.clone();
-            ensure_chat_stream_subscription(
-                app,
-                state,
-                &context_for_turn,
-                &session_id_for_turn,
-            )?;
+            ensure_chat_stream_subscription(app, state, &context_for_turn, &session_id_for_turn)?;
             let turn_request = ChatRunTurnRequest {
                 config: config.clone(),
                 messages,
@@ -4077,9 +4269,8 @@ fn read_session_messages(
     Ok(out)
 }
 
-#[tauri::command]
-fn list_chat_sessions(
-    state: State<'_, Arc<ChatSessionStore>>,
+fn discover_chat_sessions(
+    state: &Arc<ChatSessionStore>,
     limit: Option<usize>,
 ) -> Result<Vec<CliDiscoveredSession>, String> {
     let max = limit.unwrap_or(300).max(1);
@@ -4097,6 +4288,17 @@ fn list_chat_sessions(
         sessions
             .iter()
             .map(|(session_id, session)| CliDiscoveredSession {
+                metadata: {
+                    let mut metadata = serde_json::Map::new();
+                    if let Some(title) = normalize_session_title(session.title.as_deref()) {
+                        metadata.insert("title".to_string(), Value::String(title));
+                    }
+                    if metadata.is_empty() {
+                        None
+                    } else {
+                        Some(Value::Object(metadata))
+                    }
+                },
                 session_id: session_id.clone(),
                 status: session.status.clone(),
                 provider: session.config.provider.clone(),
@@ -4148,6 +4350,13 @@ fn list_chat_sessions(
                     .ok()
                     .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
                     .unwrap_or(Value::Null);
+                let metadata = manifest.get("metadata").cloned().and_then(|value| {
+                    if value.is_object() {
+                        Some(value)
+                    } else {
+                        None
+                    }
+                });
                 let is_desktop_chat = manifest
                     .get("source")
                     .and_then(|v| v.as_str())
@@ -4187,22 +4396,20 @@ fn list_chat_sessions(
                     .map(|d| d.as_millis() as u64)
                     .unwrap_or_else(now_ms);
                 let cwd = json_string_field(&manifest, &["cwd"]).unwrap_or_default();
-                let workspace_root = json_string_field(
-                    &manifest,
-                    &["workspace_root", "workspaceRoot"],
-                )
-                .or_else(|| {
-                    if cwd.trim().is_empty() {
-                        None
-                    } else {
-                        Some(cwd.clone())
-                    }
-                })
-                .unwrap_or_default();
-                let provider =
-                    json_string_field(&manifest, &["provider"]).unwrap_or_else(|| "unknown".to_string());
-                let model =
-                    json_string_field(&manifest, &["model"]).unwrap_or_else(|| "unknown".to_string());
+                let workspace_root =
+                    json_string_field(&manifest, &["workspace_root", "workspaceRoot"])
+                        .or_else(|| {
+                            if cwd.trim().is_empty() {
+                                None
+                            } else {
+                                Some(cwd.clone())
+                            }
+                        })
+                        .unwrap_or_default();
+                let provider = json_string_field(&manifest, &["provider"])
+                    .unwrap_or_else(|| "unknown".to_string());
+                let model = json_string_field(&manifest, &["model"])
+                    .unwrap_or_else(|| "unknown".to_string());
                 let started_at = json_string_field(&manifest, &["started_at", "startedAt"])
                     .unwrap_or_else(|| file_ts.to_string());
                 let ended_at = json_string_field(&manifest, &["ended_at", "endedAt"])
@@ -4221,6 +4428,7 @@ fn list_chat_sessions(
                     conversation_id: None,
                     is_subagent: false,
                     prompt,
+                    metadata,
                     started_at,
                     ended_at: Some(ended_at),
                     interactive: false,
@@ -4234,6 +4442,77 @@ fn list_chat_sessions(
         out.truncate(max);
     }
     Ok(out)
+}
+
+#[tauri::command]
+fn list_chat_sessions(
+    state: State<'_, Arc<ChatSessionStore>>,
+    limit: Option<usize>,
+) -> Result<Vec<CliDiscoveredSession>, String> {
+    discover_chat_sessions(&state, limit)
+}
+
+#[tauri::command]
+fn list_discovered_sessions(
+    context: State<'_, AppContext>,
+    state: State<'_, Arc<ChatSessionStore>>,
+    limit: Option<usize>,
+) -> Result<Vec<CliDiscoveredSession>, String> {
+    let max = limit.unwrap_or(300).max(1);
+    let chat = discover_chat_sessions(&state, Some(max))?;
+    let cli = discover_cli_sessions(&context, Some(max)).unwrap_or_else(|_| Vec::new());
+    Ok(merge_discovered_session_lists(chat, cli, max))
+}
+
+#[tauri::command]
+fn update_chat_session_title(
+    context: State<'_, AppContext>,
+    state: State<'_, Arc<ChatSessionStore>>,
+    session_id: String,
+    title: String,
+) -> Result<(), String> {
+    let trimmed_session_id = session_id.trim();
+    if trimmed_session_id.is_empty() {
+        return Err("session id is required".to_string());
+    }
+
+    let normalized_title = normalize_session_title(Some(title.as_str()));
+    let Some(cli_entrypoint) = resolve_cli_entrypoint_path(&context) else {
+        return Err("CLI entrypoint not found".to_string());
+    };
+    let cli_workdir = resolve_cli_workdir(&cli_entrypoint, &context);
+    let mut command = Command::new("bun");
+    command
+        .current_dir(cli_workdir)
+        .arg("run")
+        .arg(cli_entrypoint)
+        .arg("sessions")
+        .arg("update")
+        .arg("--session-id")
+        .arg(trimmed_session_id)
+        .arg("--title")
+        .arg(normalized_title.clone().unwrap_or_default());
+
+    let output = command
+        .output()
+        .map_err(|e| format!("failed to update session title: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            return Err("failed to update session title".to_string());
+        }
+        return Err(stderr);
+    }
+
+    let mut sessions = state
+        .sessions
+        .lock()
+        .map_err(|_| "failed to lock chat session store")?;
+    if let Some(session) = sessions.get_mut(trimmed_session_id) {
+        session.title = normalized_title;
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -4618,7 +4897,9 @@ fn main() {
             chat_session_command,
             read_session_transcript,
             read_session_messages,
+            list_discovered_sessions,
             list_chat_sessions,
+            update_chat_session_title,
             delete_chat_session,
             poll_tool_approvals,
             respond_tool_approval

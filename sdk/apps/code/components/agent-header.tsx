@@ -1,6 +1,7 @@
 "use client";
 
 import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import type { ChatSessionStatus } from "@/lib/chat-schema";
 import { cn } from "@/lib/utils";
 import { Button } from "./ui/button";
@@ -10,10 +11,14 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import { Input } from "./ui/input";
 import { normalizeTitle } from "./utils";
 
 type AgentHeaderProps = {
 	title?: string;
+	canEditTitle?: boolean;
+	renamingTitle?: boolean;
+	onRenameTitle?: (nextTitle: string) => Promise<void> | void;
 	onNewThread?: () => void;
 	onDeleteSession?: () => void;
 	canDeleteSession?: boolean;
@@ -28,6 +33,9 @@ type AgentHeaderProps = {
 
 export function AgentHeader({
 	title,
+	canEditTitle,
+	renamingTitle,
+	onRenameTitle,
 	onNewThread,
 	onDeleteSession,
 	canDeleteSession,
@@ -36,10 +44,38 @@ export function AgentHeader({
 	status,
 	diff,
 }: AgentHeaderProps) {
+	const [isEditingTitle, setIsEditingTitle] = useState(false);
+	const [titleInput, setTitleInput] = useState("");
 	const additions = diff?.additions ?? 0;
 	const deletions = diff?.deletions ?? 0;
 	const hasChanges = additions + deletions > 0;
-	const threadTitle = normalizeTitle(title?.trim()) || "New Session";
+	const threadTitle = useMemo(
+		() => normalizeTitle(title?.trim()) || "New Session",
+		[title],
+	);
+
+	useEffect(() => {
+		if (!isEditingTitle) {
+			setTitleInput(threadTitle);
+		}
+	}, [isEditingTitle, threadTitle]);
+
+	const submitTitle = async () => {
+		if (!onRenameTitle || renamingTitle) {
+			return;
+		}
+		const nextTitle = titleInput.trim();
+		if (nextTitle === threadTitle.trim()) {
+			setIsEditingTitle(false);
+			return;
+		}
+		setIsEditingTitle(false);
+		try {
+			await onRenameTitle(nextTitle);
+		} catch {
+			// Keep the existing title when update fails.
+		}
+	};
 
 	return (
 		<header className="flex h-12 items-center justify-between border-b border-border bg-card px-4">
@@ -55,7 +91,52 @@ export function AgentHeader({
 								: "bg-gray-500",
 					)}
 				/>
-				<h1 className="text-sm font-medium text-foreground">{threadTitle}</h1>
+				{isEditingTitle ? (
+					<form
+						className="m-0"
+						onSubmit={(event) => {
+							event.preventDefault();
+							void submitTitle();
+						}}
+					>
+						<Input
+							autoFocus
+							className="h-7 w-64 text-sm"
+							disabled={renamingTitle}
+							onBlur={() => {
+								void submitTitle();
+							}}
+							onChange={(event) => setTitleInput(event.target.value)}
+							onKeyDown={(event) => {
+								if (event.key === "Escape") {
+									event.preventDefault();
+									setTitleInput(threadTitle);
+									setIsEditingTitle(false);
+								}
+							}}
+							value={titleInput}
+						/>
+					</form>
+				) : (
+					<button
+						className={cn(
+							"text-sm font-medium text-foreground",
+							canEditTitle &&
+								"rounded px-1 py-0.5 transition-colors hover:bg-accent",
+						)}
+						disabled={!canEditTitle || renamingTitle}
+						onClick={() => {
+							if (!canEditTitle || renamingTitle) {
+								return;
+							}
+							setTitleInput(threadTitle);
+							setIsEditingTitle(true);
+						}}
+						type="button"
+					>
+						{threadTitle}
+					</button>
+				)}
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
 						<Button
