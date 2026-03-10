@@ -1,0 +1,182 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+
+const cliRoot = path.resolve(__dirname, "..");
+const cliEntry = path.join(cliRoot, "src", "index.ts");
+const bunExec = process.env.BUN_EXEC_PATH ?? "bun";
+
+type CliResult = ReturnType<typeof spawnSync>;
+
+interface KeyStep {
+	delaySeconds: number;
+	input: string;
+}
+
+function normalizeTerminalOutput(output: string): string {
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: this regex intentionally strips ANSI escape sequences
+	const ansiCsiRegex = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: this regex intentionally strips OSC sequences
+	const ansiOscRegex = /\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g;
+	const carriageReturnRegex = /\r/g;
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: this regex intentionally strips backspace control bytes
+	const backspaceRegex = /\u0008/g;
+	return (
+		output
+			// Strip ANSI CSI/OSC escapes.
+			.replace(ansiCsiRegex, "")
+			.replace(ansiOscRegex, "")
+			// Remove CR + backspace artifacts from `script`.
+			.replace(carriageReturnRegex, "")
+			.replace(backspaceRegex, "")
+	);
+}
+
+function toShellSingleQuotedLiteral(value: string): string {
+	return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+function runInteractiveCli(
+	steps: KeyStep[],
+	options?: { launchConfigView?: boolean },
+): CliResult {
+	const homeDir = mkdtempSync(path.join(os.tmpdir(), "cli-int-home-"));
+	const dataDir = mkdtempSync(path.join(os.tmpdir(), "cli-int-data-"));
+	const sessionDir = mkdtempSync(path.join(os.tmpdir(), "cli-int-sessions-"));
+	const teamDir = mkdtempSync(path.join(os.tmpdir(), "cli-int-teams-"));
+	tempDirs.push(homeDir, dataDir, sessionDir, teamDir);
+
+	const scriptedInput = steps
+		.map(
+			(step) =>
+				`sleep ${step.delaySeconds}; printf ${toShellSingleQuotedLiteral(step.input)}`,
+		)
+		.join("; ");
+	const launchArgs = [
+		cliEntry,
+		...(options?.launchConfigView ? ["config"] : []),
+		"-p",
+		"anthropic",
+		"-m",
+		"claude-sonnet-4-6",
+		"-k",
+		"test-key",
+	]
+		.map((arg) => toShellSingleQuotedLiteral(arg))
+		.join(" ");
+	const command = `(${scriptedInput}) | script -q /dev/null ${toShellSingleQuotedLiteral(bunExec)} ${launchArgs}`;
+
+	return spawnSync("bash", ["-lc", command], {
+		cwd: cliRoot,
+		encoding: "utf8",
+		env: {
+			...process.env,
+			HOME: homeDir,
+			CLINE_DATA_DIR: dataDir,
+			CLINE_SESSION_DATA_DIR: sessionDir,
+			CLINE_TEAM_DATA_DIR: teamDir,
+			CLINE_PROVIDER_SETTINGS_PATH: path.join(
+				dataDir,
+				"settings",
+				"providers.json",
+			),
+			CLINE_HOOKS_LOG_PATH: path.join(dataDir, "hooks", "hooks.jsonl"),
+		},
+		timeout: 6_000,
+		maxBuffer: 10 * 1024 * 1024,
+	});
+}
+
+function outputOf(result: CliResult): string {
+	return normalizeTerminalOutput(
+		`${typeof result.stdout === "string" ? result.stdout : result.stdout.toString("utf8")}\n${
+			typeof result.stderr === "string"
+				? result.stderr
+				: result.stderr.toString("utf8")
+		}`,
+	);
+}
+
+const tempDirs: string[] = [];
+
+describe("cli interactive e2e", () => {
+	afterEach(() => {
+		for (const dir of tempDirs.splice(0)) {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("shows the interactive chat view on launch", () => {
+		const result = runInteractiveCli([{ delaySeconds: 1.4, input: "" }]);
+		const output = outputOf(result);
+		expect(output).toContain("What can I do for you?");
+		expect(output).toContain("○ Plan ● Act (Tab)");
+		expect(output).toContain("Auto-approve all enabled (Shift+Tab)");
+	});
+
+	it("toggles plan/act mode with Tab", () => {
+		const result = runInteractiveCli([
+			{ delaySeconds: 1.0, input: "\t" },
+			{ delaySeconds: 0.8, input: "" },
+		]);
+		const output = outputOf(result);
+		expect(output).toContain("○ Plan ● Act (Tab)");
+		expect(output).toContain("● Plan ○ Act (Tab)");
+	});
+
+	it("toggles auto-approve-all with Shift+Tab", () => {
+		const result = runInteractiveCli([
+			{ delaySeconds: 1.0, input: "\u001b[Z" },
+			{ delaySeconds: 0.8, input: "" },
+		]);
+		const output = outputOf(result);
+		expect(output).toContain("Auto-approve all enabled (Shift+Tab)");
+		expect(output).toContain("Auto-approve all disabled (Shift+Tab)");
+	});
+
+	it("opens /settings and navigates tabs with arrow keys", () => {
+		const result = runInteractiveCli([
+			{ delaySeconds: 1.0, input: "/settings" },
+			{ delaySeconds: 0.25, input: "\r" }, // accept slash completion
+			{ delaySeconds: 0.25, input: "\r" }, // submit command
+			{ delaySeconds: 0.6, input: "\u001b[C" },
+			{ delaySeconds: 0.35, input: "\u001b[C" },
+			{ delaySeconds: 0.35, input: "\u001b[C" },
+			{ delaySeconds: 0.35, input: "\u001b[C" },
+			{ delaySeconds: 0.7, input: "" },
+		]);
+		const output = outputOf(result);
+		expect(output).toContain("Configuration");
+		expect(output).toContain("[Workflows] Rules Skills Hooks Agents");
+		expect(output).toContain("Workflows [Rules] Skills Hooks Agents");
+		expect(output).toContain("Workflows Rules [Skills] Hooks Agents");
+		expect(output).toContain("Workflows Rules Skills [Hooks] Agents");
+		expect(output).toContain("Workflows Rules Skills Hooks [Agents]");
+	});
+
+	it("closes /settings with Escape", () => {
+		const result = runInteractiveCli([
+			{ delaySeconds: 1.0, input: "/settings" },
+			{ delaySeconds: 0.25, input: "\r" },
+			{ delaySeconds: 0.25, input: "\r" },
+			{ delaySeconds: 0.8, input: "\u001b" },
+			{ delaySeconds: 0.8, input: "" },
+		]);
+		const output = outputOf(result);
+		expect(output).toContain(
+			"Config mode: ←/→ tabs · ↑/↓ navigate · Esc close",
+		);
+		expect(output).toContain("/ for commands · @ for files");
+	});
+
+	it("launches config view directly with `clite config`", () => {
+		const result = runInteractiveCli([{ delaySeconds: 1.5, input: "" }], {
+			launchConfigView: true,
+		});
+		const output = outputOf(result);
+		expect(output).toContain("Configuration");
+		expect(output).toContain("[Workflows] Rules Skills Hooks Agents");
+	});
+});
