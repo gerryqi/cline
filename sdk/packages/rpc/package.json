@@ -33,6 +33,7 @@
 		"typecheck": "bun tsc --noEmit"
 	},
 	"dependencies": {
+		"@cline/shared": "workspace:*",
 		"@cline/scheduler": "workspace:*",
 		"@grpc/grpc-js": "^1.14.0",
 		"@grpc/proto-loader": "^0.8.0"
