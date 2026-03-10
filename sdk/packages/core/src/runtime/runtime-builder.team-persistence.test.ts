@@ -26,7 +26,11 @@ class MockAgentTeamsRuntime {
 		tasks: [],
 		mailbox: [],
 		missionLog: [],
+		runs: [],
+		outcomes: [],
+		outcomeFragments: [],
 	}));
+	markStaleRunsInterrupted = vi.fn();
 	getTeammateIds = vi.fn(() => []);
 	shutdownTeammate = vi.fn();
 }
@@ -45,34 +49,41 @@ vi.mock("../default-tools", () => ({
 	},
 }));
 
-let persistenceInstance: MockFileTeamPersistenceStore | undefined;
-class MockFileTeamPersistenceStore {
+let teamStoreInstance: MockSqliteTeamStore | undefined;
+class MockSqliteTeamStore {
 	constructor() {
-		persistenceInstance = this;
+		teamStoreInstance = this;
 	}
 
-	loadState = vi.fn(() => ({
-		members: [],
-		tasks: [],
-		mailbox: [],
-		missionLog: [],
-	}));
-	getTeammateSpecs = vi.fn(() => [
-		{
-			agentId: "restored-1",
-			rolePrompt: "Persisted teammate",
-			modelId: "claude-sonnet-4-5-20250929",
-			maxIterations: 4,
+	init = vi.fn();
+	loadRuntime = vi.fn(() => ({
+		state: {
+			teamId: "team_1",
+			teamName: "test",
+			members: [],
+			tasks: [],
+			mailbox: [],
+			missionLog: [],
+			runs: [],
+			outcomes: [],
+			outcomeFragments: [],
 		},
-	]);
-	upsertTeammateSpec = vi.fn();
-	removeTeammateSpec = vi.fn();
-	appendTaskHistory = vi.fn();
-	persist = vi.fn();
+		teammates: [
+			{
+				agentId: "restored-1",
+				rolePrompt: "Persisted teammate",
+				modelId: "claude-sonnet-4-5-20250929",
+				maxIterations: 4,
+			},
+		],
+		interruptedRunIds: ["run_00001"],
+	}));
+	handleTeamEvent = vi.fn();
+	persistRuntime = vi.fn();
 }
 
-vi.mock("../session/session-service", () => ({
-	FileTeamPersistenceStore: MockFileTeamPersistenceStore,
+vi.mock("../storage/sqlite-team-store", () => ({
+	SqliteTeamStore: MockSqliteTeamStore,
 }));
 
 describe("DefaultRuntimeBuilder team persistence boundary", () => {
@@ -85,6 +96,9 @@ describe("DefaultRuntimeBuilder team persistence boundary", () => {
 				providerId: "anthropic",
 				modelId: "claude-sonnet-4-6",
 				apiKey: "key",
+				headers: {
+					Authorization: "Bearer team-token",
+				},
 				systemPrompt: "test",
 				cwd: process.cwd(),
 				enableTools: false,
@@ -98,14 +112,23 @@ describe("DefaultRuntimeBuilder team persistence boundary", () => {
 			expect.objectContaining({
 				restoredFromPersistence: true,
 				restoredTeammates: [expect.objectContaining({ agentId: "restored-1" })],
+				teammateRuntime: expect.objectContaining({
+					headers: {
+						Authorization: "Bearer team-token",
+					},
+				}),
 			}),
 		);
 		expect(onTeamRestored).toHaveBeenCalledTimes(1);
 		expect(runtimeInstance).toBeDefined();
-		expect(persistenceInstance).toBeDefined();
-		if (!runtimeInstance || !persistenceInstance) {
-			throw new Error("Expected mocked runtime and persistence instances");
+		expect(teamStoreInstance).toBeDefined();
+		if (!runtimeInstance || !teamStoreInstance) {
+			throw new Error("Expected mocked runtime and team store instances");
 		}
+
+		expect(runtimeInstance.markStaleRunsInterrupted).toHaveBeenCalledWith(
+			"runtime_recovered",
+		);
 
 		runtimeInstance.emit({
 			type: "teammate_spawned",
@@ -116,28 +139,21 @@ describe("DefaultRuntimeBuilder team persistence boundary", () => {
 				maxIterations: 7,
 			},
 		});
-		expect(persistenceInstance.upsertTeammateSpec).toHaveBeenCalledWith({
-			agentId: "python-poet",
-			rolePrompt: "Write concise Python-focused haiku",
-			modelId: "claude-sonnet-4-5-20250929",
-			maxIterations: 7,
-		});
-		expect(persistenceInstance.appendTaskHistory).toHaveBeenCalledWith(
+		expect(teamStoreInstance.handleTeamEvent).toHaveBeenCalledWith(
+			expect.any(String),
 			expect.objectContaining({
 				type: "teammate_spawned",
 				agentId: "python-poet",
 			}),
 		);
-		expect(persistenceInstance.persist).toHaveBeenCalled();
+		expect(teamStoreInstance.persistRuntime).toHaveBeenCalled();
 
 		runtimeInstance.emit({
 			type: "teammate_shutdown",
 			agentId: "python-poet",
 		});
-		expect(persistenceInstance.removeTeammateSpec).toHaveBeenCalledWith(
-			"python-poet",
-		);
-		expect(persistenceInstance.appendTaskHistory).toHaveBeenCalledWith(
+		expect(teamStoreInstance.handleTeamEvent).toHaveBeenCalledWith(
+			expect.any(String),
 			expect.objectContaining({
 				type: "teammate_shutdown",
 				agentId: "python-poet",

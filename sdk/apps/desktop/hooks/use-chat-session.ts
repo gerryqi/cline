@@ -65,7 +65,7 @@ export const DEFAULT_CHAT_CONFIG: ChatSessionConfig = {
 	model: models.CLINE_DEFAULT_MODEL,
 	apiKey: "",
 	systemPrompt: DEFAULT_SYSTEM_PROMPT,
-	maxIterations: 10,
+	maxIterations: undefined,
 	enableTools: true,
 	enableSpawn: true,
 	enableTeams: true,

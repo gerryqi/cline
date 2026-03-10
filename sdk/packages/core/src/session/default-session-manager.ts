@@ -32,6 +32,10 @@ import {
 import { DefaultRuntimeBuilder } from "../runtime/runtime-builder";
 import type { BuiltRuntime, RuntimeBuilder } from "../runtime/session-runtime";
 import type { ProviderSettingsManager } from "../storage/provider-settings-manager";
+import {
+	buildTeamProgressSummary,
+	toTeamProgressLifecycleEvent,
+} from "../team";
 import { SessionSource, type SessionStatus } from "../types/common";
 import type { CoreSessionConfig } from "../types/config";
 import type { CoreSessionEvent } from "../types/events";
@@ -70,7 +74,19 @@ type ActiveSession = {
 	started: boolean;
 	aborting: boolean;
 	interactive: boolean;
+	activeTeamRunIds: Set<string>;
+	pendingTeamRunUpdates: TeamRunUpdate[];
+	teamRunWaiters: Array<() => void>;
 	pluginSandboxShutdown?: () => Promise<void>;
+};
+
+type TeamRunUpdate = {
+	runId: string;
+	agentId: string;
+	taskId?: string;
+	status: "completed" | "failed" | "cancelled" | "interrupted";
+	error?: string;
+	iterations?: number;
 };
 
 type StoredMessageWithMetadata = LlmsProviders.MessageWithMetadata & {
@@ -365,6 +381,7 @@ export class DefaultSessionManager implements SessionManager {
 			toolPolicies: input.toolPolicies ?? this.defaultToolPolicies,
 			requestToolApproval:
 				input.requestToolApproval ?? this.defaultRequestToolApproval,
+			completionGuard: runtime.completionGuard,
 			logger: runtime.logger ?? effectiveConfig.logger,
 			onEvent: (event: AgentEvent) => {
 				this.emit({
@@ -397,6 +414,9 @@ export class DefaultSessionManager implements SessionManager {
 			started: false,
 			aborting: false,
 			interactive: input.interactive === true,
+			activeTeamRunIds: new Set<string>(),
+			pendingTeamRunUpdates: [],
+			teamRunWaiters: [],
 			pluginSandboxShutdown: loadedPlugins.shutdown,
 		};
 		this.sessions.set(active.sessionId, active);
@@ -588,28 +608,46 @@ export class DefaultSessionManager implements SessionManager {
 		await this.ensureSessionPersisted(session);
 		await this.syncOAuthCredentials(session);
 
+		let result = await this.executeAgentTurn(
+			session,
+			prompt,
+			preparedInput.userImages,
+			preparedInput.userFiles,
+		);
+
+		while (this.shouldAutoContinueTeamRuns(session, result.finishReason)) {
+			const updates = await this.waitForTeamRunUpdates(session);
+			if (updates.length === 0) {
+				break;
+			}
+			const continuationPrompt = this.buildTeamRunContinuationPrompt(
+				session,
+				updates,
+			);
+			result = await this.executeAgentTurn(session, continuationPrompt);
+		}
+
+		return result;
+	}
+
+	private async executeAgentTurn(
+		session: ActiveSession,
+		prompt: string,
+		userImages?: string[],
+		userFiles?: string[],
+	): Promise<AgentResult> {
 		const shouldContinue =
 			session.started || session.agent.getMessages().length > 0;
 		const baselineMessages = session.agent.getMessages();
 		const result = shouldContinue
 			? await this.runWithAuthRetry(
 					session,
-					() =>
-						session.agent.continue(
-							prompt,
-							preparedInput.userImages,
-							preparedInput.userFiles,
-						),
+					() => session.agent.continue(prompt, userImages, userFiles),
 					baselineMessages,
 				)
 			: await this.runWithAuthRetry(
 					session,
-					() =>
-						session.agent.run(
-							prompt,
-							preparedInput.userImages,
-							preparedInput.userFiles,
-						),
+					() => session.agent.run(prompt, userImages, userFiles),
 					baselineMessages,
 				);
 		session.started = true;
@@ -617,7 +655,6 @@ export class DefaultSessionManager implements SessionManager {
 			result.messages,
 			result,
 		);
-
 		await this.invoke<void>(
 			"persistSessionMessages",
 			session.sessionId,
@@ -713,6 +750,9 @@ export class DefaultSessionManager implements SessionManager {
 		session: ActiveSession,
 		finishReason: AgentResult["finishReason"],
 	): Promise<void> {
+		if (this.hasPendingTeamRunWork(session)) {
+			return;
+		}
 		if (finishReason === "aborted" || session.aborting) {
 			await this.shutdownSession(session, {
 				status: "cancelled",
@@ -748,6 +788,7 @@ export class DefaultSessionManager implements SessionManager {
 			endReason: string;
 		},
 	): Promise<void> {
+		this.notifyTeamRunWaiters(session);
 		if (session.artifacts) {
 			await this.updateStatus(session, input.status, input.exitCode);
 		}
@@ -855,7 +896,6 @@ export class DefaultSessionManager implements SessionManager {
 			apiKey: config.apiKey,
 			baseUrl: config.baseUrl,
 			knownModels: config.knownModels,
-			defaultMaxIterations: config.maxIterations,
 			createSubAgentTools,
 			hooks: config.hooks,
 			extensions: config.extensions,
@@ -875,6 +915,42 @@ export class DefaultSessionManager implements SessionManager {
 		rootSessionId: string,
 		event: TeamEvent,
 	): Promise<void> {
+		const session = this.sessions.get(rootSessionId);
+		if (session) {
+			switch (event.type) {
+				case "run_queued":
+				case "run_started":
+					session.activeTeamRunIds.add(event.run.id);
+					break;
+				case "run_completed":
+				case "run_failed":
+				case "run_cancelled":
+				case "run_interrupted": {
+					let runError: string | undefined;
+					if (event.type === "run_failed") {
+						runError = event.run.error;
+					} else if (event.type === "run_cancelled") {
+						runError = event.run.error ?? event.reason;
+					} else if (event.type === "run_interrupted") {
+						runError = event.run.error ?? event.reason;
+					}
+					session.activeTeamRunIds.delete(event.run.id);
+					session.pendingTeamRunUpdates.push({
+						runId: event.run.id,
+						agentId: event.run.agentId,
+						taskId: event.run.taskId,
+						status: event.type.replace("run_", "") as TeamRunUpdate["status"],
+						error: runError,
+						iterations: event.run.result?.iterations,
+					});
+					this.notifyTeamRunWaiters(session);
+					break;
+				}
+				default:
+					break;
+			}
+		}
+
 		switch (event.type) {
 			case "task_start":
 				await this.invokeOptional(
@@ -893,7 +969,7 @@ export class DefaultSessionManager implements SessionManager {
 						"failed",
 						`[error] ${event.error.message}`,
 					);
-					return;
+					break;
 				}
 				if (event.result?.finishReason === "aborted") {
 					await this.invokeOptional(
@@ -904,7 +980,7 @@ export class DefaultSessionManager implements SessionManager {
 						"[done] aborted",
 						event.result.messages,
 					);
-					return;
+					break;
 				}
 				await this.invokeOptional(
 					"onTeamTaskEnd",
@@ -918,6 +994,104 @@ export class DefaultSessionManager implements SessionManager {
 			default:
 				break;
 		}
+
+		if (!session?.runtime.teamRuntime) {
+			return;
+		}
+		const teamName = session.config.teamName?.trim() || "team";
+		this.emit({
+			type: "team_progress",
+			payload: {
+				sessionId: rootSessionId,
+				teamName,
+				lifecycle: toTeamProgressLifecycleEvent({
+					teamName,
+					sessionId: rootSessionId,
+					event,
+				}),
+				summary: buildTeamProgressSummary(
+					teamName,
+					session.runtime.teamRuntime.exportState(),
+				),
+			},
+		});
+	}
+
+	private hasPendingTeamRunWork(session: ActiveSession): boolean {
+		return (
+			session.activeTeamRunIds.size > 0 ||
+			session.pendingTeamRunUpdates.length > 0
+		);
+	}
+
+	private shouldAutoContinueTeamRuns(
+		session: ActiveSession,
+		finishReason: AgentResult["finishReason"],
+	): boolean {
+		if (
+			session.aborting ||
+			finishReason === "aborted" ||
+			finishReason === "error"
+		) {
+			return false;
+		}
+		if (!session.config.enableAgentTeams) {
+			return false;
+		}
+		return this.hasPendingTeamRunWork(session);
+	}
+
+	private notifyTeamRunWaiters(session: ActiveSession): void {
+		const waiters = session.teamRunWaiters.splice(0);
+		for (const resolve of waiters) {
+			resolve();
+		}
+	}
+
+	private async waitForTeamRunUpdates(
+		session: ActiveSession,
+	): Promise<TeamRunUpdate[]> {
+		while (true) {
+			if (session.aborting) {
+				return [];
+			}
+			if (session.pendingTeamRunUpdates.length > 0) {
+				const updates = [...session.pendingTeamRunUpdates];
+				session.pendingTeamRunUpdates.length = 0;
+				return updates;
+			}
+			if (session.activeTeamRunIds.size === 0) {
+				return [];
+			}
+			await new Promise<void>((resolve) => {
+				session.teamRunWaiters.push(resolve);
+			});
+		}
+	}
+
+	private buildTeamRunContinuationPrompt(
+		session: ActiveSession,
+		updates: TeamRunUpdate[],
+	): string {
+		const lines = updates.map((update) => {
+			const base = `- ${update.runId} (${update.agentId}) -> ${update.status}`;
+			const task = update.taskId ? ` task=${update.taskId}` : "";
+			const iterations =
+				typeof update.iterations === "number"
+					? ` iterations=${update.iterations}`
+					: "";
+			const error = update.error ? ` error=${update.error}` : "";
+			return `${base}${task}${iterations}${error}`;
+		});
+		const remaining = session.activeTeamRunIds.size;
+		const instruction =
+			remaining > 0
+				? `There are still ${remaining} teammate run(s) in progress. Continue coordination and decide whether to wait for more updates.`
+				: "No teammate runs are currently in progress. Continue coordination using these updates.";
+		return formatUserInputBlock(
+			`System-delivered teammate async run updates:\n${lines.join("\n")}\n\n${instruction}`,
+			session.config.mode === "plan" ? "plan" : "act",
+		);
 	}
 
 	private emit(event: CoreSessionEvent): void {
@@ -1033,5 +1207,9 @@ export class DefaultSessionManager implements SessionManager {
 			updateConnection?: (overrides: { apiKey?: string }) => void;
 		};
 		agentWithConnection.updateConnection?.({ apiKey: resolved.apiKey });
+		// Propagate refreshed credentials to all active teammate agents
+		session.runtime.teamRuntime?.updateTeammateConnections({
+			apiKey: resolved.apiKey,
+		});
 	}
 }

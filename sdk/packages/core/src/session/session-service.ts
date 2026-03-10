@@ -142,6 +142,29 @@ function reviveTeamStateDates(state: TeamRuntimeState): TeamRuntimeState {
 			...entry,
 			ts: new Date(entry.ts),
 		})),
+		runs: (state.runs ?? []).map((run) => ({
+			...run,
+			startedAt: new Date(run.startedAt),
+			endedAt: run.endedAt ? new Date(run.endedAt) : undefined,
+			nextAttemptAt: run.nextAttemptAt
+				? new Date(run.nextAttemptAt)
+				: undefined,
+			heartbeatAt: run.heartbeatAt ? new Date(run.heartbeatAt) : undefined,
+		})),
+		outcomes: (state.outcomes ?? []).map((outcome) => ({
+			...outcome,
+			createdAt: new Date(outcome.createdAt),
+			finalizedAt: outcome.finalizedAt
+				? new Date(outcome.finalizedAt)
+				: undefined,
+		})),
+		outcomeFragments: (state.outcomeFragments ?? []).map((fragment) => ({
+			...fragment,
+			createdAt: new Date(fragment.createdAt),
+			reviewedAt: fragment.reviewedAt
+				? new Date(fragment.reviewedAt)
+				: undefined,
+		})),
 	};
 }
 
@@ -1020,9 +1043,7 @@ export class CoreSessionService {
 				[scanLimit],
 			);
 		}
-		return rows
-			.filter((row) => this.hasPersistedConversation(row))
-			.slice(0, requestedLimit);
+		return rows.slice(0, requestedLimit);
 	}
 
 	private isPidAlive(pid: number): boolean {
@@ -1039,33 +1060,6 @@ export class CoreSessionService {
 				"code" in error &&
 				(error as { code?: string }).code === "EPERM"
 			);
-		}
-	}
-
-	private hasPersistedConversation(row: SessionRowShape): boolean {
-		if ((row.prompt ?? "").trim().length > 0) {
-			return true;
-		}
-		const messagesPath =
-			row.messages_path?.trim() || this.sessionMessagesPath(row.session_id);
-		if (!messagesPath || !existsSync(messagesPath)) {
-			return false;
-		}
-		try {
-			const raw = readFileSync(messagesPath, "utf8");
-			if (!raw.trim()) {
-				return false;
-			}
-			const parsed = JSON.parse(raw) as { messages?: unknown } | unknown[];
-			const messages = Array.isArray(parsed)
-				? parsed
-				: Array.isArray((parsed as { messages?: unknown })?.messages)
-					? ((parsed as { messages: unknown[] }).messages ?? [])
-					: [];
-			return messages.length > 0;
-		} catch {
-			// Keep the row on parse/read failures rather than hiding potentially valid sessions.
-			return true;
 		}
 	}
 

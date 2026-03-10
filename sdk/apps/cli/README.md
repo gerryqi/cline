@@ -7,8 +7,7 @@ Streams output in real time and includes built-in tools, sub-agent spawning, and
 
 ## Requirements
 
-- [Bun](https://bun.com/docs/installation) (for development and build)
-- Node.js 18+ (for end users)
+- [Bun](https://bun.com/docs/installation) (for development, build, and running `clite`)
 
 ## Installation
 
@@ -37,8 +36,8 @@ bun link # Link the package globally for easy access from anywhere
 # Run from the linked binary
 clite auth
 
-# Run built CLI with Node (no Bun runtime required for end users)
-node cli/dist/index.js "your prompt"
+# Run built CLI with Bun
+bun cli/dist/index.js "your prompt"
 ```
 
 Dev runtime note:
@@ -190,7 +189,7 @@ During OAuth login, `clite` tries to open the authorization URL in your default 
 | `-m, --model <id>` | Model ID (default: provider's first model from bundled catalog; fallback `claude-sonnet-4-6`) |
 | `-p, --provider <id>` | Provider ID (default: anthropic) |
 | `-k, --key <api-key>` | API key override for this run |
-| `-n, --max-iterations <n>` | Max agentic loop iterations (currently ignored; runtime is unbounded) |
+| `-n, --max-iterations <n>` | Max agentic loop iterations (optional; unset means unbounded) |
 | `-i, --interactive` | Interactive mode |
 | `-u, --usage` | Show token usage and estimated cost (when available) |
 | `-t, --timings` | Show timing info |
@@ -296,6 +295,7 @@ In desktop mode, CLI writes a request JSON file and waits for a matching decisio
 - Client registration: `clite rpc register --client-type <type> [--client-id <id>] [--meta key=value]...` registers host identity for RPC clients
 - Runtime APIs: `clite rpc start` wires server-side runtime handlers for `StartRuntimeSession`, `SendRuntimeSession`, and `AbortRuntimeSession` (used by `@cline/code` and CLI runtime actions)
 - Runtime event bridge: runtime handlers publish live `runtime.chat.*` events via RPC `PublishEvent`, so subscribed clients can consume real-time text/tool updates through `StreamEvents`
+- Team event bridge: runtime handlers also publish typed team progress/lifecycle events (`runtime.team.progress.v1`, `runtime.team.lifecycle.v1`) with status-board projections
 - Tool approval bridge: runtime handlers publish `approval.requested` and wait for RPC responses; CLI prompt runs consume these requests and return approval decisions through RPC.
 - CLI streaming: RPC-backed prompt runs subscribe to `runtime.chat.*` during each turn, so text/tool output is rendered incrementally in the terminal.
 - Prompt startup behavior: regular `clite "<prompt>"` runs call `rpc ensure --json` first to get a compatible address, then try to connect to the RPC server. If no server is running, one is spawned in the background and the CLI waits briefly for it to bind. If the background spawn fails, the CLI falls back to an in-process local runtime.
@@ -356,7 +356,7 @@ Custom provider registry notes:
 - **Sub-agent spawning** - `spawn_agent` is available by default unless disabled
 - **Recursive delegation** - Sub-agents spawned via `spawn_agent` also receive `spawn_agent` when spawn is enabled
 - **Agent teams runtime** - Team tools (tasks/mailbox/mission log) are available by default unless disabled
-- `team_member` payload rules: `action=spawn` requires `agentId` + `rolePrompt`; `action=shutdown` requires `agentId`
+- Team tools use strict single-action schemas (for example `team_create_task`, `team_send_message`, `team_create_outcome`) instead of `action` unions
 - **Pipe support** - Accepts piped input for processing files
 - **Interactive mode** - Multi-turn conversations
 - **JSON output mode** - NDJSON records for run lifecycle, agent/team events, and final result (`--output json` / `--json`)

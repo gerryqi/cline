@@ -9,6 +9,7 @@ export type {
 	CoreSessionEvent,
 	SessionChunkEvent,
 	SessionEndedEvent,
+	SessionTeamProgressEvent,
 	SessionToolEvent,
 } from "./events";
 export type {

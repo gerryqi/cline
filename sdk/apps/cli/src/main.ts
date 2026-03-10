@@ -320,7 +320,7 @@ export async function runCli(): Promise<void> {
 				explicitSystemPrompt: args.systemPrompt,
 				rules: loadRulesForSystemPromptFromWatcher(userInstructionWatcher),
 			}),
-			maxIterations: undefined,
+			maxIterations: args.maxIterations,
 			sandbox: sandboxEnabled,
 			sandboxDataDir,
 			showUsage: args.showUsage,

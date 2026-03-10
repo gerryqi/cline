@@ -719,6 +719,61 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 						`${c.dim}[mission]${c.reset} ${event.entry.agentId}: ${truncate(event.entry.summary, 90)}`,
 					);
 					break;
+				case "run_queued":
+					appendLine(
+						`${c.dim}[team run]${c.reset} queued ${c.cyan}${event.run.id}${c.reset} -> ${event.run.agentId}`,
+					);
+					break;
+				case "run_started":
+					appendLine(
+						`${c.dim}[team run]${c.reset} started ${c.cyan}${event.run.id}${c.reset} -> ${event.run.agentId}`,
+					);
+					break;
+				case "run_progress":
+					appendLine(
+						`${c.dim}[team run]${c.reset} progress ${c.cyan}${event.run.id}${c.reset}: ${event.message}`,
+					);
+					break;
+				case "run_completed":
+					appendLine(
+						`${c.dim}[team run]${c.reset} completed ${c.cyan}${event.run.id}${c.reset}`,
+					);
+					break;
+				case "run_failed":
+					appendLine(
+						`${c.dim}[team run]${c.reset} failed ${c.cyan}${event.run.id}${c.reset}: ${event.run.error ?? "unknown error"}`,
+					);
+					break;
+				case "run_cancelled":
+					appendLine(
+						`${c.dim}[team run]${c.reset} cancelled ${c.cyan}${event.run.id}${c.reset}`,
+					);
+					break;
+				case "run_interrupted":
+					appendLine(
+						`${c.dim}[team run]${c.reset} interrupted ${c.cyan}${event.run.id}${c.reset}`,
+					);
+					break;
+				case "outcome_created":
+					appendLine(
+						`${c.dim}[team outcome]${c.reset} created ${c.cyan}${event.outcome.id}${c.reset}: ${event.outcome.title}`,
+					);
+					break;
+				case "outcome_fragment_attached":
+					appendLine(
+						`${c.dim}[team outcome]${c.reset} fragment ${c.cyan}${event.fragment.id}${c.reset} attached to ${event.fragment.section}`,
+					);
+					break;
+				case "outcome_fragment_reviewed":
+					appendLine(
+						`${c.dim}[team outcome]${c.reset} fragment ${c.cyan}${event.fragment.id}${c.reset} -> ${event.fragment.status}`,
+					);
+					break;
+				case "outcome_finalized":
+					appendLine(
+						`${c.dim}[team outcome]${c.reset} finalized ${c.cyan}${event.outcome.id}${c.reset}`,
+					);
+					break;
 				case "task_start":
 				case "task_end":
 				case "agent_event":

@@ -109,6 +109,7 @@ export type {
 	CoreSessionEvent,
 	SessionChunkEvent,
 	SessionEndedEvent,
+	SessionTeamProgressEvent,
 	SessionToolEvent,
 } from "./types/events";
 export type { SessionRecord, SessionRef } from "./types/sessions";

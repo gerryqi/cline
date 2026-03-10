@@ -773,6 +773,19 @@ export interface AgentConfig {
 	logger?: BasicLogger;
 
 	// -------------------------------------------------------------------------
+	// Completion Guard
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Optional guard that runs when the model returns no tool calls.
+	 * If it returns a non-empty string, that string is injected as a
+	 * system-level nudge and the loop continues instead of completing.
+	 * Use this to prevent premature exit when the agent has unfinished
+	 * obligations (e.g. in-progress team tasks).
+	 */
+	completionGuard?: () => string | undefined;
+
+	// -------------------------------------------------------------------------
 	// Cancellation
 	// -------------------------------------------------------------------------
 

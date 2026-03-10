@@ -1,4 +1,7 @@
-export { RpcSessionClient } from "./client.js";
+export {
+	RpcSessionClient,
+	type RpcStreamTeamProgressHandlers,
+} from "./client.js";
 export {
 	RpcRuntimeChatClient,
 	type RpcRuntimeEvent,

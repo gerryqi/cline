@@ -70,16 +70,29 @@ Workspace boundary note:
 
 #### Team Tool Surface
 
-`createAgentTeamsTools` provides grouped team tools with action-based inputs:
+`createAgentTeamsTools` provides strict single-action team tools:
 
-- `team_member` with `action: "spawn" | "shutdown"`
-- `team_task` with `action: "create" | "claim" | "complete" | "block"`
-- `team_message` with `action: "send" | "broadcast" | "read"`
+- `team_spawn_teammate`
+- `team_shutdown_teammate`
+- `team_create_task`
+- `team_claim_task`
+- `team_complete_task`
+- `team_block_task`
 - `team_status`
 - `team_run_task`
+- `team_cancel_run`
 - `team_list_runs`
 - `team_await_run`
+- `team_await_all_runs`
+- `team_send_message`
+- `team_broadcast`
+- `team_read_mailbox`
 - `team_log_update`
+- `team_create_outcome`
+- `team_attach_outcome_fragment`
+- `team_review_outcome_fragment`
+- `team_finalize_outcome`
+- `team_list_outcomes`
 - `team_cleanup`
 
 ### Streaming

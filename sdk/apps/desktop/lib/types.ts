@@ -82,6 +82,46 @@ export interface TeamStateEnvelope {
 			nextAction?: string;
 			ts: string;
 		}>;
+		runs?: Array<{
+			id: string;
+			agentId: string;
+			taskId?: string;
+			status:
+				| "queued"
+				| "running"
+				| "completed"
+				| "failed"
+				| "cancelled"
+				| "interrupted";
+			message: string;
+			priority: number;
+			retryCount: number;
+			maxRetries: number;
+			createdAt?: string;
+			startedAt: string;
+			endedAt?: string;
+			error?: string;
+		}>;
+		outcomes?: Array<{
+			id: string;
+			title: string;
+			status: "draft" | "in_review" | "finalized";
+			requiredSections: string[];
+			createdAt: string;
+			finalizedAt?: string;
+		}>;
+		outcomeFragments?: Array<{
+			id: string;
+			outcomeId: string;
+			section: string;
+			sourceAgentId: string;
+			sourceRunId?: string;
+			content: string;
+			status: "draft" | "reviewed" | "rejected";
+			reviewedBy?: string;
+			reviewedAt?: string;
+			createdAt: string;
+		}>;
 	};
 	teammates: Array<{
 		agentId: string;
@@ -89,6 +129,48 @@ export interface TeamStateEnvelope {
 		modelId?: string;
 		maxIterations?: number;
 	}>;
+}
+
+export interface TeamStatusBoardDto {
+	members: {
+		total: number;
+		lead: number;
+		teammates: number;
+		idle: number;
+		running: number;
+		stopped: number;
+	};
+	tasks: {
+		total: number;
+		pending: number;
+		inProgress: number;
+		blocked: number;
+		completed: number;
+		readyTaskIds: string[];
+		blockedTaskIds: string[];
+	};
+	runs: {
+		total: number;
+		queued: number;
+		running: number;
+		completed: number;
+		failed: number;
+		cancelled: number;
+		interrupted: number;
+	};
+	outcomes: {
+		total: number;
+		draft: number;
+		inReview: number;
+		finalized: number;
+		missingRequiredSections: string[];
+	};
+	fragments: {
+		total: number;
+		draft: number;
+		reviewed: number;
+		rejected: number;
+	};
 }
 
 export interface TeamHistoryItem {

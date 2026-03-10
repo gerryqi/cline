@@ -154,7 +154,7 @@ interface ParsedArgs {
   model?: string                // -m / --model
   provider?: string             // -p / --provider
   sessionId?: string            // --session
-  maxIterations?: number        // -n / --max-iterations (currently ignored at runtime)
+  maxIterations?: number        // -n / --max-iterations (optional; unset is unbounded)
   cwd?: string                  // --cwd
   teamName?: string             // --team-name
   missionLogIntervalSteps?: number  // --mission-step-interval
@@ -423,7 +423,7 @@ When any agent command starts, the CLI automatically attempts to connect to the 
 | `--model <id>` | `-m` | string | `anthropic/claude-sonnet-4.6` | LLM model ID |
 | `--provider <id>` | `-p` | string | `cline` | LLM provider ID |
 | `--key <api-key>` | `-k` | string | — | API key override for this run |
-| `--max-iterations <n>` | `-n` | number | *(unbounded)* | Max agentic loop iterations (currently ignored at runtime) |
+| `--max-iterations <n>` | `-n` | number | *(unbounded)* | Max agentic loop iterations (optional; unset is unbounded) |
 | `--usage` | `-u` | boolean | `false` | Print token usage and estimated cost after each run |
 | `--timings` | `-t` | boolean | `false` | Print elapsed time after each run |
 | `--thinking` | — | boolean | `false` | Enable model thinking/reasoning when supported |
@@ -489,10 +489,24 @@ When `--output json` (or `--json`) is used, output switches to **NDJSON**:
 | `spawn_agent` | Task description (50 chars) |
 | `skills` | `<skill> <args>` (70 chars) |
 | `ask_followup_question` | Question text (70 chars) |
-| `team_member` | `spawn <agentId>: <rolePrompt>` or `shutdown <agentId>` |
-| `team_task` | `create <title>`, `claim <taskId>`, `complete <taskId>: <summary>`, `block <taskId>: <reason>` |
+| `team_spawn_teammate` | `<agentId>: <rolePrompt>` |
+| `team_shutdown_teammate` | `shutdown <agentId>` |
+| `team_create_task` | `create <title>` |
+| `team_claim_task` | `claim <taskId>` |
+| `team_complete_task` | `complete <taskId>: <summary>` |
+| `team_block_task` | `block <taskId>: <reason>` |
 | `team_run_task` | `<runMode> <agentId>: <task>` (70 chars) |
-| `team_message` | `send <toAgentId>: <subject>`, `broadcast <subject>`, `read unreadOnly=<bool> limit=<n\|default>` |
+| `team_cancel_run` | `cancel <runId>` |
+| `team_await_run` | `<runId>` |
+| `team_await_all_runs` | `all runs` |
+| `team_send_message` | `<toAgentId>: <subject>` |
+| `team_broadcast` | `<subject>` |
+| `team_read_mailbox` | `read unreadOnly=<bool> limit=<n\|default>` |
+| `team_create_outcome` | `<title>` |
+| `team_attach_outcome_fragment` | `<outcomeId>/<section>` |
+| `team_review_outcome_fragment` | `<fragmentId>: <approved>` |
+| `team_finalize_outcome` | `<outcomeId>` |
+| `team_list_outcomes` | `list` |
 
 **ANSI color scheme** (defined in `src/utils/output.ts`, no external dependencies):
 
@@ -608,17 +622,30 @@ Agent teams enable the lead agent to spawn, coordinate, and communicate with mul
 
 | Tool | Description |
 |---|---|
-| `team_member` | Manage teammate lifecycle (`action: spawn` or `shutdown`) |
+| `team_spawn_teammate` | Spawn a teammate with `agentId` and `rolePrompt` |
+| `team_shutdown_teammate` | Shutdown a teammate by `agentId` |
 | `team_status` | Get a snapshot of all teammates, tasks, mailbox, and mission log |
-| `team_task` | Manage shared tasks (`action: create`, `claim`, `complete`, `block`) |
+| `team_create_task` | Create a shared task |
+| `team_claim_task` | Claim a shared task |
+| `team_complete_task` | Complete a shared task |
+| `team_block_task` | Block a shared task |
 | `team_run_task` | Delegate a task to a teammate (sync or async) |
 | `team_list_runs` | List async teammate runs |
-| `team_await_run` | Wait for one or all async runs to complete |
-| `team_message` | Team mailbox operations (`action: send`, `broadcast`, `read`) |
+| `team_await_run` | Wait for one async run by `runId` |
+| `team_await_all_runs` | Wait for all active async runs |
+| `team_cancel_run` | Cancel one async run |
+| `team_send_message` | Send a direct teammate message |
+| `team_broadcast` | Broadcast a message to teammates |
+| `team_read_mailbox` | Read the caller mailbox |
 | `team_log_update` | Append a mission log entry |
+| `team_create_outcome` | Create a final deliverable outcome |
+| `team_attach_outcome_fragment` | Attach a section fragment to an outcome |
+| `team_review_outcome_fragment` | Review an outcome fragment |
+| `team_finalize_outcome` | Finalize an outcome |
+| `team_list_outcomes` | List outcomes |
 | `team_cleanup` | Clean up the team runtime |
 
-Team state is persisted via `FileTeamPersistenceStore` keyed by `teamName`. On restart with the same `--team-name`, the runtime is restored and the CLI prints a restoration notice.
+Team state is persisted in SQLite via `SqliteTeamStore` keyed by `teamName`. On restart with the same `--team-name`, the runtime snapshot is restored and stale queued/running runs are marked interrupted before continuing.
 
 **Team event display** (`handleTeamEvent` in `src/events.ts`):
 
@@ -629,6 +656,7 @@ Team state is persisted via `FileTeamPersistenceStore` keyed by `teamName`. On r
 | `team_task_updated` | `[team task] <taskId> -> <status>` |
 | `team_message` | `[mailbox] <from> -> <to>: <subject>` |
 | `team_mission_log` | `[mission] <agentId>: <summary (90 chars)>` |
+| `run_queued` / `run_started` / `run_progress` / `run_completed` / `run_failed` / `run_cancelled` / `run_interrupted` | team run lifecycle updates |
 
 **Mission log intervals:**
 - `--mission-step-interval <n>` — log every N agent steps (default: 3)
@@ -863,7 +891,7 @@ interface Config extends Omit<CoreSessionConfig, "apiKey" | "mode"> {
   providerId: string          // resolved provider
   modelId: string             // resolved model
   systemPrompt: string        // system prompt (default or custom)
-  maxIterations?: number      // max agentic loop iterations (currently unused at runtime)
+  maxIterations?: number      // max agentic loop iterations (optional; unset is unbounded)
   enableSpawnAgent: boolean   // --spawn / --no-spawn
   enableAgentTeams: boolean   // --teams / --no-teams
   enableTools: boolean        // --tools / --no-tools

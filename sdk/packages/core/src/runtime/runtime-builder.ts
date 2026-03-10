@@ -20,7 +20,7 @@ import {
 	type ToolExecutors,
 	ToolPresets,
 } from "../default-tools";
-import { FileTeamPersistenceStore } from "../session/session-service";
+import { SqliteTeamStore } from "../storage/sqlite-team-store";
 import type { CoreAgentMode, CoreSessionConfig } from "../types/config";
 import type {
 	RuntimeBuilder,
@@ -333,13 +333,16 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 		}
 
 		let teamRuntime: AgentTeamsRuntime | undefined;
-		const teamPersistence = normalized.enableAgentTeams
-			? new FileTeamPersistenceStore({
-					teamName: effectiveTeamName,
-				})
+		const teamStore = normalized.enableAgentTeams
+			? new SqliteTeamStore()
 			: undefined;
-		const restoredTeamState = teamPersistence?.loadState();
-		const restoredTeammateSpecs = teamPersistence?.getTeammateSpecs() ?? [];
+		teamStore?.init();
+		const restoredTeam = teamStore?.loadRuntime(effectiveTeamName);
+		const restoredTeamState = restoredTeam?.state;
+		const restoredTeammateSpecs = restoredTeam?.teammates ?? [];
+		const teammateSpecs = new Map(
+			restoredTeammateSpecs.map((spec) => [spec.agentId, spec] as const),
+		);
 
 		const ensureTeamRuntime = (): AgentTeamsRuntime | undefined => {
 			if (!normalized.enableAgentTeams) {
@@ -354,7 +357,7 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 					missionLogIntervalMs: normalized.missionLogIntervalMs,
 					onTeamEvent: (event: TeamEvent) => {
 						onTeamEvent(event);
-						if (teamRuntime && teamPersistence) {
+						if (teamRuntime && teamStore) {
 							if (
 								event.type === "teammate_spawned" &&
 								event.teammate?.rolePrompt
@@ -365,18 +368,23 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 									modelId: event.teammate.modelId,
 									maxIterations: event.teammate.maxIterations,
 								};
-								teamPersistence.upsertTeammateSpec(spec);
+								teammateSpecs.set(spec.agentId, spec);
 							}
 							if (event.type === "teammate_shutdown") {
-								teamPersistence.removeTeammateSpec(event.agentId);
+								teammateSpecs.delete(event.agentId);
 							}
-							teamPersistence.appendTaskHistory(event);
-							teamPersistence.persist(teamRuntime);
+							teamStore.handleTeamEvent(effectiveTeamName, event);
+							teamStore.persistRuntime(
+								effectiveTeamName,
+								teamRuntime.exportState(),
+								Array.from(teammateSpecs.values()),
+							);
 						}
 					},
 				});
 				if (restoredTeamState) {
 					teamRuntime.hydrateState(restoredTeamState);
+					teamRuntime.markStaleRunsInterrupted("runtime_recovered");
 				}
 			}
 
@@ -405,6 +413,7 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 						modelId: config.modelId,
 						apiKey: config.apiKey ?? "",
 						baseUrl: config.baseUrl,
+						headers: config.headers,
 						knownModels: config.knownModels,
 						thinking: config.thinking,
 						maxIterations: config.maxIterations,
@@ -438,10 +447,44 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 			ensureTeamRuntime();
 		}
 
+		const completionGuard = teamRuntime
+			? () => {
+					const rt = teamRuntime;
+					if (!rt) return undefined;
+					const tasks = rt.listTasks();
+					const hasInProgress = tasks.some(
+						(t) => t.status === "in_progress" || t.status === "pending",
+					);
+					const runs = rt.listRuns({});
+					const hasActiveRuns = runs.some(
+						(r) => r.status === "running" || r.status === "queued",
+					);
+					if (hasInProgress || hasActiveRuns) {
+						const pending = tasks
+							.filter(
+								(t) => t.status === "in_progress" || t.status === "pending",
+							)
+							.map((t) => `${t.id} (${t.status}): ${t.title}`)
+							.join(", ");
+						const activeRunSummary = runs
+							.filter((r) => r.status === "running" || r.status === "queued")
+							.map((r) => `${r.id} (${r.status})`)
+							.join(", ");
+						const parts = [];
+						if (pending) parts.push(`Unfinished tasks: ${pending}`);
+						if (activeRunSummary)
+							parts.push(`Active runs: ${activeRunSummary}`);
+						return `[SYSTEM] You still have team obligations. ${parts.join(". ")}. Use team_run_task to delegate work, or team_complete_task to mark tasks done, or team_await_run / team_await_all_runs to wait for active runs. Do NOT stop until all tasks are completed.`;
+					}
+					return undefined;
+				}
+			: undefined;
+
 		return {
 			tools,
 			logger: logger ?? config.logger,
 			teamRuntime,
+			completionGuard,
 			shutdown: (reason: string) => {
 				shutdownTeamRuntime(teamRuntime, reason);
 				if (!watcherProvided) {

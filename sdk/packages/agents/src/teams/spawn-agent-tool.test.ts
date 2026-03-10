@@ -135,4 +135,38 @@ describe("createSpawnAgentTool", () => {
 			}),
 		);
 	});
+
+	it("leaves maxIterations unset when neither input nor default is provided", async () => {
+		const { createSpawnAgentTool } = await import("./spawn-agent-tool.js");
+		runMock.mockResolvedValue({
+			text: "sub-agent result",
+			iterations: 1,
+			finishReason: "completed",
+			usage: { inputTokens: 1, outputTokens: 1 },
+		});
+
+		const tool = createSpawnAgentTool({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			subAgentTools: [],
+		});
+
+		await tool.execute(
+			{
+				systemPrompt: "System",
+				task: "Do task",
+			},
+			{
+				agentId: "parent-3",
+				conversationId: "conv-parent",
+				iteration: 1,
+			},
+		);
+
+		expect(agentConstructorSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				maxIterations: undefined,
+			}),
+		);
+	});
 });

@@ -4,6 +4,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+use std::ffi::CStr;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -116,6 +117,23 @@ fn resolve_home_dir() -> Option<String> {
             }
         }
     }
+
+    #[cfg(unix)]
+    unsafe {
+        let passwd = libc::getpwuid(libc::geteuid());
+        if !passwd.is_null() {
+            let dir_ptr = (*passwd).pw_dir;
+            if !dir_ptr.is_null() {
+                if let Ok(dir) = CStr::from_ptr(dir_ptr).to_str() {
+                    let trimmed = dir.trim();
+                    if !trimmed.is_empty() {
+                        return Some(trimmed.to_string());
+                    }
+                }
+            }
+        }
+    }
+
     None
 }
 
@@ -515,6 +533,7 @@ struct ToolApprovalRequestItem {
 #[serde(rename_all = "camelCase")]
 struct CliDiscoveredSession {
     session_id: String,
+    title: String,
     status: String,
     provider: String,
     model: String,
@@ -846,7 +865,7 @@ fn kanban_data_root() -> Option<PathBuf> {
         }
     }
 
-    let home = std::env::var("HOME").ok()?;
+    let home = resolve_home_dir()?;
     Some(
         PathBuf::from(home)
             .join(".cline")
@@ -872,12 +891,23 @@ fn shared_session_data_dir() -> Option<PathBuf> {
             return Some(PathBuf::from(trimmed));
         }
     }
-    let home = std::env::var("HOME").ok()?;
+    let home = resolve_home_dir()?;
     Some(
         PathBuf::from(home)
             .join(".cline")
             .join("data")
             .join("sessions"),
+    )
+}
+
+fn root_session_db_path() -> Option<PathBuf> {
+    let home = resolve_home_dir()?;
+    Some(
+        PathBuf::from(home)
+            .join(".cline")
+            .join("data")
+            .join("sessions")
+            .join("sessions.db"),
     )
 }
 
@@ -989,6 +1019,102 @@ fn derive_prompt_from_messages(messages: &[Value]) -> Option<String> {
         }
     }
     None
+}
+
+fn first_prompt_line(value: &str) -> Option<String> {
+    let line = value.trim().lines().next().unwrap_or("").trim();
+    if line.is_empty() {
+        None
+    } else {
+        Some(line.to_string())
+    }
+}
+
+fn derive_prompt_from_hook_file(path: &str) -> Option<String> {
+    if path.trim().is_empty() || !Path::new(path).exists() {
+        return None;
+    }
+    let raw = fs::read_to_string(path).ok()?;
+    for line in raw.lines().rev() {
+        let Ok(value) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        let hook_name = value
+            .get("hookName")
+            .or_else(|| value.get("hook_event_name"))
+            .or_else(|| value.get("event"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if hook_name != "prompt_submit" {
+            continue;
+        }
+        if let Some(prompt) = value
+            .get("data")
+            .and_then(|v| v.get("prompt"))
+            .and_then(|v| v.as_str())
+            .or_else(|| value.get("prompt").and_then(|v| v.as_str()))
+        {
+            if let Some(line) = first_prompt_line(prompt) {
+                return Some(line);
+            }
+        }
+    }
+    None
+}
+
+fn derive_prompt_from_transcript_file(path: &str) -> Option<String> {
+    if path.trim().is_empty() || !Path::new(path).exists() {
+        return None;
+    }
+    let raw = fs::read_to_string(path).ok()?;
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let normalized = trimmed.to_ascii_lowercase();
+        if normalized.starts_with("user:") || normalized.starts_with("prompt:") {
+            let candidate = trimmed
+                .split_once(':')
+                .map(|(_, rest)| rest.trim())
+                .unwrap_or_default();
+            if let Some(result) = first_prompt_line(candidate) {
+                return Some(result);
+            }
+        }
+    }
+    None
+}
+
+fn derive_session_title(
+    session_id: &str,
+    is_subagent: bool,
+    agent_id: Option<&str>,
+    prompt: Option<&str>,
+) -> String {
+    if let Some(value) = prompt.and_then(first_prompt_line) {
+        return value.chars().take(80).collect();
+    }
+    if is_subagent {
+        let suffix = agent_id
+            .and_then(|value| {
+                let trimmed = value.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            })
+            .unwrap_or(session_id);
+        let tail = if suffix.len() > 6 {
+            &suffix[suffix.len() - 6..]
+        } else {
+            suffix
+        };
+        return format!("Subagent_{tail}");
+    }
+    format!("Session_{session_id}")
 }
 
 fn stringify_message_content(value: &Value) -> String {
@@ -1178,6 +1304,134 @@ fn shared_session_artifact_path(session_id: &str, suffix: &str) -> Option<PathBu
     None
 }
 
+fn sql_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn load_related_cli_session_ids(session_id: &str) -> Result<Vec<String>, String> {
+    let Some(db_path) = root_session_db_path() else {
+        return Ok(vec![session_id.to_string()]);
+    };
+    if !db_path.exists() {
+        return Ok(vec![session_id.to_string()]);
+    }
+
+    let id_quoted = sql_quote(session_id);
+    let like_quoted = sql_quote(&format!("{session_id}__%"));
+    let query = format!(
+        "SELECT DISTINCT session_id FROM sessions \
+         WHERE session_id = {id_quoted} \
+            OR session_id LIKE {like_quoted} \
+            OR parent_session_id = {id_quoted} \
+            OR parent_session_id LIKE {like_quoted};"
+    );
+
+    let output = Command::new("sqlite3")
+        .arg("-noheader")
+        .arg(db_path.to_string_lossy().to_string())
+        .arg(query)
+        .output()
+        .map_err(|e| format!("failed to query root sessions db for delete: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            "failed to query root sessions db for delete".to_string()
+        } else {
+            format!("failed to query root sessions db for delete: {stderr}")
+        });
+    }
+
+    let mut ids: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty())
+        .collect();
+    if ids.is_empty() {
+        ids.push(session_id.to_string());
+    }
+    Ok(ids)
+}
+
+fn delete_cli_sessions_from_root_db(session_id: &str) -> Result<(), String> {
+    let Some(db_path) = root_session_db_path() else {
+        return Ok(());
+    };
+    if !db_path.exists() {
+        return Ok(());
+    }
+
+    let id_quoted = sql_quote(session_id);
+    let like_quoted = sql_quote(&format!("{session_id}__%"));
+    let query = format!(
+        "DELETE FROM sessions \
+         WHERE session_id = {id_quoted} \
+            OR session_id LIKE {like_quoted} \
+            OR parent_session_id = {id_quoted} \
+            OR parent_session_id LIKE {like_quoted};"
+    );
+
+    let output = Command::new("sqlite3")
+        .arg(db_path.to_string_lossy().to_string())
+        .arg(query)
+        .output()
+        .map_err(|e| format!("failed to delete from root sessions db: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            "failed to delete from root sessions db".to_string()
+        } else {
+            format!("failed to delete from root sessions db: {stderr}")
+        });
+    }
+
+    Ok(())
+}
+
+fn remove_persisted_session_artifacts(session_ids: &[String]) {
+    if let Some(base) = shared_session_data_dir() {
+        for session_id in session_ids {
+            let session_dir = base.join(session_id);
+            if session_dir.exists() {
+                let _ = fs::remove_dir_all(&session_dir);
+            }
+
+            let file_suffixes = ["messages.json", "log", "hooks.jsonl"];
+            for suffix in file_suffixes {
+                let file_name = format!("{session_id}.{suffix}");
+                if let Some(found) = find_artifact_under_dir(
+                    &base.join(root_session_id_from(session_id)),
+                    &file_name,
+                    4,
+                ) {
+                    let _ = fs::remove_file(found);
+                }
+            }
+        }
+    }
+
+    if let Some(dir) = tool_approval_dir() {
+        if dir.exists() {
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if !path.is_file() {
+                        continue;
+                    }
+                    let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
+                        continue;
+                    };
+                    if session_ids
+                        .iter()
+                        .any(|session_id| name.starts_with(&format!("{session_id}.")))
+                    {
+                        let _ = fs::remove_file(path);
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn resolve_cli_entrypoint_path(context: &AppContext) -> Option<PathBuf> {
     let candidates = [
         PathBuf::from(&context.workspace_root)
@@ -1326,7 +1580,9 @@ where
                 last_not_found.push(format!("{bun} ({error})"));
             }
             Err(error) => {
-                return Err(format!("failed to execute bun command via '{bun}': {error}"));
+                return Err(format!(
+                    "failed to execute bun command via '{bun}': {error}"
+                ));
             }
         }
     }
@@ -1335,6 +1591,53 @@ where
         "failed to find a runnable bun binary. Tried: {}",
         last_not_found.join(", ")
     ))
+}
+
+fn parse_first_json_array(raw: &str) -> Option<Vec<Value>> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Ok(parsed) = serde_json::from_str::<Value>(trimmed) {
+        if let Some(items) = parsed.as_array() {
+            return Some(items.clone());
+        }
+    }
+
+    for (idx, ch) in trimmed.char_indices() {
+        if ch != '{' && ch != '[' {
+            continue;
+        }
+        let candidate = &trimmed[idx..];
+        let mut stream = serde_json::Deserializer::from_str(candidate).into_iter::<Value>();
+        if let Some(Ok(parsed)) = stream.next() {
+            if let Some(items) = parsed.as_array() {
+                return Some(items.clone());
+            }
+        }
+    }
+
+    None
+}
+
+fn parse_json_array_from_output(output: &Output, context: &str) -> Result<Vec<Value>, String> {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if let Some(items) = parse_first_json_array(&stdout) {
+        return Ok(items);
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if let Some(items) = parse_first_json_array(&stderr) {
+        return Ok(items);
+    }
+
+    let combined = format!("{stdout}\n{stderr}");
+    if let Some(items) = parse_first_json_array(&combined) {
+        return Ok(items);
+    }
+
+    Err(format!("invalid JSON array from {context}"))
 }
 
 fn run_cli_rpc_output_command(
@@ -1355,12 +1658,93 @@ fn run_cli_rpc_output_command(
         .map_err(|e| format!("failed running `{clite_cmd} rpc {}`: {e}", args.join(" ")))
 }
 
-fn ensure_rpc_server(
-    workspace_root: &str,
-    rpc_address: &str,
-) -> Result<String, String> {
-    let output =
-        run_cli_rpc_output_command(workspace_root, &["ensure", "--address", rpc_address, "--json"])?;
+fn resolve_cli_command() -> String {
+    std::env::var("CLINE_CLI_COMMAND")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "clite".to_string())
+}
+
+fn apply_shared_cli_env(command: &mut Command) {
+    for key in [
+        "CLINE_DATA_DIR",
+        "CLINE_SESSION_DATA_DIR",
+        "CLINE_TEAM_DATA_DIR",
+    ] {
+        if let Ok(value) = std::env::var(key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                command.env(key, trimmed.to_string());
+            }
+        }
+    }
+    command.env("CLINE_RPC_ADDRESS", resolve_rpc_address());
+}
+
+fn resolve_preferred_cli_entrypoint(context: &AppContext) -> Option<PathBuf> {
+    resolve_workspace_cli_entrypoint_path(&context.workspace_root)
+        .or_else(|| resolve_cli_entrypoint_path(context))
+}
+
+fn cli_binary_candidates() -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    out.push(resolve_cli_command());
+
+    if let Ok(home) = std::env::var("HOME") {
+        out.push(
+            PathBuf::from(&home)
+                .join(".bun")
+                .join("bin")
+                .join("clite")
+                .to_string_lossy()
+                .to_string(),
+        );
+    }
+
+    out.push("/opt/homebrew/bin/clite".to_string());
+    out.push("/usr/local/bin/clite".to_string());
+
+    let mut deduped: Vec<String> = Vec::new();
+    for candidate in out {
+        if !deduped.iter().any(|item| item == &candidate) {
+            deduped.push(candidate);
+        }
+    }
+    deduped
+}
+
+fn spawn_cli_with_builder<F>(mut builder: F) -> Result<Child, String>
+where
+    F: FnMut(&mut Command),
+{
+    let mut last_not_found: Vec<String> = Vec::new();
+
+    for cli in cli_binary_candidates() {
+        let mut command = Command::new(&cli);
+        builder(&mut command);
+        match command.spawn() {
+            Ok(child) => return Ok(child),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                last_not_found.push(format!("{cli} ({error})"));
+            }
+            Err(error) => {
+                return Err(format!("failed to start CLI command via '{cli}': {error}"));
+            }
+        }
+    }
+
+    Err(format!(
+        "failed to find a runnable clite binary. Tried: {}",
+        last_not_found.join(", ")
+    ))
+}
+
+fn ensure_rpc_server(workspace_root: &str, rpc_address: &str) -> Result<String, String> {
+    let output = run_cli_rpc_output_command(
+        workspace_root,
+        &["ensure", "--address", rpc_address, "--json"],
+    )?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(if stderr.is_empty() {
@@ -1381,10 +1765,7 @@ fn ensure_rpc_server(
     Ok(ensured)
 }
 
-fn register_rpc_client(
-    workspace_root: &str,
-    rpc_address: &str,
-) -> Result<(), String> {
+fn register_rpc_client(workspace_root: &str, rpc_address: &str) -> Result<(), String> {
     let output = run_cli_rpc_output_command(
         workspace_root,
         &[
@@ -1592,7 +1973,7 @@ fn resolve_mcp_settings_path() -> Result<PathBuf, String> {
             return Ok(PathBuf::from(trimmed));
         }
     }
-    let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_string())?;
+    let home = resolve_home_dir().ok_or_else(|| "HOME is not set".to_string())?;
     Ok(PathBuf::from(home)
         .join(".cline")
         .join("data")
@@ -2283,7 +2664,12 @@ fn ensure_chat_runtime_bridge_started(
                             "level": "error",
                             "message": parsed.message.unwrap_or_else(|| "chat runtime bridge error".to_string()),
                         });
-                        emit_chunk(&stdout_app, session_id, "chat_core_log", payload.to_string());
+                        emit_chunk(
+                            &stdout_app,
+                            session_id,
+                            "chat_core_log",
+                            payload.to_string(),
+                        );
                     } else if let Some(message) = parsed.message {
                         eprintln!("[chat-runtime-bridge] {message}");
                     }
@@ -2361,7 +2747,9 @@ fn run_chat_runtime_bridge_command(
                 .lock()
                 .ok()
                 .and_then(|mut pending_map| pending_map.remove(&request_id));
-            return Err(format!("failed writing chat runtime bridge command: {error}"));
+            return Err(format!(
+                "failed writing chat runtime bridge command: {error}"
+            ));
         }
         request_id
     };
@@ -2370,17 +2758,15 @@ fn run_chat_runtime_bridge_command(
         Ok(Ok(value)) => Ok(value),
         Ok(Err(error)) => Err(error),
         Err(_) => {
-            let _ = state
-                .runtime_bridge
-                .lock()
-                .ok()
-                .and_then(|mut guard| guard.as_mut().and_then(|bridge| {
+            let _ = state.runtime_bridge.lock().ok().and_then(|mut guard| {
+                guard.as_mut().and_then(|bridge| {
                     bridge
                         .pending
                         .lock()
                         .ok()
                         .and_then(|mut pending_map| pending_map.remove(&request_id))
-                }));
+                })
+            });
             Err("chat runtime bridge response channel closed".to_string())
         }
     }
@@ -2733,7 +3119,7 @@ fn team_base_dir() -> Option<PathBuf> {
             return Some(PathBuf::from(trimmed));
         }
     }
-    let home = std::env::var("HOME").ok()?;
+    let home = resolve_home_dir()?;
     Some(
         PathBuf::from(home)
             .join(".cline")
@@ -2797,19 +3183,10 @@ fn start_session(
 
     let id = format!("sess_{}", state.counter.fetch_add(1, Ordering::Relaxed) + 1);
 
-    let Some(cli_entrypoint) = resolve_cli_entrypoint_path(&context) else {
-        return Err(format!(
-            "CLI entrypoint not found. Checked relative to workspace_root={} and launch_cwd={}.",
-            context.workspace_root, context.launch_cwd
-        ));
-    };
-
     let prompt = request.prompt.clone().unwrap_or_default();
     let interactive = prompt.trim().is_empty();
 
     let mut args: Vec<String> = vec![
-        "run".into(),
-        cli_entrypoint.to_string_lossy().to_string(),
         "-p".into(),
         request.provider.clone(),
         "-m".into(),
@@ -2874,57 +3251,88 @@ fn start_session(
     let approval_dir = tool_approval_dir()
         .unwrap_or_else(|| PathBuf::from(".").join(".cline").join("tool-approvals"));
     let _ = fs::create_dir_all(&approval_dir);
+    let mut spawn_errors: Vec<String> = Vec::new();
+    let mut child: Option<Child> = None;
 
-    let mut child = spawn_bun_with_builder(|command| {
-        command
-            .current_dir(&request.workspace_root)
-            .args(args.clone())
-            .stdin(if interactive {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            })
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .env("NO_COLOR", "1")
-            .env("FORCE_COLOR", "0")
-            .env("CLINE_ENABLE_SUBPROCESS_HOOKS", "1")
-            .env("CLINE_SESSION_ID", id.clone())
-            .env("CLINE_TOOL_APPROVAL_MODE", "desktop")
-            .env("CLINE_TOOL_APPROVAL_SESSION_ID", id.clone())
-            .env(
-                "CLINE_TOOL_APPROVAL_DIR",
-                approval_dir.to_string_lossy().to_string(),
-            )
-            .env(
-                "CLINE_HOOKS_LOG_PATH",
-                hook_log_path.to_string_lossy().to_string(),
-            )
-            .env(
-                "CLINE_SESSION_DATA_DIR",
-                shared_session_data_dir()
-                    .unwrap_or_else(|| {
-                        PathBuf::from(".")
-                            .join(".cline")
-                            .join("data")
-                            .join("sessions")
-                    })
-                    .to_string_lossy()
-                    .to_string(),
-            )
-            .env(
-                "CLINE_TEAM_DATA_DIR",
-                std::env::var("CLINE_TEAM_DATA_DIR").unwrap_or_else(|_| {
-                    team_base_dir()
-                        .unwrap_or_else(|| PathBuf::from(".").join(".cline").join("data").join("teams"))
-                        .to_string_lossy()
-                        .to_string()
-                }),
-            )
-            .env("ANTHROPIC_API_KEY", &effective_api_key)
-            .env("OPENAI_API_KEY", &effective_api_key);
-    })
-    .map_err(|e| format!("failed to start session process: {e}"))?;
+    if let Some(cli_entrypoint) = resolve_preferred_cli_entrypoint(&context) {
+        let cli_workdir = resolve_cli_workdir(&cli_entrypoint, &context);
+        match spawn_bun_with_builder(|command| {
+            command
+                .current_dir(&cli_workdir)
+                .arg("run")
+                .arg(cli_entrypoint.to_string_lossy().to_string())
+                .args(args.clone())
+                .stdin(if interactive {
+                    Stdio::piped()
+                } else {
+                    Stdio::null()
+                })
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .env("NO_COLOR", "1")
+                .env("FORCE_COLOR", "0")
+                .env("CLINE_ENABLE_SUBPROCESS_HOOKS", "1")
+                .env("CLINE_SESSION_ID", id.clone())
+                .env("CLINE_TOOL_APPROVAL_MODE", "desktop")
+                .env("CLINE_TOOL_APPROVAL_SESSION_ID", id.clone())
+                .env(
+                    "CLINE_TOOL_APPROVAL_DIR",
+                    approval_dir.to_string_lossy().to_string(),
+                )
+                .env(
+                    "CLINE_HOOKS_LOG_PATH",
+                    hook_log_path.to_string_lossy().to_string(),
+                )
+                .env("ANTHROPIC_API_KEY", &effective_api_key)
+                .env("OPENAI_API_KEY", &effective_api_key);
+            apply_shared_cli_env(command);
+        }) {
+            Ok(next_child) => child = Some(next_child),
+            Err(error) => spawn_errors.push(format!("workspace CLI launch failed: {error}")),
+        }
+    }
+
+    if child.is_none() {
+        match spawn_cli_with_builder(|command| {
+            command
+                .current_dir(&request.workspace_root)
+                .args(args.clone())
+                .stdin(if interactive {
+                    Stdio::piped()
+                } else {
+                    Stdio::null()
+                })
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .env("NO_COLOR", "1")
+                .env("FORCE_COLOR", "0")
+                .env("CLINE_ENABLE_SUBPROCESS_HOOKS", "1")
+                .env("CLINE_SESSION_ID", id.clone())
+                .env("CLINE_TOOL_APPROVAL_MODE", "desktop")
+                .env("CLINE_TOOL_APPROVAL_SESSION_ID", id.clone())
+                .env(
+                    "CLINE_TOOL_APPROVAL_DIR",
+                    approval_dir.to_string_lossy().to_string(),
+                )
+                .env(
+                    "CLINE_HOOKS_LOG_PATH",
+                    hook_log_path.to_string_lossy().to_string(),
+                )
+                .env("ANTHROPIC_API_KEY", &effective_api_key)
+                .env("OPENAI_API_KEY", &effective_api_key);
+            apply_shared_cli_env(command);
+        }) {
+            Ok(next_child) => child = Some(next_child),
+            Err(error) => spawn_errors.push(format!("clite launch failed: {error}")),
+        }
+    }
+
+    let mut child = child.ok_or_else(|| {
+        format!(
+            "failed to start session process: {}",
+            spawn_errors.join("; ")
+        )
+    })?;
 
     let stdin = child.stdin.take();
     let stdout = child.stdout.take().ok_or("failed to capture stdout")?;
@@ -3100,79 +3508,213 @@ fn poll_sessions(
 
 #[tauri::command]
 fn list_cli_sessions(
-    context: State<'_, AppContext>,
+    _context: State<'_, AppContext>,
     limit: Option<usize>,
 ) -> Result<Vec<CliDiscoveredSession>, String> {
-    let Some(cli_entrypoint) = resolve_cli_entrypoint_path(&context) else {
-        return Ok(vec![]);
-    };
-    let cli_workdir = resolve_cli_workdir(&cli_entrypoint, &context);
-
-    let limit_value = limit.unwrap_or(300).max(1).to_string();
-    let output = run_bun_output_with_builder(|command| {
-        command
-            .current_dir(&cli_workdir)
-            .arg("run")
-            .arg(cli_entrypoint.clone())
-            .arg("sessions")
-            .arg("list")
-            .arg("--limit")
-            .arg(limit_value.clone());
-    })
-    .map_err(|e| format!("failed to list cli sessions: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        return Err(format!("failed to list cli sessions: {stderr}"));
+    let limit_value = limit.unwrap_or(300).max(1);
+    let db_path = root_session_db_path()
+        .ok_or_else(|| "could not resolve home directory for root sessions db".to_string())?;
+    if !db_path.exists() {
+        return Ok(Vec::new());
     }
 
-    let parsed = serde_json::from_slice::<Value>(&output.stdout)
-        .map_err(|e| format!("invalid sessions json: {e}"))?;
-    let mut out: Vec<CliDiscoveredSession> = Vec::new();
-    let Some(items) = parsed.as_array() else {
-        return Ok(out);
+    let schema_output = Command::new("sqlite3")
+        .arg("-noheader")
+        .arg("-separator")
+        .arg("\t")
+        .arg(db_path.to_string_lossy().to_string())
+        .arg("PRAGMA table_info(sessions);")
+        .output()
+        .map_err(|e| format!("failed to inspect root sessions db schema: {e}"))?;
+    if !schema_output.status.success() {
+        let stderr = String::from_utf8_lossy(&schema_output.stderr)
+            .trim()
+            .to_string();
+        return Err(if stderr.is_empty() {
+            "failed to inspect root sessions db schema".to_string()
+        } else {
+            format!("failed to inspect root sessions db schema: {stderr}")
+        });
+    }
+    let mut columns = HashSet::<String>::new();
+    for line in String::from_utf8_lossy(&schema_output.stdout).lines() {
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() < 2 {
+            continue;
+        }
+        let name = fields[1].trim();
+        if !name.is_empty() {
+            columns.insert(name.to_string());
+        }
+    }
+    if columns.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let col_expr = |name: &str, fallback: &str| {
+        if columns.contains(name) {
+            name.to_string()
+        } else {
+            fallback.to_string()
+        }
+    };
+    let select_sql = vec![
+        col_expr("session_id", "''"),
+        col_expr("status", "''"),
+        col_expr("provider", "''"),
+        col_expr("model", "''"),
+        col_expr("cwd", "''"),
+        col_expr("workspace_root", "''"),
+        col_expr("team_name", "''"),
+        col_expr("parent_session_id", "''"),
+        col_expr("parent_agent_id", "''"),
+        col_expr("agent_id", "''"),
+        col_expr("conversation_id", "''"),
+        col_expr("is_subagent", "0"),
+        col_expr("prompt", "''"),
+        col_expr("started_at", "''"),
+        col_expr("ended_at", "''"),
+        col_expr("interactive", "0"),
+        col_expr("messages_path", "''"),
+        col_expr("hook_path", "''"),
+        col_expr("transcript_path", "''"),
+    ]
+    .join(",");
+    let order_expr = if columns.contains("started_at") {
+        "datetime(started_at)"
+    } else {
+        "rowid"
+    };
+    let query = format!(
+        "SELECT {select_sql} FROM sessions ORDER BY {order_expr} DESC LIMIT {limit_value};"
+    );
+    let output = Command::new("sqlite3")
+        .arg("-noheader")
+        .arg("-separator")
+        .arg("\t")
+        .arg(db_path.to_string_lossy().to_string())
+        .arg(query)
+        .output()
+        .map_err(|e| format!("failed to query root sessions db: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            "failed to query root sessions db".to_string()
+        } else {
+            format!("failed to query root sessions db: {stderr}")
+        });
+    }
+
+    let as_opt = |value: &str| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    };
+    let as_bool = |value: &str| {
+        let trimmed = value.trim().to_ascii_lowercase();
+        trimmed == "1" || trimmed == "true"
     };
 
-    for item in items {
-        let session_id =
-            json_string_field(item, &["session_id", "sessionId"]).unwrap_or_default();
+    let mut out: Vec<CliDiscoveredSession> = Vec::new();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() < 19 {
+            continue;
+        }
+
+        let session_id = fields[0].trim().to_string();
         if session_id.is_empty() {
             continue;
         }
-        let cwd = json_string_field(item, &["cwd"]).unwrap_or_default();
-        let workspace_root = json_string_field(item, &["workspace_root", "workspaceRoot"])
-            .or_else(|| {
-                if cwd.trim().is_empty() {
-                    None
-                } else {
-                    Some(cwd.clone())
-                }
-            })
-            .unwrap_or_default();
+        let cwd = fields[4].trim().to_string();
+        let workspace_root = {
+            let root = fields[5].trim().to_string();
+            if root.is_empty() {
+                cwd.clone()
+            } else {
+                root
+            }
+        };
+        let messages_path = as_opt(fields[16]);
+        let hook_path = as_opt(fields[17]);
+        let transcript_path = as_opt(fields[18]);
+        let prompt = match as_opt(fields[12]) {
+            Some(value) => Some(value),
+            None => read_persisted_chat_messages(&session_id)
+                .ok()
+                .flatten()
+                .and_then(|messages| derive_prompt_from_messages(&messages))
+                .or_else(|| {
+                    messages_path.as_deref().and_then(|path| {
+                        fs::read_to_string(path)
+                            .ok()
+                            .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+                            .and_then(|parsed| {
+                                parsed
+                                    .get("messages")
+                                    .and_then(|v| v.as_array())
+                                    .or_else(|| parsed.as_array())
+                                    .cloned()
+                            })
+                            .and_then(|messages| derive_prompt_from_messages(&messages))
+                    })
+                })
+                .or_else(|| hook_path.as_deref().and_then(derive_prompt_from_hook_file))
+                .or_else(|| {
+                    transcript_path
+                        .as_deref()
+                        .and_then(derive_prompt_from_transcript_file)
+                }),
+        };
+        let is_subagent = as_bool(fields[11]);
+        let agent_id = as_opt(fields[9]);
+        let title = derive_session_title(
+            &session_id,
+            is_subagent,
+            agent_id.as_deref(),
+            prompt.as_deref(),
+        );
+
         out.push(CliDiscoveredSession {
             session_id,
-            status: json_string_field(item, &["status"])
-                .unwrap_or_else(|| "running".to_string()),
-            provider: json_string_field(item, &["provider"])
-                .unwrap_or_else(|| "anthropic".to_string()),
-            model: json_string_field(item, &["model"])
-                .unwrap_or_default()
-                .to_string(),
+            title,
+            status: {
+                let value = fields[1].trim();
+                if value.is_empty() {
+                    "running".to_string()
+                } else {
+                    value.to_string()
+                }
+            },
+            provider: {
+                let value = fields[2].trim();
+                if value.is_empty() {
+                    "anthropic".to_string()
+                } else {
+                    value.to_string()
+                }
+            },
+            model: fields[3].trim().to_string(),
             cwd,
             workspace_root,
-            team_name: json_string_field(item, &["team_name", "teamName"]),
-            parent_session_id: json_string_field(
-                item,
-                &["parent_session_id", "parentSessionId"],
-            ),
-            parent_agent_id: json_string_field(item, &["parent_agent_id", "parentAgentId"]),
-            agent_id: json_string_field(item, &["agent_id", "agentId"]),
-            conversation_id: json_string_field(item, &["conversation_id", "conversationId"]),
-            is_subagent: json_bool_field(item, &["is_subagent", "isSubagent"]).unwrap_or(false),
-            prompt: json_string_field(item, &["prompt"]),
-            started_at: json_string_field(item, &["started_at", "startedAt"]).unwrap_or_default(),
-            ended_at: json_string_field(item, &["ended_at", "endedAt"]),
-            interactive: json_bool_field(item, &["interactive"]).unwrap_or(false),
+            team_name: as_opt(fields[6]),
+            parent_session_id: as_opt(fields[7]),
+            parent_agent_id: as_opt(fields[8]),
+            agent_id,
+            conversation_id: as_opt(fields[10]),
+            is_subagent,
+            prompt,
+            started_at: fields[13].trim().to_string(),
+            ended_at: as_opt(fields[14]),
+            interactive: as_bool(fields[15]),
         });
     }
 
@@ -3230,10 +3772,7 @@ fn list_provider_catalog(context: State<'_, AppContext>) -> Result<Value, String
 }
 
 #[tauri::command]
-fn list_provider_models(
-    context: State<'_, AppContext>,
-    provider: String,
-) -> Result<Value, String> {
+fn list_provider_models(context: State<'_, AppContext>, provider: String) -> Result<Value, String> {
     let Some(script_path) = resolve_provider_settings_script_path(&context) else {
         return Err(format!(
             "provider settings script not found. checked workspace_root={} and launch_cwd={}",
@@ -3328,35 +3867,15 @@ fn search_workspace_files(
 }
 
 #[tauri::command]
-fn delete_cli_session(context: State<'_, AppContext>, session_id: String) -> Result<(), String> {
-    let Some(cli_entrypoint) = resolve_cli_entrypoint_path(&context) else {
-        return Err("CLI entrypoint not found".to_string());
-    };
-    let cli_workdir = resolve_cli_workdir(&cli_entrypoint, &context);
-
-    let output = run_bun_output_with_builder(|command| {
-        command
-            .current_dir(&cli_workdir)
-            .arg("run")
-            .arg(cli_entrypoint.clone())
-            .arg("sessions")
-            .arg("delete")
-            .arg("--session-id")
-            .arg(&session_id);
-    })
-    .map_err(|e| format!("failed to delete cli session: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        return Err(format!("failed to delete cli session: {stderr}"));
+fn delete_cli_session(_context: State<'_, AppContext>, session_id: String) -> Result<(), String> {
+    let trimmed_session_id = session_id.trim();
+    if trimmed_session_id.is_empty() {
+        return Err("session id is required".to_string());
     }
 
-    if let Some(path) = session_log_path(&session_id) {
-        let _ = fs::remove_file(path);
-    }
-    if let Some(path) = session_hook_log_path(&session_id) {
-        let _ = fs::remove_file(path);
-    }
+    let related_session_ids = load_related_cli_session_ids(trimmed_session_id)?;
+    delete_cli_sessions_from_root_db(trimmed_session_id)?;
+    remove_persisted_session_artifacts(&related_session_ids);
 
     Ok(())
 }
@@ -3366,12 +3885,9 @@ fn read_session_hooks(
     session_id: String,
     limit: Option<usize>,
 ) -> Result<Vec<SessionHookEvent>, String> {
-    let path = match session_hook_log_path(&session_id) {
+    let path = match shared_session_hook_path(&session_id) {
         Some(path) if path.exists() => path,
-        _ => match shared_session_hook_path(&session_id) {
-            Some(path) if path.exists() => path,
-            _ => return Ok(vec![]),
-        },
+        _ => return Ok(vec![]),
     };
     if !path.exists() {
         return Ok(vec![]);
@@ -3755,12 +4271,7 @@ async fn handle_chat_session_command(
             let app_for_turn = app.clone();
             let state_for_turn = state.clone();
             let context_for_turn = context.clone();
-            ensure_chat_stream_subscription(
-                app,
-                state,
-                &context_for_turn,
-                &session_id_for_turn,
-            )?;
+            ensure_chat_stream_subscription(app, state, &context_for_turn, &session_id_for_turn)?;
             let turn_request = ChatRunTurnRequest {
                 config: config.clone(),
                 messages,
@@ -3868,12 +4379,9 @@ async fn chat_session_command(
 
 #[tauri::command]
 fn read_session_transcript(session_id: String, max_chars: Option<usize>) -> Result<String, String> {
-    let (path, is_jsonl) = match session_log_path(&session_id) {
-        Some(path) if path.exists() => (path, true),
-        _ => match shared_session_log_path(&session_id) {
-            Some(path) if path.exists() => (path, false),
-            _ => return Ok(String::new()),
-        },
+    let (path, is_jsonl) = match shared_session_log_path(&session_id) {
+        Some(path) if path.exists() => (path, false),
+        _ => return Ok(String::new()),
     };
     if !path.exists() {
         return Ok(String::new());
@@ -4131,30 +4639,34 @@ fn list_chat_sessions(
 
         sessions
             .iter()
-            .map(|(session_id, session)| CliDiscoveredSession {
-                session_id: session_id.clone(),
-                status: session.status.clone(),
-                provider: session.config.provider.clone(),
-                model: session.config.model.clone(),
-                cwd: session
-                    .config
-                    .cwd
-                    .clone()
-                    .unwrap_or_else(|| session.config.workspace_root.clone()),
-                workspace_root: session.config.workspace_root.clone(),
-                team_name: None,
-                parent_session_id: None,
-                parent_agent_id: None,
-                agent_id: None,
-                conversation_id: None,
-                is_subagent: false,
-                prompt: session
+            .map(|(session_id, session)| {
+                let prompt = session
                     .prompt
                     .clone()
-                    .or_else(|| derive_prompt_from_messages(&session.messages)),
-                started_at: session.started_at.to_string(),
-                ended_at: session.ended_at.map(|value| value.to_string()),
-                interactive: false,
+                    .or_else(|| derive_prompt_from_messages(&session.messages));
+                CliDiscoveredSession {
+                    session_id: session_id.clone(),
+                    title: derive_session_title(session_id, false, None, prompt.as_deref()),
+                    status: session.status.clone(),
+                    provider: session.config.provider.clone(),
+                    model: session.config.model.clone(),
+                    cwd: session
+                        .config
+                        .cwd
+                        .clone()
+                        .unwrap_or_else(|| session.config.workspace_root.clone()),
+                    workspace_root: session.config.workspace_root.clone(),
+                    team_name: None,
+                    parent_session_id: None,
+                    parent_agent_id: None,
+                    agent_id: None,
+                    conversation_id: None,
+                    is_subagent: false,
+                    prompt,
+                    started_at: session.started_at.to_string(),
+                    ended_at: session.ended_at.map(|value| value.to_string()),
+                    interactive: false,
+                }
             })
             .collect()
     };
@@ -4222,28 +4734,27 @@ fn list_chat_sessions(
                     .map(|d| d.as_millis() as u64)
                     .unwrap_or_else(now_ms);
                 let cwd = json_string_field(&manifest, &["cwd"]).unwrap_or_default();
-                let workspace_root = json_string_field(
-                    &manifest,
-                    &["workspace_root", "workspaceRoot"],
-                )
-                .or_else(|| {
-                    if cwd.trim().is_empty() {
-                        None
-                    } else {
-                        Some(cwd.clone())
-                    }
-                })
-                .unwrap_or_default();
-                let provider =
-                    json_string_field(&manifest, &["provider"]).unwrap_or_else(|| "unknown".to_string());
-                let model =
-                    json_string_field(&manifest, &["model"]).unwrap_or_else(|| "unknown".to_string());
+                let workspace_root =
+                    json_string_field(&manifest, &["workspace_root", "workspaceRoot"])
+                        .or_else(|| {
+                            if cwd.trim().is_empty() {
+                                None
+                            } else {
+                                Some(cwd.clone())
+                            }
+                        })
+                        .unwrap_or_default();
+                let provider = json_string_field(&manifest, &["provider"])
+                    .unwrap_or_else(|| "unknown".to_string());
+                let model = json_string_field(&manifest, &["model"])
+                    .unwrap_or_else(|| "unknown".to_string());
                 let started_at = json_string_field(&manifest, &["started_at", "startedAt"])
                     .unwrap_or_else(|| file_ts.to_string());
                 let ended_at = json_string_field(&manifest, &["ended_at", "endedAt"])
                     .unwrap_or_else(|| file_ts.to_string());
                 out.push(CliDiscoveredSession {
                     session_id: session_id.clone(),
+                    title: derive_session_title(&session_id, false, None, prompt.as_deref()),
                     status: "completed".to_string(),
                     provider,
                     model,
@@ -4292,51 +4803,7 @@ fn delete_chat_session(
     }
     let _ = remove_chat_stream_subscription(&app, state.inner(), &context, trimmed_session_id);
 
-    if let Some(path) = session_log_path(trimmed_session_id) {
-        let _ = fs::remove_file(path);
-    }
-    if let Some(path) = session_hook_log_path(trimmed_session_id) {
-        let _ = fs::remove_file(path);
-    }
-
-    if let Some(base) = shared_session_data_dir() {
-        let session_dir = base.join(trimmed_session_id);
-        if session_dir.exists() {
-            let _ = fs::remove_dir_all(&session_dir);
-        }
-
-        let file_suffixes = ["messages.json", "log", "hooks.jsonl"];
-        for suffix in file_suffixes {
-            let file_name = format!("{trimmed_session_id}.{suffix}");
-            if let Some(found) = find_artifact_under_dir(
-                &base.join(root_session_id_from(trimmed_session_id)),
-                &file_name,
-                4,
-            ) {
-                let _ = fs::remove_file(found);
-            }
-        }
-    }
-
-    if let Some(dir) = tool_approval_dir() {
-        if dir.exists() {
-            if let Ok(entries) = fs::read_dir(dir) {
-                let prefix = format!("{trimmed_session_id}.");
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if !path.is_file() {
-                        continue;
-                    }
-                    let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
-                        continue;
-                    };
-                    if name.starts_with(&prefix) {
-                        let _ = fs::remove_file(path);
-                    }
-                }
-            }
-        }
-    }
+    remove_persisted_session_artifacts(&[trimmed_session_id.to_string()]);
 
     Ok(())
 }

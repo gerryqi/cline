@@ -9,6 +9,7 @@ export class RpcSessionClient {
 		throw browserOnlyError();
 	}
 }
+export type { RpcStreamTeamProgressHandlers } from "./client.js";
 
 export class RpcRuntimeChatClient {
 	constructor() {

@@ -577,6 +577,23 @@ export class Agent {
 				});
 
 				if (turn.toolCalls.length === 0) {
+					// Check completion guard before allowing the loop to end.
+					// If the guard returns a nudge string, inject it and continue.
+					const guardNudge = this.config.completionGuard?.();
+					if (guardNudge) {
+						this.log("info", "Completion guard prevented early exit", {
+							agentId: this.agentId,
+							conversationId: this.conversationStore.getConversationId(),
+							runId,
+							iteration,
+						});
+						this.conversationStore.appendMessage({
+							role: "user",
+							content: [{ type: "text", text: guardNudge }],
+						});
+						continue;
+					}
+
 					this.emit({
 						type: "iteration_end",
 						iteration,

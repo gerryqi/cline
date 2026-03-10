@@ -64,11 +64,44 @@ per-iteration tool fan-out.
 - Team tools emit runtime events and manage in-memory behavior.
 - Persistent team state storage is handled by `@cline/core`.
 
-## Team Tool Input Normalization
+Team runtime now includes:
 
-`team_member` now tolerates strict-mode `null` values for optional fields (for
-example `maxIterations`, `reason`) and normalizes them before
-validation.
+- Explicit async run lifecycle (`queued|running|completed|failed|cancelled|interrupted`)
+- Bounded async scheduling via `maxConcurrentRuns` with retry/backoff metadata on runs
+- First-class outcome convergence primitives (outcomes + reviewed section fragments + finalize gate)
+
+Team tool surface includes:
+
+- `team_spawn_teammate`, `team_shutdown_teammate` for teammate lifecycle
+- `team_create_task`, `team_claim_task`, `team_complete_task`, `team_block_task` for task lifecycle
+- `team_run_task`, `team_cancel_run`, `team_list_runs`, `team_await_run`, `team_await_all_runs` for async run control
+- `team_send_message`, `team_broadcast`, `team_read_mailbox` for mailbox operations
+- `team_create_outcome`, `team_attach_outcome_fragment`, `team_review_outcome_fragment`, `team_finalize_outcome`, `team_list_outcomes` for one-deliverable convergence flows
+
+Async run failure propagation:
+
+- `team_await_run` now throws tool errors for non-success terminal states (`failed`, `cancelled`, `interrupted`) so lead agents cannot silently ignore delegated run failures.
+- `team_await_all_runs` now throws when any delegated run ends in `failed`, `cancelled`, or `interrupted`, with per-run failure details.
+
+Teammate auth/runtime parity:
+
+- `TeamTeammateRuntimeConfig` now forwards `headers` in addition to `apiKey`/`baseUrl`, so delegated teammates can reuse the same auth context as the lead runtime (including header-based auth flows).
+
+Team/sub-agent iteration behavior:
+
+- `maxIterations` is optional for both `spawn_agent` and `team_spawn_teammate`.
+- When omitted, no iteration cap is injected by `@cline/agents`.
+
+## Team Tool Input Validation
+
+Team tools now use strict single-action schemas instead of action unions.
+
+- Each tool now has one fixed payload schema with `.strict()` boundaries.
+- Unknown keys and `null` placeholders for optional fields are rejected.
+- `team_create_outcome` requires `title` and defaults `requiredSections` to
+  `current_state`, `boundary_analysis`, and `interface_proposal` when omitted.
+- Validation errors are returned through the shared `validateWithZod` path (formatted
+  by `z.prettifyError` in `@cline/shared`).
 
 ## Browser-Safe Default Tooling
 

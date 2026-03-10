@@ -39,7 +39,13 @@ export interface SessionEndedEvent {
 
 export interface SessionHookEvent {
 	ts: string;
-	hookEventName:
+	hookEventName?:
+		| "tool_call"
+		| "tool_result"
+		| "agent_end"
+		| "session_shutdown"
+		| string;
+	hookName?:
 		| "tool_call"
 		| "tool_result"
 		| "agent_end"
@@ -47,6 +53,7 @@ export interface SessionHookEvent {
 		| string;
 	agentId?: string;
 	conversationId?: string;
+	taskId?: string;
 	parentAgentId?: string;
 	iteration?: number;
 	toolName?: string;
@@ -64,6 +71,7 @@ export interface ProcessContext {
 
 export interface CliDiscoveredSession {
 	sessionId: string;
+	title?: string;
 	status: "running" | "completed" | "failed" | "cancelled" | string;
 	provider: string;
 	model: string;

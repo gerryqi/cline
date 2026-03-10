@@ -78,6 +78,14 @@ export {
 } from "./mcp";
 
 export { ProviderSettingsManager } from "./storage/provider-settings-manager";
+export {
+	SqliteTeamStore,
+	type SqliteTeamStoreOptions,
+} from "./storage/team-store";
+export {
+	buildTeamProgressSummary,
+	toTeamProgressLifecycleEvent,
+} from "./team";
 
 // Compatibility barrel (legacy imports).
 export type { RuntimeEnvironment, SessionEvent, StoredMessages } from "./types";
@@ -93,6 +101,7 @@ export type {
 	CoreSessionEvent,
 	SessionChunkEvent,
 	SessionEndedEvent,
+	SessionTeamProgressEvent,
 	SessionToolEvent,
 } from "./types/events";
 export type {

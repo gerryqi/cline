@@ -67,7 +67,7 @@ export function NewAgentDialog({
 	const [cwd, setCwd] = useState(defaultCwd || defaultWorkspaceRoot);
 	const [apiKey, setApiKey] = useState("");
 	const [systemPrompt, setSystemPrompt] = useState("");
-	const [maxIterations, setMaxIterations] = useState("10");
+	const [maxIterations, setMaxIterations] = useState("");
 	const [enableTools, setEnableTools] = useState(true);
 	const [enableSpawn, setEnableSpawn] = useState(true);
 	const [enableTeams, setEnableTeams] = useState(true);

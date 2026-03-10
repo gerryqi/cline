@@ -1,4 +1,4 @@
-#!/usr/bin/env -S node --no-deprecation
+#!/usr/bin/env bun
 
 import { flushCliLoggerAdapters } from "./logging/adapter";
 import { runCli } from "./main";

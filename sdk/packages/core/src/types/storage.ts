@@ -1,3 +1,8 @@
+import type {
+	TeamEvent,
+	TeamRuntimeState,
+	TeamTeammateSpec,
+} from "@cline/agents";
 import type { SessionStatus } from "./common";
 import type { SessionRecord } from "./sessions";
 
@@ -23,8 +28,29 @@ export interface TeamStore {
 	listTeamNames(): Promise<string[]> | string[];
 	readState(
 		teamName: string,
-	): Promise<unknown | undefined> | unknown | undefined;
+	): Promise<TeamRuntimeState | undefined> | TeamRuntimeState | undefined;
 	readHistory(teamName: string, limit?: number): Promise<unknown[]> | unknown[];
+	loadRuntime(teamName: string):
+		| Promise<{
+				state?: TeamRuntimeState;
+				teammates: TeamTeammateSpec[];
+				interruptedRunIds: string[];
+		  }>
+		| {
+				state?: TeamRuntimeState;
+				teammates: TeamTeammateSpec[];
+				interruptedRunIds: string[];
+		  };
+	handleTeamEvent(teamName: string, event: TeamEvent): Promise<void> | void;
+	persistRuntime(
+		teamName: string,
+		state: TeamRuntimeState,
+		teammates: TeamTeammateSpec[],
+	): Promise<void> | void;
+	markInProgressRunsInterrupted(
+		teamName: string,
+		reason: string,
+	): Promise<string[]> | string[];
 }
 
 export interface ArtifactStore {

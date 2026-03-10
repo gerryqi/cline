@@ -19,7 +19,7 @@ ${c.bold}OPTIONS${c.reset}
   -m, --model <id>            Model ID (default: anthropic/claude-sonnet-4.6)
   -p, --provider <id>         Provider ID (default: cline)
   -k, --key <api-key>         API key override for this run
-  -n, --max-iterations <n>    Max agentic loop iterations (currently ignored; runtime is unbounded)
+  -n, --max-iterations <n>    Max agentic loop iterations (optional; unset means unbounded)
   -i, --interactive           Interactive mode with multi-turn conversation
   -u, --usage                 Show token usage and estimated cost after response
   -t, --timings               Show timing information

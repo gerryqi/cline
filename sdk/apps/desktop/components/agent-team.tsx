@@ -19,12 +19,20 @@ import { UserNav } from "@/components/user-nav";
 import { useAgentSession } from "@/hooks/use-agent-session";
 import { stripAnsi } from "@/lib/parse";
 import { createTeamName } from "@/lib/team-name";
+import { buildTeamStatusBoardDto } from "@/lib/team-status-board";
 import type { StartSessionRequest } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_SYSTEM_PROMPT =
 	"You are Cline, an AI coding agent. Follow user requests and use tools when needed.";
-const TAB_NAMES = ["Members", "Tasks", "Mailbox", "Mission Log"] as const;
+const TAB_NAMES = [
+	"Members",
+	"Tasks",
+	"Runs",
+	"Outcomes",
+	"Mailbox",
+	"Mission Log",
+] as const;
 type ActiveTab = (typeof TAB_NAMES)[number];
 
 type ProcessContext = {
@@ -94,7 +102,7 @@ export function AgentTeam() {
 		model: "anthropic/claude-sonnet-4-6",
 		apiKey: "",
 		systemPrompt: DEFAULT_SYSTEM_PROMPT,
-		maxIterations: 10,
+		maxIterations: undefined,
 		enableTools: true,
 		enableSpawn: true,
 		enableTeams: true,
@@ -159,6 +167,10 @@ export function AgentTeam() {
 	}, [isRunning]);
 
 	const team = teamState?.teamState;
+	const statusBoard = useMemo(
+		() => buildTeamStatusBoardDto(teamState),
+		[teamState],
+	);
 	const normalizedTranscript = useMemo(
 		() => stripAnsi(rawTranscript).replace(/\r/g, "\n"),
 		[rawTranscript],
@@ -225,6 +237,37 @@ export function AgentTeam() {
 				mail.toAgentId === teammateFilter,
 		);
 	}, [team?.mailbox, teammateFilter]);
+	const filteredRuns = useMemo(() => {
+		const runs = team?.runs ?? [];
+		if (teammateFilter === "all") {
+			return runs;
+		}
+		return runs.filter((run) => run.agentId === teammateFilter);
+	}, [team?.runs, teammateFilter]);
+	const filteredOutcomes = useMemo(() => {
+		const outcomes = team?.outcomes ?? [];
+		if (teammateFilter === "all") {
+			return outcomes;
+		}
+		const runs = team?.runs ?? [];
+		const runById = new Map(runs.map((run) => [run.id, run] as const));
+		const fragments = team?.outcomeFragments ?? [];
+		const allowedOutcomeIds = new Set(
+			fragments
+				.filter((fragment) => {
+					if (fragment.sourceAgentId === teammateFilter) {
+						return true;
+					}
+					const runId = fragment.sourceRunId;
+					if (!runId) {
+						return false;
+					}
+					return runById.get(runId)?.agentId === teammateFilter;
+				})
+				.map((fragment) => fragment.outcomeId),
+		);
+		return outcomes.filter((outcome) => allowedOutcomeIds.has(outcome.id));
+	}, [team?.outcomes, team?.runs, team?.outcomeFragments, teammateFilter]);
 	const filteredMissionLog = useMemo(() => {
 		const missionLog = team?.missionLog ?? [];
 		if (teammateFilter === "all") {
@@ -614,6 +657,24 @@ export function AgentTeam() {
 							<h2 className="mb-3 text-sm font-semibold text-foreground">
 								Team Panels: {form.teamName || "(unset)"} ({teamHistory.length})
 							</h2>
+							<div className="mb-3 grid grid-cols-2 gap-2 text-[11px]">
+								<div className="rounded-lg border border-border bg-card px-2 py-1.5 text-muted-foreground">
+									members {statusBoard.members.running}/
+									{statusBoard.members.total} running
+								</div>
+								<div className="rounded-lg border border-border bg-card px-2 py-1.5 text-muted-foreground">
+									tasks {statusBoard.tasks.completed}/{statusBoard.tasks.total}{" "}
+									done
+								</div>
+								<div className="rounded-lg border border-border bg-card px-2 py-1.5 text-muted-foreground">
+									runs {statusBoard.runs.running} active /{" "}
+									{statusBoard.runs.queued} queued
+								</div>
+								<div className="rounded-lg border border-border bg-card px-2 py-1.5 text-muted-foreground">
+									outcomes {statusBoard.outcomes.finalized}/
+									{statusBoard.outcomes.total} finalized
+								</div>
+							</div>
 							<div className="mb-3">
 								<label className="text-xs text-muted-foreground">
 									Filter by teammate
@@ -766,6 +827,75 @@ export function AgentTeam() {
 										{filteredMailbox.length === 0 && (
 											<p className="text-muted-foreground">
 												No mailbox items for this filter.
+											</p>
+										)}
+									</ul>
+								)}
+
+								{activeTab === "Runs" && (
+									<ul className="flex flex-col gap-2">
+										{filteredRuns.map((run) => (
+											<li
+												className="rounded-lg border border-border bg-card p-3"
+												key={run.id}
+											>
+												<div className="flex items-center justify-between gap-2">
+													<p className="font-mono text-xs text-foreground">
+														{run.id}
+													</p>
+													<span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground">
+														{run.status}
+													</span>
+												</div>
+												<p className="mt-1 text-xs text-muted-foreground">
+													agent {run.agentId}
+													{run.taskId ? ` · task ${run.taskId}` : ""}
+												</p>
+												<p className="mt-1 text-xs text-muted-foreground">
+													{run.message}
+												</p>
+												{run.error ? (
+													<p className="mt-1 text-xs text-destructive">
+														{run.error}
+													</p>
+												) : null}
+											</li>
+										))}
+										{filteredRuns.length === 0 && (
+											<p className="text-muted-foreground">
+												No runs for this filter.
+											</p>
+										)}
+									</ul>
+								)}
+
+								{activeTab === "Outcomes" && (
+									<ul className="flex flex-col gap-2">
+										{filteredOutcomes.map((outcome) => (
+											<li
+												className="rounded-lg border border-border bg-card p-3"
+												key={outcome.id}
+											>
+												<div className="flex items-center justify-between gap-2">
+													<p className="font-medium text-foreground">
+														{outcome.title}
+													</p>
+													<span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground">
+														{outcome.status}
+													</span>
+												</div>
+												<p className="mt-1 font-mono text-[10px] text-muted-foreground">
+													{outcome.id}
+												</p>
+												<p className="mt-1 text-xs text-muted-foreground">
+													required sections:{" "}
+													{outcome.requiredSections.join(", ") || "none"}
+												</p>
+											</li>
+										))}
+										{filteredOutcomes.length === 0 && (
+											<p className="text-muted-foreground">
+												No outcomes for this filter.
 											</p>
 										)}
 									</ul>

@@ -56,6 +56,22 @@ export type {
 	RpcSessionStorageOptions,
 } from "./rpc/runtime";
 export type {
+	TeamProgressCounts,
+	TeamProgressLifecycleEvent,
+	TeamProgressMemberRole,
+	TeamProgressMemberStatus,
+	TeamProgressOutcomeFragmentStatus,
+	TeamProgressOutcomeStatus,
+	TeamProgressProjectionEvent,
+	TeamProgressRunStatus,
+	TeamProgressSummary,
+	TeamProgressTaskStatus,
+} from "./rpc/team-progress";
+export {
+	RPC_TEAM_LIFECYCLE_EVENT_TYPE,
+	RPC_TEAM_PROGRESS_EVENT_TYPE,
+} from "./rpc/team-progress";
+export type {
 	HookSessionContext,
 	HookSessionContextProvider,
 } from "./session/hook-context";

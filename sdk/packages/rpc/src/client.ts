@@ -1,3 +1,9 @@
+import {
+	RPC_TEAM_LIFECYCLE_EVENT_TYPE,
+	RPC_TEAM_PROGRESS_EVENT_TYPE,
+	type TeamProgressLifecycleEvent,
+	type TeamProgressProjectionEvent,
+} from "@cline/shared";
 import type * as grpc from "@grpc/grpc-js";
 import { createGatewayGenericClient } from "./gateway-client.js";
 import type { AbortRuntimeSessionResponse__Output } from "./proto/generated/cline/rpc/v1/AbortRuntimeSessionResponse.js";
@@ -112,6 +118,13 @@ export interface RpcStreamEventsHandlers {
 		sourceClientId?: string;
 		ts: string;
 	}) => void;
+	onError?: (error: Error) => void;
+	onEnd?: () => void;
+}
+
+export interface RpcStreamTeamProgressHandlers {
+	onProjection?: (event: TeamProgressProjectionEvent) => void;
+	onLifecycle?: (event: TeamProgressLifecycleEvent) => void;
 	onError?: (error: Error) => void;
 	onEnd?: () => void;
 }
@@ -475,6 +488,43 @@ export class RpcSessionClient {
 			closing = true;
 			stream.cancel();
 		};
+	}
+
+	public streamTeamProgress(
+		input: RpcStreamEventsInput,
+		handlers: RpcStreamTeamProgressHandlers = {},
+	): () => void {
+		return this.streamEvents(input, {
+			onEvent: (event) => {
+				if (event.eventType === RPC_TEAM_PROGRESS_EVENT_TYPE) {
+					try {
+						const parsed = JSON.parse(
+							event.payloadJson,
+						) as TeamProgressProjectionEvent;
+						if (
+							parsed.type === "team_progress_projection" &&
+							parsed.version === 1
+						) {
+							handlers.onProjection?.(parsed);
+						}
+					} catch {
+						// Ignore malformed payloads; event stream remains best effort.
+					}
+					return;
+				}
+				if (event.eventType === RPC_TEAM_LIFECYCLE_EVENT_TYPE) {
+					try {
+						handlers.onLifecycle?.(
+							JSON.parse(event.payloadJson) as TeamProgressLifecycleEvent,
+						);
+					} catch {
+						// Ignore malformed payloads; event stream remains best effort.
+					}
+				}
+			},
+			onError: handlers.onError,
+			onEnd: handlers.onEnd,
+		});
 	}
 
 	private async unary<TResponse = unknown>(

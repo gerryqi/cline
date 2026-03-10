@@ -18,6 +18,11 @@ It also exposes runtime session execution RPCs:
 
 Runtime payload DTOs consumed by multiple hosts are defined in `@cline/shared`
 (`packages/shared/src/rpc/runtime.ts`), while transport/service wiring remains in `@cline/rpc`.
+Team progress DTOs/events are also shared from `@cline/shared`:
+
+- `runtime.team.progress.v1` - typed team status-board projection snapshots
+- `runtime.team.lifecycle.v1` - typed lifecycle deltas (task/run/outcome related)
+- `RpcSessionClient.streamTeamProgress(...)` - typed stream helper over `StreamEvents(...)`
 
 It also exposes server lifecycle helpers:
 

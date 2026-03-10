@@ -63,8 +63,32 @@ function normalizeDiscoveredStatus(status: string): AgentStatus {
 	if (normalized.includes("complete")) return "completed";
 	if (normalized.includes("cancel")) return "cancelled";
 	if (normalized.includes("fail")) return "failed";
+	if (normalized.includes("error")) return "failed";
+	if (normalized.includes("stop")) return "completed";
+	if (normalized.includes("done")) return "completed";
+	if (normalized.includes("success")) return "completed";
+	if (normalized.includes("idle")) return "running";
 	if (normalized.includes("run")) return "running";
 	return "queued";
+}
+
+function deriveDiscoveredDisplayName(session: CliDiscoveredSession): string {
+	const backendTitle = session.title?.trim();
+	if (backendTitle) {
+		return backendTitle.slice(0, 80);
+	}
+	const promptLine = session.prompt?.trim().split("\n")[0]?.trim();
+	if (promptLine) {
+		return promptLine.slice(0, 60);
+	}
+	if (session.isSubagent) {
+		return `Subagent ${session.agentId?.slice(-6) || session.sessionId.slice(-6)}`;
+	}
+	return `Session ${session.sessionId.slice(-6)}`;
+}
+
+function hookEventNameOf(event: SessionHookEvent): string {
+	return (event.hookEventName ?? event.hookName ?? "").toLowerCase();
 }
 
 function sumHookTokens(events: SessionHookEvent[]): number {
@@ -91,10 +115,11 @@ function deriveSubagentStatus(events: SessionHookEvent[]): AgentStatus {
 		return "running";
 	}
 	const last = events[events.length - 1];
-	if (last.hookEventName === "agent_end") {
+	const lastHookName = hookEventNameOf(last);
+	if (lastHookName === "agent_end") {
 		return "completed";
 	}
-	if (last.hookEventName === "session_shutdown") {
+	if (lastHookName === "session_shutdown") {
 		const reason = (last.toolName || "").toLowerCase();
 		if (
 			reason.includes("cancel") ||
@@ -209,7 +234,7 @@ function parseDiffFromEditorResult(
 
 function parseEditorFileDiff(event: SessionHookEvent): FileDiff | null {
 	if (
-		event.hookEventName !== "tool_result" ||
+		hookEventNameOf(event) !== "tool_result" ||
 		event.toolName !== "editor" ||
 		event.toolError
 	) {
@@ -474,375 +499,404 @@ export function KanbanBoard() {
 		};
 	}, []);
 
-	const refreshSessions = useCallback((): Promise<void> => {
-		if (refreshInFlightRef.current) {
-			return refreshInFlightRef.current;
-		}
-
-		const refreshPromise = (async () => {
-			const listPromise = invoke<CliDiscoveredSession[]>("list_cli_sessions", {
-				limit: 300,
-			})
-				.then(async (sessions) => {
-					setAgents((prev) => {
-						const next = [...prev];
-						for (const session of sessions) {
-							const idx = next.findIndex(
-								(agent) => agent.sessionId === session.sessionId,
-							);
-							const status = normalizeDiscoveredStatus(session.status);
-							if (idx >= 0) {
-								const current = next[idx];
-								const nextProgress =
-									status === "completed"
-										? 100
-										: status === "running"
-											? Math.min(current.progress, 95)
-											: current.progress;
-								next[idx] = {
-									...current,
-									status,
-									model: session.model || current.model,
-									provider: session.provider || current.provider,
-									workspaceRoot: session.workspaceRoot || current.workspaceRoot,
-									cwd: session.cwd || current.cwd,
-									teamName: session.teamName ?? current.teamName,
-									parentSessionId:
-										session.parentSessionId ?? current.parentSessionId,
-									parentAgentId: session.parentAgentId ?? current.parentAgentId,
-									agentId: session.agentId ?? current.agentId,
-									conversationId:
-										session.conversationId ?? current.conversationId,
-									isSubagent: session.isSubagent ?? current.isSubagent,
-									prompt: session.prompt ?? current.prompt,
-									startedAt:
-										formatDisplayTimestamp(session.startedAt) ||
-										current.startedAt,
-									completedAt:
-										status === "running"
-											? undefined
-											: formatDisplayTimestamp(session.endedAt) ||
-												current.completedAt,
-									progress: nextProgress,
-								};
-								continue;
-							}
-
-							const displayName =
-								session.prompt?.trim().split("\n")[0]?.slice(0, 60) ||
-								(session.isSubagent
-									? `Subagent ${session.agentId?.slice(-6) || session.sessionId.slice(-6)}`
-									: `CLI Session ${session.sessionId.slice(-6)}`);
-							next.push(
-								createNewAgent({
-									name: displayName,
-									type: session.isSubagent
-										? "Subagent Task"
-										: session.interactive
-											? "CLI Interactive"
-											: "CLI Task",
-									model: session.model || "unknown",
-									provider: session.provider || "anthropic",
-									branch: "",
-									taskNames: [
-										session.prompt?.trim() ||
-											(session.isSubagent
-												? "Imported subagent task"
-												: "Imported external CLI session"),
-									],
-									workspaceRoot:
-										session.workspaceRoot ||
-										defaultWorkspaceRoot ||
-										session.cwd ||
-										".",
-									cwd: session.cwd || defaultCwd || ".",
-									teamName: session.teamName || "cli-team",
-									enableTools: true,
-									enableSpawn: true,
-									enableTeams: true,
-									prompt: session.prompt || "",
-								}),
-							);
-							const newIndex = next.length - 1;
-							next[newIndex] = {
-								...next[newIndex],
-								sessionId: session.sessionId,
-								parentSessionId: session.parentSessionId,
-								parentAgentId: session.parentAgentId,
-								agentId: session.agentId,
-								conversationId: session.conversationId,
-								isSubagent: session.isSubagent,
-								status,
-								startedAt:
-									formatDisplayTimestamp(session.startedAt) ||
-									next[newIndex].startedAt,
-								completedAt:
-									formatDisplayTimestamp(session.endedAt) || undefined,
-								logs: [`Imported from CLI registry: ${session.sessionId}`],
-							};
-						}
-						return next;
-					});
-
-					const sessionsToHydrate = sessions
-						.map((session) => session.sessionId)
-						.filter(
-							(sessionId) => !hydratedSessionMetricsRef.current.has(sessionId),
-						);
-
-					if (sessionsToHydrate.length === 0) {
-						return;
-					}
-
-					await Promise.allSettled(
-						sessionsToHydrate.map((sessionId) =>
-							invoke<SessionHookEvent[]>("read_session_hooks", {
-								sessionId,
-								limit: 800,
-							})
-								.then((events) => {
-									const tokensUsed = sumHookTokens(events);
-									setAgents((prev) =>
-										prev.map((agent) =>
-											agent.sessionId === sessionId
-												? (() => {
-														const diffState = mergeEditorDiffs(
-															events,
-															agent.fileDiffs,
-														);
-														return {
-															...agent,
-															hookEvents: Math.max(
-																agent.hookEvents,
-																events.length,
-															),
-															tokensUsed: Math.max(
-																agent.tokensUsed,
-																tokensUsed,
-															),
-															fileDiffs: diffState.fileDiffs,
-															filesModified: diffState.fileDiffs.length,
-															currentFile:
-																diffState.currentFile ?? agent.currentFile,
-														};
-													})()
-												: agent,
-										),
-									);
-								})
-								.finally(() => {
-									hydratedSessionMetricsRef.current.add(sessionId);
-								}),
-						),
-					);
-				})
-				.catch(() => {
-					// Ignore if command unavailable in browser mode.
-				});
-
-			const runningSessions = agentsRef.current
-				.filter((agent) => agent.status === "running" && agent.sessionId)
-				.map((agent) => agent.sessionId as string);
-
-			if (runningSessions.length === 0) {
-				await listPromise;
-				return;
+	const refreshSessions = useCallback(
+		(options?: { force?: boolean }): Promise<void> => {
+			const force = options?.force === true;
+			if (force) {
+				refreshInFlightRef.current = null;
+				hydratedSessionMetricsRef.current.clear();
 			}
 
-			const pollPromise = invoke("poll_sessions").catch(() => {
-				// Ignore failures when not in tauri runtime.
-			});
+			if (refreshInFlightRef.current) {
+				return refreshInFlightRef.current;
+			}
 
-			const transcriptPromises = runningSessions.map((sessionId) =>
-				invoke<string>("read_session_transcript", {
-					sessionId,
-					maxChars: 12000,
-				})
-					.then((transcript) => {
-						const lines = transcript
-							.split("\n")
-							.map((line) => line.trim())
-							.filter(Boolean)
-							.slice(-80);
-						if (lines.length === 0) {
-							return;
-						}
-						setAgents((prev) =>
-							prev.map((agent) =>
-								agent.sessionId === sessionId
-									? {
-											...agent,
-											logs: lines,
-										}
-									: agent,
-							),
-						);
-					})
-					.catch(() => {
-						// No transcript yet.
-					}),
-			);
-
-			const hookPromises = runningSessions.map((sessionId) =>
-				invoke<SessionHookEvent[]>("read_session_hooks", {
-					sessionId,
-					limit: 400,
-				})
-					.then((events) => {
-						const toolCalls = events.filter(
-							(event) => event.hookEventName === "tool_call",
-						).length;
-						const tokensUsed = sumHookTokens(events);
-						const subagentEventMap = new Map<string, SessionHookEvent[]>();
-						for (const event of events) {
-							if (!event.parentAgentId || !event.agentId) {
-								continue;
-							}
-							const bucket = subagentEventMap.get(event.agentId) ?? [];
-							bucket.push(event);
-							subagentEventMap.set(event.agentId, bucket);
-						}
-
+			const refreshPromise = (async () => {
+				const listPromise = invoke<CliDiscoveredSession[]>(
+					"list_cli_sessions",
+					{
+						limit: 300,
+					},
+				)
+					.then(async (sessions) => {
 						setAgents((prev) => {
-							const next = prev.map((agent) => {
-								if (agent.sessionId !== sessionId) {
-									return agent;
+							const next = force
+								? prev.filter((agent) => !agent.sessionId)
+								: [...prev];
+							for (const session of sessions) {
+								const sessionId = session.sessionId?.trim();
+								if (!sessionId) {
+									continue;
 								}
-								const nextProgress = Math.min(95, 5 + toolCalls * 7);
-								const runningProgress =
-									agent.status === "running"
-										? Math.min(agent.progress, 95)
-										: agent.progress;
-								const diffState = mergeEditorDiffs(events, agent.fileDiffs);
-								return {
-									...agent,
-									hookEvents: events.length,
-									tokensUsed,
-									fileDiffs: diffState.fileDiffs,
-									filesModified: diffState.fileDiffs.length,
-									currentFile: diffState.currentFile ?? agent.currentFile,
-									progress: Math.max(runningProgress, nextProgress),
-									tasks: agent.tasks.map((task, index) => {
-										if (index !== 0) {
-											return task;
-										}
-										return {
-											...task,
-											status:
-												agent.status === "running" ? "running" : task.status,
-											progress: Math.max(task.progress, nextProgress),
-											startedAt: task.startedAt ?? nowDisplayTimestamp(),
-										};
-									}),
-								};
-							});
-
-							const parentAgent = next.find(
-								(agent) => agent.sessionId === sessionId,
-							);
-							for (const [
-								agentId,
-								subagentEvents,
-							] of subagentEventMap.entries()) {
-								const subSessionId = makeSubSessionId(sessionId, agentId);
-								const subagentStatus = deriveSubagentStatus(subagentEvents);
-								const subagentTokensUsed = sumHookTokens(subagentEvents);
-								const subagentToolCalls = subagentEvents.filter(
-									(event) => event.hookEventName === "tool_call",
-								).length;
-								const subagentProgress =
-									subagentStatus === "completed"
-										? 100
-										: subagentStatus === "running"
-											? Math.min(95, 5 + subagentToolCalls * 7)
-											: Math.max(15, 5 + subagentToolCalls * 7);
-								const latestEvent = subagentEvents[subagentEvents.length - 1];
 								const idx = next.findIndex(
-									(agent) => agent.sessionId === subSessionId,
+									(agent) => agent.sessionId === sessionId,
 								);
-
+								const status = normalizeDiscoveredStatus(session.status);
 								if (idx >= 0) {
 									const current = next[idx];
+									const nextProgress =
+										status === "completed"
+											? 100
+											: status === "running"
+												? Math.min(current.progress, 95)
+												: current.progress;
 									next[idx] = {
 										...current,
-										status: subagentStatus,
-										progress: Math.max(current.progress, subagentProgress),
-										completedAt:
-											subagentStatus === "running"
-												? undefined
-												: (current.completedAt ?? nowDisplayTimestamp()),
-										parentSessionId: sessionId,
+										name:
+											current.prompt?.trim().length ||
+											!session.prompt?.trim().length
+												? current.name
+												: deriveDiscoveredDisplayName(session),
+										status,
+										model: session.model || current.model,
+										provider: session.provider || current.provider,
+										workspaceRoot:
+											session.workspaceRoot || current.workspaceRoot,
+										cwd: session.cwd || current.cwd,
+										teamName: session.teamName ?? current.teamName,
+										parentSessionId:
+											session.parentSessionId ?? current.parentSessionId,
 										parentAgentId:
-											latestEvent.parentAgentId ?? current.parentAgentId,
-										agentId,
+											session.parentAgentId ?? current.parentAgentId,
+										agentId: session.agentId ?? current.agentId,
 										conversationId:
-											latestEvent.conversationId ?? current.conversationId,
-										isSubagent: true,
-										hookEvents: subagentEvents.length,
-										tokensUsed: Math.max(
-											current.tokensUsed,
-											subagentTokensUsed,
-										),
+											session.conversationId ?? current.conversationId,
+										isSubagent: session.isSubagent ?? current.isSubagent,
+										prompt: session.prompt ?? current.prompt,
+										startedAt:
+											formatDisplayTimestamp(session.startedAt) ||
+											current.startedAt,
+										completedAt:
+											status === "running"
+												? undefined
+												: formatDisplayTimestamp(session.endedAt) ||
+													current.completedAt,
+										progress: nextProgress,
 									};
 									continue;
 								}
 
-								const name = `Subagent ${agentId.slice(-6)}`;
+								const displayName = deriveDiscoveredDisplayName(session);
 								next.push(
 									createNewAgent({
-										name,
-										type: "Subagent Task",
-										model: parentAgent?.model || "unknown",
-										provider: parentAgent?.provider || "anthropic",
+										name: displayName,
+										type: session.isSubagent
+											? "Subagent Task"
+											: session.interactive
+												? "CLI Interactive"
+												: "CLI Task",
+										model: session.model || "unknown",
+										provider: session.provider || "anthropic",
 										branch: "",
-										taskNames: ["Imported subagent task"],
+										taskNames: [
+											session.prompt?.trim() ||
+												(session.isSubagent
+													? "Imported subagent task"
+													: "Imported external CLI session"),
+										],
 										workspaceRoot:
-											parentAgent?.workspaceRoot || defaultWorkspaceRoot || ".",
-										cwd: parentAgent?.cwd || defaultCwd || ".",
-										teamName: parentAgent?.teamName || "cli-team",
-										enableTools: parentAgent?.enableTools ?? true,
-										enableSpawn: parentAgent?.enableSpawn ?? true,
-										enableTeams: parentAgent?.enableTeams ?? true,
-										prompt: "Imported subagent task",
+											session.workspaceRoot ||
+											defaultWorkspaceRoot ||
+											session.cwd ||
+											".",
+										cwd: session.cwd || defaultCwd || ".",
+										teamName: session.teamName || "cli-team",
+										enableTools: true,
+										enableSpawn: true,
+										enableTeams: true,
+										prompt: session.prompt || "",
 									}),
 								);
 								const newIndex = next.length - 1;
 								next[newIndex] = {
 									...next[newIndex],
-									sessionId: subSessionId,
-									parentSessionId: sessionId,
-									parentAgentId: latestEvent.parentAgentId,
-									agentId,
-									conversationId: latestEvent.conversationId,
-									isSubagent: true,
-									status: subagentStatus,
-									progress: subagentProgress,
-									hookEvents: subagentEvents.length,
-									tokensUsed: subagentTokensUsed,
-									logs: [`Imported subagent from hook events: ${subSessionId}`],
+									sessionId,
+									parentSessionId: session.parentSessionId,
+									parentAgentId: session.parentAgentId,
+									agentId: session.agentId,
+									conversationId: session.conversationId,
+									isSubagent: session.isSubagent,
+									status,
+									startedAt:
+										formatDisplayTimestamp(session.startedAt) ||
+										next[newIndex].startedAt,
+									completedAt:
+										formatDisplayTimestamp(session.endedAt) || undefined,
+									logs: [`Imported from CLI registry: ${sessionId}`],
 								};
 							}
 							return next;
 						});
+
+						const sessionsToHydrate = sessions
+							.map((session) => session.sessionId?.trim())
+							.filter((sessionId): sessionId is string => Boolean(sessionId))
+							.filter(
+								(sessionId) =>
+									!hydratedSessionMetricsRef.current.has(sessionId),
+							);
+
+						if (sessionsToHydrate.length === 0) {
+							return;
+						}
+
+						await Promise.allSettled(
+							sessionsToHydrate.map((sessionId) =>
+								invoke<SessionHookEvent[]>("read_session_hooks", {
+									sessionId,
+									limit: 800,
+								})
+									.then((events) => {
+										const tokensUsed = sumHookTokens(events);
+										setAgents((prev) =>
+											prev.map((agent) =>
+												agent.sessionId === sessionId
+													? (() => {
+															const diffState = mergeEditorDiffs(
+																events,
+																agent.fileDiffs,
+															);
+															return {
+																...agent,
+																hookEvents: Math.max(
+																	agent.hookEvents,
+																	events.length,
+																),
+																tokensUsed: Math.max(
+																	agent.tokensUsed,
+																	tokensUsed,
+																),
+																fileDiffs: diffState.fileDiffs,
+																filesModified: diffState.fileDiffs.length,
+																currentFile:
+																	diffState.currentFile ?? agent.currentFile,
+															};
+														})()
+													: agent,
+											),
+										);
+									})
+									.finally(() => {
+										hydratedSessionMetricsRef.current.add(sessionId);
+									}),
+							),
+						);
 					})
-					.catch(() => {
-						// Ignore unavailable command in non-tauri mode.
-					}),
-			);
+					.catch((error) => {
+						const message =
+							error instanceof Error ? error.message : String(error);
+						console.error(`Failed to discover CLI sessions: ${message}`);
+					});
 
-			await Promise.allSettled([
-				listPromise,
-				pollPromise,
-				...transcriptPromises,
-				...hookPromises,
-			]);
-		})();
+				const runningSessions = agentsRef.current
+					.filter((agent) => agent.status === "running" && agent.sessionId)
+					.map((agent) => agent.sessionId as string);
 
-		refreshInFlightRef.current = refreshPromise.finally(() => {
-			refreshInFlightRef.current = null;
-		});
-		return refreshInFlightRef.current;
-	}, [defaultCwd, defaultWorkspaceRoot]);
+				if (runningSessions.length === 0) {
+					await listPromise;
+					return;
+				}
+
+				const pollPromise = invoke("poll_sessions").catch(() => {
+					// Ignore failures when not in tauri runtime.
+				});
+
+				const transcriptPromises = runningSessions.map((sessionId) =>
+					invoke<string>("read_session_transcript", {
+						sessionId,
+						maxChars: 12000,
+					})
+						.then((transcript) => {
+							const lines = transcript
+								.split("\n")
+								.map((line) => line.trim())
+								.filter(Boolean)
+								.slice(-80);
+							if (lines.length === 0) {
+								return;
+							}
+							setAgents((prev) =>
+								prev.map((agent) =>
+									agent.sessionId === sessionId
+										? {
+												...agent,
+												logs: lines,
+											}
+										: agent,
+								),
+							);
+						})
+						.catch(() => {
+							// No transcript yet.
+						}),
+				);
+
+				const hookPromises = runningSessions.map((sessionId) =>
+					invoke<SessionHookEvent[]>("read_session_hooks", {
+						sessionId,
+						limit: 400,
+					})
+						.then((events) => {
+							const toolCalls = events.filter(
+								(event) => hookEventNameOf(event) === "tool_call",
+							).length;
+							const tokensUsed = sumHookTokens(events);
+							const subagentEventMap = new Map<string, SessionHookEvent[]>();
+							for (const event of events) {
+								if (!event.parentAgentId || !event.agentId) {
+									continue;
+								}
+								const bucket = subagentEventMap.get(event.agentId) ?? [];
+								bucket.push(event);
+								subagentEventMap.set(event.agentId, bucket);
+							}
+
+							setAgents((prev) => {
+								const next = prev.map((agent) => {
+									if (agent.sessionId !== sessionId) {
+										return agent;
+									}
+									const nextProgress = Math.min(95, 5 + toolCalls * 7);
+									const runningProgress =
+										agent.status === "running"
+											? Math.min(agent.progress, 95)
+											: agent.progress;
+									const diffState = mergeEditorDiffs(events, agent.fileDiffs);
+									return {
+										...agent,
+										hookEvents: events.length,
+										tokensUsed,
+										fileDiffs: diffState.fileDiffs,
+										filesModified: diffState.fileDiffs.length,
+										currentFile: diffState.currentFile ?? agent.currentFile,
+										progress: Math.max(runningProgress, nextProgress),
+										tasks: agent.tasks.map((task, index) => {
+											if (index !== 0) {
+												return task;
+											}
+											return {
+												...task,
+												status:
+													agent.status === "running" ? "running" : task.status,
+												progress: Math.max(task.progress, nextProgress),
+												startedAt: task.startedAt ?? nowDisplayTimestamp(),
+											};
+										}),
+									};
+								});
+
+								const parentAgent = next.find(
+									(agent) => agent.sessionId === sessionId,
+								);
+								for (const [
+									agentId,
+									subagentEvents,
+								] of subagentEventMap.entries()) {
+									const subSessionId = makeSubSessionId(sessionId, agentId);
+									const subagentStatus = deriveSubagentStatus(subagentEvents);
+									const subagentTokensUsed = sumHookTokens(subagentEvents);
+									const subagentToolCalls = subagentEvents.filter(
+										(event) => hookEventNameOf(event) === "tool_call",
+									).length;
+									const subagentProgress =
+										subagentStatus === "completed"
+											? 100
+											: subagentStatus === "running"
+												? Math.min(95, 5 + subagentToolCalls * 7)
+												: Math.max(15, 5 + subagentToolCalls * 7);
+									const latestEvent = subagentEvents[subagentEvents.length - 1];
+									const idx = next.findIndex(
+										(agent) => agent.sessionId === subSessionId,
+									);
+
+									if (idx >= 0) {
+										const current = next[idx];
+										next[idx] = {
+											...current,
+											status: subagentStatus,
+											progress: Math.max(current.progress, subagentProgress),
+											completedAt:
+												subagentStatus === "running"
+													? undefined
+													: (current.completedAt ?? nowDisplayTimestamp()),
+											parentSessionId: sessionId,
+											parentAgentId:
+												latestEvent.parentAgentId ?? current.parentAgentId,
+											agentId,
+											conversationId:
+												latestEvent.conversationId ?? current.conversationId,
+											isSubagent: true,
+											hookEvents: subagentEvents.length,
+											tokensUsed: Math.max(
+												current.tokensUsed,
+												subagentTokensUsed,
+											),
+										};
+										continue;
+									}
+
+									const name = `Subagent ${agentId.slice(-6)}`;
+									next.push(
+										createNewAgent({
+											name,
+											type: "Subagent Task",
+											model: parentAgent?.model || "unknown",
+											provider: parentAgent?.provider || "anthropic",
+											branch: "",
+											taskNames: ["Imported subagent task"],
+											workspaceRoot:
+												parentAgent?.workspaceRoot ||
+												defaultWorkspaceRoot ||
+												".",
+											cwd: parentAgent?.cwd || defaultCwd || ".",
+											teamName: parentAgent?.teamName || "cli-team",
+											enableTools: parentAgent?.enableTools ?? true,
+											enableSpawn: parentAgent?.enableSpawn ?? true,
+											enableTeams: parentAgent?.enableTeams ?? true,
+											prompt: "Imported subagent task",
+										}),
+									);
+									const newIndex = next.length - 1;
+									next[newIndex] = {
+										...next[newIndex],
+										sessionId: subSessionId,
+										parentSessionId: sessionId,
+										parentAgentId: latestEvent.parentAgentId,
+										agentId,
+										conversationId: latestEvent.conversationId,
+										isSubagent: true,
+										status: subagentStatus,
+										progress: subagentProgress,
+										hookEvents: subagentEvents.length,
+										tokensUsed: subagentTokensUsed,
+										logs: [
+											`Imported subagent from hook events: ${subSessionId}`,
+										],
+									};
+								}
+								return next;
+							});
+						})
+						.catch(() => {
+							// Ignore unavailable command in non-tauri mode.
+						}),
+				);
+
+				await Promise.allSettled([
+					listPromise,
+					pollPromise,
+					...transcriptPromises,
+					...hookPromises,
+				]);
+			})();
+
+			refreshInFlightRef.current = refreshPromise.finally(() => {
+				refreshInFlightRef.current = null;
+			});
+			return refreshInFlightRef.current;
+		},
+		[defaultCwd, defaultWorkspaceRoot],
+	);
 
 	useEffect(() => {
 		refreshSessions();
@@ -855,7 +909,7 @@ export function KanbanBoard() {
 			return;
 		}
 		setIsRefreshing(true);
-		void refreshSessions().finally(() => setIsRefreshing(false));
+		void refreshSessions({ force: true }).finally(() => setIsRefreshing(false));
 	}, [isRefreshing, refreshSessions]);
 
 	const handleCreateAgent = useCallback(
@@ -1097,12 +1151,15 @@ export function KanbanBoard() {
 			COLUMNS.reduce(
 				(acc, col) => {
 					acc[col.id] =
-						col.id === "failed"
+						col.id === "completed"
 							? filteredAgents.filter(
 									(agent) =>
-										agent.status === "failed" || agent.status === "cancelled",
+										agent.status === "completed" ||
+										agent.status === "cancelled",
 								)
-							: filteredAgents.filter((agent) => agent.status === col.id);
+							: col.id === "failed"
+								? filteredAgents.filter((agent) => agent.status === "failed")
+								: filteredAgents.filter((agent) => agent.status === col.id);
 					return acc;
 				},
 				{} as Record<AgentStatus, Agent[]>,
@@ -1114,15 +1171,35 @@ export function KanbanBoard() {
 		() => ({
 			queued: agents.filter((agent) => agent.status === "queued").length,
 			running: agents.filter((agent) => agent.status === "running").length,
-			completed: agents.filter((agent) => agent.status === "completed").length,
-			failed: agents.filter(
-				(agent) => agent.status === "failed" || agent.status === "cancelled",
+			completed: agents.filter(
+				(agent) => agent.status === "completed" || agent.status === "cancelled",
 			).length,
+			failed: agents.filter((agent) => agent.status === "failed").length,
 		}),
 		[agents],
 	);
 
 	const [activeTab, setActiveTab] = useState<AgentStatus>("running");
+
+	useEffect(() => {
+		const hasActiveTabItems = agentsByStatus[activeTab].length > 0;
+		if (hasActiveTabItems) {
+			return;
+		}
+
+		const fallbackOrder: AgentStatus[] = [
+			"running",
+			"failed",
+			"completed",
+			"queued",
+		];
+		const nextTab = fallbackOrder.find(
+			(status) => agentsByStatus[status].length > 0,
+		);
+		if (nextTab && nextTab !== activeTab) {
+			setActiveTab(nextTab);
+		}
+	}, [activeTab, agentsByStatus]);
 
 	return (
 		<div className="flex h-[100dvh] flex-col overflow-hidden">

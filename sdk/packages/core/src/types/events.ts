@@ -24,6 +24,13 @@ export interface SessionToolEvent {
 	ts?: string;
 }
 
+export interface SessionTeamProgressEvent {
+	sessionId: string;
+	teamName: string;
+	lifecycle: import("@cline/shared").TeamProgressLifecycleEvent;
+	summary: import("@cline/shared").TeamProgressSummary;
+}
+
 export type CoreSessionEvent =
 	| { type: "chunk"; payload: SessionChunkEvent }
 	| {
@@ -33,6 +40,7 @@ export type CoreSessionEvent =
 				event: import("@cline/agents").AgentEvent;
 			};
 	  }
+	| { type: "team_progress"; payload: SessionTeamProgressEvent }
 	| { type: "ended"; payload: SessionEndedEvent }
 	| { type: "hook"; payload: SessionToolEvent }
 	| { type: "status"; payload: { sessionId: string; status: string } };

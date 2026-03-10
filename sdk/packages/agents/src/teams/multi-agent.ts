@@ -55,6 +55,17 @@ export enum TeamMessageType {
 	TeamMessage = "team_message",
 	TeamMissionLog = "team_mission_log",
 	TeamTaskCompleted = "team_task_completed",
+	RunStarted = "run_started",
+	RunQueued = "run_queued",
+	RunProgress = "run_progress",
+	RunCompleted = "run_completed",
+	RunFailed = "run_failed",
+	RunCancelled = "run_cancelled",
+	RunInterrupted = "run_interrupted",
+	OutcomeCreated = "outcome_created",
+	OutcomeFragmentAttached = "outcome_fragment_attached",
+	OutcomeFragmentReviewed = "outcome_fragment_reviewed",
+	OutcomeFinalized = "outcome_finalized",
 }
 
 export interface TeammateLifecycleSpec {
@@ -84,7 +95,28 @@ export type TeamEvent =
 	| { type: TeamMessageType.TeammateShutdown; agentId: string; reason?: string }
 	| { type: TeamMessageType.TeamTaskUpdated; task: TeamTask }
 	| { type: TeamMessageType.TeamMessage; message: TeamMailboxMessage }
-	| { type: TeamMessageType.TeamMissionLog; entry: MissionLogEntry };
+	| { type: TeamMessageType.TeamMissionLog; entry: MissionLogEntry }
+	| { type: TeamMessageType.RunQueued; run: TeamRunRecord }
+	| { type: TeamMessageType.RunStarted; run: TeamRunRecord }
+	| { type: TeamMessageType.RunProgress; run: TeamRunRecord; message: string }
+	| { type: TeamMessageType.RunCompleted; run: TeamRunRecord }
+	| { type: TeamMessageType.RunFailed; run: TeamRunRecord }
+	| { type: TeamMessageType.RunCancelled; run: TeamRunRecord; reason?: string }
+	| {
+			type: TeamMessageType.RunInterrupted;
+			run: TeamRunRecord;
+			reason?: string;
+	  }
+	| { type: TeamMessageType.OutcomeCreated; outcome: TeamOutcome }
+	| {
+			type: TeamMessageType.OutcomeFragmentAttached;
+			fragment: TeamOutcomeFragment;
+	  }
+	| {
+			type: TeamMessageType.OutcomeFragmentReviewed;
+			fragment: TeamOutcomeFragment;
+	  }
+	| { type: TeamMessageType.OutcomeFinalized; outcome: TeamOutcome };
 
 // =============================================================================
 // AgentTeam
@@ -642,6 +674,8 @@ export interface TeamRuntimeSnapshot {
 	unreadMessages: number;
 	missionLogEntries: number;
 	activeRuns: number;
+	queuedRuns: number;
+	outcomeCounts: Record<TeamOutcomeStatus, number>;
 }
 
 export interface TeamRuntimeState {
@@ -651,6 +685,9 @@ export interface TeamRuntimeState {
 	tasks: TeamTask[];
 	mailbox: TeamMailboxMessage[];
 	missionLog: MissionLogEntry[];
+	runs: TeamRunRecord[];
+	outcomes: TeamOutcome[];
+	outcomeFragments: TeamOutcomeFragment[];
 }
 
 export interface AgentTeamsRuntimeOptions {
@@ -658,6 +695,7 @@ export interface AgentTeamsRuntimeOptions {
 	leadAgentId?: string;
 	missionLogIntervalSteps?: number;
 	missionLogIntervalMs?: number;
+	maxConcurrentRuns?: number;
 	onTeamEvent?: (event: TeamEvent) => void;
 }
 
@@ -672,7 +710,13 @@ export interface RouteToTeammateOptions {
 	continueConversation?: boolean;
 }
 
-export type TeamRunStatus = "running" | "completed" | "failed";
+export type TeamRunStatus =
+	| "queued"
+	| "running"
+	| "completed"
+	| "failed"
+	| "cancelled"
+	| "interrupted";
 
 export interface TeamRunRecord {
 	id: string;
@@ -680,11 +724,46 @@ export interface TeamRunRecord {
 	taskId?: string;
 	status: TeamRunStatus;
 	message: string;
+	priority: number;
+	retryCount: number;
+	maxRetries: number;
+	nextAttemptAt?: Date;
 	continueConversation?: boolean;
 	startedAt: Date;
 	endedAt?: Date;
+	leaseOwner?: string;
+	heartbeatAt?: Date;
 	result?: AgentResult;
 	error?: string;
+}
+
+export type TeamOutcomeStatus = "draft" | "in_review" | "finalized";
+
+export interface TeamOutcome {
+	id: string;
+	teamId: string;
+	title: string;
+	status: TeamOutcomeStatus;
+	requiredSections: string[];
+	createdBy: string;
+	createdAt: Date;
+	finalizedAt?: Date;
+}
+
+export type TeamOutcomeFragmentStatus = "draft" | "reviewed" | "rejected";
+
+export interface TeamOutcomeFragment {
+	id: string;
+	teamId: string;
+	outcomeId: string;
+	section: string;
+	sourceAgentId: string;
+	sourceRunId?: string;
+	content: string;
+	status: TeamOutcomeFragmentStatus;
+	reviewedBy?: string;
+	reviewedAt?: Date;
+	createdAt: Date;
 }
 
 export interface AppendMissionLogInput {
@@ -704,6 +783,26 @@ export interface CreateTeamTaskInput {
 	assignee?: string;
 }
 
+export interface CreateTeamOutcomeInput {
+	title: string;
+	requiredSections: string[];
+	createdBy: string;
+}
+
+export interface AttachTeamOutcomeFragmentInput {
+	outcomeId: string;
+	section: string;
+	sourceAgentId: string;
+	sourceRunId?: string;
+	content: string;
+}
+
+export interface ReviewTeamOutcomeFragmentInput {
+	fragmentId: string;
+	reviewedBy: string;
+	approved: boolean;
+}
+
 export class AgentTeamsRuntime {
 	private readonly teamId: string;
 	private readonly teamName: string;
@@ -717,9 +816,16 @@ export class AgentTeamsRuntime {
 	private messageCounter = 0;
 	private missionCounter = 0;
 	private runCounter = 0;
+	private outcomeCounter = 0;
+	private outcomeFragmentCounter = 0;
 	private readonly runs: Map<string, TeamRunRecord> = new Map();
+	private readonly runQueue: string[] = [];
+	private readonly outcomes: Map<string, TeamOutcome> = new Map();
+	private readonly outcomeFragments: Map<string, TeamOutcomeFragment> =
+		new Map();
 	private readonly missionLogIntervalSteps: number;
 	private readonly missionLogIntervalMs: number;
+	private readonly maxConcurrentRuns: number;
 
 	constructor(options: AgentTeamsRuntimeOptions) {
 		this.teamName = options.teamName;
@@ -733,6 +839,7 @@ export class AgentTeamsRuntime {
 			1000,
 			options.missionLogIntervalMs ?? 120000,
 		);
+		this.maxConcurrentRuns = Math.max(1, options.maxConcurrentRuns ?? 2);
 		const leadAgentId = options.leadAgentId ?? "lead";
 		this.members.set(leadAgentId, {
 			agentId: leadAgentId,
@@ -817,6 +924,14 @@ export class AgentTeamsRuntime {
 		for (const task of this.tasks.values()) {
 			taskCounts[task.status]++;
 		}
+		const outcomeCounts: Record<TeamOutcomeStatus, number> = {
+			draft: 0,
+			in_review: 0,
+			finalized: 0,
+		};
+		for (const outcome of this.outcomes.values()) {
+			outcomeCounts[outcome.status]++;
+		}
 		return {
 			teamId: this.teamId,
 			teamName: this.teamName,
@@ -832,6 +947,10 @@ export class AgentTeamsRuntime {
 			activeRuns: Array.from(this.runs.values()).filter(
 				(run) => run.status === "running",
 			).length,
+			queuedRuns: Array.from(this.runs.values()).filter(
+				(run) => run.status === "queued",
+			).length,
+			outcomeCounts,
 		};
 	}
 
@@ -848,6 +967,13 @@ export class AgentTeamsRuntime {
 			tasks: Array.from(this.tasks.values()).map((task) => ({ ...task })),
 			mailbox: this.mailbox.map((message) => ({ ...message })),
 			missionLog: this.missionLog.map((entry) => ({ ...entry })),
+			runs: Array.from(this.runs.values()).map((run) => ({ ...run })),
+			outcomes: Array.from(this.outcomes.values()).map((outcome) => ({
+				...outcome,
+			})),
+			outcomeFragments: Array.from(this.outcomeFragments.values()).map(
+				(fragment) => ({ ...fragment }),
+			),
 		};
 	}
 
@@ -862,6 +988,27 @@ export class AgentTeamsRuntime {
 
 		this.missionLog.length = 0;
 		this.missionLog.push(...state.missionLog.map((entry) => ({ ...entry })));
+
+		this.runs.clear();
+		for (const run of state.runs ?? []) {
+			this.runs.set(run.id, { ...run });
+		}
+		this.runQueue.length = 0;
+		this.runQueue.push(
+			...Array.from(this.runs.values())
+				.filter((run) => run.status === "queued")
+				.map((run) => run.id),
+		);
+
+		this.outcomes.clear();
+		for (const outcome of state.outcomes ?? []) {
+			this.outcomes.set(outcome.id, { ...outcome });
+		}
+
+		this.outcomeFragments.clear();
+		for (const fragment of state.outcomeFragments ?? []) {
+			this.outcomeFragments.set(fragment.id, { ...fragment });
+		}
 
 		// Keep lead member from current runtime, restore teammate placeholders.
 		const leadMembers = Array.from(this.members.values()).filter(
@@ -912,6 +1059,27 @@ export class AgentTeamsRuntime {
 			maxCounter(
 				state.missionLog.map((entry) => entry.id),
 				"log_",
+			),
+		);
+		this.runCounter = Math.max(
+			this.runCounter,
+			maxCounter(
+				(state.runs ?? []).map((run) => run.id),
+				"run_",
+			),
+		);
+		this.outcomeCounter = Math.max(
+			this.outcomeCounter,
+			maxCounter(
+				(state.outcomes ?? []).map((outcome) => outcome.id),
+				"out_",
+			),
+		);
+		this.outcomeFragmentCounter = Math.max(
+			this.outcomeFragmentCounter,
+			maxCounter(
+				(state.outcomeFragments ?? []).map((fragment) => fragment.id),
+				"frag_",
 			),
 		);
 	}
@@ -981,6 +1149,21 @@ export class AgentTeamsRuntime {
 		member.agent?.abort();
 		member.status = "stopped";
 		this.emitEvent({ type: TeamMessageType.TeammateShutdown, agentId, reason });
+	}
+
+	/**
+	 * Update connection overrides (e.g. refreshed API key) on all active
+	 * teammate agents so they stay in sync with the lead agent's credentials.
+	 */
+	updateTeammateConnections(
+		overrides: Partial<Pick<AgentConfig, "apiKey" | "baseUrl" | "headers">>,
+	): void {
+		for (const member of this.members.values()) {
+			if (member.role !== "teammate" || !member.agent) {
+				continue;
+			}
+			member.agent.updateConnection(overrides);
+		}
 	}
 
 	createTask(input: CreateTeamTaskInput): TeamTask {
@@ -1113,33 +1296,129 @@ export class AgentTeamsRuntime {
 	startTeammateRun(
 		agentId: string,
 		message: string,
-		options?: RouteToTeammateOptions,
+		options?: RouteToTeammateOptions & {
+			priority?: number;
+			maxRetries?: number;
+			leaseOwner?: string;
+		},
 	): TeamRunRecord {
 		const runId = `run_${String(++this.runCounter).padStart(5, "0")}`;
 		const record: TeamRunRecord = {
 			id: runId,
 			agentId,
 			taskId: options?.taskId,
-			status: "running",
+			status: "queued",
 			message,
+			priority: options?.priority ?? 0,
+			retryCount: 0,
+			maxRetries: Math.max(0, options?.maxRetries ?? 0),
 			continueConversation: options?.continueConversation,
-			startedAt: new Date(),
+			startedAt: new Date(0),
+			leaseOwner: options?.leaseOwner,
+			heartbeatAt: undefined,
 		};
 		this.runs.set(runId, record);
-
-		void this.routeToTeammate(agentId, message, options)
-			.then((result) => {
-				record.status = "completed";
-				record.result = result;
-				record.endedAt = new Date();
-			})
-			.catch((error) => {
-				record.status = "failed";
-				record.error = error instanceof Error ? error.message : String(error);
-				record.endedAt = new Date();
-			});
-
+		this.runQueue.push(runId);
+		this.emitEvent({ type: TeamMessageType.RunQueued, run: { ...record } });
+		this.dispatchQueuedRuns();
 		return { ...record };
+	}
+
+	private dispatchQueuedRuns(): void {
+		while (
+			this.countActiveRuns() < this.maxConcurrentRuns &&
+			this.runQueue.length > 0
+		) {
+			const nextRunIndex = this.selectNextQueuedRunIndex();
+			const [runId] = this.runQueue.splice(nextRunIndex, 1);
+			const run = runId ? this.runs.get(runId) : undefined;
+			if (!run || run.status !== "queued") {
+				continue;
+			}
+			void this.executeQueuedRun(run);
+		}
+	}
+
+	private selectNextQueuedRunIndex(): number {
+		let selectedIndex = 0;
+		let bestPriority = Number.NEGATIVE_INFINITY;
+		for (let index = 0; index < this.runQueue.length; index++) {
+			const run = this.runs.get(this.runQueue[index]);
+			if (!run || run.status !== "queued") {
+				continue;
+			}
+			if (run.priority > bestPriority) {
+				bestPriority = run.priority;
+				selectedIndex = index;
+			}
+		}
+		return selectedIndex;
+	}
+
+	private countActiveRuns(): number {
+		let count = 0;
+		for (const run of this.runs.values()) {
+			if (run.status === "running") {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private async executeQueuedRun(run: TeamRunRecord): Promise<void> {
+		run.status = "running";
+		run.startedAt = new Date();
+		run.heartbeatAt = new Date();
+		this.emitEvent({ type: TeamMessageType.RunStarted, run: { ...run } });
+
+		const heartbeatTimer = setInterval(() => {
+			if (run.status !== "running") {
+				return;
+			}
+			run.heartbeatAt = new Date();
+			this.emitEvent({
+				type: TeamMessageType.RunProgress,
+				run: { ...run },
+				message: "heartbeat",
+			});
+		}, 2000);
+
+		try {
+			const result = await this.routeToTeammate(run.agentId, run.message, {
+				taskId: run.taskId,
+				continueConversation: run.continueConversation,
+			});
+			run.status = "completed";
+			run.result = result;
+			run.endedAt = new Date();
+			this.emitEvent({ type: TeamMessageType.RunCompleted, run: { ...run } });
+		} catch (error) {
+			const message =
+				error instanceof Error
+					? error.message
+					: String(error ?? "Unknown error");
+			run.error = message;
+			run.endedAt = new Date();
+			if (run.retryCount < run.maxRetries) {
+				run.retryCount++;
+				run.status = "queued";
+				run.nextAttemptAt = new Date(
+					Date.now() + Math.min(30000, 1000 * 2 ** run.retryCount),
+				);
+				this.runQueue.push(run.id);
+				this.emitEvent({
+					type: TeamMessageType.RunProgress,
+					run: { ...run },
+					message: `retry_scheduled_${run.retryCount}`,
+				});
+			} else {
+				run.status = "failed";
+				this.emitEvent({ type: TeamMessageType.RunFailed, run: { ...run } });
+			}
+		} finally {
+			clearInterval(heartbeatTimer);
+			this.dispatchQueuedRuns();
+		}
 	}
 
 	listRuns(options?: {
@@ -1150,7 +1429,7 @@ export class AgentTeamsRuntime {
 		const includeCompleted = options?.includeCompleted ?? true;
 		return Array.from(this.runs.values())
 			.filter((run) => {
-				if (!includeCompleted && run.status !== "running") {
+				if (!includeCompleted && !["running", "queued"].includes(run.status)) {
 					return false;
 				}
 				if (options?.status && run.status !== options.status) {
@@ -1182,11 +1461,56 @@ export class AgentTeamsRuntime {
 
 	async awaitAllRuns(pollIntervalMs = 250): Promise<TeamRunRecord[]> {
 		while (
-			Array.from(this.runs.values()).some((run) => run.status === "running")
+			Array.from(this.runs.values()).some((run) =>
+				["queued", "running"].includes(run.status),
+			)
 		) {
 			await sleep(pollIntervalMs);
 		}
 		return this.listRuns();
+	}
+
+	cancelRun(runId: string, reason?: string): TeamRunRecord {
+		const run = this.runs.get(runId);
+		if (!run) {
+			throw new Error(`Run "${runId}" was not found`);
+		}
+		if (run.status === "completed" || run.status === "failed") {
+			return { ...run };
+		}
+		run.status = "cancelled";
+		run.error = reason;
+		run.endedAt = new Date();
+		const queueIndex = this.runQueue.indexOf(runId);
+		if (queueIndex >= 0) {
+			this.runQueue.splice(queueIndex, 1);
+		}
+		this.emitEvent({
+			type: TeamMessageType.RunCancelled,
+			run: { ...run },
+			reason,
+		});
+		return { ...run };
+	}
+
+	markStaleRunsInterrupted(reason = "runtime_recovered"): TeamRunRecord[] {
+		const interrupted: TeamRunRecord[] = [];
+		for (const run of this.runs.values()) {
+			if (!["queued", "running"].includes(run.status)) {
+				continue;
+			}
+			run.status = "interrupted";
+			run.error = reason;
+			run.endedAt = new Date();
+			interrupted.push({ ...run });
+			this.emitEvent({
+				type: TeamMessageType.RunInterrupted,
+				run: { ...run },
+				reason,
+			});
+		}
+		this.runQueue.length = 0;
+		return interrupted;
 	}
 
 	sendMessage(
@@ -1276,6 +1600,113 @@ export class AgentTeamsRuntime {
 		return { ...entry };
 	}
 
+	createOutcome(input: CreateTeamOutcomeInput): TeamOutcome {
+		const outcome: TeamOutcome = {
+			id: `out_${String(++this.outcomeCounter).padStart(4, "0")}`,
+			teamId: this.teamId,
+			title: input.title,
+			status: "draft",
+			requiredSections: [...new Set(input.requiredSections)],
+			createdBy: input.createdBy,
+			createdAt: new Date(),
+		};
+		this.outcomes.set(outcome.id, outcome);
+		this.emitEvent({
+			type: TeamMessageType.OutcomeCreated,
+			outcome: { ...outcome },
+		});
+		return { ...outcome };
+	}
+
+	listOutcomes(): TeamOutcome[] {
+		return Array.from(this.outcomes.values()).map((outcome) => ({
+			...outcome,
+		}));
+	}
+
+	attachOutcomeFragment(
+		input: AttachTeamOutcomeFragmentInput,
+	): TeamOutcomeFragment {
+		const outcome = this.outcomes.get(input.outcomeId);
+		if (!outcome) {
+			throw new Error(`Outcome "${input.outcomeId}" was not found`);
+		}
+		if (!outcome.requiredSections.includes(input.section)) {
+			throw new Error(
+				`Section "${input.section}" is not part of outcome "${input.outcomeId}"`,
+			);
+		}
+		const fragment: TeamOutcomeFragment = {
+			id: `frag_${String(++this.outcomeFragmentCounter).padStart(5, "0")}`,
+			teamId: this.teamId,
+			outcomeId: input.outcomeId,
+			section: input.section,
+			sourceAgentId: input.sourceAgentId,
+			sourceRunId: input.sourceRunId,
+			content: input.content,
+			status: "draft",
+			createdAt: new Date(),
+		};
+		this.outcomeFragments.set(fragment.id, fragment);
+		if (outcome.status === "draft") {
+			outcome.status = "in_review";
+		}
+		this.emitEvent({
+			type: TeamMessageType.OutcomeFragmentAttached,
+			fragment: { ...fragment },
+		});
+		return { ...fragment };
+	}
+
+	reviewOutcomeFragment(
+		input: ReviewTeamOutcomeFragmentInput,
+	): TeamOutcomeFragment {
+		const fragment = this.outcomeFragments.get(input.fragmentId);
+		if (!fragment) {
+			throw new Error(`Fragment "${input.fragmentId}" was not found`);
+		}
+		fragment.status = input.approved ? "reviewed" : "rejected";
+		fragment.reviewedBy = input.reviewedBy;
+		fragment.reviewedAt = new Date();
+		this.emitEvent({
+			type: TeamMessageType.OutcomeFragmentReviewed,
+			fragment: { ...fragment },
+		});
+		return { ...fragment };
+	}
+
+	listOutcomeFragments(outcomeId: string): TeamOutcomeFragment[] {
+		return Array.from(this.outcomeFragments.values())
+			.filter((fragment) => fragment.outcomeId === outcomeId)
+			.map((fragment) => ({ ...fragment }));
+	}
+
+	finalizeOutcome(outcomeId: string): TeamOutcome {
+		const outcome = this.outcomes.get(outcomeId);
+		if (!outcome) {
+			throw new Error(`Outcome "${outcomeId}" was not found`);
+		}
+		const fragments = this.listOutcomeFragments(outcomeId);
+		for (const section of outcome.requiredSections) {
+			const approvedForSection = fragments.some(
+				(fragment) =>
+					fragment.section === section && fragment.status === "reviewed",
+			);
+			if (!approvedForSection) {
+				throw new Error(
+					`Outcome "${outcomeId}" cannot be finalized. Section "${section}" is missing a reviewed fragment.`,
+				);
+			}
+		}
+		outcome.status = "finalized";
+		outcome.finalizedAt = new Date();
+		this.emitEvent({
+			type: TeamMessageType.OutcomeFinalized,
+			outcome: { ...outcome },
+		});
+		return { ...outcome };
+	}
+
 	cleanup(): void {
 		for (const member of this.members.values()) {
 			if (member.role === "teammate" && member.runningCount > 0) {
@@ -1285,7 +1716,9 @@ export class AgentTeamsRuntime {
 			}
 		}
 		if (
-			Array.from(this.runs.values()).some((run) => run.status === "running")
+			Array.from(this.runs.values()).some((run) =>
+				["queued", "running"].includes(run.status),
+			)
 		) {
 			throw new Error(
 				"Cannot cleanup team while async teammate runs are still active",
@@ -1302,6 +1735,9 @@ export class AgentTeamsRuntime {
 		this.mailbox.length = 0;
 		this.missionLog.length = 0;
 		this.runs.clear();
+		this.runQueue.length = 0;
+		this.outcomes.clear();
+		this.outcomeFragments.clear();
 
 		for (const [memberId, member] of this.members.entries()) {
 			if (member.role === "teammate") {

@@ -1,10 +1,4 @@
-import {
-	appendFileSync,
-	existsSync,
-	mkdirSync,
-	readFileSync,
-	writeFileSync,
-} from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import type {
 	HookEventPayload,
 	SubAgentEndContext,
@@ -684,10 +678,7 @@ export class RpcCoreSessionService {
 			}
 			rows = await this.client.listSessions({ limit: scanLimit });
 		}
-		return rows
-			.map((row) => toShape(row))
-			.filter((row) => this.hasPersistedConversation(row))
-			.slice(0, requestedLimit);
+		return rows.map((row) => toShape(row)).slice(0, requestedLimit);
 	}
 
 	private isPidAlive(pid: number): boolean {
@@ -704,32 +695,6 @@ export class RpcCoreSessionService {
 				"code" in error &&
 				(error as { code?: string }).code === "EPERM"
 			);
-		}
-	}
-
-	private hasPersistedConversation(row: SessionRowShape): boolean {
-		if ((row.prompt ?? "").trim().length > 0) {
-			return true;
-		}
-		const messagesPath =
-			row.messages_path?.trim() || this.sessionMessagesPath(row.session_id);
-		if (!messagesPath || !existsSync(messagesPath)) {
-			return false;
-		}
-		try {
-			const raw = readFileSync(messagesPath, "utf8");
-			if (!raw.trim()) {
-				return false;
-			}
-			const parsed = JSON.parse(raw) as { messages?: unknown } | unknown[];
-			const messages = Array.isArray(parsed)
-				? parsed
-				: Array.isArray((parsed as { messages?: unknown })?.messages)
-					? ((parsed as { messages: unknown[] }).messages ?? [])
-					: [];
-			return messages.length > 0;
-		} catch {
-			return true;
 		}
 	}
 

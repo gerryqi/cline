@@ -35,16 +35,19 @@ export const SearchCodebaseInputSchema = z.object({
 		.describe("Array of regex search queries to execute"),
 });
 
+const CommandInputSchema = z.string();
 /**
  * Schema for run_commands tool input
  */
 export const RunCommandsInputSchema = z.object({
-	commands: z.array(z.string()).describe("Array of shell commands to execute"),
+	commands: z
+		.array(CommandInputSchema)
+		.describe("Array of shell commands to execute"),
 });
 export const RunCommandsInputUnionSchema = z.union([
 	RunCommandsInputSchema,
-	z.array(z.string()),
-	z.string(),
+	z.array(CommandInputSchema),
+	CommandInputSchema,
 ]);
 
 /**

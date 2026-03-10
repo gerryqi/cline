@@ -74,6 +74,11 @@ export {
 	type SubAgentStartContext,
 	type TeamEvent,
 	type TeammateLifecycleSpec,
+	type TeamOutcome,
+	type TeamOutcomeFragment,
+	type TeamRunRecord,
+	type TeamRunStatus,
+	type TeamRuntimeState,
 	type TeamTeammateRuntimeConfig,
 	type TeamTeammateSpec,
 } from "./teams/index.js";

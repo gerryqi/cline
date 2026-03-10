@@ -5,6 +5,11 @@ import type {
 } from "@cline/agents";
 import type { DefaultSessionManager } from "@cline/core/server";
 import type { RpcSessionClient } from "@cline/rpc";
+import {
+	RPC_TEAM_LIFECYCLE_EVENT_TYPE,
+	RPC_TEAM_PROGRESS_EVENT_TYPE,
+	type TeamProgressProjectionEvent,
+} from "@cline/shared";
 
 export function createRpcToolApprovalRequester(input: {
 	eventClient: RpcSessionClient;
@@ -121,13 +126,35 @@ export function subscribeRuntimeEventBridge(input: {
 	eventClient: RpcSessionClient;
 }): () => void {
 	return input.sessionManager.subscribe((coreEvent) => {
-		if (coreEvent.type !== "agent_event") {
+		if (coreEvent.type === "agent_event") {
+			publishFromAgentEvent({
+				eventClient: input.eventClient,
+				sessionId: coreEvent.payload.sessionId,
+				event: coreEvent.payload.event,
+			});
 			return;
 		}
-		publishFromAgentEvent({
+		if (coreEvent.type !== "team_progress") {
+			return;
+		}
+		const payload: TeamProgressProjectionEvent = {
+			type: "team_progress_projection",
+			version: 1,
+			sessionId: coreEvent.payload.sessionId,
+			summary: coreEvent.payload.summary,
+			lastEvent: coreEvent.payload.lifecycle,
+		};
+		publishRuntimeEvent({
 			eventClient: input.eventClient,
 			sessionId: coreEvent.payload.sessionId,
-			event: coreEvent.payload.event,
+			eventType: RPC_TEAM_PROGRESS_EVENT_TYPE,
+			payload,
+		});
+		publishRuntimeEvent({
+			eventClient: input.eventClient,
+			sessionId: coreEvent.payload.sessionId,
+			eventType: RPC_TEAM_LIFECYCLE_EVENT_TYPE,
+			payload: coreEvent.payload.lifecycle,
 		});
 	});
 }

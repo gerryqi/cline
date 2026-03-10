@@ -12,80 +12,50 @@ export interface TeamTeammateSpec {
 	maxIterations?: number;
 }
 
-const TeamMemberInputSchema = z.object({
-	action: z
-		.enum(["spawn", "shutdown"])
-		.describe("Teammate lifecycle operation"),
+const TeamSpawnTeammateInputSchema = z.object({
 	agentId: z.string().min(1).describe("Teammate identifier"),
 	rolePrompt: z
 		.string()
-		.optional()
-		.describe("System prompt describing teammate role (required for spawn)"),
+		.min(1)
+		.describe("System prompt describing teammate role"),
 	maxIterations: z
 		.number()
 		.int()
 		.min(1)
-		.max(40)
 		.optional()
 		.describe("Max iterations per teammate run for spawn"),
-	reason: z.string().optional().describe("Optional shutdown reason"),
 });
 
-const TeamMemberSpawnInputSchema = TeamMemberInputSchema.extend({
-	action: z.literal("spawn"),
-	rolePrompt: z.string().min(1),
-});
-
-const TeamMemberShutdownInputSchema = TeamMemberInputSchema.extend({
-	action: z.literal("shutdown"),
+const TeamShutdownTeammateInputSchema = z.object({
+	agentId: z.string().min(1).describe("Teammate identifier"),
+	reason: z.string().min(1).optional().describe("Optional shutdown reason"),
 });
 
 const TeamStatusInputSchema = z.object({});
 
-const TeamTaskInputSchema = z.object({
-	action: z
-		.enum(["create", "claim", "complete", "block"])
-		.describe("Task operation"),
-	taskId: z.string().optional().describe("Task ID"),
-	title: z.string().optional().describe("Task title for create action"),
-	description: z.string().optional().describe("Task details for create action"),
-	dependsOn: z
-		.array(z.string())
-		.optional()
-		.describe("Dependency task IDs for create action"),
-	assignee: z
-		.string()
-		.optional()
-		.describe("Optional assignee for create action"),
-	summary: z.string().optional().describe("Completion summary for complete"),
-	reason: z.string().optional().describe("Blocking reason for block"),
+const TeamCreateTaskInputSchema = z.object({
+	title: z.string().min(1).describe("Task title"),
+	description: z.string().min(1).describe("Task details"),
+	dependsOn: z.array(z.string()).optional().describe("Dependency task IDs"),
+	assignee: z.string().min(1).optional().describe("Optional assignee"),
 });
 
-const TeamCreateTaskInputSchema = TeamTaskInputSchema.extend({
-	action: z.literal("create"),
-	title: z.string().min(1),
-	description: z.string().min(1),
+const TeamClaimTaskInputSchema = z.object({
+	taskId: z.string().describe("Task ID"),
 });
 
-const TeamClaimTaskInputSchema = TeamTaskInputSchema.extend({
-	action: z.literal("claim"),
-	taskId: z.string().min(1),
+const TeamCompleteTaskInputSchema = z.object({
+	taskId: z.string().describe("Task ID"),
+	summary: z.string().min(1).describe("Completion summary"),
 });
 
-const TeamCompleteTaskInputSchema = TeamTaskInputSchema.extend({
-	action: z.literal("complete"),
-	taskId: z.string().min(1),
-	summary: z.string().min(1),
-});
-
-const TeamBlockTaskInputSchema = TeamTaskInputSchema.extend({
-	action: z.literal("block"),
-	taskId: z.string().min(1),
-	reason: z.string().min(1),
+const TeamBlockTaskInputSchema = z.object({
+	taskId: z.string().describe("Task ID"),
+	reason: z.string().min(1).describe("Blocking reason"),
 });
 
 const TeamRunTaskInputSchema = z.object({
-	agentId: z.string().min(1).describe("Teammate agent ID"),
+	agentId: z.string().describe("Teammate agent ID"),
 	task: z.string().min(1).describe("Task instructions for the teammate"),
 	taskId: z.string().optional().describe("Optional shared task list ID"),
 	runMode: z
@@ -103,52 +73,52 @@ const TeamRunTaskInputSchema = z.object({
 });
 
 const TeamListRunsInputSchema = z.object({
-	status: z.enum(["running", "completed", "failed"]).optional(),
-	agentId: z.string().optional().describe("Filter by teammate ID"),
+	status: z
+		.enum([
+			"queued",
+			"running",
+			"completed",
+			"failed",
+			"cancelled",
+			"interrupted",
+		])
+		.optional(),
+	agentId: z.string().min(1).optional().describe("Filter by teammate ID"),
 	includeCompleted: z
 		.boolean()
 		.optional()
 		.describe("Include completed/failed runs (default true)"),
 });
 
-const TeamAwaitRunBaseInputSchema = z.object({
-	awaitAll: z
-		.boolean()
-		.optional()
-		.describe("Wait for all active runs (default false)"),
-	runId: z.string().optional().describe("Async run ID to await"),
+const TeamCancelRunInputSchema = z.object({
+	runId: z.string().min(1).describe("Run ID"),
+	reason: z.string().min(1).optional().describe("Optional cancellation reason"),
 });
 
-const TeamAwaitRunInputSchema = TeamAwaitRunBaseInputSchema.superRefine(
-	(value, ctx) => {
-		if (!value.awaitAll && !value.runId) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				path: ["runId"],
-				message: "runId is required unless awaitAll=true",
-			});
-		}
-	},
-);
-
-const TeamAwaitSingleRunInputSchema = TeamAwaitRunBaseInputSchema.extend({
-	awaitAll: z.literal(false).optional(),
-	runId: z.string().min(1),
+const TeamAwaitRunInputSchema = z.object({
+	runId: z.string().min(1).describe("Async run ID to await"),
 });
 
-const TeamMessageInputSchema = z.object({
-	action: z.enum(["send", "broadcast", "read"]).describe("Mailbox operation"),
-	toAgentId: z
-		.string()
-		.optional()
-		.describe("Recipient agent ID for send action"),
-	subject: z.string().optional().describe("Subject for send/broadcast"),
-	body: z.string().optional().describe("Body for send/broadcast"),
-	taskId: z.string().optional().describe("Optional task ID context"),
+const TeamAwaitAllRunsInputSchema = z.object({});
+
+const TeamSendMessageInputSchema = z.object({
+	toAgentId: z.string().min(1).describe("Recipient agent ID"),
+	subject: z.string().min(1).describe("Message subject"),
+	body: z.string().min(1).describe("Message body"),
+	taskId: z.string().min(1).optional().describe("Optional task ID context"),
+});
+
+const TeamBroadcastInputSchema = z.object({
+	subject: z.string().min(1).describe("Message subject"),
+	body: z.string().min(1).describe("Message body"),
+	taskId: z.string().min(1).optional().describe("Optional task ID context"),
 	includeLead: z
 		.boolean()
 		.optional()
 		.describe("Include the lead agent in broadcast recipients"),
+});
+
+const TeamReadMailboxInputSchema = z.object({
 	unreadOnly: z
 		.boolean()
 		.optional()
@@ -162,87 +132,88 @@ const TeamMessageInputSchema = z.object({
 		.describe("Optional max number of messages for read action"),
 });
 
-const TeamSendMessageInputSchema = TeamMessageInputSchema.extend({
-	action: z.literal("send"),
-	toAgentId: z.string().min(1),
-	subject: z.string().min(1),
-	body: z.string().min(1),
-});
-
-const TeamBroadcastMessageInputSchema = TeamMessageInputSchema.extend({
-	action: z.literal("broadcast"),
-	subject: z.string().min(1),
-	body: z.string().min(1),
-});
-
-const TeamReadMailboxInputSchema = TeamMessageInputSchema.extend({
-	action: z.literal("read"),
-});
-
 const TeamLogUpdateInputSchema = z.object({
 	kind: z.enum(["progress", "handoff", "blocked", "decision", "done", "error"]),
 	summary: z.string().min(1).describe("Update summary"),
-	taskId: z.string().optional().describe("Optional task ID context"),
+	taskId: z.string().min(1).optional().describe("Optional task ID context"),
 	evidence: z
-		.array(z.string())
+		.array(z.string().min(1))
 		.optional()
 		.describe("Optional evidence links/snippets"),
-	nextAction: z.string().optional().describe("Planned next step"),
+	nextAction: z.string().min(1).optional().describe("Planned next step"),
 });
 
 const TeamCleanupInputSchema = z.object({});
 
-function stripNullProperties(input: unknown): unknown {
-	if (!input || typeof input !== "object" || Array.isArray(input)) {
-		return input;
-	}
-	const result: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-		if (value !== null) {
-			result[key] = value;
-		}
-	}
-	return result;
-}
+const DEFAULT_OUTCOME_REQUIRED_SECTIONS = [
+	"current_state",
+	"boundary_analysis",
+	"interface_proposal",
+];
 
-function formatTeamMemberInputError(input: unknown): string {
-	const action =
-		typeof input === "object" && input !== null && "action" in input
-			? (input as { action?: unknown }).action
-			: undefined;
-	if (action === "spawn") {
-		return (
-			'team_member action=spawn requires non-empty "agentId" and "rolePrompt". ' +
-			'Example: {"action":"spawn","agentId":"python-poet","rolePrompt":"Write concise Python-focused haiku"}'
-		);
-	}
-	if (action === "shutdown") {
-		return (
-			'team_member action=shutdown requires non-empty "agentId". ' +
-			'Example: {"action":"shutdown","agentId":"python-poet"}'
-		);
-	}
-	return (
-		'team_member requires "action" (spawn|shutdown). ' +
-		'For spawn include "agentId" and "rolePrompt"; for shutdown include "agentId".'
-	);
-}
+const TeamCreateOutcomeInputSchema = z.object({
+	title: z.string().describe("Outcome title"),
+	requiredSections: z
+		.array(z.string())
+		.default(DEFAULT_OUTCOME_REQUIRED_SECTIONS)
+		.describe(
+			"Required sections for finalization gate (defaults to current_state,boundary_analysis,interface_proposal)",
+		),
+});
 
-type TeamMemberInput = z.infer<typeof TeamMemberInputSchema>;
+const TeamAttachOutcomeFragmentInputSchema = z.object({
+	outcomeId: z.string().describe("Outcome ID"),
+	section: z.string().describe("Section name"),
+	sourceRunId: z.string().optional().describe("Optional source run ID"),
+	content: z.string().describe("Section fragment content"),
+});
+
+const TeamReviewOutcomeFragmentInputSchema = z.object({
+	fragmentId: z.string().describe("Fragment ID"),
+	approved: z.boolean().describe("Review decision"),
+});
+
+const TeamFinalizeOutcomeInputSchema = z.object({
+	outcomeId: z.string().describe("Outcome ID"),
+});
+
+const TeamListOutcomesInputSchema = z.object({});
+
+type TeamSpawnTeammateInput = z.infer<typeof TeamSpawnTeammateInputSchema>;
+type TeamShutdownTeammateInput = z.infer<
+	typeof TeamShutdownTeammateInputSchema
+>;
 type TeamStatusInput = z.infer<typeof TeamStatusInputSchema>;
-type TeamTaskInput = z.infer<typeof TeamTaskInputSchema>;
+type TeamCreateTaskInput = z.infer<typeof TeamCreateTaskInputSchema>;
+type TeamClaimTaskInput = z.infer<typeof TeamClaimTaskInputSchema>;
+type TeamCompleteTaskInput = z.infer<typeof TeamCompleteTaskInputSchema>;
+type TeamBlockTaskInput = z.infer<typeof TeamBlockTaskInputSchema>;
 type TeamRunTaskInput = z.infer<typeof TeamRunTaskInputSchema>;
 type TeamListRunsInput = z.infer<typeof TeamListRunsInputSchema>;
+type TeamCancelRunInput = z.infer<typeof TeamCancelRunInputSchema>;
 type TeamAwaitRunInput = z.infer<typeof TeamAwaitRunInputSchema>;
-type TeamMessageInput = z.infer<typeof TeamMessageInputSchema>;
+type TeamAwaitAllRunsInput = z.infer<typeof TeamAwaitAllRunsInputSchema>;
+type TeamSendMessageInput = z.infer<typeof TeamSendMessageInputSchema>;
+type TeamBroadcastInput = z.infer<typeof TeamBroadcastInputSchema>;
+type TeamReadMailboxInput = z.infer<typeof TeamReadMailboxInputSchema>;
 type TeamLogUpdateInput = z.infer<typeof TeamLogUpdateInputSchema>;
 type TeamCleanupInput = z.infer<typeof TeamCleanupInputSchema>;
+type TeamCreateOutcomeInput = z.infer<typeof TeamCreateOutcomeInputSchema>;
+type TeamAttachOutcomeFragmentInput = z.infer<
+	typeof TeamAttachOutcomeFragmentInputSchema
+>;
+type TeamReviewOutcomeFragmentInput = z.infer<
+	typeof TeamReviewOutcomeFragmentInputSchema
+>;
+type TeamFinalizeOutcomeInput = z.infer<typeof TeamFinalizeOutcomeInputSchema>;
+type TeamListOutcomesInput = z.infer<typeof TeamListOutcomesInputSchema>;
 
 export interface TeamTeammateRuntimeConfig {
 	providerId: string;
 	modelId: string;
 	apiKey?: string;
 	baseUrl?: string;
+	headers?: Record<string, string>;
 	knownModels?: Record<string, LlmsProviders.ModelInfo>;
 	thinking?: boolean;
 	maxIterations?: number;
@@ -300,6 +271,7 @@ function spawnTeamTeammate(
 			modelId: options.spec.modelId ?? options.teammateRuntime.modelId,
 			apiKey: options.teammateRuntime.apiKey,
 			baseUrl: options.teammateRuntime.baseUrl,
+			headers: options.teammateRuntime.headers,
 			knownModels: options.teammateRuntime.knownModels,
 			thinking: options.teammateRuntime.thinking,
 			systemPrompt: options.spec.rolePrompt,
@@ -356,63 +328,56 @@ export function createAgentTeamsTools(
 	const tools: Tool[] = [];
 
 	tools.push(
-		createTool<TeamMemberInput, { agentId: string; status: string }>({
-			name: "team_member",
-			description:
-				"Manage teammate lifecycle. action=spawn requires agentId+rolePrompt; action=shutdown requires agentId.",
-			inputSchema: zodToJsonSchema(TeamMemberInputSchema),
+		createTool<TeamSpawnTeammateInput, { agentId: string; status: string }>({
+			name: "team_spawn_teammate",
+			description: "Spawn a teammate with a required agentId and rolePrompt.",
+			inputSchema: zodToJsonSchema(TeamSpawnTeammateInputSchema),
 			execute: async (input) => {
-				const normalizedInput = stripNullProperties(input);
-				const validatedInputResult =
-					TeamMemberInputSchema.safeParse(normalizedInput);
-				if (!validatedInputResult.success) {
-					throw new Error(formatTeamMemberInputError(input));
-				}
-				const validatedInput = validatedInputResult.data;
+				const validatedInput = validateWithZod(
+					TeamSpawnTeammateInputSchema,
+					input,
+				);
 				if (options.runtime.getMemberRole(options.requesterId) !== "lead") {
 					throw new Error("Only the lead agent can manage teammates.");
 				}
-				switch (validatedInput.action) {
-					case "spawn": {
-						const spawnInputResult =
-							TeamMemberSpawnInputSchema.safeParse(normalizedInput);
-						if (!spawnInputResult.success) {
-							throw new Error(formatTeamMemberInputError(input));
-						}
-						const spawnInput = spawnInputResult.data;
-						if (!allowSpawn) {
-							throw new Error(
-								"Spawning teammates is disabled in this context.",
-							);
-						}
-						const spec: TeamTeammateSpec = {
-							agentId: spawnInput.agentId,
-							rolePrompt: spawnInput.rolePrompt,
-							maxIterations: spawnInput.maxIterations,
-						};
-						spawnTeamTeammate({
-							runtime: options.runtime,
-							requesterId: options.requesterId,
-							teammateRuntime: options.teammateRuntime,
-							createBaseTools: options.createBaseTools,
-							spec,
-						});
-						return { agentId: spawnInput.agentId, status: "spawned" };
-					}
-					case "shutdown": {
-						const shutdownInputResult =
-							TeamMemberShutdownInputSchema.safeParse(normalizedInput);
-						if (!shutdownInputResult.success) {
-							throw new Error(formatTeamMemberInputError(input));
-						}
-						const shutdownInput = shutdownInputResult.data;
-						options.runtime.shutdownTeammate(
-							shutdownInput.agentId,
-							shutdownInput.reason,
-						);
-						return { agentId: shutdownInput.agentId, status: "stopped" };
-					}
+				if (!allowSpawn) {
+					throw new Error("Spawning teammates is disabled in this context.");
 				}
+				const spec: TeamTeammateSpec = {
+					agentId: validatedInput.agentId,
+					rolePrompt: validatedInput.rolePrompt,
+					maxIterations: validatedInput.maxIterations,
+				};
+				spawnTeamTeammate({
+					runtime: options.runtime,
+					requesterId: options.requesterId,
+					teammateRuntime: options.teammateRuntime,
+					createBaseTools: options.createBaseTools,
+					spec,
+				});
+				return { agentId: validatedInput.agentId, status: "spawned" };
+			},
+		}) as Tool,
+	);
+
+	tools.push(
+		createTool<TeamShutdownTeammateInput, { agentId: string; status: string }>({
+			name: "team_shutdown_teammate",
+			description: "Shutdown a teammate by agentId.",
+			inputSchema: zodToJsonSchema(TeamShutdownTeammateInputSchema),
+			execute: async (input) => {
+				const validatedInput = validateWithZod(
+					TeamShutdownTeammateInputSchema,
+					input,
+				);
+				if (options.runtime.getMemberRole(options.requesterId) !== "lead") {
+					throw new Error("Only the lead agent can manage teammates.");
+				}
+				options.runtime.shutdownTeammate(
+					validatedInput.agentId,
+					validatedInput.reason,
+				);
+				return { agentId: validatedInput.agentId, status: "stopped" };
 			},
 		}) as Tool,
 	);
@@ -431,58 +396,84 @@ export function createAgentTeamsTools(
 	);
 
 	tools.push(
-		createTool<TeamTaskInput, { taskId: string; status: string }>({
-			name: "team_task",
-			description:
-				"Operate on shared team tasks. Use action=create|claim|complete|block.",
-			inputSchema: zodToJsonSchema(TeamTaskInputSchema),
+		createTool<TeamCreateTaskInput, { taskId: string; status: string }>({
+			name: "team_create_task",
+			description: "Create a shared team task with title and description.",
+			inputSchema: zodToJsonSchema(TeamCreateTaskInputSchema),
 			execute: async (input) => {
-				const validatedInput = validateWithZod(TeamTaskInputSchema, input);
-				switch (validatedInput.action) {
-					case "create": {
-						const createInput = validateWithZod(
-							TeamCreateTaskInputSchema,
-							input,
-						);
-						const task = options.runtime.createTask({
-							title: createInput.title,
-							description: createInput.description,
-							dependsOn: createInput.dependsOn,
-							assignee: createInput.assignee,
-							createdBy: options.requesterId,
-						});
-						return { taskId: task.id, status: task.status };
-					}
-					case "claim": {
-						const claimInput = validateWithZod(TeamClaimTaskInputSchema, input);
-						const task = options.runtime.claimTask(
-							claimInput.taskId,
-							options.requesterId,
-						);
-						return { taskId: task.id, status: task.status };
-					}
-					case "complete": {
-						const completeInput = validateWithZod(
-							TeamCompleteTaskInputSchema,
-							input,
-						);
-						const task = options.runtime.completeTask(
-							completeInput.taskId,
-							options.requesterId,
-							completeInput.summary,
-						);
-						return { taskId: task.id, status: task.status };
-					}
-					case "block": {
-						const blockInput = validateWithZod(TeamBlockTaskInputSchema, input);
-						const task = options.runtime.blockTask(
-							blockInput.taskId,
-							options.requesterId,
-							blockInput.reason,
-						);
-						return { taskId: task.id, status: task.status };
-					}
-				}
+				const validatedInput = validateWithZod(
+					TeamCreateTaskInputSchema,
+					input,
+				);
+				const task = options.runtime.createTask({
+					title: validatedInput.title,
+					description: validatedInput.description,
+					dependsOn: validatedInput.dependsOn,
+					assignee: validatedInput.assignee,
+					createdBy: options.requesterId,
+				});
+				return { taskId: task.id, status: task.status };
+			},
+		}) as Tool,
+	);
+
+	tools.push(
+		createTool<
+			TeamClaimTaskInput,
+			{ taskId: string; status: string; nextStep: string }
+		>({
+			name: "team_claim_task",
+			description: "Claim a task by taskId.",
+			inputSchema: zodToJsonSchema(TeamClaimTaskInputSchema),
+			execute: async (input) => {
+				const validatedInput = validateWithZod(TeamClaimTaskInputSchema, input);
+				const task = options.runtime.claimTask(
+					validatedInput.taskId,
+					options.requesterId,
+				);
+				return {
+					taskId: task.id,
+					status: task.status,
+					nextStep:
+						"Task is now in_progress. Execute the work using team_run_task or your own tools, then call team_complete_task when done.",
+				};
+			},
+		}) as Tool,
+	);
+
+	tools.push(
+		createTool<TeamCompleteTaskInput, { taskId: string; status: string }>({
+			name: "team_complete_task",
+			description: "Complete a task by taskId and provide a summary.",
+			inputSchema: zodToJsonSchema(TeamCompleteTaskInputSchema),
+			execute: async (input) => {
+				const validatedInput = validateWithZod(
+					TeamCompleteTaskInputSchema,
+					input,
+				);
+				const task = options.runtime.completeTask(
+					validatedInput.taskId,
+					options.requesterId,
+					validatedInput.summary,
+				);
+				return { taskId: task.id, status: task.status };
+			},
+		}) as Tool,
+	);
+
+	tools.push(
+		createTool<TeamBlockTaskInput, { taskId: string; status: string }>({
+			name: "team_block_task",
+			description: "Block a task by taskId with a reason.",
+			inputSchema: zodToJsonSchema(TeamBlockTaskInputSchema),
+			execute: async (input) => {
+				const validatedInput = validateWithZod(TeamBlockTaskInputSchema, input);
+				const task = options.runtime.blockTask(
+					validatedInput.taskId,
+					options.requesterId,
+					validatedInput.reason,
+				);
+				return { taskId: task.id, status: task.status };
 			},
 		}) as Tool,
 	);
@@ -540,6 +531,22 @@ export function createAgentTeamsTools(
 	);
 
 	tools.push(
+		createTool<TeamCancelRunInput, { runId: string; status: string }>({
+			name: "team_cancel_run",
+			description: "Cancel one async teammate run.",
+			inputSchema: zodToJsonSchema(TeamCancelRunInputSchema),
+			execute: async (input) => {
+				const validatedInput = validateWithZod(TeamCancelRunInputSchema, input);
+				const run = options.runtime.cancelRun(
+					validatedInput.runId,
+					validatedInput.reason,
+				);
+				return { runId: run.id, status: run.status };
+			},
+		}) as Tool,
+	);
+
+	tools.push(
 		createTool<TeamListRunsInput, ReturnType<AgentTeamsRuntime["listRuns"]>>({
 			name: "team_list_runs",
 			description:
@@ -555,85 +562,125 @@ export function createAgentTeamsTools(
 	tools.push(
 		createTool<
 			TeamAwaitRunInput,
-			Awaited<
-				| ReturnType<AgentTeamsRuntime["awaitRun"]>
-				| ReturnType<AgentTeamsRuntime["awaitAllRuns"]>
-			>
+			Awaited<ReturnType<AgentTeamsRuntime["awaitRun"]>>
 		>({
 			name: "team_await_run",
-			description:
-				"Wait for one async run by runId, or wait for all active async runs.",
+			description: "Wait for one async run by runId.",
 			inputSchema: zodToJsonSchema(TeamAwaitRunInputSchema),
 			execute: async (input) => {
 				const validatedInput = validateWithZod(TeamAwaitRunInputSchema, input);
-				if (validatedInput.awaitAll) {
-					return options.runtime.awaitAllRuns();
+				const run = await options.runtime.awaitRun(validatedInput.runId);
+				if (run.status === "failed") {
+					throw new Error(
+						`Run "${run.id}" failed${run.error ? `: ${run.error}` : ""}`,
+					);
 				}
-				const singleRunInput = validateWithZod(
-					TeamAwaitSingleRunInputSchema,
-					input,
-				);
-				return options.runtime.awaitRun(singleRunInput.runId);
+				if (run.status === "cancelled") {
+					throw new Error(
+						`Run "${run.id}" was cancelled${run.error ? `: ${run.error}` : ""}`,
+					);
+				}
+				if (run.status === "interrupted") {
+					throw new Error(
+						`Run "${run.id}" was interrupted${run.error ? `: ${run.error}` : ""}`,
+					);
+				}
+				return run;
 			},
 		}) as Tool,
 	);
 
 	tools.push(
 		createTool<
-			TeamMessageInput,
-			| { id: string; toAgentId: string }
-			| { delivered: number }
-			| ReturnType<AgentTeamsRuntime["listMailbox"]>
+			TeamAwaitAllRunsInput,
+			Awaited<ReturnType<AgentTeamsRuntime["awaitAllRuns"]>>
 		>({
-			name: "team_message",
-			description:
-				"Team mailbox operations. Use action=send|broadcast|read for direct messages, broadcasts, and inbox reads.",
-			inputSchema: zodToJsonSchema(TeamMessageInputSchema),
+			name: "team_await_all_runs",
+			description: "Wait for all active async runs to complete.",
+			inputSchema: zodToJsonSchema(TeamAwaitAllRunsInputSchema),
 			execute: async (input) => {
-				const validatedInput = validateWithZod(TeamMessageInputSchema, input);
-				switch (validatedInput.action) {
-					case "send": {
-						const sendInput = validateWithZod(
-							TeamSendMessageInputSchema,
-							input,
-						);
-						const message = options.runtime.sendMessage(
-							options.requesterId,
-							sendInput.toAgentId,
-							sendInput.subject,
-							sendInput.body,
-							sendInput.taskId,
-						);
-						return { id: message.id, toAgentId: message.toAgentId };
-					}
-					case "broadcast": {
-						const broadcastInput = validateWithZod(
-							TeamBroadcastMessageInputSchema,
-							input,
-						);
-						const messages = options.runtime.broadcast(
-							options.requesterId,
-							broadcastInput.subject,
-							broadcastInput.body,
-							{
-								taskId: broadcastInput.taskId,
-								includeLead: broadcastInput.includeLead,
-							},
-						);
-						return { delivered: messages.length };
-					}
-					case "read": {
-						const readInput = validateWithZod(
-							TeamReadMailboxInputSchema,
-							input,
-						);
-						return options.runtime.listMailbox(options.requesterId, {
-							unreadOnly: readInput.unreadOnly,
-							limit: readInput.limit,
-							markRead: true,
-						});
-					}
+				validateWithZod(TeamAwaitAllRunsInputSchema, input);
+				const runs = await options.runtime.awaitAllRuns();
+				const failedRuns = runs.filter((run) =>
+					["failed", "cancelled", "interrupted"].includes(run.status),
+				);
+				if (failedRuns.length > 0) {
+					const details = failedRuns
+						.map(
+							(run) =>
+								`${run.id}:${run.status}${run.error ? `(${run.error})` : ""}`,
+						)
+						.join(", ");
+					throw new Error(
+						`One or more runs did not complete successfully: ${details}`,
+					);
 				}
+				return runs;
+			},
+		}) as Tool,
+	);
+
+	tools.push(
+		createTool<TeamSendMessageInput, { id: string; toAgentId: string }>({
+			name: "team_send_message",
+			description: "Send a direct mailbox message to one teammate.",
+			inputSchema: zodToJsonSchema(TeamSendMessageInputSchema),
+			execute: async (input) => {
+				const validatedInput = validateWithZod(
+					TeamSendMessageInputSchema,
+					input,
+				);
+				const message = options.runtime.sendMessage(
+					options.requesterId,
+					validatedInput.toAgentId,
+					validatedInput.subject,
+					validatedInput.body,
+					validatedInput.taskId,
+				);
+				return { id: message.id, toAgentId: message.toAgentId };
+			},
+		}) as Tool,
+	);
+
+	tools.push(
+		createTool<TeamBroadcastInput, { delivered: number }>({
+			name: "team_broadcast",
+			description: "Broadcast a mailbox message to all teammates.",
+			inputSchema: zodToJsonSchema(TeamBroadcastInputSchema),
+			execute: async (input) => {
+				const validatedInput = validateWithZod(TeamBroadcastInputSchema, input);
+				const messages = options.runtime.broadcast(
+					options.requesterId,
+					validatedInput.subject,
+					validatedInput.body,
+					{
+						taskId: validatedInput.taskId,
+						includeLead: validatedInput.includeLead,
+					},
+				);
+				return { delivered: messages.length };
+			},
+		}) as Tool,
+	);
+
+	tools.push(
+		createTool<
+			TeamReadMailboxInput,
+			ReturnType<AgentTeamsRuntime["listMailbox"]>
+		>({
+			name: "team_read_mailbox",
+			description: "Read the current agent mailbox.",
+			inputSchema: zodToJsonSchema(TeamReadMailboxInputSchema),
+			execute: async (input) => {
+				const validatedInput = validateWithZod(
+					TeamReadMailboxInputSchema,
+					input,
+				);
+				return options.runtime.listMailbox(options.requesterId, {
+					unreadOnly: validatedInput.unreadOnly,
+					limit: validatedInput.limit,
+					markRead: true,
+				});
 			},
 		}) as Tool,
 	);
@@ -675,6 +722,109 @@ export function createAgentTeamsTools(
 		}) as Tool,
 	);
 
+	tools.push(
+		createTool<TeamCreateOutcomeInput, { outcomeId: string; status: string }>({
+			name: "team_create_outcome",
+			description: "Create a converged team outcome.",
+			inputSchema: zodToJsonSchema(TeamCreateOutcomeInputSchema),
+			execute: async (input) => {
+				const validatedInput = validateWithZod(
+					TeamCreateOutcomeInputSchema,
+					input,
+				);
+				const outcome = options.runtime.createOutcome({
+					title: validatedInput.title,
+					requiredSections: validatedInput.requiredSections,
+					createdBy: options.requesterId,
+				});
+				return { outcomeId: outcome.id, status: outcome.status };
+			},
+		}) as Tool,
+	);
+
+	tools.push(
+		createTool<
+			TeamAttachOutcomeFragmentInput,
+			{ fragmentId: string; status: string }
+		>({
+			name: "team_attach_outcome_fragment",
+			description: "Attach a fragment to an outcome section.",
+			inputSchema: zodToJsonSchema(TeamAttachOutcomeFragmentInputSchema),
+			execute: async (input) => {
+				const validatedInput = validateWithZod(
+					TeamAttachOutcomeFragmentInputSchema,
+					input,
+				);
+				const fragment = options.runtime.attachOutcomeFragment({
+					outcomeId: validatedInput.outcomeId,
+					section: validatedInput.section,
+					sourceAgentId: options.requesterId,
+					sourceRunId: validatedInput.sourceRunId,
+					content: validatedInput.content,
+				});
+				return { fragmentId: fragment.id, status: fragment.status };
+			},
+		}) as Tool,
+	);
+
+	tools.push(
+		createTool<
+			TeamReviewOutcomeFragmentInput,
+			{ fragmentId: string; status: string }
+		>({
+			name: "team_review_outcome_fragment",
+			description: "Review one outcome fragment.",
+			inputSchema: zodToJsonSchema(TeamReviewOutcomeFragmentInputSchema),
+			execute: async (input) => {
+				const validatedInput = validateWithZod(
+					TeamReviewOutcomeFragmentInputSchema,
+					input,
+				);
+				const fragment = options.runtime.reviewOutcomeFragment({
+					fragmentId: validatedInput.fragmentId,
+					reviewedBy: options.requesterId,
+					approved: validatedInput.approved,
+				});
+				return { fragmentId: fragment.id, status: fragment.status };
+			},
+		}) as Tool,
+	);
+
+	tools.push(
+		createTool<TeamFinalizeOutcomeInput, { outcomeId: string; status: string }>(
+			{
+				name: "team_finalize_outcome",
+				description: "Finalize one outcome.",
+				inputSchema: zodToJsonSchema(TeamFinalizeOutcomeInputSchema),
+				execute: async (input) => {
+					const validatedInput = validateWithZod(
+						TeamFinalizeOutcomeInputSchema,
+						input,
+					);
+					const outcome = options.runtime.finalizeOutcome(
+						validatedInput.outcomeId,
+					);
+					return { outcomeId: outcome.id, status: outcome.status };
+				},
+			},
+		) as Tool,
+	);
+
+	tools.push(
+		createTool<
+			TeamListOutcomesInput,
+			ReturnType<AgentTeamsRuntime["listOutcomes"]>
+		>({
+			name: "team_list_outcomes",
+			description: "List team outcomes.",
+			inputSchema: zodToJsonSchema(TeamListOutcomesInputSchema),
+			execute: async (input) => {
+				validateWithZod(TeamListOutcomesInputSchema, input);
+				return options.runtime.listOutcomes();
+			},
+		}) as Tool,
+	);
+
 	return tools;
 }
 
@@ -696,6 +846,29 @@ export function reviveTeamStateDates(
 		missionLog: state.missionLog.map((entry) => ({
 			...entry,
 			ts: new Date(entry.ts),
+		})),
+		runs: (state.runs ?? []).map((run) => ({
+			...run,
+			startedAt: new Date(run.startedAt),
+			endedAt: run.endedAt ? new Date(run.endedAt) : undefined,
+			nextAttemptAt: run.nextAttemptAt
+				? new Date(run.nextAttemptAt)
+				: undefined,
+			heartbeatAt: run.heartbeatAt ? new Date(run.heartbeatAt) : undefined,
+		})),
+		outcomes: (state.outcomes ?? []).map((outcome) => ({
+			...outcome,
+			createdAt: new Date(outcome.createdAt),
+			finalizedAt: outcome.finalizedAt
+				? new Date(outcome.finalizedAt)
+				: undefined,
+		})),
+		outcomeFragments: (state.outcomeFragments ?? []).map((fragment) => ({
+			...fragment,
+			createdAt: new Date(fragment.createdAt),
+			reviewedAt: fragment.reviewedAt
+				? new Date(fragment.reviewedAt)
+				: undefined,
 		})),
 	};
 }

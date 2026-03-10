@@ -163,6 +163,61 @@ export function handleTeamEvent(event: TeamEvent): void {
 				`\n${c.dim}[mission]${c.reset} ${event.entry.agentId}: ${truncate(event.entry.summary, 90)}`,
 			);
 			break;
+		case "run_queued":
+			write(
+				`\n${c.dim}[team run]${c.reset} queued ${c.cyan}${event.run.id}${c.reset} -> ${event.run.agentId}`,
+			);
+			break;
+		case "run_started":
+			write(
+				`\n${c.dim}[team run]${c.reset} started ${c.cyan}${event.run.id}${c.reset} -> ${event.run.agentId}`,
+			);
+			break;
+		case "run_progress":
+			write(
+				`\n${c.dim}[team run]${c.reset} progress ${c.cyan}${event.run.id}${c.reset}: ${event.message}`,
+			);
+			break;
+		case "run_completed":
+			write(
+				`\n${c.dim}[team run]${c.reset} completed ${c.cyan}${event.run.id}${c.reset}`,
+			);
+			break;
+		case "run_failed":
+			write(
+				`\n${c.dim}[team run]${c.reset} failed ${c.cyan}${event.run.id}${c.reset}: ${event.run.error ?? "unknown error"}`,
+			);
+			break;
+		case "run_cancelled":
+			write(
+				`\n${c.dim}[team run]${c.reset} cancelled ${c.cyan}${event.run.id}${c.reset}`,
+			);
+			break;
+		case "run_interrupted":
+			write(
+				`\n${c.dim}[team run]${c.reset} interrupted ${c.cyan}${event.run.id}${c.reset}`,
+			);
+			break;
+		case "outcome_created":
+			write(
+				`\n${c.dim}[team outcome]${c.reset} created ${c.cyan}${event.outcome.id}${c.reset}: ${event.outcome.title}`,
+			);
+			break;
+		case "outcome_fragment_attached":
+			write(
+				`\n${c.dim}[team outcome]${c.reset} fragment ${c.cyan}${event.fragment.id}${c.reset} attached to ${event.fragment.section}`,
+			);
+			break;
+		case "outcome_fragment_reviewed":
+			write(
+				`\n${c.dim}[team outcome]${c.reset} fragment ${c.cyan}${event.fragment.id}${c.reset} -> ${event.fragment.status}`,
+			);
+			break;
+		case "outcome_finalized":
+			write(
+				`\n${c.dim}[team outcome]${c.reset} finalized ${c.cyan}${event.outcome.id}${c.reset}`,
+			);
+			break;
 		case "task_start":
 			break;
 		case "task_end":

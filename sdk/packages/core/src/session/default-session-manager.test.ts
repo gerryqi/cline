@@ -622,4 +622,113 @@ describe("DefaultSessionManager", () => {
 			apiKey: "oauth-access-new",
 		});
 	});
+
+	it("auto-continues when async teammate runs complete after lead turn", async () => {
+		const sessionId = "sess-team-auto-continue";
+		const manifest = createManifest(sessionId);
+		const sessionService = {
+			ensureSessionsDir: vi.fn().mockReturnValue("/tmp/sessions"),
+			createRootSessionWithArtifacts: vi.fn().mockResolvedValue({
+				manifestPath: "/tmp/manifest-team-auto-continue.json",
+				transcriptPath: "/tmp/transcript-team-auto-continue.log",
+				hookPath: "/tmp/hook-team-auto-continue.log",
+				messagesPath: "/tmp/messages-team-auto-continue.json",
+				manifest,
+			}),
+			persistSessionMessages: vi.fn(),
+			updateSessionStatus: vi.fn().mockResolvedValue({ updated: true }),
+			writeSessionManifest: vi.fn(),
+			listSessions: vi.fn().mockResolvedValue([]),
+			deleteSession: vi.fn().mockResolvedValue({ deleted: true }),
+		};
+
+		let onTeamEvent: ((event: unknown) => void) | undefined;
+		const runtimeBuilder = {
+			build: vi
+				.fn()
+				.mockImplementation(
+					(input: { onTeamEvent?: (event: unknown) => void }) => {
+						onTeamEvent = input.onTeamEvent;
+						return {
+							tools: [],
+							shutdown: vi.fn(),
+						};
+					},
+				),
+		};
+
+		const run = vi.fn().mockImplementation(async () => {
+			onTeamEvent?.({
+				type: "run_started",
+				run: {
+					id: "run_0001",
+					agentId: "investigator",
+					status: "running",
+					message: "Investigate",
+					priority: 0,
+					retryCount: 0,
+					maxRetries: 0,
+					startedAt: new Date("2026-01-01T00:00:00.000Z"),
+				},
+			});
+			setTimeout(() => {
+				onTeamEvent?.({
+					type: "run_completed",
+					run: {
+						id: "run_0001",
+						agentId: "investigator",
+						status: "completed",
+						message: "Investigate",
+						priority: 0,
+						retryCount: 0,
+						maxRetries: 0,
+						startedAt: new Date("2026-01-01T00:00:00.000Z"),
+						endedAt: new Date("2026-01-01T00:00:02.000Z"),
+						result: createResult({ iterations: 3 }),
+					},
+				});
+			}, 0);
+			return createResult({ text: "lead scheduled teammate" });
+		});
+		const continueFn = vi
+			.fn()
+			.mockResolvedValue(
+				createResult({ text: "lead processed teammate result" }),
+			);
+		const manager = new DefaultSessionManager({
+			distinctId,
+			sessionService: sessionService as never,
+			runtimeBuilder,
+			createAgent: () =>
+				({
+					run,
+					continue: continueFn,
+					abort: vi.fn(),
+					shutdown: vi.fn().mockResolvedValue(undefined),
+					getMessages: vi.fn().mockReturnValue([]),
+					messages: [],
+				}) as never,
+		});
+
+		await manager.start({
+			config: createConfig({ sessionId }),
+			interactive: false,
+		});
+		const result = await manager.send({
+			sessionId,
+			prompt: "run teammate work",
+		});
+
+		expect(result?.text).toBe("lead processed teammate result");
+		expect(run).toHaveBeenCalledTimes(1);
+		expect(continueFn).toHaveBeenCalledTimes(1);
+		expect(continueFn.mock.calls[0]?.[0]).toContain(
+			"System-delivered teammate async run updates:",
+		);
+		expect(sessionService.updateSessionStatus).toHaveBeenCalledWith(
+			sessionId,
+			"completed",
+			0,
+		);
+	});
 });

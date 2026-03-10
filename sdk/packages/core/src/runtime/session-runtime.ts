@@ -15,6 +15,7 @@ export interface BuiltRuntime {
 	hooks?: AgentHooks;
 	logger?: BasicLogger;
 	teamRuntime?: AgentTeamsRuntime;
+	completionGuard?: () => string | undefined;
 	shutdown: (reason: string) => Promise<void> | void;
 }
 

@@ -94,6 +94,13 @@ By default, plugin paths are loaded in an out-of-process sandbox (`resolveAndLoa
 
 This is the primary API for host clients that should only consume runtime events and outputs without manually creating agents or persisting messages.
 
+Async teammate run coordination behavior:
+
+- `DefaultSessionManager` now tracks async team runs (`queued`/`running`) at the session layer.
+- Session completion is gated while async teammate runs are still in flight.
+- When teammate runs reach terminal states (`completed`, `failed`, `cancelled`, `interrupted`), core injects a synthetic continuation prompt into the same lead-agent turn flow so orchestration can continue without requiring the model to manually call `team_await_*`.
+- This keeps one-shot host calls (for example CLI `send`) alive through teammate completions and only finalizes when there are no remaining async team runs or pending run updates.
+
 ## Session Telemetry Injection
 
 `@cline/core` now exposes a runtime-agnostic session telemetry contract:
@@ -160,11 +167,26 @@ This is intended to be the portable client integration API for CLI/desktop/edito
 this logger through the built runtime, and `DefaultSessionManager` passes it into root
 agents and spawned sub-agents, so host clients can capture agent-loop trace logs in one place.
 
+Spawned sub-agent iteration behavior:
+
+- Core does not inject a default `maxIterations` cap for `spawn_agent`.
+- If callers do not provide `maxIterations`, spawned runs are unbounded by default.
+
 ## Team State Persistence Boundary
 
-Team state file persistence (`state.json` and `task-history.jsonl`) is owned by `@cline/core` session services/runtime wiring.
+Team runtime persistence is owned by `@cline/core` through `SqliteTeamStore` (`~/.cline/data/teams/teams.db` by default).
 
-`@cline/agents` team tooling emits in-memory runtime events only; `@cline/core` consumes those events and performs filesystem persistence.
+`@cline/agents` team tooling emits runtime events; `@cline/core` persists:
+
+- append-only `team_events`
+- runtime snapshots (`team_runtime_snapshot`)
+- materialized `team_tasks`, `team_runs`, `team_outcomes`, `team_outcome_fragments`
+
+Recovery behavior:
+
+- On runtime bootstrap, `DefaultRuntimeBuilder` loads the last team snapshot for `teamName`.
+- In-progress queued/running rows in `team_runs` are marked `interrupted` in storage.
+- Restored in-memory runs are transitioned with `run_interrupted` lifecycle events so clients and logs stay consistent.
 
 ## OAuth Callback Behavior
 

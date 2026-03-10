@@ -139,6 +139,7 @@ export async function runAgent(
 				hooks,
 				onTeamEvent: handleTeamEvent,
 			},
+			prompt,
 			interactive: false,
 			userInstructionWatcher,
 			onTeamRestored: () => {

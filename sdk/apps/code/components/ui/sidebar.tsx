@@ -91,13 +91,17 @@ function SidebarProvider({
 }) {
 	const isMobile = useIsMobile();
 	const [openMobile, setOpenMobile] = React.useState(false);
-	const [desktopWidth, setDesktopWidthState] = React.useState<number>(() => {
+	const [desktopWidth, setDesktopWidthState] =
+		React.useState<number>(SIDEBAR_WIDTH);
+
+	// Read persisted width from cookie after hydration to avoid mismatch
+	React.useEffect(() => {
 		const cookieValue = getCookieValue(SIDEBAR_WIDTH_COOKIE_NAME);
 		const parsedWidth = Number(cookieValue);
-		return Number.isFinite(parsedWidth)
-			? clampSidebarWidth(parsedWidth)
-			: SIDEBAR_WIDTH;
-	});
+		if (Number.isFinite(parsedWidth)) {
+			setDesktopWidthState(clampSidebarWidth(parsedWidth));
+		}
+	}, []);
 
 	// This is the internal state of the sidebar.
 	// We use openProp and setOpenProp for control from outside the component.

@@ -118,6 +118,8 @@ export function formatToolInput(toolName: string, input: unknown): string {
 				`${String(obj.agentId ?? "")}: ${String(obj.rolePrompt ?? "")}`,
 				70,
 			);
+		case "team_shutdown_teammate":
+			return truncate(`shutdown ${String(obj.agentId ?? "")}`, 70);
 		case "team_task": {
 			const action = String(obj.action ?? "");
 			if (action === "create") {
@@ -164,11 +166,12 @@ export function formatToolInput(toolName: string, input: unknown): string {
 				`status=${String(obj.status ?? "any")} agent=${String(obj.agentId ?? "any")}`,
 				60,
 			);
+		case "team_cancel_run":
+			return truncate(`cancel ${String(obj.runId ?? "")}`, 60);
 		case "team_await_run":
-			return truncate(
-				String(obj.awaitAll ? "all runs" : (obj.runId ?? "")),
-				60,
-			);
+			return truncate(String(obj.runId ?? ""), 60);
+		case "team_await_all_runs":
+			return "all runs";
 		case "team_message": {
 			const action = String(obj.action ?? "");
 			if (action === "send") {
@@ -195,6 +198,27 @@ export function formatToolInput(toolName: string, input: unknown): string {
 			);
 		case "team_broadcast":
 			return truncate(String(obj.subject ?? ""), 70);
+		case "team_read_mailbox":
+			return truncate(
+				`read unreadOnly=${String(obj.unreadOnly ?? true)} limit=${String(obj.limit ?? "default")}`,
+				70,
+			);
+		case "team_create_outcome":
+			return truncate(String(obj.title ?? ""), 70);
+		case "team_attach_outcome_fragment":
+			return truncate(
+				`${String(obj.outcomeId ?? "")}/${String(obj.section ?? "")}`,
+				70,
+			);
+		case "team_review_outcome_fragment":
+			return truncate(
+				`${String(obj.fragmentId ?? "")}: ${String(obj.approved ?? "")}`,
+				70,
+			);
+		case "team_finalize_outcome":
+			return truncate(String(obj.outcomeId ?? ""), 70);
+		case "team_list_outcomes":
+			return "list";
 	}
 
 	return truncate(JSON.stringify(input), 60);
@@ -207,6 +231,18 @@ export function formatToolOutput(output: unknown): string {
 
 	if (typeof output === "string") {
 		return truncate(output, 100);
+	}
+
+	if (isTeamStatusBoard(output)) {
+		const pending = output.taskCounts.pending;
+		const inProgress = output.taskCounts.in_progress;
+		const blocked = output.taskCounts.blocked;
+		const completed = output.taskCounts.completed;
+		const outcomes = output.outcomeCounts;
+		return truncate(
+			`team=${output.teamName} members=${output.members.length} tasks(p:${pending}/ip:${inProgress}/b:${blocked}/c:${completed}) runs(active:${output.activeRuns}/queued:${output.queuedRuns}) outcomes(d:${outcomes.draft}/r:${outcomes.in_review}/f:${outcomes.finalized})`,
+			130,
+		);
 	}
 
 	if (Array.isArray(output)) {
@@ -229,6 +265,45 @@ export function formatToolOutput(output: unknown): string {
 	}
 
 	return truncate(JSON.stringify(output), 100);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return !!value && typeof value === "object";
+}
+
+function isTeamStatusBoard(value: unknown): value is {
+	teamName: string;
+	members: unknown[];
+	taskCounts: Record<
+		"pending" | "in_progress" | "blocked" | "completed",
+		number
+	>;
+	activeRuns: number;
+	queuedRuns: number;
+	outcomeCounts: Record<"draft" | "in_review" | "finalized", number>;
+} {
+	if (!isRecord(value)) {
+		return false;
+	}
+	const teamName = value.teamName;
+	const members = value.members;
+	const taskCounts = value.taskCounts;
+	const outcomeCounts = value.outcomeCounts;
+	return (
+		typeof teamName === "string" &&
+		Array.isArray(members) &&
+		isRecord(taskCounts) &&
+		typeof taskCounts.pending === "number" &&
+		typeof taskCounts.in_progress === "number" &&
+		typeof taskCounts.blocked === "number" &&
+		typeof taskCounts.completed === "number" &&
+		typeof value.activeRuns === "number" &&
+		typeof value.queuedRuns === "number" &&
+		isRecord(outcomeCounts) &&
+		typeof outcomeCounts.draft === "number" &&
+		typeof outcomeCounts.in_review === "number" &&
+		typeof outcomeCounts.finalized === "number"
+	);
 }
 
 export function unlinkIfExists(filePath: string | null | undefined): void {
