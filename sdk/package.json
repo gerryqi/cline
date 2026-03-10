@@ -10,6 +10,7 @@
 		"build": "bun install && bun run build:sdk && bun -F @cline/cli build",
 		"build:sdk": "bun -F @cline/shared build && bun -F @cline/llms build && bun -F @cline/scheduler build && bun -F @cline/rpc build && bun -F @cline/agents build && bun -F @cline/core build",
 		"build:apps": "bun build:models && bun -F './apps/**' build",
+		"build:vscode": "bun -F cline-vscode build",
 		"build:models": "bun -F @cline/llms generate:models && bun format --write",
 		"dev": "bun cli",
 		"cli": "bun --conditions=development --cwd apps/cli ./src/index.ts",

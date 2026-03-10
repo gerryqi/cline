@@ -20,6 +20,7 @@ Apps:
 - `apps/cli` (`@cline/cli`): command-line host/runtime wiring.
 - `apps/code` (`@cline/code`): Tauri + Next.js app host/runtime wiring.
 - `apps/desktop` (`@cline/desktop`): desktop app host/runtime wiring.
+- `apps/vscode` (`cline-vscode`): VS Code extension host/runtime wiring with webview chat over RPC.
 
 ## Dependency Direction
 
@@ -34,6 +35,7 @@ flowchart LR
   cli["@cline/cli"]
   code["@cline/code"]
   desktop["@cline/desktop"]
+  vscode["cline-vscode"]
 
   agents --> llms
   agents --> shared
@@ -47,6 +49,8 @@ flowchart LR
   cli --> core
   code --> core
   desktop --> core
+  vscode --> rpc
+  vscode --> shared
 ```
 
 ## Runtime Flows
@@ -70,6 +74,15 @@ flowchart LR
 1. `apps/desktop` Kanban session discovery reads directly from the root SQLite sessions DB at `~/.cline/data/sessions/sessions.db`.
 2. This avoids dependency on workspace CLI resolution for loading persisted history and keeps board hydration aligned with the canonical session store.
 3. Session/task mutation commands (for example session delete or subprocess launch) still use CLI commands.
+
+### VS Code extension runtime flow (latest)
+
+1. `apps/vscode` registers command `Cline: Open RPC Chat` and launches a webview panel.
+2. Extension host ensures RPC compatibility through `clite rpc ensure --json` (same server bootstrap strategy used by CLI/Tauri hosts).
+3. Extension host creates `RpcSessionClient` against the ensured `CLINE_RPC_ADDRESS`.
+4. Provider/model selector data is loaded using runtime provider actions (`listProviders`, `getProviderModels`).
+5. Chat turns run through runtime RPC methods (`StartRuntimeSession`, `SendRuntimeSession`, `AbortRuntimeSession`, `StopRuntimeSession`).
+6. Stream updates are consumed from `StreamEvents` (`runtime.chat.text_delta`, tool lifecycle events) and forwarded to the webview.
 
 ### Team runtime durability and convergence (latest)
 

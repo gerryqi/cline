@@ -28,6 +28,7 @@ Apps:
 - `apps/cli` (`@cline/cli`): command-line host/runtime wiring.
 - `apps/code` (`@cline/code`): Tauri + Next.js app host/runtime wiring.
 - `apps/desktop` (`@cline/desktop`): desktop app host/runtime wiring.
+- `apps/vscode` (`cline-vscode`): VS Code extension host/runtime wiring with webview chat over RPC.
 
 ## Architecture
 
@@ -44,6 +45,7 @@ flowchart LR
   cli["@cline/cli"]
   code["@cline/code"]
   desktop["@cline/desktop"]
+  vscode["cline-vscode"]
 
   agents --> llms
   agents --> shared
@@ -57,6 +59,8 @@ flowchart LR
   cli --> core
   code --> core
   desktop --> core
+  vscode --> rpc
+  vscode --> shared
 ```
 
 ## Runtime Flows
@@ -110,6 +114,16 @@ flowchart LR
 7. Host-to-runtime uses one persistent desktop bridge script backed by shared `@cline/rpc` helpers:
    - `apps/desktop/scripts/chat-runtime-bridge.ts` (`start/send/abort/set_sessions/reset`)
    - shared helper: `runRpcRuntimeCommandBridge(...)` in `packages/rpc/src/runtime-chat-command-bridge.ts`
+
+### `apps/vscode` startup flow (latest)
+
+1. Extension activation registers command `Cline: Open RPC Chat` and creates a webview panel.
+2. On webview ready, extension ensures a compatible RPC server by invoking `clite rpc ensure --json`.
+3. Extension sets `CLINE_RPC_ADDRESS` from ensure output and initializes `RpcSessionClient`.
+4. Extension loads providers/models with `runProviderAction` (`listProviders`, `getProviderModels`) to hydrate UI selectors.
+5. On first prompt send, extension starts a runtime session (`startRuntimeSession`) with webview-selected config.
+6. Extension streams `runtime.chat.*` events via `streamEvents` for incremental text/tool updates and sends turns via `sendRuntimeSession`.
+7. Webview controls support abort (`abortRuntimeSession`) and reset/new session (`stopRuntimeSession` + fresh start).
 
 ### `apps/code` canonical chat transport schema
 
@@ -192,6 +206,8 @@ Three interfaces define the storage contract consumed by session management:
 - Run code app from root: `bun run dev:code`
 - Run desktop app from root: `bun run dev:desktop`
 - Run CLI from source: `bun run dev:cli -- "<prompt>"`
+- Build VS Code extension app: `bun -F cline-vscode build`
+- Typecheck VS Code extension app: `bun -F cline-vscode typecheck`
 - Typecheck all packages/apps: `bun run types`
 - Run tests: `bun run test`
 - Lint: `bun run lint`

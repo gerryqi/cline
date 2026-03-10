@@ -1,0 +1,39 @@
+{
+	"name": "cline-vscode",
+	"displayName": "Cline Chat",
+	"description": "VS Code extension chat panel backed by the Cline RPC runtime.",
+	"version": "0.0.0",
+	"private": true,
+	"publisher": "cline",
+	"license": "Apache-2.0",
+	"engines": {
+		"vscode": "^1.90.0"
+	},
+	"categories": [
+		"Other"
+	],
+	"main": "./dist/extension.js",
+	"contributes": {
+		"commands": [
+			{
+				"command": "clineVscode.openChat",
+				"title": "Cline: Open RPC Chat"
+			}
+		]
+	},
+	"scripts": {
+		"build": "rm -rf dist && bun build ./src/extension.ts --outdir ./dist --target=node --format=cjs --external=vscode",
+		"watch": "bun build ./src/extension.ts --outdir ./dist --target=node --format=cjs --external=vscode --watch",
+		"typecheck": "tsc --noEmit",
+		"clean": "rm -rf dist"
+	},
+	"dependencies": {
+		"@cline/rpc": "workspace:*",
+		"@cline/shared": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^25.3.5",
+		"@types/vscode": "^1.90.0",
+		"typescript": "^5.9.3"
+	}
+}

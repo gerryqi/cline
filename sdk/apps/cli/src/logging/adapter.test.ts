@@ -1,6 +1,12 @@
-import { mkdtempSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	utimesSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createCliLoggerAdapter } from "./adapter";
 
@@ -91,6 +97,29 @@ describe("createCliLoggerAdapter", () => {
 					sessionId: "s1",
 				});
 			}).not.toThrow();
+		} finally {
+			restoreEnv(snapshot);
+		}
+	});
+
+	it("truncates stale log files older than two days on startup", () => {
+		const snapshot = withEnvSnapshot();
+		const dataDir = mkdtempSync(join(tmpdir(), "clite-log-test-"));
+		const logPath = join(dataDir, "logs", "clite.log");
+		process.env.CLINE_DATA_DIR = dataDir;
+		delete process.env.CLINE_LOG_PATH;
+		delete process.env.CLINE_LOG_LEVEL;
+		delete process.env.CLINE_LOG_NAME;
+		delete process.env.CLINE_LOG_ENABLED;
+
+		try {
+			mkdirSync(dirname(logPath), { recursive: true });
+			writeFileSync(logPath, "old log contents", "utf8");
+			const staleDate = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+			utimesSync(logPath, staleDate, staleDate);
+
+			createCliLoggerAdapter({ runtime: "cli" });
+			expect(readFileSync(logPath, "utf8")).toBe("");
 		} finally {
 			restoreEnv(snapshot);
 		}

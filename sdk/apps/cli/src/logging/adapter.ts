@@ -1,3 +1,4 @@
+import { existsSync, statSync, truncateSync } from "node:fs";
 import { join } from "node:path";
 import type { BasicLogger, RpcChatRuntimeLoggerConfig } from "@cline/shared";
 import { resolveClineDataDir } from "@cline/shared/storage";
@@ -11,6 +12,8 @@ const loggerCache = new Map<
 	string,
 	{ logger: PinoLogger; destination?: DestinationStream }
 >();
+const cleanupTimersByDestination = new Map<string, NodeJS.Timeout>();
+const LOG_CLEANUP_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000;
 
 export interface CliLoggerAdapter {
 	readonly pino: PinoLogger;
@@ -90,6 +93,9 @@ function getOrCreatePinoLogger(
 		return cached.logger;
 	}
 
+	cleanupStaleLogFile(config.destination);
+	startLogCleanupTimer(config.destination);
+
 	const destination = pino.destination({
 		dest: config.destination,
 		mkdir: true,
@@ -106,6 +112,36 @@ function getOrCreatePinoLogger(
 	);
 	loggerCache.set(key, { logger: created, destination });
 	return created;
+}
+
+function cleanupStaleLogFile(destination: string): void {
+	if (!existsSync(destination)) {
+		return;
+	}
+	try {
+		const stats = statSync(destination);
+		const ageMs = Date.now() - stats.mtimeMs;
+		if (ageMs >= LOG_CLEANUP_INTERVAL_MS) {
+			truncateSync(destination, 0);
+		}
+	} catch {
+		// no-op: cleanup is best-effort.
+	}
+}
+
+function startLogCleanupTimer(destination: string): void {
+	if (cleanupTimersByDestination.has(destination)) {
+		return;
+	}
+	const timer = setInterval(() => {
+		try {
+			truncateSync(destination, 0);
+		} catch {
+			// no-op: cleanup is best-effort.
+		}
+	}, LOG_CLEANUP_INTERVAL_MS);
+	timer.unref();
+	cleanupTimersByDestination.set(destination, timer);
 }
 
 function toPinoFields(
