@@ -101,7 +101,7 @@ async function hasRuntimeMethods(address: string): Promise<boolean> {
 			missionTimeIntervalMs: 120000,
 		};
 		const started = await client.startRuntimeSession(probeRequest);
-		if (!started.sessionId.trim() || !started.startResult) {
+		if (!started.sessionId.trim()) {
 			return false;
 		}
 		let stopSupported = true;

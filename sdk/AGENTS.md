@@ -18,7 +18,7 @@ Packages:
 
 - `packages/shared` (`@cline/shared`): cross-package primitives (paths, common types, helpers).
 - `packages/llms` (`@cline/llms`): provider settings schema, model catalog, handler creation.
-- `packages/scheduler` (`@cline/scheduler`): cron-based scheduled agent orchestration, execution limits, and schedule/execution persistence.
+- `packages/scheduler` (`@cline/scheduler`): cron-based scheduled agent orchestration, execution limits, schedule/execution persistence, and transactional due-run claims with renewable leases for multi-ticker safety.
 - `packages/agents` (`@cline/agents`): stateless runtime loop, tools, hooks, teams.
 - `packages/rpc` (`@cline/rpc`): transport/control-plane APIs (session CRUD, tasks, events, approvals) plus shared runtime chat client helpers (`RpcRuntimeChatClient`, `runRpcRuntimeEventBridge`, `runRpcRuntimeCommandBridge`).
 - `packages/core` (`@cline/core`) stateful orchestration (runtime composition, sessions, storage, RPC-backed session adapter).
@@ -77,13 +77,15 @@ flowchart LR
 1. Host uses `RpcCoreSessionService` (through `@cline/core`) for session persistence/control-plane calls.
 2. `@cline/rpc` server handles session/task/event/approval RPCs.
 3. `@cline/rpc` embeds `@cline/scheduler` for `CreateSchedule/ListSchedules/...` APIs and scheduled runtime execution.
-4. SQLite session backend is provided by `@cline/core/server` (`createSqliteRpcSessionBackend`).
+4. Scheduler ticks claim due runs in SQLite transactions with a renewable lease, then finalizes the claim after execution to advance `next_run_at` once.
+5. SQLite session backend is provided by `@cline/core/server` (`createSqliteRpcSessionBackend`).
 
 ### `apps/cli` runtime bootstrap (latest)
 
 1. CLI attempts a direct health/connect to `CLINE_RPC_ADDRESS` (default `127.0.0.1:4317`).
 2. If no healthy server is available, CLI spawns `clite rpc start` in the background and retries briefly.
 3. If RPC still cannot be reached, CLI falls back to local in-process `CoreSessionService` storage/runtime wiring.
+4. CLI treats RPC `startRuntimeSession` artifact fields as optional at start time; runtime artifacts can be materialized after the first turn send.
 
 ### OAuth refresh ownership
 

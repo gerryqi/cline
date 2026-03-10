@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { basename, isAbsolute, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 import type {
 	AgentEvent,
 	AgentResult,
@@ -13,6 +13,7 @@ import {
 	createSessionHost,
 	RpcCoreSessionService,
 	type SessionManifest,
+	SessionSource,
 	SqliteSessionStore,
 } from "@cline/core/server";
 import { getRpcServerHealth, RpcSessionClient } from "@cline/rpc";
@@ -20,6 +21,7 @@ import type {
 	RpcChatMessage,
 	RpcChatRunTurnRequest,
 	RpcChatRuntimeLoggerConfig,
+	RpcChatStartSessionArtifacts,
 	RpcChatStartSessionRequest,
 	RpcChatTurnResult,
 } from "@cline/shared";
@@ -299,18 +301,14 @@ function parseToolApprovalInput(inputJson: unknown): unknown {
 
 function normalizeStartResult(
 	sessionId: string,
-	startResult: Record<string, unknown> | undefined,
+	startResult: RpcChatStartSessionArtifacts | undefined,
 ): StartSessionOutput {
-	const readString = (key: string): string => {
-		const value = startResult?.[key];
-		return typeof value === "string" ? value : "";
-	};
-	const manifestPath = readString("manifestPath");
-	const transcriptPath = readString("transcriptPath");
-	const hookPath = readString("hookPath");
-	const messagesPath = readString("messagesPath");
-	let manifest = startResult?.manifest as SessionManifest | undefined;
-	if (!manifest && manifestPath && existsSync(manifestPath)) {
+	const manifestPath = startResult?.manifestPath?.trim() || "";
+	const transcriptPath = startResult?.transcriptPath?.trim() || "";
+	const hookPath = startResult?.hookPath?.trim() || "";
+	const messagesPath = startResult?.messagesPath?.trim() || "";
+	let manifest: SessionManifest | undefined;
+	if (manifestPath && existsSync(manifestPath)) {
 		try {
 			manifest = JSON.parse(
 				readFileSync(manifestPath, "utf8"),
@@ -320,12 +318,7 @@ function normalizeStartResult(
 		}
 	}
 	if (!manifest) {
-		throw new Error("rpc runtime start returned no manifest");
-	}
-	if (!manifestPath || !transcriptPath || !hookPath || !messagesPath) {
-		throw new Error(
-			"rpc runtime start returned incomplete session artifact paths",
-		);
+		throw new Error("manifest unavailable");
 	}
 	return {
 		sessionId,
@@ -335,6 +328,122 @@ function normalizeStartResult(
 		hookPath,
 		messagesPath,
 	};
+}
+
+function toManifestFromSessionRow(
+	sessionId: string,
+	row: Awaited<ReturnType<RpcSessionClient["getSession"]>>,
+): SessionManifest | undefined {
+	if (!row) {
+		return undefined;
+	}
+	const source = row.source?.trim() as SessionSource | undefined;
+	if (!source || !Object.values(SessionSource).includes(source)) {
+		return undefined;
+	}
+	return {
+		version: 1,
+		session_id: row.sessionId?.trim() || sessionId,
+		source,
+		pid: row.pid,
+		started_at: row.startedAt,
+		ended_at: row.endedAt || undefined,
+		exit_code: row.exitCode ?? undefined,
+		status: row.status,
+		interactive: row.interactive,
+		provider: row.provider,
+		model: row.model,
+		cwd: row.cwd,
+		workspace_root: row.workspaceRoot,
+		team_name: row.teamName || undefined,
+		enable_tools: row.enableTools,
+		enable_spawn: row.enableSpawn,
+		enable_teams: row.enableTeams,
+		prompt: row.prompt || undefined,
+		metadata: row.metadata || undefined,
+		messages_path: row.messagesPath || undefined,
+	};
+}
+
+function toFallbackManifest(
+	sessionId: string,
+	request: RpcChatStartSessionRequest,
+	source: StartSessionInput["source"],
+	interactive: boolean | undefined,
+	messagesPath: string,
+): SessionManifest {
+	return {
+		version: 1,
+		session_id: sessionId,
+		source:
+			source === "cli-subagent"
+				? SessionSource.CLI_SUBAGENT
+				: SessionSource.CLI,
+		pid: process.pid,
+		started_at: new Date().toISOString(),
+		status: "running",
+		interactive: interactive === true,
+		provider: request.provider,
+		model: request.model,
+		cwd: request.cwd ?? process.cwd(),
+		workspace_root: request.workspaceRoot,
+		team_name: request.teamName || undefined,
+		enable_tools: request.enableTools,
+		enable_spawn: request.enableSpawn,
+		enable_teams: request.enableTeams,
+		messages_path: messagesPath || undefined,
+	};
+}
+
+function normalizeStartResultWithFallback(
+	sessionId: string,
+	startResult: RpcChatStartSessionArtifacts | undefined,
+	sessionRow: Awaited<ReturnType<RpcSessionClient["getSession"]>> | undefined,
+	request: RpcChatStartSessionRequest,
+	source: StartSessionInput["source"],
+	interactive: boolean | undefined,
+): StartSessionOutput {
+	try {
+		return normalizeStartResult(sessionId, startResult);
+	} catch {
+		const transcriptPath =
+			startResult?.transcriptPath?.trim() ||
+			sessionRow?.transcriptPath?.trim() ||
+			"";
+		const hookPath =
+			startResult?.hookPath?.trim() || sessionRow?.hookPath?.trim() || "";
+		const messagesPath =
+			startResult?.messagesPath?.trim() ||
+			sessionRow?.messagesPath?.trim() ||
+			"";
+		const manifestPathFromStart = startResult?.manifestPath?.trim() || "";
+		const inferredManifestPath = transcriptPath
+			? `${dirname(transcriptPath)}/${sessionId}.json`
+			: "";
+		const manifestPath = manifestPathFromStart || inferredManifestPath;
+		let manifest: SessionManifest | undefined;
+		if (manifestPath && existsSync(manifestPath)) {
+			try {
+				manifest = JSON.parse(
+					readFileSync(manifestPath, "utf8"),
+				) as SessionManifest;
+			} catch {
+				manifest = undefined;
+			}
+		}
+		manifest =
+			manifest ??
+			toManifestFromSessionRow(sessionId, sessionRow) ??
+			toFallbackManifest(sessionId, request, source, interactive, messagesPath);
+		return {
+			sessionId,
+			manifest,
+			manifestPath,
+			transcriptPath,
+			hookPath,
+			messagesPath,
+		};
+	}
 }
 
 function resolveAttachmentPath(filePath: string, cwd: string): string {
@@ -419,7 +528,22 @@ function createRpcRuntimeCliSessionManager(
 				throw new Error("rpc runtime start returned empty session id");
 			}
 			sessionConfigs.set(sessionId, request);
-			return normalizeStartResult(sessionId, response.startResult);
+			let sessionRow:
+				| Awaited<ReturnType<RpcSessionClient["getSession"]>>
+				| undefined;
+			try {
+				sessionRow = await client.getSession(sessionId);
+			} catch {
+				sessionRow = undefined;
+			}
+			return normalizeStartResultWithFallback(
+				sessionId,
+				response.startResult,
+				sessionRow,
+				request,
+				input.source,
+				input.interactive,
+			);
 		},
 		send: async (input) => {
 			const config = sessionConfigs.get(input.sessionId);

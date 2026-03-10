@@ -6,7 +6,7 @@
  *
  * Uses lazy loading - providers are only loaded when first accessed.
  */
-
+import { GENERATED_PROVIDER_LOADER_ENTRIES } from "./generated-provider-loaders";
 import type { ModelCollection, ModelInfo, ProviderInfo } from "./schemas/index";
 
 // =============================================================================
@@ -52,137 +52,11 @@ const CUSTOM_PROVIDERS: Map<string, ModelCollection> = new Map();
 
 /**
  * Register built-in provider loaders (does not load the providers)
+ *
+ * Generated from provider module metadata at build time.
  */
-const BUILT_IN_PROVIDER_LOADER_ENTRIES: ProviderLoaderEntry[] = [
-	["cline", async () => (await import("./providers/cline")).CLINE_PROVIDER],
-	[
-		"asksage",
-		async () => (await import("./providers/asksage")).ASKSAGE_PROVIDER,
-	],
-	[
-		"claude-code",
-		async () => (await import("./providers/claude-code")).CLAUDE_CODE_PROVIDER,
-	],
-	[
-		"anthropic",
-		async () => (await import("./providers/anthropic")).ANTHROPIC_PROVIDER,
-	],
-	[
-		"bedrock",
-		async () => (await import("./providers/bedrock")).BEDROCK_PROVIDER,
-	],
-	["gemini", async () => (await import("./providers/gemini")).GEMINI_PROVIDER],
-	["vertex", async () => (await import("./providers/vertex")).VERTEX_PROVIDER],
-	["openai", async () => (await import("./providers/openai")).OPENAI_PROVIDER],
-	[
-		"openai-native",
-		async () => (await import("./providers/openai")).OPENAI_PROVIDER,
-	],
-	[
-		"openai-codex",
-		async () =>
-			(await import("./providers/openai-codex")).OPENAI_CODEX_PROVIDER,
-	],
-	[
-		"opencode",
-		async () => (await import("./providers/opencode")).OPENCODE_PROVIDER,
-	],
-	[
-		"deepseek",
-		async () => (await import("./providers/deepseek")).DEEPSEEK_PROVIDER,
-	],
-	["doubao", async () => (await import("./providers/doubao")).DOUBAO_PROVIDER],
-	["xai", async () => (await import("./providers/xai")).XAI_PROVIDER],
-	[
-		"together",
-		async () => (await import("./providers/together")).TOGETHER_PROVIDER,
-	],
-	["groq", async () => (await import("./providers/groq")).GROQ_PROVIDER],
-	[
-		"fireworks",
-		async () => (await import("./providers/fireworks")).FIREWORKS_PROVIDER,
-	],
-	[
-		"cerebras",
-		async () => (await import("./providers/cerebras")).CEREBRAS_PROVIDER,
-	],
-	[
-		"sambanova",
-		async () => (await import("./providers/sambanova")).SAMBANOVA_PROVIDER,
-	],
-	["nebius", async () => (await import("./providers/nebius")).NEBIUS_PROVIDER],
-	[
-		"nousResearch",
-		async () =>
-			(await import("./providers/nous-research")).NOUS_RESEARCH_PROVIDER,
-	],
-	["oca", async () => (await import("./providers/oca")).OCA_PROVIDER],
-	[
-		"requesty",
-		async () => (await import("./providers/requesty")).REQUESTY_PROVIDER,
-	],
-	[
-		"litellm",
-		async () => (await import("./providers/litellm")).LITELLM_PROVIDER,
-	],
-	[
-		"vercel-ai-gateway",
-		async () =>
-			(await import("./providers/vercel-ai-gateway"))
-				.VERCEL_AI_GATEWAY_PROVIDER,
-	],
-	["ollama", async () => (await import("./providers/ollama")).OLLAMA_PROVIDER],
-	[
-		"lmstudio",
-		async () => (await import("./providers/lmstudio")).LMSTUDIO_PROVIDER,
-	],
-	[
-		"baseten",
-		async () => (await import("./providers/baseten")).BASETEN_PROVIDER,
-	],
-	[
-		"huggingface",
-		async () => (await import("./providers/huggingface")).HUGGINGFACE_PROVIDER,
-	],
-	[
-		"aihubmix",
-		async () => (await import("./providers/aihubmix")).AIHUBMIX_PROVIDER,
-	],
-	["hicap", async () => (await import("./providers/hicap")).HICAP_PROVIDER],
-	[
-		"huawei-cloud-maas",
-		async () =>
-			(await import("./providers/huawei-cloud-maas"))
-				.HUAWEI_CLOUD_MAAS_PROVIDER,
-	],
-	[
-		"minimax",
-		async () => (await import("./providers/minimax")).MINIMAX_PROVIDER,
-	],
-	[
-		"mistral",
-		async () => (await import("./providers/mistral")).MISTRAL_PROVIDER,
-	],
-	[
-		"moonshot",
-		async () => (await import("./providers/moonshot")).MOONSHOT_PROVIDER,
-	],
-	["dify", async () => (await import("./providers/dify")).DIFY_PROVIDER],
-	[
-		"openrouter",
-		async () => (await import("./providers/openrouter")).OPENROUTER_PROVIDER,
-	],
-	["qwen", async () => (await import("./providers/qwen")).QWEN_PROVIDER],
-	[
-		"qwen-code",
-		async () => (await import("./providers/qwen-code")).QWEN_CODE_PROVIDER,
-	],
-	[
-		"sapaicore",
-		async () => (await import("./providers/sapaicore")).SAP_AI_CORE_PROVIDER,
-	],
-	["zai", async () => (await import("./providers/zai")).ZAI_PROVIDER],
-];
+const BUILT_IN_PROVIDER_LOADER_ENTRIES: ProviderLoaderEntry[] =
+	GENERATED_PROVIDER_LOADER_ENTRIES;
 
 function registerBuiltInProviderLoaders(): void {
 	for (const [providerId, load] of BUILT_IN_PROVIDER_LOADER_ENTRIES) {

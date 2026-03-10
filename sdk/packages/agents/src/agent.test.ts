@@ -456,8 +456,10 @@ describe("Agent", () => {
 		const restored: LlmsProviders.Message[] = [
 			{ role: "assistant", content: [{ type: "text", text: "new-state" }] },
 		];
+		const conversationIdBeforeRestore = agent.getConversationId();
 		agent.restore(restored);
 		expect(agent.getMessages()).toEqual(restored);
+		expect(agent.getConversationId()).toBe(conversationIdBeforeRestore);
 		const second = await agent.continue("resume-2");
 		expect(second.text).toBe("restored-again");
 	});

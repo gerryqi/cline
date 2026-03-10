@@ -8,6 +8,7 @@
 - Evaluate cron patterns and compute upcoming runs
 - Enforce global and per-schedule concurrency limits
 - Execute schedules through injected runtime handlers
+- Coordinate due runs with transactional DB claims + renewable leases to avoid duplicate scheduling across concurrent tickers/restarts
 
 ## Main APIs
 

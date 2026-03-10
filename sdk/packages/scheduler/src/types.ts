@@ -106,7 +106,7 @@ export interface ScheduleExecutionStats {
 
 export interface SchedulerRuntimeStartResult {
 	sessionId: string;
-	startResult?: Record<string, unknown>;
+	startResult?: import("@cline/shared").RpcChatStartSessionArtifacts;
 }
 
 export interface SchedulerRuntimeSendResult {
@@ -136,6 +136,7 @@ export interface SchedulerServiceOptions {
 	sessionsDbPath?: string;
 	pollIntervalMs?: number;
 	globalMaxConcurrency?: number;
+	claimLeaseSeconds?: number;
 }
 
 export interface ActiveScheduledExecution {

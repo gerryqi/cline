@@ -7,7 +7,7 @@ import type {
 import { nowIso } from "@cline/shared/db";
 import { assertValidCronPattern } from "./cron";
 import { ResourceLimiter } from "./resource-limiter";
-import { ScheduleStore } from "./schedule-store";
+import { type ScheduleClaimRecord, ScheduleStore } from "./schedule-store";
 import type {
 	ActiveScheduledExecution,
 	CreateScheduleInput,
@@ -83,18 +83,24 @@ export class SchedulerService {
 	private readonly store: ScheduleStore;
 	private readonly resourceLimiter: ResourceLimiter;
 	private readonly options: SchedulerServiceOptions;
+	private readonly claimLeaseMs: number;
 	private readonly activeExecutions = new Map<
 		string,
 		ActiveScheduledExecution
 	>();
 	private timer: ReturnType<typeof setInterval> | undefined;
 	private started = false;
+	private ticking = false;
 
 	constructor(options: SchedulerServiceOptions) {
 		this.options = options;
 		this.store = new ScheduleStore({ sessionsDbPath: options.sessionsDbPath });
 		this.resourceLimiter = new ResourceLimiter(
 			options.globalMaxConcurrency ?? 10,
+		);
+		this.claimLeaseMs = Math.max(
+			5_000,
+			optionsOrDefault(options.claimLeaseSeconds, 90) * 1000,
 		);
 	}
 
@@ -217,12 +223,66 @@ export class SchedulerService {
 	}
 
 	private async tick(): Promise<void> {
-		const dueSchedules = this.store.listDueSchedules(nowIso());
-		for (const schedule of dueSchedules) {
-			const triggeredAt = nowIso();
-			this.store.markScheduleTriggered(schedule.scheduleId, triggeredAt);
-			void this.executeSchedule(schedule, triggeredAt, "scheduled");
+		if (this.ticking) {
+			return;
 		}
+		this.ticking = true;
+		try {
+			const claims = this.store.claimDueSchedules(nowIso(), this.claimLeaseMs);
+			await Promise.allSettled(
+				claims.map((claim) => this.executeClaimedSchedule(claim)),
+			);
+		} finally {
+			this.ticking = false;
+		}
+	}
+
+	private async executeClaimedSchedule(
+		claim: ScheduleClaimRecord,
+	): Promise<void> {
+		const releaseLeaseHeartbeat = this.startClaimLeaseHeartbeat(claim);
+		try {
+			const result = await this.executeSchedule(
+				claim.schedule,
+				claim.triggeredAt,
+				"scheduled",
+			);
+			const completedAt = result.startedAt ?? claim.triggeredAt;
+			const finalized = this.store.completeScheduleClaim(
+				claim.schedule.scheduleId,
+				claim.claimToken,
+				completedAt,
+			);
+			if (!finalized) {
+				this.publishEvent("schedule.execution.claimLost", {
+					scheduleId: claim.schedule.scheduleId,
+					executionId: result.executionId,
+					claimToken: claim.claimToken,
+				});
+			}
+		} finally {
+			releaseLeaseHeartbeat();
+		}
+	}
+
+	private startClaimLeaseHeartbeat(claim: ScheduleClaimRecord): () => void {
+		const heartbeatMs = Math.max(1_000, Math.floor(this.claimLeaseMs / 2));
+		const interval = setInterval(() => {
+			const leaseUntilAt = new Date(
+				Date.now() + this.claimLeaseMs,
+			).toISOString();
+			const renewed = this.store.renewScheduleClaim(
+				claim.schedule.scheduleId,
+				claim.claimToken,
+				leaseUntilAt,
+			);
+			if (!renewed) {
+				clearInterval(interval);
+			}
+		}, heartbeatMs);
+		return () => {
+			clearInterval(interval);
+		};
 	}
 
 	private buildStartRequest(
@@ -294,12 +354,13 @@ export class SchedulerService {
 			if (!sessionId) {
 				throw new Error("runtime start returned empty sessionId");
 			}
-			startedAt = nowIso();
+			const startedAtIso = nowIso();
+			startedAt = startedAtIso;
 			timeoutAt =
 				typeof schedule.timeoutSeconds === "number" &&
 				schedule.timeoutSeconds > 0
 					? new Date(
-							new Date(startedAt).getTime() + schedule.timeoutSeconds * 1000,
+							new Date(startedAtIso).getTime() + schedule.timeoutSeconds * 1000,
 						).toISOString()
 					: undefined;
 
@@ -314,7 +375,7 @@ export class SchedulerService {
 				executionId,
 				scheduleId: schedule.scheduleId,
 				sessionId,
-				startedAt,
+				startedAt: startedAtIso,
 				timeoutAt,
 			});
 			this.publishEvent("schedule.execution.started", {
@@ -398,10 +459,6 @@ export class SchedulerService {
 			}
 			this.activeExecutions.delete(executionId);
 			this.resourceLimiter.release(schedule.scheduleId, executionId);
-			this.store.markScheduleTriggered(
-				schedule.scheduleId,
-				startedAt ?? triggeredAt,
-			);
 		}
 	}
 

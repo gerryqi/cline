@@ -40,6 +40,19 @@ export interface RpcChatStartSessionRequest extends RpcChatRuntimeConfigBase {
 	initialMessages?: RpcChatMessage[];
 }
 
+export interface RpcChatStartSessionArtifacts {
+	sessionId: string;
+	manifestPath: string;
+	transcriptPath: string;
+	hookPath: string;
+	messagesPath: string;
+}
+
+export interface RpcChatStartSessionResponse {
+	sessionId: string;
+	startResult?: RpcChatStartSessionArtifacts;
+}
+
 export interface RpcChatAttachmentFile {
 	name: string;
 	content: string;

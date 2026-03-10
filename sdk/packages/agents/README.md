@@ -16,6 +16,9 @@ For execution flow and state behavior, see
 - `initialMessages` in `AgentConfig`
 - `agent.restore(messages)`
 
+`agent.restore(messages)` preserves the current conversation ID so resumed turns
+remain traceable under the same conversation identity.
+
 Clients should use these APIs instead of mutating internal `agent.messages`.
 
 ## Event Subscription API

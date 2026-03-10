@@ -2,7 +2,9 @@ import {
 	RPC_TEAM_LIFECYCLE_EVENT_TYPE,
 	RPC_TEAM_PROGRESS_EVENT_TYPE,
 	type RpcChatRunTurnRequest,
+	type RpcChatStartSessionArtifacts,
 	type RpcChatStartSessionRequest,
+	type RpcChatStartSessionResponse,
 	type RpcChatTurnResult,
 	type RpcProviderActionRequest,
 	type TeamProgressLifecycleEvent,
@@ -378,7 +380,7 @@ export class RpcSessionClient {
 
 	public async startRuntimeSession(
 		request: RpcChatStartSessionRequest,
-	): Promise<{ sessionId: string; startResult?: Record<string, unknown> }> {
+	): Promise<RpcChatStartSessionResponse> {
 		const runtimeRequest = {
 			workspaceRoot: request.workspaceRoot,
 			cwd: request.cwd ?? "",
@@ -427,9 +429,8 @@ export class RpcSessionClient {
 				this.client.StartRuntimeSession({ request: runtimeRequest }, callback);
 			},
 		);
-		return {
-			sessionId: response.sessionId ?? "",
-			startResult: response.startResult
+		const startResult: RpcChatStartSessionArtifacts | undefined =
+			response.startResult
 				? {
 						sessionId: response.startResult.sessionId ?? "",
 						manifestPath: response.startResult.manifestPath ?? "",
@@ -437,7 +438,10 @@ export class RpcSessionClient {
 						hookPath: response.startResult.hookPath ?? "",
 						messagesPath: response.startResult.messagesPath ?? "",
 					}
-				: undefined,
+				: undefined;
+		return {
+			sessionId: response.sessionId ?? "",
+			startResult,
 		};
 	}
 

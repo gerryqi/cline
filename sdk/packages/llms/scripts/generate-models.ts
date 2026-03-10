@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ModelInfo } from "../src/models/schemas/index.js";
+import { generateProviderLoaders } from "./generate-provider-loaders";
 import { loadModelsDevProviderModels } from "./models/generate-models-dev";
 
 const OUTPUT_FILE = "src/models/generated.ts";
@@ -20,6 +21,8 @@ function sortObjectByKey<T>(
 }
 
 async function generate(): Promise<void> {
+	await generateProviderLoaders();
+
 	const providerModels: Record<string, Record<string, ModelInfo>> = {};
 	const generatedModelsVersion = Date.now();
 	let loadError: Error | undefined;

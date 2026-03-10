@@ -153,6 +153,9 @@ export function ensureSessionSchema(
 			updated_at TEXT NOT NULL,
 			last_run_at TEXT,
 			next_run_at TEXT,
+			claim_token TEXT,
+			claim_started_at TEXT,
+			claim_until_at TEXT,
 			created_by TEXT,
 			tags TEXT,
 			metadata_json TEXT
@@ -220,5 +223,17 @@ export function ensureSessionSchema(
 	}
 	if (!hasColumn("metadata_json")) {
 		db.exec("ALTER TABLE sessions ADD COLUMN metadata_json TEXT;");
+	}
+	const scheduleColumns = db.prepare("PRAGMA table_info(schedules);").all();
+	const scheduleHasColumn = (name: string): boolean =>
+		scheduleColumns.some((column) => column.name === name);
+	if (!scheduleHasColumn("claim_token")) {
+		db.exec("ALTER TABLE schedules ADD COLUMN claim_token TEXT;");
+	}
+	if (!scheduleHasColumn("claim_started_at")) {
+		db.exec("ALTER TABLE schedules ADD COLUMN claim_started_at TEXT;");
+	}
+	if (!scheduleHasColumn("claim_until_at")) {
+		db.exec("ALTER TABLE schedules ADD COLUMN claim_until_at TEXT;");
 	}
 }

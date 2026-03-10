@@ -32,27 +32,25 @@ export function setHomeDirIfUnset(dir: string) {
 	HOME_DIR = trimmed;
 }
 
-export const DOCUMENTS_CLINE_DIRECTORY_PATH = join(
-	HOME_DIR,
-	"Documents",
-	"Cline",
-);
-export const DOCUMENTS_AGENT_CONFIG_DIRECTORY_PATH = join(
-	DOCUMENTS_CLINE_DIRECTORY_PATH,
-	"Agents",
-);
-export const DOCUMENTS_HOOKS_DIRECTORY_PATH = join(
-	DOCUMENTS_CLINE_DIRECTORY_PATH,
-	"Hooks",
-);
-export const DOCUMENTS_RULES_DIRECTORY_PATH = join(
-	DOCUMENTS_CLINE_DIRECTORY_PATH,
-	"Rules",
-);
-export const DOCUMENTS_WORKFLOWS_DIRECTORY_PATH = join(
-	DOCUMENTS_CLINE_DIRECTORY_PATH,
-	"Workflows",
-);
+export function resolveDocumentsClineDirectoryPath(): string {
+	return join(HOME_DIR, "Documents", "Cline");
+}
+
+export function resolveDocumentsAgentConfigDirectoryPath(): string {
+	return join(resolveDocumentsClineDirectoryPath(), "Agents");
+}
+
+export function resolveDocumentsHooksDirectoryPath(): string {
+	return join(resolveDocumentsClineDirectoryPath(), "Hooks");
+}
+
+export function resolveDocumentsRulesDirectoryPath(): string {
+	return join(resolveDocumentsClineDirectoryPath(), "Rules");
+}
+
+export function resolveDocumentsWorkflowsDirectoryPath(): string {
+	return join(resolveDocumentsClineDirectoryPath(), "Workflows");
+}
 
 export function resolveClineDataDir(): string {
 	const explicitDir = process.env.CLINE_DATA_DIR?.trim();
@@ -124,7 +122,10 @@ export function resolveAgentsConfigDirPath(): string {
 }
 
 export function resolveAgentConfigSearchPaths(): string[] {
-	return [DOCUMENTS_AGENT_CONFIG_DIRECTORY_PATH, resolveAgentsConfigDirPath()];
+	return [
+		resolveDocumentsAgentConfigDirectoryPath(),
+		resolveAgentsConfigDirPath(),
+	];
 }
 
 export function resolveHooksConfigSearchPaths(
@@ -134,7 +135,7 @@ export function resolveHooksConfigSearchPaths(
 		workspacePath
 			? join(workspacePath, ".clinerules", HOOKS_CONFIG_DIRECTORY_NAME)
 			: "",
-		DOCUMENTS_HOOKS_DIRECTORY_PATH,
+		resolveDocumentsHooksDirectoryPath(),
 	]);
 }
 
@@ -155,7 +156,7 @@ export function resolveRulesConfigSearchPaths(
 	return dedupePaths([
 		workspacePath ? join(workspacePath, ".clinerules") : "",
 		join(resolveClineDataDir(), "settings", RULES_CONFIG_DIRECTORY_NAME),
-		DOCUMENTS_RULES_DIRECTORY_PATH,
+		resolveDocumentsRulesDirectoryPath(),
 	]);
 }
 
@@ -165,7 +166,7 @@ export function resolveWorkflowsConfigSearchPaths(
 	return dedupePaths([
 		workspacePath ? join(workspacePath, ".clinerules", "workflows") : "",
 		join(resolveClineDataDir(), "settings", WORKFLOWS_CONFIG_DIRECTORY_NAME),
-		DOCUMENTS_WORKFLOWS_DIRECTORY_PATH,
+		resolveDocumentsWorkflowsDirectoryPath(),
 	]);
 }
 

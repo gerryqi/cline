@@ -48,7 +48,6 @@ export class ConversationStore {
 
 	restore(messages: providers.Message[]): void {
 		this.messages = [...messages];
-		this.conversationId = createConversationId();
 		this.sessionStarted = false;
 	}
 

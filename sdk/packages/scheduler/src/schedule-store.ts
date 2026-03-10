@@ -83,6 +83,13 @@ export interface ScheduleStoreOptions {
 	sessionsDbPath?: string;
 }
 
+export interface ScheduleClaimRecord {
+	schedule: ScheduleRecord;
+	claimToken: string;
+	triggeredAt: string;
+	leaseUntilAt: string;
+}
+
 export class ScheduleStore {
 	private readonly db: SqliteDb;
 
@@ -139,8 +146,9 @@ export class ScheduleStore {
 					provider, model, mode, workspace_root, cwd, system_prompt,
 					max_iterations, timeout_seconds, max_parallel,
 					enabled, created_at, updated_at, last_run_at, next_run_at,
+					claim_token, claim_started_at, claim_until_at,
 					created_by, tags, metadata_json
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			)
 			.run(
 				record.scheduleId,
@@ -161,6 +169,9 @@ export class ScheduleStore {
 				record.updatedAt,
 				record.lastRunAt ?? null,
 				record.nextRunAt ?? null,
+				null,
+				null,
+				null,
 				record.createdBy ?? null,
 				record.tags ? JSON.stringify(record.tags) : null,
 				record.metadata ? JSON.stringify(record.metadata) : null,
@@ -328,6 +339,137 @@ export class ScheduleStore {
 				"UPDATE schedules SET last_run_at = ?, next_run_at = ?, updated_at = ? WHERE schedule_id = ?",
 			)
 			.run(triggeredAt, nextRunAt ?? null, nowIso(), scheduleId);
+	}
+
+	public claimDueSchedules(
+		referenceTime: string,
+		leaseDurationMs: number,
+		limit = 50,
+	): ScheduleClaimRecord[] {
+		const claimed: ScheduleClaimRecord[] = [];
+		const boundedLimit = Math.max(1, Math.floor(limit));
+		const boundedLeaseMs = Math.max(1_000, Math.floor(leaseDurationMs));
+		const leaseUntilAt = new Date(
+			new Date(referenceTime).getTime() + boundedLeaseMs,
+		).toISOString();
+		const claimedAt = nowIso();
+		const dueRowsSql = `SELECT * FROM schedules
+			WHERE enabled = 1
+				AND next_run_at IS NOT NULL
+				AND next_run_at <= ?
+				AND (claim_until_at IS NULL OR claim_until_at <= ?)
+			ORDER BY next_run_at ASC
+			LIMIT ?`;
+		const claimSql = `UPDATE schedules SET
+			claim_token = ?, claim_started_at = ?, claim_until_at = ?, updated_at = ?
+			WHERE schedule_id = ?
+				AND enabled = 1
+				AND next_run_at = ?
+				AND (claim_until_at IS NULL OR claim_until_at <= ?)`;
+		const claimStatement = this.db.prepare(claimSql);
+
+		this.db.exec("BEGIN IMMEDIATE;");
+		try {
+			const rows = this.db
+				.prepare(dueRowsSql)
+				.all(referenceTime, referenceTime, boundedLimit);
+			for (const row of rows) {
+				const scheduleId = asString(row.schedule_id);
+				const triggeredAt = asString(row.next_run_at);
+				if (!scheduleId || !triggeredAt) {
+					continue;
+				}
+				const claimToken = `claim_${randomUUID()}`;
+				const changes =
+					claimStatement.run(
+						claimToken,
+						claimedAt,
+						leaseUntilAt,
+						claimedAt,
+						scheduleId,
+						triggeredAt,
+						referenceTime,
+					).changes ?? 0;
+				if (changes !== 1) {
+					continue;
+				}
+				claimed.push({
+					schedule: this.toScheduleRecord(row),
+					claimToken,
+					triggeredAt,
+					leaseUntilAt,
+				});
+			}
+			this.db.exec("COMMIT;");
+			return claimed;
+		} catch (error) {
+			this.db.exec("ROLLBACK;");
+			throw error;
+		}
+	}
+
+	public renewScheduleClaim(
+		scheduleId: string,
+		claimToken: string,
+		leaseUntilAt: string,
+	): boolean {
+		const updatedAt = nowIso();
+		const changes =
+			this.db
+				.prepare(
+					`UPDATE schedules
+						SET claim_until_at = ?, updated_at = ?
+						WHERE schedule_id = ? AND claim_token = ?`,
+				)
+				.run(leaseUntilAt, updatedAt, scheduleId, claimToken).changes ?? 0;
+		return changes === 1;
+	}
+
+	public releaseScheduleClaim(scheduleId: string, claimToken: string): boolean {
+		const updatedAt = nowIso();
+		const changes =
+			this.db
+				.prepare(
+					`UPDATE schedules
+						SET claim_token = NULL, claim_started_at = NULL, claim_until_at = NULL, updated_at = ?
+						WHERE schedule_id = ? AND claim_token = ?`,
+				)
+				.run(updatedAt, scheduleId, claimToken).changes ?? 0;
+		return changes === 1;
+	}
+
+	public completeScheduleClaim(
+		scheduleId: string,
+		claimToken: string,
+		triggeredAt: string,
+	): boolean {
+		const row = this.db
+			.prepare(
+				`SELECT cron_pattern, enabled
+					FROM schedules
+					WHERE schedule_id = ? AND claim_token = ?`,
+			)
+			.get(scheduleId, claimToken);
+		if (!row) {
+			return false;
+		}
+		const cronPattern = asString(row.cron_pattern);
+		const enabled = Number(row.enabled ?? 0) === 1;
+		const nextRunAt =
+			enabled && cronPattern
+				? getNextCronRun(cronPattern, new Date(triggeredAt))
+				: undefined;
+		const updatedAt = nowIso();
+		const changes =
+			this.db
+				.prepare(
+					`UPDATE schedules SET
+						last_run_at = ?, next_run_at = ?, claim_token = NULL, claim_started_at = NULL, claim_until_at = NULL, updated_at = ?
+						WHERE schedule_id = ? AND claim_token = ?`,
+				)
+				.run(triggeredAt, nextRunAt ?? null, updatedAt, scheduleId, claimToken)
+				.changes ?? 0;
+		return changes === 1;
 	}
 
 	public deleteSchedule(scheduleId: string): boolean {

@@ -6,13 +6,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	AGENT_CONFIG_DIRECTORY_NAME,
 	createAgentConfigDefinition,
-	DOCUMENTS_AGENT_CONFIG_DIRECTORY_PATH,
 	parseAgentConfigFromYaml,
 	parsePartialAgentConfigFromYaml,
 	readAgentConfigsFromDisk,
 	resolveAgentConfigSearchPaths,
 	resolveAgentsConfigDirPath,
 	resolveAgentTools,
+	resolveDocumentsAgentConfigDirectoryPath,
 	toPartialAgentConfig,
 } from "./agent-config-loader";
 
@@ -46,7 +46,7 @@ describe("agent config YAML loader", () => {
 	it("includes documents and settings search paths", () => {
 		process.env.CLINE_DATA_DIR = "/tmp/cline-data";
 		expect(resolveAgentConfigSearchPaths()).toEqual([
-			DOCUMENTS_AGENT_CONFIG_DIRECTORY_PATH,
+			resolveDocumentsAgentConfigDirectoryPath(),
 			`/tmp/cline-data/settings/${AGENT_CONFIG_DIRECTORY_NAME}`,
 		]);
 	});
@@ -56,7 +56,7 @@ describe("agent config YAML loader", () => {
 		const definition = createAgentConfigDefinition();
 		expect(definition.type).toBe("agent");
 		expect(definition.directories).toEqual([
-			DOCUMENTS_AGENT_CONFIG_DIRECTORY_PATH,
+			resolveDocumentsAgentConfigDirectoryPath(),
 			`/tmp/cline-data/settings/${AGENT_CONFIG_DIRECTORY_NAME}`,
 		]);
 		expect(definition.includeFile?.("agent.yaml", "/tmp/agent.yaml")).toBe(

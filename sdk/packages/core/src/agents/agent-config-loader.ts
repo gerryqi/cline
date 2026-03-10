@@ -1,8 +1,8 @@
 import {
 	AGENT_CONFIG_DIRECTORY_NAME,
-	DOCUMENTS_AGENT_CONFIG_DIRECTORY_PATH,
 	resolveAgentConfigSearchPaths as resolveAgentConfigSearchPathsFromShared,
 	resolveAgentsConfigDirPath as resolveAgentsConfigDirPathFromShared,
+	resolveDocumentsAgentConfigDirectoryPath,
 } from "@cline/shared/storage";
 import {
 	type AgentYamlConfig,
@@ -37,7 +37,10 @@ export type AgentConfigWatcherEvent = UnifiedConfigWatcherEvent<
 	AgentYamlConfig
 >;
 
-export { AGENT_CONFIG_DIRECTORY_NAME, DOCUMENTS_AGENT_CONFIG_DIRECTORY_PATH };
+export {
+	AGENT_CONFIG_DIRECTORY_NAME,
+	resolveDocumentsAgentConfigDirectoryPath,
+};
 
 export function resolveAgentsConfigDirPath(): string {
 	return resolveAgentsConfigDirPathFromShared();

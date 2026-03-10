@@ -2,12 +2,12 @@ import { existsSync, readdirSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import type { HookEventName } from "@cline/agents";
 import {
-	DOCUMENTS_HOOKS_DIRECTORY_PATH,
 	HOOKS_CONFIG_DIRECTORY_NAME,
+	resolveDocumentsHooksDirectoryPath,
 	resolveHooksConfigSearchPaths as resolveHooksConfigSearchPathsFromShared,
 } from "@cline/shared/storage";
 
-export { DOCUMENTS_HOOKS_DIRECTORY_PATH, HOOKS_CONFIG_DIRECTORY_NAME };
+export { HOOKS_CONFIG_DIRECTORY_NAME, resolveDocumentsHooksDirectoryPath };
 
 export function resolveHooksConfigSearchPaths(
 	workspacePath?: string,
