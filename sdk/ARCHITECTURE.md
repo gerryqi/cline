@@ -142,3 +142,267 @@ Managed OAuth providers:
 - `openai-codex`
 
 Core refreshes tokens pre-turn, persists refreshed credentials, and performs single-flight refresh in long-lived runtimes (for example RPC servers).
+
+## Agents Runtime (`@cline/agents`)
+
+`@cline/agents` is the stateless runtime layer for:
+
+- agent loop execution
+- hook dispatch and policies
+- extension contribution registration
+- in-memory team orchestration
+
+Stateful concerns (plugin discovery/loading, trust/sandbox policy, persistence) belong in `@cline/core`.
+
+### Runtime layers
+
+```mermaid
+flowchart TD
+  Host["Host App / @cline/core"] --> Agent["Agent"]
+  Agent --> Bus["AgentRuntimeBus"]
+  Agent --> Conversation["ConversationStore"]
+  Agent --> LifecycleOrchestrator["LifecycleOrchestrator"]
+  Agent --> TurnProcessor["TurnProcessor"]
+  Agent --> ToolOrchestrator["ToolOrchestrator"]
+  Agent --> Registry["ContributionRegistry"]
+  Agent --> Hooks["HookEngine"]
+  ToolOrchestrator --> Tools["Tool Registry + Dispatcher"]
+
+  Registry --> Contributions["Tools / Commands / Shortcuts / Flags / Renderers / Providers"]
+  Hooks --> Lifecycle["Lifecycle + Runtime Event Handlers"]
+  Bus --> Lifecycle
+```
+
+### Execution model and state
+
+This package keeps one canonical in-memory conversation (`providers.Message[]`) and iterates until it can return a final answer.
+
+Conversation state buckets:
+
+- Persistent per conversation (`ConversationStore`):
+  - `messages`: full conversation history used for future turns
+  - `conversationId`: reset by `run()`, `clearHistory()`, and `restore()`
+  - `sessionStarted`: ensures `session_start` runs once per conversation
+- Ephemeral per run:
+  - `activeRunId`
+  - `abortController`
+  - loop counters, aggregated usage, collected tool call records
+
+Run APIs:
+
+- `run(input)` starts a new conversation and clears previous history.
+- `continue(input)` appends a new user message to existing history.
+- `restore(messages)` (or `initialMessages`) preloads history for resume flows; use `continue()` next to preserve that history.
+
+Message preparation path:
+
+```text
+Canonical History (this.messages)
+  -> MessageBuilder.buildForApi(...)
+  -> requestMessages
+  -> handler.createMessage(systemPrompt, requestMessages, toolDefinitions)
+```
+
+`MessageBuilder` can trim oversized tool outputs and mark superseded read-file results while leaving canonical history unchanged.
+
+Iteration loop (high level):
+
+```text
+user input
+  -> iteration_start
+  -> turn_start
+  -> before_agent_start
+  -> model stream (text/reasoning/tool_calls/usage)
+  -> assistant message persisted
+  -> if no tool calls: iteration_end + done
+  -> if tool calls:
+       execute tools in parallel
+       persist tool_result message
+       iteration_end
+       next iteration
+```
+
+Tool-call arguments are buffered from stream chunks and finalized at end-of-turn using `parseJsonStream`, so tools execute against finalized payloads instead of partial JSON fragments.
+
+### Runtime events and hook order
+
+`AgentEvent` (from `onEvent`) event types:
+
+- `iteration_start`
+- `content_start` (`text` | `reasoning` | `tool`)
+- `content_end` (`text` | `reasoning` | `tool`)
+- `usage`
+- `iteration_end`
+- `done`
+- `error`
+
+Blocking hook stages dispatch order during a run:
+
+1. `session_start` (first run in a conversation only)
+2. `run_start`
+3. For each iteration:
+   - `iteration_start`
+   - `turn_start`
+   - `before_agent_start`
+   - `tool_call_before` / `tool_call_after` (for each tool call when present)
+   - `turn_end`
+   - `iteration_end`
+4. `run_end`
+
+Additional stages:
+
+- `error` on loop failure
+- `session_shutdown` when host calls `agent.shutdown(...)`
+- `runtime_event` for extension-level observation of emitted runtime events
+
+Lifecycle transitions are emitted through `AgentRuntimeBus`, and lifecycle dispatch is owned by `LifecycleOrchestrator`.
+
+### Hook system
+
+`HookEngine` is the only runtime hook execution path.
+
+Hook stages:
+
+- `input`
+- `session_start`
+- `run_start`
+- `iteration_start`
+- `turn_start`
+- `before_agent_start`
+- `tool_call_before`
+- `tool_call_after`
+- `turn_end`
+- `iteration_end`
+- `run_end`
+- `runtime_event`
+- `session_shutdown`
+- `error`
+
+Dispatch behavior:
+
+- Blocking stages return merged `AgentHookControl`.
+- Async stages are queued with per-stage queue and concurrency limits.
+- Handler execution order is deterministic: higher `priority` first, then handler name.
+- Stage/handler policies control timeout, retries, failure mode, max concurrency, and queue limit.
+
+Control merge model:
+
+- `cancel`: logical OR
+- `context`: newline-joined
+- `overrideInput`: last writer wins
+- `systemPrompt`: last writer wins
+- `appendMessages`: concatenated in handler order
+
+### Extension lifecycle and responsibilities
+
+Extensions are manifest-first and follow a deterministic setup lifecycle:
+
+1. `resolve`
+2. `validate`
+3. `setup`
+4. `activate`
+5. `run`
+
+No dynamic extension registration occurs during `run`.
+
+Inside `@cline/agents`:
+
+- validate extension manifests
+- register contributions via `setup(api)`
+- register hook handlers to `HookEngine`
+
+Outside `@cline/agents` (in `@cline/core`):
+
+- discover modules from disk
+- load/instantiate modules
+- apply trust/sandbox policy
+- persist plugin/runtime state
+
+### Performance guardrails
+
+- Hook stage defaults include bounded timeout/retry behavior.
+- Async stages use bounded queue limits.
+- Per-stage concurrency budgets are enforced.
+- Tool execution fan-out is bounded by `AgentConfig.maxParallelToolCalls` (default `8`).
+- Hook routing is stage-indexed; dispatch does not scan unrelated handlers.
+- Extension contribution setup runs once per agent lifecycle.
+
+## Desktop App (`@cline/desktop`)
+
+`@cline/desktop` splits responsibilities into four layers:
+
+1. Frontend (Next.js): Kanban board UI and user interactions.
+2. Desktop runtime (Tauri/Rust): process orchestration and transport bridge.
+3. RPC runtime (CLI RPC server): shared session runtime and event bus.
+4. Execution engine (CLI + Agents): task-card subprocess execution with hooks.
+
+Boundary rule:
+
+- Frontend/browser modules: `@cline/llms/browser`
+- Node runtime hosts (CLI/Tauri scripts): `@cline/llms/node`, `@cline/agents/node`, `@cline/core/node`, `@cline/core/server/node`, `@cline/rpc/node`
+
+### Layer details
+
+Frontend (`apps/desktop/components/kanban-board.tsx`):
+
+- manages card lifecycle (`queued -> running -> completed|failed|cancelled`)
+- sends task-card commands to Tauri (`start_session`, `stop_session`, and related commands)
+- opens one persistent websocket endpoint (`get_chat_ws_endpoint`) and sends chat command envelopes (`start/send/abort/reset`)
+- listens for `chat_event` stream envelopes and compatibility events (`agent://chunk`)
+
+Tauri backend (`apps/desktop/src-tauri/src/main.rs`):
+
+- ensures/registers RPC server at app startup (`clite rpc ensure`, `clite rpc register`)
+- spawns one CLI subprocess per task card
+- streams stdout/stderr chunk events to frontend
+- runs a local websocket bridge with canonical chat envelopes:
+  - request: `{ requestId, request }`
+  - response: `{ type: "chat_response", requestId, response|error }`
+  - event: `{ type: "chat_event", event }`
+- runs one persistent chat runtime bridge script (`apps/desktop/scripts/chat-runtime-bridge.ts`) with `start/send/abort/set_sessions/reset`
+
+RPC runtime (`apps/cli/src/commands/rpc.ts`, `apps/cli/src/commands/rpc-runtime.ts`):
+
+- hosts shared runtime handlers (`start/send/abort runtime session`)
+- publishes runtime chat events (`runtime.chat.text_delta`, `runtime.chat.tool_call_*`)
+- owns stateful runtime/session lifecycle via `@cline/core/server`
+
+CLI + Agents (`apps/cli/src/index.ts`):
+
+- runs agent loop (interactive and single-prompt modes)
+- enables tools/spawn/team runtime per session config
+- appends structured hook logs
+- persists session registry + metadata in SQLite (`sessions.db`)
+
+### Session registry and status locking
+
+Session registry:
+
+- SQLite location: `~/.cline/data/sessions/sessions.db` (or `CLINE_SESSION_DATA_DIR`)
+- key table: `sessions` (`session_id`, `status`, `status_lock`, `pid`, `provider`, `model`, `cwd`, file paths, timestamps)
+
+Optimistic lock strategy for status transitions:
+
+1. Read `status_lock`.
+2. `UPDATE ... WHERE session_id = ? AND status_lock = ?`.
+3. Increment `status_lock` on success.
+4. Retry when lock changed.
+
+This avoids concurrent-writer races between runtime updates and exit handlers.
+
+### Desktop session lifecycle
+
+1. User creates card in UI.
+2. UI sends `start_session` with model/provider/task settings.
+3. Tauri launches CLI with subprocess hooks enabled.
+4. CLI runs task and emits output + hook events.
+5. CLI stores session state in SQLite and updates status with lock checks.
+6. Tauri relays output chunks and polls/loads persisted sessions.
+7. UI imports unknown sessions as cards, updates progress from hooks/transcript polling, and finalizes status from registry/process events.
+
+### Why this design
+
+- isolation: each card has an independent process
+- recoverability: transcript/hook JSONL files preserve runtime history
+- observable progress: hooks provide structured progress beyond console output
+- extensibility: Tauri command layer can add pause/resume/retry without changing UI contract

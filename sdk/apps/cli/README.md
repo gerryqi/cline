@@ -4,6 +4,8 @@ Cline CLI built with Cline SDK.
 
 Streams output in real time and includes built-in tools, sub-agent spawning, and team runtime support by default.
 
+Detailed CLI command/feature reference is centralized in [`DOC.md`](/Users/beatrix/dev/clinee/sdk-wip/DOC.md).
+
 
 ## Requirements
 
@@ -126,6 +128,9 @@ clite auth --provider openai-native --apikey sk-... --modelid gpt-5 --baseurl ht
 
 # Authenticate OAuth providers explicitly
 clite auth <cline|openai-codex|oca>
+
+# Open the CLI runtime log file
+clite dev log
 
 # Open interactive config view directly
 clite config
@@ -250,6 +255,7 @@ Subcommands:
 
 - `clite auth` - Run interactive auth setup TUI
 - `clite auth <provider>` - Run OAuth login for `cline`, `openai-codex`, or `oca`
+- `clite dev log` - Open the CLI runtime log file (`~/.cline/data/logs/clite.log`)
 - `clite config` - Open interactive config view (workflows/rules/skills/hooks/agents)
 - `clite rpc start` - Start the RPC gateway
 - `clite rpc status` - Check whether the RPC gateway is healthy

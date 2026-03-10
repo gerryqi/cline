@@ -4,6 +4,7 @@ This repository contains the SDK packages that power Cline agent runtimes.
 
 Contributor onboarding guidance is in [`AGENTS.md`](/Users/beatrix/dev/clinee/sdk-wip/AGENTS.md).
 Repository architecture guidance is in [`ARCHITECTURE.md`](/Users/beatrix/dev/clinee/sdk-wip/ARCHITECTURE.md).
+Detailed API/behavior reference is in [`DOC.md`](/Users/beatrix/dev/clinee/sdk-wip/DOC.md).
 
 ## Prerequisites
 
@@ -162,6 +163,7 @@ Keep these boundaries in mind when adding imports — cross-boundary deep import
 ├── README.md
 ├── AGENTS.md
 ├── ARCHITECTURE.md
+├── DOC.md
 ├── package.json
 ├── biome.json
 ├── packages/
@@ -181,8 +183,6 @@ Keep these boundaries in mind when adding imports — cross-boundary deep import
 │   │       └── providers/
 │   ├── agents/
 │   │   ├── README.md
-│   │   ├── ARCHITECTURE.md
-│   │   ├── DOC.md
 │   │   └── src/
 │   │       ├── index.ts
 │   │       ├── agent.ts
@@ -241,7 +241,6 @@ Keep these boundaries in mind when adding imports — cross-boundary deep import
     │   └── src-tauri/
     └── desktop/
         ├── README.md
-        ├── ARCHITECTURE.md
         ├── app/
         ├── components/
         ├── hooks/
@@ -285,8 +284,8 @@ Use this package to:
 Start with:
 
 - `packages/agents/README.md`
-- `packages/agents/DOC.md` (API/export overview)
-- `packages/agents/ARCHITECTURE.md`
+- `DOC.md` (`@cline/agents` section; API/export overview)
+- `ARCHITECTURE.md` (`Agents Runtime` section)
 - `packages/agents/src/agent.ts`
 - `packages/agents/src/tools/`
 - `packages/agents/src/teams/`
@@ -454,7 +453,7 @@ console.log(result.text)
 
 ## Navigation Tips
 
-- Start with [`AGENTS.md`](/Users/beatrix/dev/clinee/sdk-wip/AGENTS.md) for onboarding + architecture, then read package `README.md` files and any package `DOC.md` details.
+- Start with [`AGENTS.md`](/Users/beatrix/dev/clinee/sdk-wip/AGENTS.md), [`ARCHITECTURE.md`](/Users/beatrix/dev/clinee/sdk-wip/ARCHITECTURE.md), and [`DOC.md`](/Users/beatrix/dev/clinee/sdk-wip/DOC.md), then read package `README.md` files.
 - Follow imports from `apps/cli/src/index.ts` and `apps/desktop/src-tauri/src/main.rs` to understand package boundaries.
 - Prefer `src/` for implementation and `dist/` only for built output verification.
 - Start debugging integration behavior from `apps/cli/src/index.ts`, then drill into `packages/core/src/runtime`, `packages/agents/src/agent.ts`, and `packages/llms/src/sdk.ts`.

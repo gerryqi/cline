@@ -9,6 +9,7 @@ ${c.bold}USAGE${c.reset}
   clite -i                    Interactive mode
   clite config                Open interactive config view
   clite auth <provider>       Authenticate with a provider (cline|openai-codex|oca)
+  clite dev log               Open the CLI runtime log file
   clite hook < payload.json   Handle hook payload from stdin
   clite schedule <command>    Manage scheduled agent runs via RPC server
   clite list <workflows|rules|skills|agents|history|hooks|mcp>
@@ -77,6 +78,8 @@ ${c.bold}INTERNAL${c.reset}
 						  Create a scheduled agent execution
   clite schedule <create|list|get|update|pause|resume|delete|trigger|history|stats|active|upcoming|import|export>
 						  Manage schedules and execution history
+  clite dev log
+						  Open ~/.cline/data/logs/clite.log
 `);
 }
 

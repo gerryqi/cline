@@ -17,6 +17,7 @@ import {
 	parseAuthCommandArgs,
 	runAuthCommand,
 } from "./commands/auth";
+import { runDevCommand } from "./commands/dev";
 import { runHookCommand } from "./commands/hook";
 import { runHistoryListCommand, runListCommand } from "./commands/list";
 import {
@@ -79,6 +80,10 @@ export async function runCli(): Promise<void> {
 
 	if (rawArgs[0] === "hook") {
 		const code = await runHookCommand(writeErr);
+		process.exit(code);
+	}
+	if (rawArgs[0] === "dev") {
+		const code = await runDevCommand(rawArgs, { writeln, writeErr });
 		process.exit(code);
 	}
 	if (rawArgs[0] === "rpc") {
