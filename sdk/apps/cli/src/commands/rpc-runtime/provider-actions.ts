@@ -67,7 +67,7 @@ export async function runProviderAction(
 
 export async function runProviderOAuthLogin(
 	provider: string,
-): Promise<{ provider: RpcOAuthProviderId; apiKey: string }> {
+): Promise<{ provider: RpcOAuthProviderId; accessToken: string }> {
 	const providerId = normalizeOAuthProvider(provider);
 	const manager = new ProviderSettingsManager();
 	const existing = manager.getProviderSettings(providerId);
@@ -81,6 +81,6 @@ export async function runProviderOAuthLogin(
 	const resolvedKey = saved.auth?.accessToken ?? saved.apiKey ?? "";
 	return {
 		provider: providerId,
-		apiKey: resolvedKey,
+		accessToken: resolvedKey,
 	};
 }

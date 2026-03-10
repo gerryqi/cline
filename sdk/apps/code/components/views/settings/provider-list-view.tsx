@@ -194,7 +194,7 @@ export function ProviderDetailContent({
 							</Button>
 						</div>
 					}
-					{!localApiKey && onOAuthLogin ? (
+					{!localApiKey && !provider.oauthAccessTokenPresent && onOAuthLogin ? (
 						<div className="mt-3">
 							<Button
 								className="inline-flex items-center gap-2 w-full"
@@ -208,6 +208,12 @@ export function ProviderDetailContent({
 								<span>Login via Browser</span>
 							</Button>
 						</div>
+					) : null}
+					{provider.oauthAccessTokenPresent ? (
+						<p className="mt-3 text-xs text-muted-foreground">
+							OAuth is connected. API key field remains available for manual
+							overrides.
+						</p>
 					) : null}
 				</section>
 

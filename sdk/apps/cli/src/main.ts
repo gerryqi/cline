@@ -328,7 +328,8 @@ export async function runCli(): Promise<void> {
 			provider,
 			selectedProviderSettings,
 		);
-		let apiKey = args.key?.trim() || persistedApiKey || undefined;
+		const providedApiKey = args.key?.trim() || undefined;
+		let apiKey = providedApiKey || persistedApiKey || undefined;
 
 		if (!apiKey && isOAuthProvider(provider)) {
 			const oauthResult = await ensureOAuthProviderApiKey({
@@ -379,6 +380,7 @@ export async function runCli(): Promise<void> {
 			systemPrompt: await resolveSystemPrompt({
 				cwd,
 				explicitSystemPrompt: args.systemPrompt,
+				providerId: provider,
 				rules: loadRulesForSystemPromptFromWatcher(userInstructionWatcher),
 			}),
 			maxIterations: args.maxIterations,
@@ -417,7 +419,12 @@ export async function runCli(): Promise<void> {
 			// the token lives in auth.accessToken and apiKey is reserved for
 			// migrated/manual keys.
 			const persistApiKey =
-				apiKey && !isOAuthProvider(provider) ? { apiKey } : {};
+				// Persist explicit `-k/--key` even for OAuth-capable providers.
+				providedApiKey
+					? { apiKey: providedApiKey }
+					: apiKey && !isOAuthProvider(provider)
+						? { apiKey }
+						: {};
 			providerSettingsManager.saveProviderSettings({
 				...(selectedProviderSettings ?? {}),
 				provider,

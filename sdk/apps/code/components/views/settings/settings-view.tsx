@@ -227,7 +227,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 	const runOAuthProviderLogin = async (id: string) => {
 		setOauthSigningProviderId(id);
 		try {
-			const result = await invoke<{ provider: string; apiKey: string }>(
+			const result = await invoke<{ provider: string; accessToken: string }>(
 				"run_provider_oauth_login",
 				{
 					provider: id,
@@ -236,7 +236,11 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 			setProvidersWithCache((prev) =>
 				prev.map((provider) =>
 					provider.id === id
-						? { ...provider, enabled: true, apiKey: result.apiKey }
+						? {
+								...provider,
+								enabled: true,
+								oauthAccessTokenPresent: result.accessToken.trim().length > 0,
+							}
 						: provider,
 				),
 			);

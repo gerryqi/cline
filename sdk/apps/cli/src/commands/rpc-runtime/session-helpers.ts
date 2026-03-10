@@ -91,6 +91,7 @@ export async function buildSessionStartInput(input: {
 	const systemPrompt = await resolveSystemPrompt({
 		cwd,
 		explicitSystemPrompt: config.systemPrompt,
+		providerId,
 		rules: config.rules,
 	});
 	const logger = createCliLoggerAdapter({

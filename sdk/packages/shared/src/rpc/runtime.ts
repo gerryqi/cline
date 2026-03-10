@@ -103,6 +103,7 @@ export interface RpcProviderListItem {
 	letter: string;
 	enabled: boolean;
 	apiKey?: string;
+	oauthAccessTokenPresent?: boolean;
 	baseUrl?: string;
 	defaultModelId?: string;
 	authDescription: string;
@@ -293,5 +294,5 @@ export type RpcProviderActionRequest =
 
 export interface RpcProviderOAuthLoginResponse {
 	provider: RpcOAuthProviderId;
-	apiKey: string;
+	accessToken: string;
 }

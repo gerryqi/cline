@@ -847,7 +847,7 @@ export class RpcSessionClient {
 
 	public async runProviderOAuthLogin(
 		provider: string,
-	): Promise<{ provider: string; apiKey: string }> {
+	): Promise<{ provider: string; accessToken: string }> {
 		const response = await this.unary<RunProviderOAuthLoginResponse__Output>(
 			(callback) => {
 				this.client.RunProviderOAuthLogin({ provider }, callback);
@@ -855,7 +855,7 @@ export class RpcSessionClient {
 		);
 		return {
 			provider: response.provider ?? "",
-			apiKey: response.apiKey ?? "",
+			accessToken: response.apiKey ?? "",
 		};
 	}
 

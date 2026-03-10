@@ -247,7 +247,7 @@ struct ChatRuntimeBridgeCommandEnvelope {
 #[serde(rename_all = "camelCase")]
 struct ProviderOauthLoginResponse {
     provider: String,
-    api_key: String,
+    access_token: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -588,15 +588,29 @@ fn resolve_api_key(provider: &str, explicit_api_key: &str) -> Option<String> {
     }
 }
 
+fn is_oauth_managed_provider(provider: &str) -> bool {
+    matches!(
+        provider.trim().to_ascii_lowercase().as_str(),
+        "cline" | "oca" | "openai-codex"
+    )
+}
+
 fn resolve_chat_config_api_key(config: &mut StartSessionRequest) -> Result<(), String> {
-    let effective_api_key =
-        resolve_api_key(&config.provider, &config.api_key).ok_or_else(|| {
-            format!(
-                "Missing API key for provider '{}'. Provide one in the UI or set the required env var before launching Tauri.",
-                config.provider
-            )
-        })?;
-    config.api_key = effective_api_key;
+    let provider_id = config.provider.trim();
+    let explicit_api_key = config.api_key.trim();
+    if !explicit_api_key.is_empty() {
+        config.api_key = explicit_api_key.to_string();
+    } else if let Some(effective_api_key) = resolve_api_key(provider_id, explicit_api_key) {
+        config.api_key = effective_api_key;
+    } else if is_oauth_managed_provider(provider_id) {
+        // OAuth providers read credentials from persisted provider settings.
+        config.api_key = String::new();
+    } else {
+        return Err(format!(
+            "Missing API key for provider '{}'. Provide one in the UI or set the required env var before launching Tauri.",
+            config.provider
+        ));
+    }
     config.mode = if config.mode.trim().eq_ignore_ascii_case("plan") {
         "plan".to_string()
     } else {

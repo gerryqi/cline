@@ -13,6 +13,7 @@ export interface Provider {
 	letter: string;
 	enabled: boolean;
 	apiKey?: string;
+	oauthAccessTokenPresent?: boolean;
 	baseUrl?: string;
 	docUrl?: string;
 	docLabel?: string;

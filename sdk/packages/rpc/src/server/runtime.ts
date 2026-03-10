@@ -427,7 +427,7 @@ export class ClineGatewayRuntime {
 		const result = await handler(provider);
 		return {
 			provider: safeString(result.provider).trim(),
-			apiKey: safeString(result.apiKey),
+			apiKey: safeString(result.accessToken),
 		};
 	}
 

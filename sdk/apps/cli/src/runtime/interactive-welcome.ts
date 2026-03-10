@@ -111,7 +111,7 @@ export async function resolveClineWelcomeLine(input: {
 		input.clineProviderSettings?.auth?.accessToken?.trim() || "";
 	const configApiKey = input.config.apiKey.trim();
 	let authToken = persistedAccessToken || configApiKey;
-	if (authToken.startsWith("workos:workos:")) {
+	if (authToken.toLowerCase().startsWith("workos:workos:")) {
 		authToken = authToken.slice("workos:".length);
 	}
 	if (!authToken) {

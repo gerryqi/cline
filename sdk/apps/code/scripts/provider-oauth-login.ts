@@ -24,7 +24,7 @@ async function main() {
 			provider,
 		)) as RpcProviderOAuthLoginResponse;
 		process.stdout.write(
-			`${JSON.stringify({ provider: response.provider, apiKey: response.apiKey })}\n`,
+			`${JSON.stringify({ provider: response.provider, accessToken: response.accessToken })}\n`,
 		);
 	} finally {
 		client.close();

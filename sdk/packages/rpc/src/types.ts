@@ -43,7 +43,7 @@ export interface RpcRuntimeHandlers {
 	runProviderAction?: (requestJson: string) => Promise<{ resultJson: string }>;
 	runProviderOAuthLogin?: (provider: string) => Promise<{
 		provider: string;
-		apiKey: string;
+		accessToken: string;
 	}>;
 	dispose?: () => Promise<void>;
 }

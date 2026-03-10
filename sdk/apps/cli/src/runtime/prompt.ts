@@ -5,20 +5,32 @@ import {
 	type UserInstructionConfigWatcher,
 } from "@cline/core/server";
 
+const WORKSPACE_CONFIGURATION_MARKER = "# Workspace Configuration";
+
 export async function resolveSystemPrompt(input: {
 	cwd: string;
 	explicitSystemPrompt?: string;
+	providerId?: string;
 	rules?: string;
 }): Promise<string> {
+	const shouldAppendWorkspaceMetadata = input.providerId === "cline";
+	const workspace = shouldAppendWorkspaceMetadata
+		? await buildWorkspaceMetadata(input.cwd)
+		: "";
 	const explicit = input.explicitSystemPrompt?.trim();
 	if (explicit) {
+		if (
+			shouldAppendWorkspaceMetadata &&
+			!explicit.includes(WORKSPACE_CONFIGURATION_MARKER)
+		) {
+			return `${explicit}\n\n${workspace}`;
+		}
 		return explicit;
 	}
-	const workspace = await buildWorkspaceMetadata(input.cwd);
 	return getClineDefaultSystemPrompt(
 		"Terminal Shell",
 		input.cwd,
-		workspace,
+		shouldAppendWorkspaceMetadata ? workspace : "",
 		input.rules,
 	);
 }

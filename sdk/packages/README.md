@@ -14,7 +14,7 @@ This directory is the single documentation source for package-level responsibili
 | `@cline/scheduler` | Scheduled runtime execution service (cron, limits, execution history) | `@cline/rpc` | `@cline/shared` |
 | `@cline/agents` | Stateless agent runtime loop (tools, hooks, extensions, teams, streaming) | `@cline/core`, apps | `@cline/llms`, `@cline/shared` |
 | `@cline/rpc` | gRPC session/task/event/tool-approval/schedule gateway (server + client) | `@cline/core`, apps | `@cline/scheduler`, `@cline/shared` |
-| `@cline/core` | Stateful runtime orchestration (session lifecycle, storage, runtime composition, RPC adapter) | CLI/Desktop apps | `@cline/agents`, `@cline/llms`, `@cline/rpc`, `@cline/shared` |
+| `@cline/core` | Stateful runtime orchestration (runtime composition, session lifecycle/storage, shared persistence service with local+RPC adapters) | CLI/Desktop apps | `@cline/agents`, `@cline/llms`, `@cline/rpc`, `@cline/shared` |
 
 ## How Packages Work Together
 

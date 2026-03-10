@@ -69,6 +69,14 @@ flowchart LR
 3. `@cline/rpc` embeds `@cline/scheduler` to trigger scheduled runtime turns with concurrency and timeout guards.
 4. SQLite session backend is provided by `@cline/core/server` (`createSqliteRpcSessionBackend`).
 
+### Session persistence implementation (latest)
+
+1. `@cline/core` now routes both local (`CoreSessionService`) and RPC (`RpcCoreSessionService`) session persistence through one shared implementation: `UnifiedSessionPersistenceService`.
+2. Backend-specific differences are isolated in adapters:
+   - Local adapter (`SqliteSessionStore`-backed SQL/session queue operations)
+   - RPC adapter (`RpcSessionClient`-backed CRUD/queue operations)
+3. Session artifact/manifest writes, subagent session upserts, team task sub-session lifecycle, and child-session status propagation are now executed by the shared service logic to keep behavior identical across local and RPC backends.
+
 ### Desktop Kanban session discovery (latest)
 
 1. `apps/desktop` Kanban session discovery reads directly from the root SQLite sessions DB at `~/.cline/data/sessions/sessions.db`.

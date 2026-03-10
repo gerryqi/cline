@@ -15,10 +15,17 @@ function resolveVisibleApiKey(settings: {
 	apiKey?: string;
 	auth?: {
 		apiKey?: string;
-		accessToken?: string;
 	};
 }): string | undefined {
-	return settings.apiKey ?? settings.auth?.apiKey ?? settings.auth?.accessToken;
+	return settings.apiKey ?? settings.auth?.apiKey;
+}
+
+function hasOAuthAccessToken(settings: {
+	auth?: {
+		accessToken?: string;
+	};
+}): boolean {
+	return (settings.auth?.accessToken?.trim() ?? "").length > 0;
 }
 
 function titleCaseFromId(id: string): string {
@@ -392,6 +399,9 @@ export async function listProviders(manager: ProviderSettingsManager): Promise<{
 				enabled: Boolean(persistedSettings),
 				apiKey: persistedSettings
 					? resolveVisibleApiKey(persistedSettings)
+					: undefined,
+				oauthAccessTokenPresent: persistedSettings
+					? hasOAuthAccessToken(persistedSettings)
 					: undefined,
 				baseUrl: persistedSettings?.baseUrl ?? info?.baseUrl,
 				defaultModelId: info?.defaultModelId,
