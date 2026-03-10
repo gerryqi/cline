@@ -186,6 +186,20 @@ export interface AgentHookRunStartContext {
 	userMessage: string;
 }
 
+export interface AgentHookScheduleContext {
+	scheduleId: string;
+	executionId?: string;
+	trigger: "scheduled" | "manual";
+	triggeredAt?: string;
+}
+
+export interface AgentHookSessionStartContext {
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+	schedule?: AgentHookScheduleContext;
+}
+
 export interface AgentHookRunEndContext {
 	agentId: string;
 	conversationId: string;
@@ -374,6 +388,7 @@ export interface AgentExtensionSessionStartContext {
 	agentId: string;
 	conversationId: string;
 	parentAgentId: string | null;
+	schedule?: AgentHookScheduleContext;
 }
 
 export interface AgentExtensionSessionShutdownContext {
@@ -503,6 +518,9 @@ export interface AgentExtensionRegistry {
  * Lifecycle hooks for observing or influencing agent execution.
  */
 export interface AgentHooks {
+	onSessionStart?: (
+		ctx: AgentHookSessionStartContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
 	onRunStart?: (
 		ctx: AgentHookRunStartContext,
 	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
@@ -757,6 +775,11 @@ export interface AgentConfig {
 	 * Optional deterministic hook execution policies.
 	 */
 	hookPolicies?: HookPolicies;
+	/**
+	 * Optional schedule metadata for runs initiated by scheduler services.
+	 * Used by session_start lifecycle hooks.
+	 */
+	schedule?: AgentHookScheduleContext;
 	/**
 	 * Per-tool execution policy. Tool names not listed here default to enabled + autoApprove.
 	 */

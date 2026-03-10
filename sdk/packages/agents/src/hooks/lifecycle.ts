@@ -8,127 +8,117 @@ import type { HookEngine, HookHandler } from "./engine.js";
 
 type LifecycleConfig = Pick<AgentConfig, "hooks" | "extensions">;
 
-const EXTENSION_STAGE_HANDLERS: ReadonlyArray<{
-	stage: AgentExtensionHookStage;
+type ExtensionStageHandlerSpec = {
 	handler: (
 		extension: AgentExtension,
 		event: { payload: unknown },
 	) => Promise<AgentHookControl | undefined> | AgentHookControl | undefined;
 	name: string;
-}> = [
-	{
-		stage: "input",
+};
+
+const EXTENSION_STAGE_HANDLERS: Record<
+	AgentExtensionHookStage,
+	ExtensionStageHandlerSpec
+> = {
+	input: {
 		name: "onInput",
 		handler: (extension, event) =>
 			extension.onInput?.(event.payload as never) as
 				| AgentHookControl
 				| undefined,
 	},
-	{
-		stage: "session_start",
+	session_start: {
 		name: "onSessionStart",
 		handler: (extension, event) =>
 			extension.onSessionStart?.(event.payload as never) as
 				| AgentHookControl
 				| undefined,
 	},
-	{
-		stage: "run_start",
+	run_start: {
 		name: "onRunStart",
 		handler: (extension, event) =>
 			extension.onRunStart?.(event.payload as never) as
 				| AgentHookControl
 				| undefined,
 	},
-	{
-		stage: "iteration_start",
+	iteration_start: {
 		name: "onIterationStart",
 		handler: (extension, event) =>
 			extension.onIterationStart?.(event.payload as never) as
 				| AgentHookControl
 				| undefined,
 	},
-	{
-		stage: "turn_start",
+	turn_start: {
 		name: "onTurnStart",
 		handler: (extension, event) =>
 			extension.onTurnStart?.(event.payload as never) as
 				| AgentHookControl
 				| undefined,
 	},
-	{
-		stage: "before_agent_start",
+	before_agent_start: {
 		name: "onBeforeAgentStart",
 		handler: (extension, event) =>
 			extension.onBeforeAgentStart?.(event.payload as never) as
 				| AgentHookControl
 				| undefined,
 	},
-	{
-		stage: "tool_call_before",
+	tool_call_before: {
 		name: "onToolCall",
 		handler: (extension, event) =>
 			extension.onToolCall?.(event.payload as never) as
 				| AgentHookControl
 				| undefined,
 	},
-	{
-		stage: "tool_call_after",
+	tool_call_after: {
 		name: "onToolResult",
 		handler: (extension, event) =>
 			extension.onToolResult?.(event.payload as never) as
 				| AgentHookControl
 				| undefined,
 	},
-	{
-		stage: "turn_end",
+	turn_end: {
 		name: "onAgentEnd",
 		handler: (extension, event) =>
 			extension.onAgentEnd?.(event.payload as never) as
 				| AgentHookControl
 				| undefined,
 	},
-	{
-		stage: "iteration_end",
+	iteration_end: {
 		name: "onIterationEnd",
 		handler: async (extension, event) => {
 			await extension.onIterationEnd?.(event.payload as never);
 			return undefined;
 		},
 	},
-	{
-		stage: "run_end",
+	run_end: {
 		name: "onRunEnd",
 		handler: async (extension, event) => {
 			await extension.onRunEnd?.(event.payload as never);
 			return undefined;
 		},
 	},
-	{
-		stage: "session_shutdown",
+	session_shutdown: {
 		name: "onSessionShutdown",
 		handler: (extension, event) =>
 			extension.onSessionShutdown?.(event.payload as never) as
 				| AgentHookControl
 				| undefined,
 	},
-	{
-		stage: "error",
+	error: {
 		name: "onError",
 		handler: async (extension, event) => {
 			await extension.onError?.(event.payload as never);
 			return undefined;
 		},
 	},
-	{
-		stage: "runtime_event",
+	runtime_event: {
 		name: "onRuntimeEvent",
 		handler: async (extension, event) => {
 			await extension.onRuntimeEvent?.(event.payload as never);
 			return undefined;
 		},
 	},
-];
+};
 
 export function registerLifecycleHandlers(
 	hookEngine: HookEngine,
@@ -139,6 +129,13 @@ export function registerLifecycleHandlers(
 	};
 	const hooks = config.hooks;
 
+	if (hooks?.onSessionStart) {
+		register({
+			name: "hooks.onSessionStart",
+			stage: "session_start",
+			handle: (event) => hooks.onSessionStart?.(event.payload as never),
+		});
+	}
 	if (hooks?.onRunStart) {
 		register({
 			name: "hooks.onRunStart",
@@ -227,13 +224,14 @@ export function registerLifecycleHandlers(
 		const extensionName = extension.name || `extension_${order}`;
 		const base = `${order}:${extensionName}`;
 		const subscribedStages = new Set(extension.manifest.hookStages ?? []);
-		for (const stageHandler of EXTENSION_STAGE_HANDLERS) {
-			if (!subscribedStages.has(stageHandler.stage)) {
+		for (const stage of subscribedStages) {
+			const stageHandler = EXTENSION_STAGE_HANDLERS[stage];
+			if (!stageHandler) {
 				continue;
 			}
 			register({
 				name: `${base}.${stageHandler.name}`,
-				stage: stageHandler.stage,
+				stage,
 				handle: (event) => stageHandler.handler(extension, event),
 			});
 		}

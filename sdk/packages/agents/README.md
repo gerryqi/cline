@@ -155,6 +155,17 @@ Subprocess hook payloads now support `sessionContext` so hosts can pass root ses
 Node-only subprocess hook helpers are exported from `@cline/agents/node`.
 The default `@cline/agents` entrypoint remains runtime-agnostic.
 
+## Session Start Hook (Schedule-Aware)
+
+`AgentHooks` now supports `onSessionStart(...)` (stage: `session_start`).
+
+- The session-start payload now optionally includes `schedule` metadata:
+  - `scheduleId`
+  - `executionId` (optional)
+  - `trigger` (`scheduled` or `manual`)
+  - `triggeredAt` (optional)
+- Hosts that start scheduled runs can set `AgentConfig.schedule` so lifecycle hooks can apply schedule-specific policy/telemetry.
+
 ## Plugin Architecture
 
 `@cline/agents` now uses a single hook execution path: `HookEngine`.

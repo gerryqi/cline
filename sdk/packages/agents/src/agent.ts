@@ -412,6 +412,7 @@ export class Agent {
 							agentId: this.agentId,
 							conversationId: this.conversationStore.getConversationId(),
 							parentAgentId: this.parentAgentId,
+							schedule: this.config.schedule,
 						},
 					},
 				);
