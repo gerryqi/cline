@@ -14,19 +14,21 @@ export interface TeamTeammateSpec {
 	maxIterations?: number;
 }
 
-const TeamSpawnTeammateInputSchema = z.object({
-	agentId: z.string().min(1).describe("Teammate identifier"),
-	rolePrompt: z
-		.string()
-		.min(1)
-		.describe("System prompt describing teammate role"),
-	maxIterations: z
-		.number()
-		.int()
-		.min(1)
-		.optional()
-		.describe("Max iterations per teammate run for spawn"),
-});
+const TeamSpawnTeammateInputSchema = z
+	.object({
+		agentId: z.string().min(1).describe("Teammate identifier"),
+		rolePrompt: z
+			.string()
+			.min(1)
+			.describe("System prompt describing teammate role"),
+		maxIterations: z
+			.number()
+			.int()
+			.min(1)
+			.optional()
+			.describe("Max iterations per teammate run for spawn"),
+	})
+	.strict();
 
 const TeamShutdownTeammateInputSchema = z.object({
 	agentId: z.string().min(1).describe("Teammate identifier"),
@@ -217,6 +219,7 @@ export interface TeamTeammateRuntimeConfig {
 	apiKey?: string;
 	baseUrl?: string;
 	headers?: Record<string, string>;
+	providerConfig?: LlmsProviders.ProviderConfig;
 	knownModels?: Record<string, LlmsProviders.ModelInfo>;
 	thinking?: boolean;
 	clineWorkspaceMetadata?: string;
@@ -313,6 +316,7 @@ function spawnTeamTeammate(
 			apiKey: options.teammateRuntime.apiKey,
 			baseUrl: options.teammateRuntime.baseUrl,
 			headers: options.teammateRuntime.headers,
+			providerConfig: options.teammateRuntime.providerConfig,
 			knownModels: options.teammateRuntime.knownModels,
 			thinking: options.teammateRuntime.thinking,
 			systemPrompt: buildTeammateSystemPrompt(

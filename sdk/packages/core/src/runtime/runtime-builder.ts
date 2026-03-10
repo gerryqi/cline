@@ -428,6 +428,7 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 						apiKey: config.apiKey ?? "",
 						baseUrl: config.baseUrl,
 						headers: config.headers,
+						providerConfig: config.providerConfig,
 						knownModels: config.knownModels,
 						thinking: config.thinking,
 						clineWorkspaceMetadata:

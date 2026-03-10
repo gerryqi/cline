@@ -75,6 +75,12 @@ flowchart LR
 3. `@cline/rpc` embeds `@cline/scheduler` for `CreateSchedule/ListSchedules/...` APIs and scheduled runtime execution.
 4. SQLite session backend is provided by `@cline/core/server` (`createSqliteRpcSessionBackend`).
 
+### `apps/cli` runtime bootstrap (latest)
+
+1. CLI attempts a direct health/connect to `CLINE_RPC_ADDRESS` (default `127.0.0.1:4317`).
+2. If no healthy server is available, CLI spawns `clite rpc start` in the background and retries briefly.
+3. If RPC still cannot be reached, CLI falls back to local in-process `CoreSessionService` storage/runtime wiring.
+
 ### OAuth refresh ownership
 
 - OAuth token refresh is owned by `@cline/core` session runtime (not UI/CLI clients).

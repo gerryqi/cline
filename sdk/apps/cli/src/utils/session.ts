@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, isAbsolute, resolve } from "node:path";
@@ -27,7 +27,7 @@ import { resolveSessionDataDir } from "@cline/shared/storage";
 
 const DEFAULT_RPC_ADDRESS =
 	process.env.CLINE_RPC_ADDRESS?.trim() || "127.0.0.1:4317";
-let activeRpcAddress = DEFAULT_RPC_ADDRESS;
+const activeRpcAddress = DEFAULT_RPC_ADDRESS;
 
 let coreSessions: RpcCoreSessionService | undefined;
 let localSessions: CoreSessionService | undefined;
@@ -100,47 +100,6 @@ function startRpcServerInBackground(address: string): void {
 	child.unref();
 }
 
-function parseEnsureAddress(stdout: string): string | undefined {
-	const lines = stdout
-		.split(/\r?\n/)
-		.map((line) => line.trim())
-		.filter(Boolean);
-	for (let index = lines.length - 1; index >= 0; index -= 1) {
-		const line = lines[index];
-		if (!line.startsWith("{")) {
-			continue;
-		}
-		try {
-			const parsed = JSON.parse(line) as { address?: unknown };
-			if (typeof parsed.address === "string" && parsed.address.trim()) {
-				return parsed.address.trim();
-			}
-		} catch {
-			// ignore non-JSON lines
-		}
-	}
-	return undefined;
-}
-
-function ensureRpcAddressViaCli(requestedAddress: string): string | undefined {
-	const launcher = process.argv[0];
-	const entry = process.argv[1];
-	const ensureArgs = ["rpc", "ensure", "--address", requestedAddress, "--json"];
-	const args =
-		entry && isLikelyScriptEntryPath(entry)
-			? [entry, ...ensureArgs]
-			: ensureArgs;
-	const result = spawnSync(launcher, args, {
-		encoding: "utf8",
-		env: process.env,
-		cwd: process.cwd(),
-	});
-	if (result.status !== 0) {
-		return undefined;
-	}
-	return parseEnsureAddress(result.stdout || "");
-}
-
 async function tryConnectRpcSessions(
 	address: string,
 ): Promise<RpcCoreSessionService | undefined> {
@@ -169,12 +128,10 @@ async function getCoreSessions(): Promise<
 	}
 	if (!initPromise) {
 		initPromise = (async () => {
-			const ensuredAddress =
-				ensureRpcAddressViaCli(activeRpcAddress) || activeRpcAddress;
-			activeRpcAddress = ensuredAddress;
-			process.env.CLINE_RPC_ADDRESS = ensuredAddress;
+			const requestedAddress = activeRpcAddress;
+			process.env.CLINE_RPC_ADDRESS = requestedAddress;
 
-			const existingRpcSessions = await tryConnectRpcSessions(ensuredAddress);
+			const existingRpcSessions = await tryConnectRpcSessions(requestedAddress);
 			if (existingRpcSessions) {
 				coreSessions = existingRpcSessions;
 				return coreSessions;
@@ -182,14 +139,14 @@ async function getCoreSessions(): Promise<
 
 			// No healthy RPC server was detected; spawn one in the background.
 			try {
-				startRpcServerInBackground(ensuredAddress);
+				startRpcServerInBackground(requestedAddress);
 			} catch {
 				// Ignore launch failures and fall back to local storage.
 			}
 
 			// Give the detached RPC process a brief chance to bind.
 			for (let attempt = 0; attempt < 5; attempt += 1) {
-				const rpcSessions = await tryConnectRpcSessions(ensuredAddress);
+				const rpcSessions = await tryConnectRpcSessions(requestedAddress);
 				if (rpcSessions) {
 					coreSessions = rpcSessions;
 					return coreSessions;

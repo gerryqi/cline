@@ -58,6 +58,7 @@ export interface SpawnAgentToolConfig {
 	modelId: string;
 	apiKey?: string;
 	baseUrl?: string;
+	providerConfig?: LlmsProviders.ProviderConfig;
 	knownModels?: Record<string, LlmsProviders.ModelInfo>;
 	thinking?: boolean;
 	defaultMaxIterations?: number;
@@ -143,6 +144,7 @@ export function createSpawnAgentTool(
 				modelId: config.modelId,
 				apiKey: config.apiKey,
 				baseUrl: config.baseUrl,
+				providerConfig: config.providerConfig,
 				knownModels: config.knownModels,
 				thinking: config.thinking,
 				systemPrompt: input.systemPrompt,

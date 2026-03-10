@@ -14,7 +14,7 @@ export const GENERATED_PROVIDER_MODELS: {
 	version: number;
 	providers: Record<string, Record<string, ModelInfo>>;
 } = {
-	version: 1773093056709,
+	version: 1773114658276,
 	providers: {
 		aihubmix: {
 			"claude-sonnet-4-6": {
@@ -8618,6 +8618,27 @@ export const GENERATED_PROVIDER_MODELS: {
 			},
 		},
 		"vercel-ai-gateway": {
+			"google/gemini-3.1-flash-lite-preview": {
+				id: "google/gemini-3.1-flash-lite-preview",
+				name: "Gemini 3.1 Flash Lite Preview",
+				contextWindow: 1048576,
+				maxTokens: 65536,
+				capabilities: [
+					"images",
+					"files",
+					"tools",
+					"reasoning",
+					"structured_output",
+					"temperature",
+				],
+				pricing: {
+					input: 0.5,
+					output: 3,
+					cacheRead: 0.05,
+					cacheWrite: 0,
+				},
+				releaseDate: "2026-03-03",
+			},
 			"alibaba/qwen3.5-flash": {
 				id: "alibaba/qwen3.5-flash",
 				name: "Qwen 3.5 Flash",

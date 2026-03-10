@@ -31,7 +31,7 @@ import {
 } from "../runtime/hook-file-hooks";
 import { DefaultRuntimeBuilder } from "../runtime/runtime-builder";
 import type { BuiltRuntime, RuntimeBuilder } from "../runtime/session-runtime";
-import type { ProviderSettingsManager } from "../storage/provider-settings-manager";
+import { ProviderSettingsManager } from "../storage/provider-settings-manager";
 import {
 	buildTeamProgressSummary,
 	toTeamProgressLifecycleEvent,
@@ -39,6 +39,10 @@ import {
 import { SessionSource, type SessionStatus } from "../types/common";
 import type { CoreSessionConfig } from "../types/config";
 import type { CoreSessionEvent } from "../types/events";
+import {
+	type ProviderSettings,
+	toProviderConfig,
+} from "../types/provider-settings";
 import type { SessionRecord } from "../types/sessions";
 import type { RpcCoreSessionService } from "./rpc-session-service";
 import {
@@ -247,6 +251,7 @@ export class DefaultSessionManager implements SessionManager {
 	private readonly createAgentInstance: (config: AgentConfig) => Agent;
 	private readonly defaultToolExecutors?: Partial<ToolExecutors>;
 	private readonly defaultToolPolicies?: AgentConfig["toolPolicies"];
+	private readonly providerSettingsManager: ProviderSettingsManager;
 	private readonly oauthTokenManager: RuntimeOAuthTokenManager;
 	private readonly defaultRequestToolApproval?: (
 		request: ToolApprovalRequest,
@@ -263,12 +268,50 @@ export class DefaultSessionManager implements SessionManager {
 			options.createAgent ?? ((config) => new Agent(config));
 		this.defaultToolExecutors = options.defaultToolExecutors;
 		this.defaultToolPolicies = options.toolPolicies;
+		this.providerSettingsManager =
+			options.providerSettingsManager ?? new ProviderSettingsManager();
 		this.oauthTokenManager =
 			options.oauthTokenManager ??
 			new RuntimeOAuthTokenManager({
-				providerSettingsManager: options.providerSettingsManager,
+				providerSettingsManager: this.providerSettingsManager,
 			});
 		this.defaultRequestToolApproval = options.requestToolApproval;
+	}
+
+	private resolveStoredProviderSettings(providerId: string): ProviderSettings {
+		const stored = this.providerSettingsManager.getProviderSettings(providerId);
+		if (stored) {
+			return stored;
+		}
+		return {
+			provider: providerId,
+		};
+	}
+
+	private buildResolvedProviderConfig(
+		config: CoreSessionConfig,
+	): LlmsProviders.ProviderConfig {
+		const settings = this.resolveStoredProviderSettings(config.providerId);
+		const mergedSettings: ProviderSettings = {
+			...settings,
+			provider: config.providerId,
+			model: config.modelId,
+			apiKey: config.apiKey ?? settings.apiKey,
+			baseUrl: config.baseUrl ?? settings.baseUrl,
+			headers: config.headers ?? settings.headers,
+			reasoning:
+				typeof config.thinking === "boolean"
+					? {
+							...(settings.reasoning ?? {}),
+							enabled: config.thinking,
+						}
+					: settings.reasoning,
+		};
+		const providerConfig = toProviderConfig(mergedSettings);
+		if (config.knownModels) {
+			providerConfig.knownModels = config.knownModels;
+		}
+		return providerConfig;
 	}
 
 	async start(input: StartSessionInput): Promise<StartSessionResult> {
@@ -341,10 +384,16 @@ export class DefaultSessionManager implements SessionManager {
 			input.config.extensions,
 			loadedPlugins.extensions,
 		);
-		const effectiveConfig: CoreSessionConfig = {
+		const effectiveConfigBase: CoreSessionConfig = {
 			...input.config,
 			hooks: effectiveHooks,
 			extensions: effectiveExtensions,
+		};
+		const providerConfig =
+			this.buildResolvedProviderConfig(effectiveConfigBase);
+		const effectiveConfig: CoreSessionConfig = {
+			...effectiveConfigBase,
+			providerConfig,
 		};
 
 		const runtime = this.runtimeBuilder.build({
@@ -364,11 +413,13 @@ export class DefaultSessionManager implements SessionManager {
 		});
 		const tools = [...runtime.tools, ...(effectiveConfig.extraTools ?? [])];
 		const agent = this.createAgentInstance({
-			providerId: effectiveConfig.providerId,
-			modelId: effectiveConfig.modelId,
-			apiKey: effectiveConfig.apiKey,
-			baseUrl: effectiveConfig.baseUrl,
-			knownModels: effectiveConfig.knownModels,
+			providerId: providerConfig.providerId,
+			modelId: providerConfig.modelId,
+			apiKey: providerConfig.apiKey,
+			baseUrl: providerConfig.baseUrl,
+			headers: providerConfig.headers,
+			knownModels: providerConfig.knownModels,
+			providerConfig,
 			thinking: effectiveConfig.thinking,
 			systemPrompt: effectiveConfig.systemPrompt,
 			maxIterations: effectiveConfig.maxIterations,
@@ -895,6 +946,7 @@ export class DefaultSessionManager implements SessionManager {
 			modelId: config.modelId,
 			apiKey: config.apiKey,
 			baseUrl: config.baseUrl,
+			providerConfig: config.providerConfig,
 			knownModels: config.knownModels,
 			createSubAgentTools,
 			hooks: config.hooks,

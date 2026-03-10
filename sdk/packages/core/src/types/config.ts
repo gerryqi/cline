@@ -22,6 +22,7 @@ export interface CoreModelConfig {
 	apiKey?: string;
 	baseUrl?: string;
 	headers?: Record<string, string>;
+	providerConfig?: LlmsProviders.ProviderConfig;
 	knownModels?: Record<string, LlmsProviders.ModelInfo>;
 	/**
 	 * Request model-side thinking/reasoning when supported.

@@ -94,8 +94,9 @@ Workspace boundary rule:
 2. Load provider settings from core storage.
 3. If OAuth provider is selected and no API key exists, run OAuth login and persist credentials.
 4. Persist effective provider/model selection.
-5. Build runtime via `DefaultRuntimeBuilder.build(...)`.
-6. Start `Agent` and run `agent.run(...)` or `agent.continue(...)`.
+5. `DefaultSessionManager` resolves persisted provider settings (`providers.json`) and converts them to full `ProviderConfig` (including provider-specific fields like `aws`, `gcp`, `azure`, `sap`, `oca`), then overlays runtime overrides (`model`, `apiKey`, `baseUrl`, `headers`, `thinking`).
+6. Build runtime via `DefaultRuntimeBuilder.build(...)`.
+7. Start `Agent` and run `agent.run(...)` or `agent.continue(...)`.
 
 ```mermaid
 flowchart TD
@@ -107,9 +108,10 @@ flowchart TD
   B2 -->|no| B3[Resolve provider/model/apiKey defaults]
   B2b --> B3
   B3 --> B4[core: ProviderSettingsManager save]
-  B4 --> C[core: DefaultRuntimeBuilder.build]
+  B4 --> B5[core: resolve stored ProviderSettings to ProviderConfig]
+  B5 --> C[core: DefaultRuntimeBuilder.build]
   C --> D[tools + optional team runtime]
-  D --> E[agents: new Agent]
+  D --> E[agents: new Agent with providerConfig]
   E --> F[agent.run or agent.continue]
 ```
 

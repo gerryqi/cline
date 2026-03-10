@@ -40,6 +40,9 @@ const DEFAULT_REMINDER_TEXT =
 function resolveKnownModelsFromConfig(
 	config: AgentConfig,
 ): Record<string, providers.ModelInfo> | undefined {
+	if (config.providerConfig?.knownModels) {
+		return config.providerConfig.knownModels;
+	}
 	if (config.knownModels) {
 		return config.knownModels;
 	}
@@ -352,19 +355,25 @@ export class Agent {
 	}
 
 	private createHandlerFromConfig(config: AgentConfig): providers.ApiHandler {
-		return providers.createHandler({
+		const baseProviderConfig =
+			config.providerConfig?.providerId === config.providerId
+				? config.providerConfig
+				: undefined;
+		const normalizedProviderConfig: providers.ProviderConfig = {
+			...(baseProviderConfig ?? {}),
 			providerId: config.providerId,
 			modelId: config.modelId,
-			apiKey: config.apiKey,
-			baseUrl: config.baseUrl,
-			headers: config.headers,
+			apiKey: config.apiKey ?? baseProviderConfig?.apiKey,
+			baseUrl: config.baseUrl ?? baseProviderConfig?.baseUrl,
+			headers: config.headers ?? baseProviderConfig?.headers,
 			knownModels: resolveKnownModelsFromConfig(config),
 			maxOutputTokens: config.maxTokensPerTurn,
 			reasoningEffort: config.reasoningEffort,
 			thinkingBudgetTokens: config.thinkingBudgetTokens,
 			thinking: config.thinking,
 			abortSignal: config.abortSignal,
-		});
+		};
+		return providers.createHandler(normalizedProviderConfig);
 	}
 
 	private async executeLoop(triggerMessage: string): Promise<AgentResult> {

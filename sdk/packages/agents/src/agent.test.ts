@@ -114,6 +114,46 @@ describe("Agent", () => {
 		expect(result.usage.totalCost).toBeUndefined();
 	});
 
+	it("passes providerConfig through to handler creation", async () => {
+		const { Agent } = await import("./agent.js");
+		const handler = makeHandler([
+			[
+				{ type: "text", id: "r1", text: "ok" },
+				{ type: "usage", id: "r1", inputTokens: 1, outputTokens: 1 },
+				{ type: "done", id: "r1", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const agent = new Agent({
+			providerId: "vertex",
+			modelId: "claude-sonnet-4@20250514",
+			systemPrompt: "You are helpful.",
+			tools: [],
+			providerConfig: {
+				providerId: "vertex",
+				modelId: "claude-sonnet-4@20250514",
+				gcp: {
+					projectId: "test-project",
+					region: "us-central1",
+				},
+			} as LlmsProviders.ProviderConfig,
+		});
+
+		await agent.run("hello");
+
+		expect(createHandlerMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				providerId: "vertex",
+				modelId: "claude-sonnet-4@20250514",
+				gcp: {
+					projectId: "test-project",
+					region: "us-central1",
+				},
+			}),
+		);
+	});
+
 	it("emits loop logs to provided logger", async () => {
 		const { Agent } = await import("./agent.js");
 		const handler = makeHandler([

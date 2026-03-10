@@ -211,6 +211,16 @@ For `oca` CLI login, default callback ports are `48801-48811` (`/auth/oca`) to m
 - Refresh operations are single-flight per provider to avoid concurrent refresh storms in long-lived RPC runtimes.
 - When a turn fails with an auth-like error (for example HTTP 401/403), core force-refreshes once and retries the turn once.
 
+## Provider Config Hydration
+
+`DefaultSessionManager` resolves full provider runtime config from persisted provider settings before creating `Agent` instances:
+
+- Reads provider settings from `ProviderSettingsManager` (`settings/providers.json`).
+- Converts settings to `ProviderConfig` via `toProviderConfig(...)`.
+- Preserves provider-specific fields (for example `aws.*`, `gcp.*`, `azure.*`, `sap.*`, `oca.*`) so non-OpenAI-compatible handlers receive required config.
+- Applies explicit runtime overrides for `model`, `apiKey`, `baseUrl`, `headers`, and `thinking`.
+- Forwards the resolved `providerConfig` to lead agents, spawned sub-agents, and team teammates.
+
 Prompt preparation behavior:
 
 - Hosts should pass raw prompt text into session `start/send` APIs.

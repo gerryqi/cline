@@ -465,6 +465,88 @@ describe("DefaultSessionManager", () => {
 		expect(run).toHaveBeenCalledTimes(1);
 	});
 
+	it("hydrates provider-specific config from provider settings", async () => {
+		const sessionId = "sess-provider-config";
+		const manifest = createManifest(sessionId);
+		const sessionService = {
+			ensureSessionsDir: vi.fn().mockReturnValue("/tmp/sessions"),
+			createRootSessionWithArtifacts: vi.fn().mockResolvedValue({
+				manifestPath: "/tmp/manifest-provider-config.json",
+				transcriptPath: "/tmp/transcript-provider-config.log",
+				hookPath: "/tmp/hook-provider-config.log",
+				messagesPath: "/tmp/messages-provider-config.json",
+				manifest,
+			}),
+			persistSessionMessages: vi.fn(),
+			updateSessionStatus: vi.fn().mockResolvedValue({ updated: true }),
+			writeSessionManifest: vi.fn(),
+			listSessions: vi.fn().mockResolvedValue([]),
+			deleteSession: vi.fn().mockResolvedValue({ deleted: true }),
+		};
+		const run = vi.fn().mockResolvedValue(
+			createResult({
+				model: {
+					id: "claude-sonnet-4@20250514",
+					provider: "vertex",
+				},
+			}),
+		);
+		const createAgent = vi.fn().mockReturnValue({
+			run,
+			continue: vi.fn(),
+			abort: vi.fn(),
+			restore: vi.fn(),
+			shutdown: vi.fn().mockResolvedValue(undefined),
+			getMessages: vi.fn().mockReturnValue([]),
+			messages: [],
+		});
+		const manager = new DefaultSessionManager({
+			distinctId,
+			sessionService: sessionService as never,
+			runtimeBuilder: {
+				build: vi.fn().mockReturnValue({
+					tools: [],
+					shutdown: vi.fn(),
+				}),
+			},
+			createAgent: createAgent as never,
+			providerSettingsManager: {
+				getProviderSettings: vi.fn().mockReturnValue({
+					provider: "vertex",
+					gcp: {
+						projectId: "test-project",
+						region: "us-central1",
+					},
+				}),
+			} as never,
+		});
+
+		await manager.start({
+			config: createConfig({
+				sessionId,
+				providerId: "vertex",
+				modelId: "claude-sonnet-4@20250514",
+			}),
+			interactive: true,
+		});
+		await manager.send({ sessionId, prompt: "hello" });
+
+		expect(createAgent).toHaveBeenCalledWith(
+			expect.objectContaining({
+				providerId: "vertex",
+				modelId: "claude-sonnet-4@20250514",
+				providerConfig: expect.objectContaining({
+					providerId: "vertex",
+					modelId: "claude-sonnet-4@20250514",
+					gcp: {
+						projectId: "test-project",
+						region: "us-central1",
+					},
+				}),
+			}),
+		);
+	});
+
 	it("formats prompt in core and merges explicit + mention user files", async () => {
 		const tempCwd = mkdtempSync(join(tmpdir(), "core-session-format-"));
 		try {

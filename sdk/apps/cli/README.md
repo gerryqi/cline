@@ -330,7 +330,7 @@ In desktop mode, CLI writes a request JSON file and waits for a matching decisio
 - Team event bridge: runtime handlers also publish typed team progress/lifecycle events (`runtime.team.progress.v1`, `runtime.team.lifecycle.v1`) with status-board projections
 - Tool approval bridge: runtime handlers publish `approval.requested` and wait for RPC responses; CLI prompt runs consume these requests and return approval decisions through RPC.
 - CLI streaming: RPC-backed prompt runs subscribe to `runtime.chat.*` during each turn, so text/tool output is rendered incrementally in the terminal.
-- Prompt startup behavior: regular `clite "<prompt>"` runs call `rpc ensure --json` first to get a compatible address, then try to connect to the RPC server. If no server is running, one is spawned in the background and the CLI waits briefly for it to bind. If the background spawn fails, the CLI falls back to an in-process local runtime.
+- Prompt startup behavior: regular `clite "<prompt>"` runs try to connect directly to `CLINE_RPC_ADDRESS` first. If no server is running, one is spawned in the background and the CLI waits briefly for it to bind. If the background spawn fails, the CLI falls back to an in-process local runtime.
 
 ## Environment Variables
 

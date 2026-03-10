@@ -33,7 +33,6 @@ describe("default tool presets", () => {
 			"search_codebase",
 			"run_commands",
 			"fetch_web_content",
-			"apply_patch",
 			"editor",
 			"skills",
 			"ask_question",

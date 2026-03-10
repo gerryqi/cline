@@ -19,7 +19,7 @@
 		"dev": "bun ./src/index.ts",
 		"clean": "rm -rf dist node_modules",
 		"typecheck": "tsc --noEmit",
-		"test": "vitest run --config vitest.config.ts && vitest run --config vitest.e2e.config.ts",
+		"test": "bun run test:unit && bun run test:e2e",
 		"test:unit": "vitest run --config vitest.config.ts",
 		"test:e2e": "vitest run --config vitest.e2e.config.ts",
 		"test:watch": "vitest --config vitest.config.ts",
