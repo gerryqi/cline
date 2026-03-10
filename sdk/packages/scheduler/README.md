@@ -25,3 +25,8 @@ Tables are created in the same SQLite DB as sessions (`~/.cline/data/sessions/se
 - `schedule_executions`
 
 Schema creation is delegated through `@cline/shared/db` `ensureSessionSchema(...)`.
+
+## Developer Verification
+
+- `bun -F @cline/scheduler test`: run scheduler unit tests (Vitest).
+- `bun -F @cline/scheduler verify:routines`: run a deterministic routine lifecycle smoke check (create/list/pause/resume/trigger/stats/delete) against a temporary SQLite DB with mocked runtime handlers.

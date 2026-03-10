@@ -19,7 +19,10 @@
 	"scripts": {
 		"build": "bun run bun.mts && bun tsc --emitDeclarationOnly",
 		"clean": "rm -rf dist node_modules",
-		"typecheck": "bun tsc --noEmit"
+		"typecheck": "bun tsc --noEmit",
+		"test": "vitest run --config vitest.config.ts",
+		"test:watch": "vitest --config vitest.config.ts",
+		"verify:routines": "bun run ./scripts/verify-routine-feature.ts"
 	},
 	"dependencies": {
 		"@cline/shared": "workspace:*"

@@ -212,6 +212,7 @@ Three interfaces define the storage contract consumed by session management:
 - Typecheck VS Code extension app: `bun -F cline-vscode typecheck`
 - Typecheck all packages/apps: `bun run types`
 - Run tests: `bun run test`
+- Run scheduler/routine verification script: `bun run verify:routines`
 - Lint: `bun run lint`
 - Format: `bun run format`
 - Apply fixes: `bun run fix`

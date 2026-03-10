@@ -1,5 +1,4 @@
 {
-	"files": [],
 	"compilerOptions": {
 		"target": "ES2022",
 		"module": "ESNext",
@@ -10,5 +9,7 @@
 		"skipLibCheck": true,
 		"forceConsistentCasingInFileNames": true,
 		"resolveJsonModule": true
-	}
+	},
+	"include": ["**/*.ts", "**/*.tsx"],
+	"exclude": ["node_modules", "**/dist/**", "**/.next/**"]
 }

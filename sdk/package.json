@@ -19,6 +19,7 @@
 		"clean": "bun --parallel -F '*' clean",
 		"types": "bun --parallel -F '*' typecheck",
 		"test": "bun --parallel -F './packages/**' test & bun -F './apps/cli' test",
+		"verify:routines": "bun -F @cline/scheduler verify:routines",
 		"biome": "bunx --bun @biomejs/biome",
 		"format": "bun biome format",
 		"lint": "bun biome lint",

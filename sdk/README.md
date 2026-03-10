@@ -130,10 +130,10 @@ Tip: run `bun run fix` before opening a PR, then `bun run lint` to verify everyt
 
 ## Testing (Vitest)
 
-SDK/CLI packages in this workspace use Vitest for testing (`llms`, `agents`, `core`, and `cli`).
+SDK/CLI packages in this workspace use Vitest for testing (`llms`, `agents`, `scheduler`, `core`, and `cli`).
 
 - `bun run test` - run all package test suites from the repo root
-- `bun run test:llms|test:agents|test:core|test:cli` - run tests for one package
+- `bun run verify:routines` - run scheduler/routine smoke verification script
 
 Package-level scripts also expose Vitest directly (for example `test:watch`, and in `cli`, `test:unit` and `test:e2e`).
 
