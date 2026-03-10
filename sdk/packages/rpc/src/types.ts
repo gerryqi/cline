@@ -2,6 +2,12 @@ export interface RpcServerOptions {
 	address?: string;
 	sessionBackend: RpcSessionBackend;
 	runtimeHandlers?: RpcRuntimeHandlers;
+	scheduler?: {
+		enabled?: boolean;
+		sessionsDbPath?: string;
+		pollIntervalMs?: number;
+		globalMaxConcurrency?: number;
+	};
 }
 
 export interface RpcServerHandle {
@@ -103,6 +109,55 @@ export interface RpcSpawnQueueItem {
 	systemPrompt?: string;
 	createdAt: string;
 	consumedAt?: string;
+}
+
+export type RpcScheduleMode = "act" | "plan";
+
+export type RpcScheduleExecutionStatus =
+	| "pending"
+	| "running"
+	| "success"
+	| "failed"
+	| "timeout"
+	| "aborted";
+
+export interface RpcScheduleRecord {
+	scheduleId: string;
+	name: string;
+	cronPattern: string;
+	prompt: string;
+	provider: string;
+	model: string;
+	mode: RpcScheduleMode;
+	workspaceRoot?: string;
+	cwd?: string;
+	systemPrompt?: string;
+	maxIterations?: number;
+	timeoutSeconds?: number;
+	maxParallel: number;
+	enabled: boolean;
+	createdAt: string;
+	updatedAt: string;
+	lastRunAt?: string;
+	nextRunAt?: string;
+	createdBy?: string;
+	tags?: string[];
+	metadata?: Record<string, unknown>;
+}
+
+export interface RpcScheduleExecution {
+	executionId: string;
+	scheduleId: string;
+	sessionId?: string;
+	triggeredAt: string;
+	startedAt?: string;
+	endedAt?: string;
+	status: RpcScheduleExecutionStatus;
+	exitCode?: number;
+	errorMessage?: string;
+	iterations?: number;
+	tokensUsed?: number;
+	costUsd?: number;
 }
 
 export interface RpcSessionUpdateInput {

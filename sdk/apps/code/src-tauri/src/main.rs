@@ -11,6 +11,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
@@ -41,6 +42,7 @@ struct AppContext {
 const DEFAULT_RPC_ADDRESS: &str = "127.0.0.1:4317";
 const DEFAULT_RPC_CLIENT_ID: &str = "code-desktop";
 const DEFAULT_RPC_CLIENT_TYPE: &str = "desktop";
+const CHAT_RUNTIME_BRIDGE_RESPONSE_TIMEOUT_MS: u64 = 130000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1497,6 +1499,28 @@ fn resolve_provider_settings_script_path(context: &AppContext) -> Option<PathBuf
     candidates.into_iter().find(|path| path.exists())
 }
 
+fn resolve_routine_schedules_script_path(context: &AppContext) -> Option<PathBuf> {
+    let candidates = [
+        PathBuf::from(&context.workspace_root)
+            .join("apps")
+            .join("code")
+            .join("scripts")
+            .join("routine-schedules.ts"),
+        PathBuf::from(&context.workspace_root)
+            .join("scripts")
+            .join("routine-schedules.ts"),
+        PathBuf::from(&context.launch_cwd)
+            .join("scripts")
+            .join("routine-schedules.ts"),
+        PathBuf::from(&context.launch_cwd)
+            .join("apps")
+            .join("code")
+            .join("scripts")
+            .join("routine-schedules.ts"),
+    ];
+    candidates.into_iter().find(|path| path.exists())
+}
+
 fn resolve_workspace_file_search_script_path(context: &AppContext) -> Option<PathBuf> {
     let candidates = [
         PathBuf::from(&context.workspace_root)
@@ -2358,10 +2382,29 @@ fn run_chat_runtime_bridge_command(
         request_id
     };
 
-    match rx.recv() {
+    match rx.recv_timeout(Duration::from_millis(
+        CHAT_RUNTIME_BRIDGE_RESPONSE_TIMEOUT_MS,
+    )) {
         Ok(Ok(value)) => Ok(value),
         Ok(Err(error)) => Err(error),
-        Err(_) => {
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            let _ = state
+                .runtime_bridge
+                .lock()
+                .ok()
+                .and_then(|mut guard| guard.as_mut().and_then(|bridge| {
+                    bridge
+                        .pending
+                        .lock()
+                        .ok()
+                        .and_then(|mut pending_map| pending_map.remove(&request_id))
+                }));
+            Err(format!(
+                "chat runtime bridge request timed out after {}ms",
+                CHAT_RUNTIME_BRIDGE_RESPONSE_TIMEOUT_MS
+            ))
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
             let _ = state
                 .runtime_bridge
                 .lock()
@@ -2984,6 +3027,207 @@ fn add_provider(
 }
 
 #[tauri::command]
+fn list_routine_schedules(context: State<'_, AppContext>) -> Result<Value, String> {
+    let Some(script_path) = resolve_routine_schedules_script_path(&context) else {
+        return Err(format!(
+            "routine schedules script not found. checked workspace_root={} and launch_cwd={}",
+            context.workspace_root, context.launch_cwd
+        ));
+    };
+    let script_workdir = script_path
+        .parent()
+        .and_then(|parent| parent.parent())
+        .map(|value| value.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from(&context.launch_cwd));
+
+    run_bun_script_json(
+        &script_path,
+        &script_workdir,
+        serde_json::json!({
+            "action": "listOverview"
+        })
+        .to_string(),
+        "routine schedules",
+    )
+}
+
+#[tauri::command]
+fn create_routine_schedule(
+    context: State<'_, AppContext>,
+    name: String,
+    cron_pattern: String,
+    prompt: String,
+    provider: String,
+    model: String,
+    mode: String,
+    workspace_root: String,
+    cwd: Option<String>,
+    system_prompt: Option<String>,
+    max_iterations: Option<u64>,
+    timeout_seconds: Option<u64>,
+    max_parallel: Option<u64>,
+    enabled: Option<bool>,
+    tags: Option<Vec<String>>,
+) -> Result<Value, String> {
+    let Some(script_path) = resolve_routine_schedules_script_path(&context) else {
+        return Err(format!(
+            "routine schedules script not found. checked workspace_root={} and launch_cwd={}",
+            context.workspace_root, context.launch_cwd
+        ));
+    };
+    let script_workdir = script_path
+        .parent()
+        .and_then(|parent| parent.parent())
+        .map(|value| value.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from(&context.launch_cwd));
+    let schedule_mode = if mode.trim().eq_ignore_ascii_case("plan") {
+        "plan"
+    } else {
+        "act"
+    };
+
+    run_bun_script_json(
+        &script_path,
+        &script_workdir,
+        serde_json::json!({
+            "action": "createSchedule",
+            "name": name,
+            "cronPattern": cron_pattern,
+            "prompt": prompt,
+            "provider": provider,
+            "model": model,
+            "mode": schedule_mode,
+            "workspaceRoot": workspace_root,
+            "cwd": cwd,
+            "systemPrompt": system_prompt,
+            "maxIterations": max_iterations,
+            "timeoutSeconds": timeout_seconds,
+            "maxParallel": max_parallel,
+            "enabled": enabled,
+            "tags": tags
+        })
+        .to_string(),
+        "routine schedules",
+    )
+}
+
+#[tauri::command]
+fn pause_routine_schedule(
+    context: State<'_, AppContext>,
+    schedule_id: String,
+) -> Result<Value, String> {
+    let Some(script_path) = resolve_routine_schedules_script_path(&context) else {
+        return Err(format!(
+            "routine schedules script not found. checked workspace_root={} and launch_cwd={}",
+            context.workspace_root, context.launch_cwd
+        ));
+    };
+    let script_workdir = script_path
+        .parent()
+        .and_then(|parent| parent.parent())
+        .map(|value| value.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from(&context.launch_cwd));
+
+    run_bun_script_json(
+        &script_path,
+        &script_workdir,
+        serde_json::json!({
+            "action": "pauseSchedule",
+            "scheduleId": schedule_id
+        })
+        .to_string(),
+        "routine schedules",
+    )
+}
+
+#[tauri::command]
+fn resume_routine_schedule(
+    context: State<'_, AppContext>,
+    schedule_id: String,
+) -> Result<Value, String> {
+    let Some(script_path) = resolve_routine_schedules_script_path(&context) else {
+        return Err(format!(
+            "routine schedules script not found. checked workspace_root={} and launch_cwd={}",
+            context.workspace_root, context.launch_cwd
+        ));
+    };
+    let script_workdir = script_path
+        .parent()
+        .and_then(|parent| parent.parent())
+        .map(|value| value.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from(&context.launch_cwd));
+
+    run_bun_script_json(
+        &script_path,
+        &script_workdir,
+        serde_json::json!({
+            "action": "resumeSchedule",
+            "scheduleId": schedule_id
+        })
+        .to_string(),
+        "routine schedules",
+    )
+}
+
+#[tauri::command]
+fn trigger_routine_schedule(
+    context: State<'_, AppContext>,
+    schedule_id: String,
+) -> Result<Value, String> {
+    let Some(script_path) = resolve_routine_schedules_script_path(&context) else {
+        return Err(format!(
+            "routine schedules script not found. checked workspace_root={} and launch_cwd={}",
+            context.workspace_root, context.launch_cwd
+        ));
+    };
+    let script_workdir = script_path
+        .parent()
+        .and_then(|parent| parent.parent())
+        .map(|value| value.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from(&context.launch_cwd));
+
+    run_bun_script_json(
+        &script_path,
+        &script_workdir,
+        serde_json::json!({
+            "action": "triggerScheduleNow",
+            "scheduleId": schedule_id
+        })
+        .to_string(),
+        "routine schedules",
+    )
+}
+
+#[tauri::command]
+fn delete_routine_schedule(
+    context: State<'_, AppContext>,
+    schedule_id: String,
+) -> Result<Value, String> {
+    let Some(script_path) = resolve_routine_schedules_script_path(&context) else {
+        return Err(format!(
+            "routine schedules script not found. checked workspace_root={} and launch_cwd={}",
+            context.workspace_root, context.launch_cwd
+        ));
+    };
+    let script_workdir = script_path
+        .parent()
+        .and_then(|parent| parent.parent())
+        .map(|value| value.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from(&context.launch_cwd));
+
+    run_bun_script_json(
+        &script_path,
+        &script_workdir,
+        serde_json::json!({
+            "action": "deleteSchedule",
+            "scheduleId": schedule_id
+        })
+        .to_string(),
+        "routine schedules",
+    )
+}
+
+#[tauri::command]
 fn search_workspace_files(
     context: State<'_, AppContext>,
     workspace_root: Option<String>,
@@ -3549,6 +3793,16 @@ async fn handle_chat_session_command(
         }
         _ => Err("unsupported action".to_string()),
     }
+}
+
+#[tauri::command]
+async fn chat_session_command(
+    app: AppHandle,
+    state: State<'_, Arc<ChatSessionStore>>,
+    context: State<'_, AppContext>,
+    request: ChatSessionCommandRequest,
+) -> Result<ChatSessionCommandResponse, String> {
+    handle_chat_session_command(&app, state.inner(), context.inner(), request).await
 }
 
 #[tauri::command]
@@ -4338,6 +4592,12 @@ fn main() {
             list_provider_models,
             save_provider_settings,
             add_provider,
+            list_routine_schedules,
+            create_routine_schedule,
+            pause_routine_schedule,
+            resume_routine_schedule,
+            trigger_routine_schedule,
+            delete_routine_schedule,
             search_workspace_files,
             delete_cli_session,
             read_session_hooks,
@@ -4355,6 +4615,7 @@ fn main() {
             delete_mcp_server,
             open_mcp_settings_file,
             get_chat_ws_endpoint,
+            chat_session_command,
             read_session_transcript,
             read_session_messages,
             list_chat_sessions,

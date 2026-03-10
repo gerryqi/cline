@@ -39,7 +39,7 @@ bun run code
 
 Useful workspace scripts (root `package.json`):
 
-- `bun run build` - build SDK packages + CLI (`shared → llms → rpc → agents → core → cli`)
+- `bun run build` - build SDK packages + CLI (`shared → llms → scheduler → rpc → agents → core → cli`)
 - `bun run build:sdk` - build only SDK packages (no CLI)
 - `bun run build:apps` - build app targets (`cli` + `desktop` + `code`)
 - `bun run build:shared|build:llms|build:agents|build:rpc|build:core|build:cli|build:code|build:desktop` - build one workspace package
@@ -56,13 +56,15 @@ Useful workspace scripts (root `package.json`):
 
 # Repository Structure
 
-It is organized as a Bun workspace with four SDK packages and three app targets:
+It is organized as a Bun workspace with six SDK packages and three app targets:
 
 SDK packages (`packages/`):
 
+- `@cline/shared`: cross-package shared primitives (paths, common contracts, db/storage helpers)
 - `@cline/llms`: model/provider selection and handler creation
+- `@cline/scheduler`: scheduled runtime execution primitives and persistence
 - `@cline/agents`: agent loop + tools + hooks + teams runtime primitives
-- `@cline/rpc`: gRPC routing server for clients, sessions, tasks, and tool approvals
+- `@cline/rpc`: gRPC routing server for clients, sessions, tasks, tool approvals, and schedules
 - `@cline/core`: stateful orchestration, sessions, storage, runtime assembly
 
 Apps built with the Cline SDK (`apps/`):
@@ -111,6 +113,9 @@ Apps built with the Cline SDK (`apps/`):
 - Both app hosts use one persistent `chat-runtime-bridge.ts` process per app (`apps/code/scripts/chat-runtime-bridge.ts`, `apps/desktop/scripts/chat-runtime-bridge.ts`).
 - Bridge command/control is shared via `@cline/rpc` `runRpcRuntimeCommandBridge(...)`.
 - Bridge stream subscription handling remains shared via `@cline/rpc` runtime chat helpers.
+- Runtime `send` commands in the shared bridge are now bounded (default `120000ms`, configurable by `CLINE_RPC_RUNTIME_SEND_TIMEOUT_MS`) so one stalled turn cannot wedge the bridge command loop.
+- The code app host also bounds bridge command waits (`130000ms`) and returns a timeout error instead of remaining indefinitely in `running`.
+- RPC runtime request parsing now normalizes invalid optional `maxIterations` values (especially JSON `null` from host serializers) to `undefined` to avoid immediate `max_iterations` exits at iteration `0`.
 
 ## Linting and Formatting (Biome)
 
@@ -138,6 +143,7 @@ Detailed testing strategy (including CLI e2e execution flow, current e2e coverag
 Allowed cross-workspace imports:
 
 - `@cline/llms`
+- `@cline/scheduler`
 - `@cline/agents`
 - `@cline/rpc`
 - `@cline/core`
@@ -159,6 +165,9 @@ Keep these boundaries in mind when adding imports — cross-boundary deep import
 ├── package.json
 ├── biome.json
 ├── packages/
+│   ├── shared/
+│   │   ├── README.md
+│   │   └── src/
 │   ├── llms/
 │   │   ├── README.md
 │   │   ├── ARCHITECTURE.md
@@ -185,6 +194,14 @@ Keep these boundaries in mind when adding imports — cross-boundary deep import
 │   │       ├── default-tools/
 │   │       ├── teams/
 │   │       └── prompts/
+│   ├── scheduler/
+│   │   ├── README.md
+│   │   └── src/
+│   │       ├── index.ts
+│   │       ├── scheduler-service.ts
+│   │       ├── schedule-store.ts
+│   │       ├── resource-limiter.ts
+│   │       └── cron.ts
 │   ├── rpc/
 │   │   ├── README.md
 │   │   └── src/
@@ -274,14 +291,31 @@ Start with:
 - `packages/agents/src/tools/`
 - `packages/agents/src/teams/`
 
+### `packages/scheduler` (`@cline/scheduler`)
+
+Purpose: reusable scheduled-agent execution service.
+
+Use this package to:
+
+- manage cron schedule definitions and execution history in SQLite
+- enforce global and per-schedule concurrency/timeout controls
+- run scheduled prompts through injected runtime handlers
+
+Start with:
+
+- `packages/scheduler/README.md`
+- `packages/scheduler/src/scheduler-service.ts`
+- `packages/scheduler/src/schedule-store.ts`
+
 ### `packages/rpc` (`@cline/rpc`)
 
-Purpose: gRPC gateway for routing clients, sessions, tasks, and tool approvals.
+Purpose: gRPC gateway for routing clients, sessions, tasks, tool approvals, and schedules.
 
 Use this package to:
 
 - start and connect to a local gRPC server (default `127.0.0.1:4317`)
 - register clients and manage session lifecycle
+- create/list/update/trigger schedules and query schedule executions/stats
 - enqueue and claim spawn requests for sub-agents
 - stream events and handle tool approval flows
 

@@ -18,6 +18,7 @@ Packages:
 
 - `packages/shared` (`@cline/shared`): cross-package primitives (paths, common types, helpers).
 - `packages/llms` (`@cline/llms`): provider settings schema, model catalog, handler creation.
+- `packages/scheduler` (`@cline/scheduler`): cron-based scheduled agent orchestration, execution limits, and schedule/execution persistence.
 - `packages/agents` (`@cline/agents`): stateless runtime loop, tools, hooks, teams.
 - `packages/rpc` (`@cline/rpc`): transport/control-plane APIs (session CRUD, tasks, events, approvals) plus shared runtime chat client helpers (`RpcRuntimeChatClient`, `runRpcRuntimeEventBridge`, `runRpcRuntimeCommandBridge`).
 - `packages/core` (`@cline/core`) stateful orchestration (runtime composition, sessions, storage, RPC-backed session adapter).
@@ -36,6 +37,7 @@ Dependency direction:
 flowchart LR
   shared["@cline/shared"]
   llms["@cline/llms"]
+  scheduler["@cline/scheduler"]
   agents["@cline/agents"]
   rpc["@cline/rpc"]
   core["@cline/core"]
@@ -45,6 +47,8 @@ flowchart LR
 
   agents --> llms
   agents --> shared
+  scheduler --> shared
+  rpc --> scheduler
   rpc --> shared
   core --> agents
   core --> llms
@@ -68,7 +72,8 @@ flowchart LR
 
 1. Host uses `RpcCoreSessionService` (through `@cline/core`) for session persistence/control-plane calls.
 2. `@cline/rpc` server handles session/task/event/approval RPCs.
-3. SQLite session backend is provided by `@cline/core/server` (`createSqliteRpcSessionBackend`).
+3. `@cline/rpc` embeds `@cline/scheduler` for `CreateSchedule/ListSchedules/...` APIs and scheduled runtime execution.
+4. SQLite session backend is provided by `@cline/core/server` (`createSqliteRpcSessionBackend`).
 
 ### OAuth refresh ownership
 
@@ -193,6 +198,7 @@ After editing a package, rebuild it before running tests or other packages:
 # Rebuild a single package
 bun -F @cline/shared build
 bun -F @cline/llms build
+bun -F @cline/scheduler build
 bun -F @cline/agents build
 bun -F @cline/rpc build
 bun -F @cline/core build
@@ -205,11 +211,11 @@ bun run build:sdk
 bun run build
 ```
 
-Build order for SDK packages (dependency order): `shared → llms → (rpc, agents in parallel) → core`
+Build order for SDK packages (dependency order): `shared → llms → scheduler → (rpc, agents in parallel) → core`
 
 ### RPC server restart required after changes
 
-The RPC server (`clite rpc start`) loads compiled code at startup. After making changes to **any package the RPC server depends on** (`@cline/shared`, `@cline/llms`, `@cline/agents`, `@cline/rpc`, `@cline/core`, or `@cline/cli`), you must:
+The RPC server (`clite rpc start`) loads compiled code at startup. After making changes to **any package the RPC server depends on** (`@cline/shared`, `@cline/llms`, `@cline/scheduler`, `@cline/agents`, `@cline/rpc`, `@cline/core`, or `@cline/cli`), you must:
 
 1. Rebuild the affected packages (`bun run build:sdk` or the individual `build:<package>` script).
 2. Stop the running RPC server (`clite rpc stop` or Ctrl+C on the `clite rpc start` process).
@@ -227,6 +233,7 @@ Without a restart the server continues running the old compiled code regardless 
 ## Change Routing
 
 - Provider/model schema changes: `@cline/llms`
+- Scheduled runtime orchestration and cron execution: `@cline/scheduler`
 - Tool/agent loop behavior: `@cline/agents`
 - Session persistence/lifecycle/runtime assembly: `@cline/core`
 - Remote/control-plane contracts: `@cline/rpc` (`packages/rpc/src/proto/rpc.proto`)

@@ -1,0 +1,28 @@
+{
+	"name": "@cline/scheduler",
+	"version": "0.0.0",
+	"description": "Scheduled runtime execution primitives for Cline RPC hosts",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"development": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"src"
+	],
+	"scripts": {
+		"build": "bun run bun.mts && bun tsc --emitDeclarationOnly",
+		"clean": "rm -rf dist node_modules",
+		"typecheck": "bun tsc --noEmit"
+	},
+	"dependencies": {
+		"@cline/shared": "workspace:*"
+	},
+	"private": true
+}

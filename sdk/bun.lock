@@ -37,6 +37,7 @@
         "pino": "^10.3.1",
         "react": "^19.2.4",
         "react-devtools-core": "^7.0.1",
+        "yaml": "^2.8.2",
       },
     },
     "apps/code": {
@@ -254,8 +255,16 @@
       "name": "@cline/rpc",
       "version": "0.0.0",
       "dependencies": {
+        "@cline/scheduler": "workspace:*",
         "@grpc/grpc-js": "^1.14.0",
         "@grpc/proto-loader": "^0.8.0",
+      },
+    },
+    "packages/scheduler": {
+      "name": "@cline/scheduler",
+      "version": "0.0.0",
+      "dependencies": {
+        "@cline/shared": "workspace:*",
       },
     },
     "packages/shared": {
@@ -397,6 +406,8 @@
     "@cline/llms": ["@cline/llms@workspace:packages/llms"],
 
     "@cline/rpc": ["@cline/rpc@workspace:packages/rpc"],
+
+    "@cline/scheduler": ["@cline/scheduler@workspace:packages/scheduler"],
 
     "@cline/shared": ["@cline/shared@workspace:packages/shared"],
 

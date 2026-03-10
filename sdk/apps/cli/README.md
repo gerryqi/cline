@@ -160,6 +160,26 @@ clite rpc ensure --address 127.0.0.1:4317 --json
 # For new client to call to register with the RPC gateway
 clite rpc register --address 127.0.0.1:4317 --client-type desktop --client-id code-desktop
 clite rpc register --meta app=code --meta host=tauri
+
+# Schedule agents on cron-like intervals (runs through RPC server runtime)
+clite schedule create "Daily code review" \
+  --cron "0 9 * * MON-FRI" \
+  --prompt "Review PRs opened yesterday and summarize issues." \
+  --workspace /path/to/repo \
+  --provider cline \
+  --model openai/gpt-5.3-codex \
+  --timeout 3600 \
+  --max-iterations 50 \
+  --tags automation,review
+clite schedule list
+clite schedule get <schedule-id>
+clite schedule trigger <schedule-id>
+clite schedule history <schedule-id> --limit 20
+clite schedule stats <schedule-id>
+clite schedule active
+clite schedule upcoming --limit 10
+clite schedule export <schedule-id> > daily-review.yaml
+clite schedule import ./daily-review.yaml
 ```
 
 ## OAuth Authentication
@@ -180,6 +200,10 @@ During OAuth login, `clite` tries to open the authorization URL in your default 
 - Sign in with ChatGPT Subscription (`openai-codex`)
 - Sign in with OCA
 - Use your own API key (provider + model + optional base URL)
+
+RPC runtime note:
+
+- RPC chat payload parsers normalize invalid optional `maxIterations` values (including JSON `null`) to `undefined` so sessions do not terminate immediately with `finishReason="max_iterations"` at iteration 0.
 
 ## Options
 
@@ -232,6 +256,8 @@ Subcommands:
 - `clite rpc stop` - Request graceful shutdown of the RPC gateway
 - `clite rpc ensure` - Ensure a compatible runtime-capable RPC server is available and return the effective address
 - `clite rpc register` - Register a client id/type (+ optional metadata) with the RPC gateway
+- `clite schedule create` - Create a scheduled runtime job
+- `clite schedule list|get|update|pause|resume|delete|trigger|history|stats|active|upcoming|import|export` - Manage schedule definitions and execution history
 - `clite list ...` - List workflows/rules/skills/agents/history/hooks/mcp
 
 Auth quick-setup flags:

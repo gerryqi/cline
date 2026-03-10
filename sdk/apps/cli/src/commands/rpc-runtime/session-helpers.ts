@@ -140,11 +140,43 @@ export function applyHomeDir(config: RpcChatStartSessionRequest): void {
 export function parseStartPayload(
 	requestJson: string,
 ): RpcChatStartSessionRequest {
-	return JSON.parse(requestJson) as RpcChatStartSessionRequest;
+	const parsed = JSON.parse(requestJson) as RpcChatStartSessionRequest & {
+		maxIterations?: unknown;
+	};
+	const normalizedMaxIterations =
+		typeof parsed.maxIterations === "number" &&
+		Number.isFinite(parsed.maxIterations) &&
+		parsed.maxIterations > 0
+			? Math.floor(parsed.maxIterations)
+			: undefined;
+	return {
+		...parsed,
+		maxIterations: normalizedMaxIterations,
+	};
 }
 
 export function parseSendPayload(requestJson: string): RpcChatRunTurnRequest {
-	return JSON.parse(requestJson) as RpcChatRunTurnRequest;
+	const parsed = JSON.parse(requestJson) as RpcChatRunTurnRequest & {
+		config?: RpcChatRunTurnRequest["config"] & {
+			maxIterations?: unknown;
+		};
+	};
+	if (!parsed.config) {
+		return parsed;
+	}
+	const normalizedMaxIterations =
+		typeof parsed.config.maxIterations === "number" &&
+		Number.isFinite(parsed.config.maxIterations) &&
+		parsed.config.maxIterations > 0
+			? Math.floor(parsed.config.maxIterations)
+			: undefined;
+	return {
+		...parsed,
+		config: {
+			...parsed.config,
+			maxIterations: normalizedMaxIterations,
+		},
+	};
 }
 
 function toRpcMessages(messages: LlmsProviders.Message[]): RpcChatMessage[] {

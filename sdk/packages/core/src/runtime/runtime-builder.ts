@@ -35,6 +35,8 @@ type SkillsExecutorMetadataItem = {
 	disabled: boolean;
 };
 
+const WORKSPACE_CONFIGURATION_MARKER = "# Workspace Configuration";
+
 type SkillsExecutorWithMetadata = SkillsExecutor & {
 	configuredSkills?: SkillsExecutorMetadataItem[];
 };
@@ -242,6 +244,17 @@ function shutdownTeamRuntime(
 	}
 }
 
+function extractWorkspaceMetadataFromSystemPrompt(
+	systemPrompt: string,
+): string | undefined {
+	const markerIndex = systemPrompt.lastIndexOf(WORKSPACE_CONFIGURATION_MARKER);
+	if (markerIndex < 0) {
+		return undefined;
+	}
+	const metadata = systemPrompt.slice(markerIndex).trim();
+	return metadata.length > 0 ? metadata : undefined;
+}
+
 function normalizeConfig(
 	config: CoreSessionConfig,
 ): Required<
@@ -411,11 +424,16 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 					teammateRuntime: {
 						providerId: config.providerId,
 						modelId: config.modelId,
+						cwd: config.cwd,
 						apiKey: config.apiKey ?? "",
 						baseUrl: config.baseUrl,
 						headers: config.headers,
 						knownModels: config.knownModels,
 						thinking: config.thinking,
+						clineWorkspaceMetadata:
+							config.providerId === "cline"
+								? extractWorkspaceMetadataFromSystemPrompt(config.systemPrompt)
+								: undefined,
 						maxIterations: config.maxIterations,
 						hooks,
 						extensions: extensions ?? config.extensions,

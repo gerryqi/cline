@@ -160,4 +160,44 @@ describe("DefaultRuntimeBuilder team persistence boundary", () => {
 			}),
 		);
 	});
+
+	it("forwards cline workspace metadata to teammate runtime bootstrap config", async () => {
+		const { DefaultRuntimeBuilder } = await import("./runtime-builder");
+		bootstrapAgentTeamsMock.mockClear();
+
+		new DefaultRuntimeBuilder().build({
+			config: {
+				providerId: "cline",
+				modelId: "anthropic/claude-sonnet-4.6",
+				apiKey: "key",
+				systemPrompt: `Base instructions.
+
+# Workspace Configuration
+{
+  "workspaces": {
+    "/repo/demo": {
+      "hint": "demo",
+      "latestGitBranchName": "main"
+    }
+  }
+}`,
+				cwd: "/repo/demo",
+				enableTools: false,
+				enableSpawnAgent: false,
+				enableAgentTeams: true,
+			},
+		});
+
+		expect(bootstrapAgentTeamsMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				teammateRuntime: expect.objectContaining({
+					providerId: "cline",
+					cwd: "/repo/demo",
+					clineWorkspaceMetadata: expect.stringContaining(
+						"# Workspace Configuration",
+					),
+				}),
+			}),
+		);
+	});
 });

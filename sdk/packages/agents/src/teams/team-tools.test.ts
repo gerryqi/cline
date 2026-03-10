@@ -318,6 +318,67 @@ describe("createAgentTeamsTools runtime behavior", () => {
 		);
 	});
 
+	it("injects workspace metadata into cline teammate system prompt", async () => {
+		const spawnTeammate = vi.fn();
+		const runtime = {
+			getMemberRole: vi.fn(() => "lead"),
+			isTeammateActive: vi.fn(() => false),
+			spawnTeammate,
+		} as unknown as AgentTeamsRuntime;
+
+		const workspaceMetadata = `# Workspace Configuration
+{
+  "workspaces": {
+    "/repo/app": {
+      "hint": "app",
+      "latestGitBranchName": "main"
+    }
+  }
+}`;
+
+		const tools = createAgentTeamsTools({
+			runtime,
+			requesterId: "lead",
+			teammateRuntime: {
+				providerId: "cline",
+				modelId: "anthropic/claude-sonnet-4.6",
+				cwd: "/repo/app",
+				clineWorkspaceMetadata: workspaceMetadata,
+			},
+		});
+		const spawnTool = tools.find((tool) => tool.name === "team_spawn_teammate");
+		expect(spawnTool).toBeDefined();
+
+		await spawnTool?.execute(
+			{
+				agentId: "researcher",
+				rolePrompt: "Investigate runtime boundary regressions.",
+			},
+			{
+				agentId: "lead",
+				conversationId: "conv-1",
+				iteration: 1,
+			},
+		);
+
+		expect(spawnTeammate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				config: expect.objectContaining({
+					systemPrompt: expect.stringContaining(workspaceMetadata),
+				}),
+			}),
+		);
+		expect(spawnTeammate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				config: expect.objectContaining({
+					systemPrompt: expect.stringContaining(
+						"# Team Teammate Role\nInvestigate runtime boundary regressions.",
+					),
+				}),
+			}),
+		);
+	});
+
 	it("throws from team_await_run when async delegated run fails", async () => {
 		const runtime = {
 			awaitRun: vi.fn(async () => ({

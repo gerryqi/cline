@@ -10,6 +10,7 @@ ${c.bold}USAGE${c.reset}
   clite config                Open interactive config view
   clite auth <provider>       Authenticate with a provider (cline|openai-codex|oca)
   clite hook < payload.json   Handle hook payload from stdin
+  clite schedule <command>    Manage scheduled agent runs via RPC server
   clite list <workflows|rules|skills|agents|history|hooks|mcp>
                               List workflow/rule/skill/agent configs, history, or hook file paths
   echo "prompt" | clite       Pipe input
@@ -55,7 +56,6 @@ ${c.bold}OPTIONS${c.reset}
   -v, --version               Show version
 
 ${c.bold}ENVIRONMENT${c.reset}
-  ANTHROPIC_API_KEY           API key for Anthropic
   CLINE_API_KEY               API key for CLINE (when using -p cline)
   CLINE_DATA_DIR              Base data directory (sessions/settings/teams/hooks)
   CLINE_LOG_ENABLED           Set to 0/false to disable runtime file logging
@@ -65,32 +65,6 @@ ${c.bold}ENVIRONMENT${c.reset}
   CLINE_SANDBOX               Set to 1 to force sandbox mode
   CLINE_SANDBOX_DATA_DIR      Override sandbox state directory
   CLINE_TEAM_DATA_DIR         Override team persistence directory
-  OPENAI_API_KEY              API key for OpenAI (when using -p openai)
-  OPENROUTER_API_KEY          API key for Openrouter (when using -p openrouter)
-  AI_GATEWAY_API_KEY          API key for Vercel AI Gateway (when using -p vercel-ai-gateway)
-
-${c.bold}EXAMPLES${c.reset}
-  clite list history
-  clite --session 1700000000000_abcde_cli
-  clite list workflows
-  clite list rules --json
-  clite list skills
-  clite list agents
-  clite list hooks
-  clite list mcp
-  clite config
-  clite auth
-  clite auth openai-codex
-  clite auth --provider anthropic --apikey sk-xxx --modelid claude-sonnet-4-6
-  clite auth oca
-  clite "What is 2+2?"
-  clite "Read package.json and summarize it"
-  clite "Search for TODO comments in the codebase"
-  clite -s "You are a pirate" "Tell me about the sea"
-  clite -i
-  clite --tools --teams "Create teammates for planner/coder/reviewer and execute tasks"
-  clite --no-tools "Answer from general knowledge only"
-  cat file.txt | clite "Summarize this"
 
 ${c.bold}INTERNAL${c.reset}
   clite rpc <start|status|stop|ensure> --address <host:port>
@@ -99,6 +73,10 @@ ${c.bold}INTERNAL${c.reset}
 						  Register a client with RPC server (e.g. --client-type desktop --client-id example)
   clite rpc ensure --json
 						  Ensure compatible runtime server, auto-selecting a new port when needed
+  clite schedule create <name> --cron "<expr>" --prompt "<text>" --workspace <path>
+						  Create a scheduled agent execution
+  clite schedule <create|list|get|update|pause|resume|delete|trigger|history|stats|active|upcoming|import|export>
+						  Manage schedules and execution history
 `);
 }
 

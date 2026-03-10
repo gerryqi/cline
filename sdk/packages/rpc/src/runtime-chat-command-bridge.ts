@@ -64,6 +64,15 @@ function parseResultPayload(raw: string): unknown {
 	}
 }
 
+function getSendTimeoutMs(): number {
+	const raw = process.env.CLINE_RPC_RUNTIME_SEND_TIMEOUT_MS?.trim();
+	const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+	if (Number.isInteger(parsed) && parsed > 0) {
+		return parsed;
+	}
+	return 120000;
+}
+
 export async function runRpcRuntimeCommandBridge(options: {
 	clientId: string;
 	writeLine: (line: RpcRuntimeBridgeCommandOutputLine) => void;
@@ -100,10 +109,19 @@ export async function runRpcRuntimeCommandBridge(options: {
 		}
 		if (command.action === "send") {
 			options.onBeforeSend?.(command.request);
-			const resultRaw = await client.sendSession(
-				command.sessionId,
-				command.request,
-			);
+			const sendTimeoutMs = getSendTimeoutMs();
+			const resultRaw = await Promise.race<string>([
+				client.sendSession(command.sessionId, command.request),
+				new Promise<string>((_resolve, reject) => {
+					setTimeout(() => {
+						reject(
+							new Error(
+								`runtime send timed out after ${sendTimeoutMs}ms for session ${command.sessionId}`,
+							),
+						);
+					}, sendTimeoutMs);
+				}),
+			]);
 			const parsedResult = options.parseSendResult
 				? options.parseSendResult(resultRaw)
 				: parseResultPayload(resultRaw);

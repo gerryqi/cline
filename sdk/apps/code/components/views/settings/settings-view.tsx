@@ -18,6 +18,7 @@ import {
 	ProviderDetailContent,
 	ProviderListContent,
 } from "./provider-list-view";
+import { RoutineSchedulesContent } from "./routine-view";
 
 // -----------------------------------------------------------
 // Settings nav categories
@@ -29,6 +30,7 @@ const navCategories = [
 	"Extensions",
 	"Features",
 	"MCP",
+	"Routine",
 	"Account",
 ] as const;
 
@@ -389,6 +391,8 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 						)
 					) : activeNav === "MCP" ? (
 						<McpServersContent />
+					) : activeNav === "Routine" ? (
+						<RoutineSchedulesContent />
 					) : activeNav === "Extensions" ? (
 						<RulesView />
 					) : (

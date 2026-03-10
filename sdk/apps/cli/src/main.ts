@@ -26,6 +26,7 @@ import {
 	runRpcStatusCommand,
 	runRpcStopCommand,
 } from "./commands/rpc";
+import { runScheduleCommand } from "./commands/schedule";
 import { showHelp, showVersion } from "./help";
 import { createCliLoggerAdapter } from "./logging/adapter";
 import { resolveSystemPrompt } from "./runtime/prompt";
@@ -119,6 +120,10 @@ export async function runCli(): Promise<void> {
 			baseurl: parsedAuthArgs.baseurl,
 			io: { writeln, writeErr },
 		});
+		process.exit(code);
+	}
+	if (rawArgs[0] === "schedule") {
+		const code = await runScheduleCommand(rawArgs, { writeln, writeErr });
 		process.exit(code);
 	}
 	if (rawArgs[0] === "list") {

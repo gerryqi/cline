@@ -10,19 +10,31 @@ import type { AbortRuntimeSessionResponse__Output } from "./proto/generated/clin
 import type { ClaimSpawnRequestRequest } from "./proto/generated/cline/rpc/v1/ClaimSpawnRequestRequest.js";
 import type { ClaimSpawnRequestResponse__Output } from "./proto/generated/cline/rpc/v1/ClaimSpawnRequestResponse.js";
 import type { ClineGatewayClient } from "./proto/generated/cline/rpc/v1/ClineGateway.js";
+import type { CreateScheduleResponse__Output } from "./proto/generated/cline/rpc/v1/CreateScheduleResponse.js";
+import type { DeleteScheduleResponse__Output } from "./proto/generated/cline/rpc/v1/DeleteScheduleResponse.js";
 import type { DeleteSessionResponse__Output } from "./proto/generated/cline/rpc/v1/DeleteSessionResponse.js";
 import type { EnqueueSpawnRequestResponse__Output } from "./proto/generated/cline/rpc/v1/EnqueueSpawnRequestResponse.js";
+import type { GetActiveScheduledExecutionsResponse__Output } from "./proto/generated/cline/rpc/v1/GetActiveScheduledExecutionsResponse.js";
+import type { GetScheduleResponse__Output } from "./proto/generated/cline/rpc/v1/GetScheduleResponse.js";
+import type { GetScheduleStatsResponse__Output } from "./proto/generated/cline/rpc/v1/GetScheduleStatsResponse.js";
 import type { GetSessionResponse__Output } from "./proto/generated/cline/rpc/v1/GetSessionResponse.js";
+import type { GetUpcomingScheduledRunsResponse__Output } from "./proto/generated/cline/rpc/v1/GetUpcomingScheduledRunsResponse.js";
 import type { ListPendingApprovalsResponse__Output } from "./proto/generated/cline/rpc/v1/ListPendingApprovalsResponse.js";
+import type { ListScheduleExecutionsResponse__Output } from "./proto/generated/cline/rpc/v1/ListScheduleExecutionsResponse.js";
+import type { ListSchedulesResponse__Output } from "./proto/generated/cline/rpc/v1/ListSchedulesResponse.js";
 import type { ListSessionsResponse__Output } from "./proto/generated/cline/rpc/v1/ListSessionsResponse.js";
+import type { PauseScheduleResponse__Output } from "./proto/generated/cline/rpc/v1/PauseScheduleResponse.js";
 import type { PublishEventResponse__Output } from "./proto/generated/cline/rpc/v1/PublishEventResponse.js";
 import type { RequestToolApprovalRequest } from "./proto/generated/cline/rpc/v1/RequestToolApprovalRequest.js";
 import type { RequestToolApprovalResponse__Output } from "./proto/generated/cline/rpc/v1/RequestToolApprovalResponse.js";
 import type { RespondToolApprovalRequest } from "./proto/generated/cline/rpc/v1/RespondToolApprovalRequest.js";
 import type { RespondToolApprovalResponse__Output } from "./proto/generated/cline/rpc/v1/RespondToolApprovalResponse.js";
+import type { ResumeScheduleResponse__Output } from "./proto/generated/cline/rpc/v1/ResumeScheduleResponse.js";
 import type { RoutedEvent__Output } from "./proto/generated/cline/rpc/v1/RoutedEvent.js";
 import type { RunProviderActionResponse__Output } from "./proto/generated/cline/rpc/v1/RunProviderActionResponse.js";
 import type { RunProviderOAuthLoginResponse__Output } from "./proto/generated/cline/rpc/v1/RunProviderOAuthLoginResponse.js";
+import type { Schedule__Output } from "./proto/generated/cline/rpc/v1/Schedule.js";
+import type { ScheduleExecution__Output } from "./proto/generated/cline/rpc/v1/ScheduleExecution.js";
 import type { SendRuntimeSessionResponse__Output } from "./proto/generated/cline/rpc/v1/SendRuntimeSessionResponse.js";
 import type {
 	SessionRecord,
@@ -30,10 +42,19 @@ import type {
 } from "./proto/generated/cline/rpc/v1/SessionRecord.js";
 import type { StartRuntimeSessionResponse__Output } from "./proto/generated/cline/rpc/v1/StartRuntimeSessionResponse.js";
 import type { StopRuntimeSessionResponse__Output } from "./proto/generated/cline/rpc/v1/StopRuntimeSessionResponse.js";
+import type { TriggerScheduleNowResponse__Output } from "./proto/generated/cline/rpc/v1/TriggerScheduleNowResponse.js";
+import type { UpcomingScheduledRun__Output } from "./proto/generated/cline/rpc/v1/UpcomingScheduledRun.js";
+import type { UpdateScheduleRequest } from "./proto/generated/cline/rpc/v1/UpdateScheduleRequest.js";
+import type { UpdateScheduleResponse__Output } from "./proto/generated/cline/rpc/v1/UpdateScheduleResponse.js";
 import type { UpdateSessionRequest } from "./proto/generated/cline/rpc/v1/UpdateSessionRequest.js";
 import type { UpdateSessionResponse__Output } from "./proto/generated/cline/rpc/v1/UpdateSessionResponse.js";
 import type { UpsertSessionRequest } from "./proto/generated/cline/rpc/v1/UpsertSessionRequest.js";
-import type { RpcSessionRow, RpcSessionUpdateInput } from "./types.js";
+import type {
+	RpcScheduleExecution,
+	RpcScheduleRecord,
+	RpcSessionRow,
+	RpcSessionUpdateInput,
+} from "./types.js";
 
 function toMessage(row: RpcSessionRow): SessionRecord {
 	return {
@@ -96,6 +117,101 @@ function fromMessage(message: SessionRecord__Output): RpcSessionRow {
 		hookPath: message.hookPath ?? "",
 		messagesPath: message.messagesPath || undefined,
 		updatedAt: message.updatedAt ?? "",
+	};
+}
+
+function parseJsonArray(raw: string | undefined): string[] | undefined {
+	const value = raw?.trim();
+	if (!value) {
+		return undefined;
+	}
+	try {
+		const parsed = JSON.parse(value) as unknown;
+		if (!Array.isArray(parsed)) {
+			return undefined;
+		}
+		const out = parsed
+			.map((item) => (typeof item === "string" ? item.trim() : ""))
+			.filter((item) => item.length > 0);
+		return out.length > 0 ? out : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function parseJsonObject(
+	raw: string | undefined,
+): Record<string, unknown> | undefined {
+	const value = raw?.trim();
+	if (!value) {
+		return undefined;
+	}
+	try {
+		const parsed = JSON.parse(value) as unknown;
+		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+			return parsed as Record<string, unknown>;
+		}
+	} catch {
+		// ignore malformed payload
+	}
+	return undefined;
+}
+
+function fromSchedule(message: Schedule__Output): RpcScheduleRecord {
+	return {
+		scheduleId: message.scheduleId ?? "",
+		name: message.name ?? "",
+		cronPattern: message.cronPattern ?? "",
+		prompt: message.prompt ?? "",
+		provider: message.provider ?? "",
+		model: message.model ?? "",
+		mode: message.mode === "plan" ? "plan" : "act",
+		workspaceRoot: message.workspaceRoot?.trim() || undefined,
+		cwd: message.cwd?.trim() || undefined,
+		systemPrompt: message.systemPrompt?.trim() || undefined,
+		maxIterations: message.hasMaxIterations ? message.maxIterations : undefined,
+		timeoutSeconds: message.hasTimeoutSeconds
+			? message.timeoutSeconds
+			: undefined,
+		maxParallel:
+			typeof message.maxParallel === "number" && message.maxParallel > 0
+				? message.maxParallel
+				: 1,
+		enabled: message.enabled === true,
+		createdAt: message.createdAt ?? "",
+		updatedAt: message.updatedAt ?? "",
+		lastRunAt: message.lastRunAt?.trim() || undefined,
+		nextRunAt: message.nextRunAt?.trim() || undefined,
+		createdBy: message.createdBy?.trim() || undefined,
+		tags: parseJsonArray(message.tagsJson ?? undefined),
+		metadata: parseJsonObject(message.metadataJson ?? undefined),
+	};
+}
+
+function fromScheduleExecution(
+	message: ScheduleExecution__Output,
+): RpcScheduleExecution {
+	return {
+		executionId: message.executionId ?? "",
+		scheduleId: message.scheduleId ?? "",
+		sessionId: message.sessionId?.trim() || undefined,
+		triggeredAt: message.triggeredAt ?? "",
+		startedAt: message.startedAt?.trim() || undefined,
+		endedAt: message.endedAt?.trim() || undefined,
+		status:
+			message.status === "pending" ||
+			message.status === "running" ||
+			message.status === "success" ||
+			message.status === "failed" ||
+			message.status === "timeout" ||
+			message.status === "aborted"
+				? message.status
+				: "failed",
+		exitCode: message.hasExitCode ? message.exitCode : undefined,
+		errorMessage: message.errorMessage?.trim() || undefined,
+		iterations: message.hasIterations ? message.iterations : undefined,
+		tokensUsed: message.hasTokensUsed ? message.tokensUsed : undefined,
+		costUsd: message.hasCostUsd ? message.costUsd : undefined,
 	};
 }
 
@@ -387,6 +503,315 @@ export class RpcSessionClient {
 			inputJson: approval.inputJson ?? "",
 			requesterClientId: approval.requesterClientId ?? "",
 			createdAt: approval.createdAt ?? "",
+		}));
+	}
+
+	public async createSchedule(input: {
+		name: string;
+		cronPattern: string;
+		prompt: string;
+		provider: string;
+		model: string;
+		mode?: "act" | "plan";
+		workspaceRoot?: string;
+		cwd?: string;
+		systemPrompt?: string;
+		maxIterations?: number;
+		timeoutSeconds?: number;
+		maxParallel?: number;
+		enabled?: boolean;
+		createdBy?: string;
+		tags?: string[];
+		metadata?: Record<string, unknown>;
+	}): Promise<RpcScheduleRecord | undefined> {
+		const response = await this.unary<CreateScheduleResponse__Output>(
+			(callback) => {
+				this.client.CreateSchedule(
+					{
+						name: input.name,
+						cronPattern: input.cronPattern,
+						prompt: input.prompt,
+						provider: input.provider,
+						model: input.model,
+						mode: input.mode ?? "act",
+						workspaceRoot: input.workspaceRoot,
+						cwd: input.cwd,
+						systemPrompt: input.systemPrompt,
+						maxIterations: input.maxIterations ?? 0,
+						hasMaxIterations: typeof input.maxIterations === "number",
+						timeoutSeconds: input.timeoutSeconds ?? 0,
+						hasTimeoutSeconds: typeof input.timeoutSeconds === "number",
+						maxParallel: input.maxParallel ?? 1,
+						enabled: input.enabled ?? true,
+						createdBy: input.createdBy,
+						tagsJson: input.tags ? JSON.stringify(input.tags) : "",
+						metadataJson: input.metadata ? JSON.stringify(input.metadata) : "",
+					},
+					callback,
+				);
+			},
+		);
+		return response.schedule ? fromSchedule(response.schedule) : undefined;
+	}
+
+	public async getSchedule(
+		scheduleId: string,
+	): Promise<RpcScheduleRecord | undefined> {
+		const response = await this.unary<GetScheduleResponse__Output>(
+			(callback) => {
+				this.client.GetSchedule({ scheduleId }, callback);
+			},
+		);
+		return response.schedule ? fromSchedule(response.schedule) : undefined;
+	}
+
+	public async listSchedules(input?: {
+		limit?: number;
+		enabled?: boolean;
+		tags?: string[];
+	}): Promise<RpcScheduleRecord[]> {
+		const response = await this.unary<ListSchedulesResponse__Output>(
+			(callback) => {
+				this.client.ListSchedules(
+					{
+						limit: input?.limit ?? 100,
+						hasEnabled: typeof input?.enabled === "boolean",
+						enabled: input?.enabled ?? false,
+						tagsJson: input?.tags ? JSON.stringify(input.tags) : "",
+					},
+					callback,
+				);
+			},
+		);
+		return (response.schedules ?? []).map((schedule) => fromSchedule(schedule));
+	}
+
+	public async updateSchedule(
+		scheduleId: string,
+		updates: {
+			name?: string;
+			cronPattern?: string;
+			prompt?: string;
+			provider?: string;
+			model?: string;
+			mode?: "act" | "plan";
+			workspaceRoot?: string;
+			cwd?: string;
+			systemPrompt?: string;
+			maxIterations?: number | null;
+			timeoutSeconds?: number | null;
+			maxParallel?: number;
+			enabled?: boolean;
+			createdBy?: string | null;
+			tags?: string[];
+			metadata?: Record<string, unknown>;
+		},
+	): Promise<RpcScheduleRecord | undefined> {
+		const request: UpdateScheduleRequest = {
+			scheduleId,
+		};
+		if (updates.name !== undefined) {
+			request.hasName = true;
+			request.name = updates.name;
+		}
+		if (updates.cronPattern !== undefined) {
+			request.hasCronPattern = true;
+			request.cronPattern = updates.cronPattern;
+		}
+		if (updates.prompt !== undefined) {
+			request.hasPrompt = true;
+			request.prompt = updates.prompt;
+		}
+		if (updates.provider !== undefined) {
+			request.hasProvider = true;
+			request.provider = updates.provider;
+		}
+		if (updates.model !== undefined) {
+			request.hasModel = true;
+			request.model = updates.model;
+		}
+		if (updates.mode !== undefined) {
+			request.hasMode = true;
+			request.mode = updates.mode;
+		}
+		if (updates.workspaceRoot !== undefined) {
+			request.hasWorkspaceRoot = true;
+			request.workspaceRoot = updates.workspaceRoot;
+		}
+		if (updates.cwd !== undefined) {
+			request.hasCwd = true;
+			request.cwd = updates.cwd;
+		}
+		if (updates.systemPrompt !== undefined) {
+			request.hasSystemPrompt = true;
+			request.systemPrompt = updates.systemPrompt;
+		}
+		if (updates.maxIterations === null) {
+			request.clearMaxIterations = true;
+		} else if (updates.maxIterations !== undefined) {
+			request.hasMaxIterations = true;
+			request.maxIterations = updates.maxIterations;
+		}
+		if (updates.timeoutSeconds === null) {
+			request.clearTimeoutSeconds = true;
+		} else if (updates.timeoutSeconds !== undefined) {
+			request.hasTimeoutSeconds = true;
+			request.timeoutSeconds = updates.timeoutSeconds;
+		}
+		if (updates.maxParallel !== undefined) {
+			request.hasMaxParallel = true;
+			request.maxParallel = updates.maxParallel;
+		}
+		if (updates.enabled !== undefined) {
+			request.hasEnabled = true;
+			request.enabled = updates.enabled;
+		}
+		if (updates.createdBy === null) {
+			request.clearCreatedBy = true;
+		} else if (updates.createdBy !== undefined) {
+			request.hasCreatedBy = true;
+			request.createdBy = updates.createdBy;
+		}
+		if (updates.tags !== undefined) {
+			request.hasTagsJson = true;
+			request.tagsJson = JSON.stringify(updates.tags);
+		}
+		if (updates.metadata !== undefined) {
+			request.hasMetadataJson = true;
+			request.metadataJson = JSON.stringify(updates.metadata);
+		}
+
+		const response = await this.unary<UpdateScheduleResponse__Output>(
+			(callback) => {
+				this.client.UpdateSchedule(request, callback);
+			},
+		);
+		return response.schedule ? fromSchedule(response.schedule) : undefined;
+	}
+
+	public async deleteSchedule(scheduleId: string): Promise<boolean> {
+		const response = await this.unary<DeleteScheduleResponse__Output>(
+			(callback) => {
+				this.client.DeleteSchedule({ scheduleId }, callback);
+			},
+		);
+		return response.deleted === true;
+	}
+
+	public async pauseSchedule(
+		scheduleId: string,
+	): Promise<RpcScheduleRecord | undefined> {
+		const response = await this.unary<PauseScheduleResponse__Output>(
+			(callback) => {
+				this.client.PauseSchedule({ scheduleId }, callback);
+			},
+		);
+		return response.schedule ? fromSchedule(response.schedule) : undefined;
+	}
+
+	public async resumeSchedule(
+		scheduleId: string,
+	): Promise<RpcScheduleRecord | undefined> {
+		const response = await this.unary<ResumeScheduleResponse__Output>(
+			(callback) => {
+				this.client.ResumeSchedule({ scheduleId }, callback);
+			},
+		);
+		return response.schedule ? fromSchedule(response.schedule) : undefined;
+	}
+
+	public async triggerScheduleNow(
+		scheduleId: string,
+	): Promise<RpcScheduleExecution | undefined> {
+		const response = await this.unary<TriggerScheduleNowResponse__Output>(
+			(callback) => {
+				this.client.TriggerScheduleNow({ scheduleId }, callback);
+			},
+		);
+		return response.execution
+			? fromScheduleExecution(response.execution)
+			: undefined;
+	}
+
+	public async listScheduleExecutions(input: {
+		scheduleId?: string;
+		status?: string;
+		limit?: number;
+	}): Promise<RpcScheduleExecution[]> {
+		const response = await this.unary<ListScheduleExecutionsResponse__Output>(
+			(callback) => {
+				this.client.ListScheduleExecutions(
+					{
+						scheduleId: input.scheduleId,
+						status: input.status,
+						limit: input.limit ?? 50,
+					},
+					callback,
+				);
+			},
+		);
+		return (response.executions ?? []).map((item) =>
+			fromScheduleExecution(item),
+		);
+	}
+
+	public async getScheduleStats(scheduleId: string): Promise<{
+		totalRuns: number;
+		successRate: number;
+		avgDurationSeconds: number;
+		lastFailure?: RpcScheduleExecution;
+	}> {
+		const response = await this.unary<GetScheduleStatsResponse__Output>(
+			(callback) => {
+				this.client.GetScheduleStats({ scheduleId }, callback);
+			},
+		);
+		return {
+			totalRuns: Number(response.totalRuns ?? 0),
+			successRate: Number(response.successRate ?? 0),
+			avgDurationSeconds: Number(response.avgDurationSeconds ?? 0),
+			lastFailure: response.lastFailure
+				? fromScheduleExecution(response.lastFailure)
+				: undefined,
+		};
+	}
+
+	public async getActiveScheduledExecutions(): Promise<
+		Array<{
+			executionId: string;
+			scheduleId: string;
+			sessionId: string;
+			startedAt: string;
+			timeoutAt?: string;
+		}>
+	> {
+		const response =
+			await this.unary<GetActiveScheduledExecutionsResponse__Output>(
+				(callback) => {
+					this.client.GetActiveScheduledExecutions({}, callback);
+				},
+			);
+		return (response.executions ?? []).map((item) => ({
+			executionId: item.executionId ?? "",
+			scheduleId: item.scheduleId ?? "",
+			sessionId: item.sessionId ?? "",
+			startedAt: item.startedAt ?? "",
+			timeoutAt: item.timeoutAt?.trim() || undefined,
+		}));
+	}
+
+	public async getUpcomingScheduledRuns(
+		limit = 20,
+	): Promise<Array<{ scheduleId: string; name: string; nextRunAt: string }>> {
+		const response = await this.unary<GetUpcomingScheduledRunsResponse__Output>(
+			(callback) => {
+				this.client.GetUpcomingScheduledRuns({ limit }, callback);
+			},
+		);
+		return (response.runs ?? []).map((item: UpcomingScheduledRun__Output) => ({
+			scheduleId: item.scheduleId ?? "",
+			name: item.name ?? "",
+			nextRunAt: item.nextRunAt ?? "",
 		}));
 	}
 

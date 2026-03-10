@@ -10,6 +10,7 @@ Packages:
 
 - `packages/shared` (`@cline/shared`): cross-package primitives (paths, common types, helpers).
 - `packages/llms` (`@cline/llms`): provider settings schema, model catalog, handler creation.
+- `packages/scheduler` (`@cline/scheduler`): cron-based scheduled execution service and persistence.
 - `packages/agents` (`@cline/agents`): stateless runtime loop, tools, hooks, teams.
 - `packages/rpc` (`@cline/rpc`): transport/control-plane APIs (session CRUD, tasks, events, approvals) plus shared runtime chat client helpers.
 - `packages/core` (`@cline/core`): stateful orchestration (runtime composition, sessions, storage, RPC-backed session adapter).
@@ -26,6 +27,7 @@ Apps:
 flowchart LR
   shared["@cline/shared"]
   llms["@cline/llms"]
+  scheduler["@cline/scheduler"]
   agents["@cline/agents"]
   rpc["@cline/rpc"]
   core["@cline/core"]
@@ -35,6 +37,8 @@ flowchart LR
 
   agents --> llms
   agents --> shared
+  scheduler --> shared
+  rpc --> scheduler
   rpc --> shared
   core --> agents
   core --> llms
@@ -57,8 +61,9 @@ flowchart LR
 ### RPC-backed flow
 
 1. Host uses `RpcCoreSessionService` (through `@cline/core`) for session persistence/control-plane calls.
-2. `@cline/rpc` server handles session/task/event/approval RPCs.
-3. SQLite session backend is provided by `@cline/core/server` (`createSqliteRpcSessionBackend`).
+2. `@cline/rpc` server handles session/task/event/approval RPCs and schedule/execution RPCs.
+3. `@cline/rpc` embeds `@cline/scheduler` to trigger scheduled runtime turns with concurrency and timeout guards.
+4. SQLite session backend is provided by `@cline/core/server` (`createSqliteRpcSessionBackend`).
 
 ### Desktop Kanban session discovery (latest)
 

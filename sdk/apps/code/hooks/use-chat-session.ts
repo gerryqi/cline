@@ -128,6 +128,8 @@ const CHAT_WS_ENDPOINT_RETRY_ATTEMPTS = 60;
 const CHAT_WS_ENDPOINT_RETRY_DELAY_MS = 100;
 const CHAT_WS_RECONNECT_BASE_DELAY_MS = 300;
 const CHAT_WS_RECONNECT_MAX_DELAY_MS = 3000;
+const CHAT_WS_REQUEST_TIMEOUT_MS = 120000;
+const OAUTH_MANAGED_PROVIDERS = new Set(["cline", "oca", "openai-codex"]);
 
 export const DEFAULT_CHAT_CONFIG: ChatSessionConfig = {
 	workspaceRoot: "",
@@ -246,6 +248,20 @@ function normalizeRuntimeConfig(config: ChatSessionConfig): ChatSessionConfig {
 		enableSpawn: false,
 		enableTeams: false,
 	};
+}
+
+function resolveCredentialError(config: ChatSessionConfig): string | null {
+	const providerId = config.provider.trim().toLowerCase();
+	if (!providerId) {
+		return "Provider is required before starting a chat session.";
+	}
+	if (OAUTH_MANAGED_PROVIDERS.has(providerId)) {
+		return null;
+	}
+	if (config.apiKey.trim().length > 0) {
+		return null;
+	}
+	return `Missing API key for provider "${config.provider}". Add credentials in Settings, or switch providers.`;
 }
 
 function mapHistoryStatusToChatStatus(
@@ -372,7 +388,6 @@ export function useChatSession() {
 	const hasWsConnectedOnceRef = useRef(false);
 	const wsReadyResolveRef = useRef<(() => void) | null>(null);
 	const wsReadyPromiseRef = useRef<Promise<void> | null>(null);
-	const wsConnectErrorRef = useRef<Error | null>(null);
 	const [chatTransportState, setChatTransportState] =
 		useState<ChatTransportState>("connecting");
 	const wsRequestResolversRef = useRef<
@@ -385,6 +400,7 @@ export function useChatSession() {
 					ok?: boolean;
 				}) => void;
 				reject: (error: Error) => void;
+				timeoutId: ReturnType<typeof setTimeout>;
 			}
 		>
 	>(new Map());
@@ -722,24 +738,34 @@ export function useChatSession() {
 	);
 
 	const postSession = useCallback(async (body: Record<string, unknown>) => {
+		const postViaInvoke = async () => {
+			return await invoke<{
+				sessionId?: string;
+				result?: ChatApiResult;
+				ok?: boolean;
+			}>("chat_session_command", {
+				request: body,
+			});
+		};
 		if (!wsReadyPromiseRef.current) {
-			throw new Error(CHAT_TRANSPORT_UNAVAILABLE_MESSAGE);
+			return await postViaInvoke();
 		}
-		await Promise.race([
-			wsReadyPromiseRef.current,
-			new Promise<void>((_resolve, reject) =>
-				setTimeout(
-					() => reject(new Error(CHAT_TRANSPORT_UNAVAILABLE_MESSAGE)),
-					5000,
+		try {
+			await Promise.race([
+				wsReadyPromiseRef.current,
+				new Promise<void>((_resolve, reject) =>
+					setTimeout(
+						() => reject(new Error(CHAT_TRANSPORT_UNAVAILABLE_MESSAGE)),
+						5000,
+					),
 				),
-			),
-		]);
+			]);
+		} catch {
+			return await postViaInvoke();
+		}
 		const socket = wsRef.current;
 		if (!socket || socket.readyState !== WebSocket.OPEN) {
-			throw (
-				wsConnectErrorRef.current ??
-				new Error(CHAT_TRANSPORT_UNAVAILABLE_MESSAGE)
-			);
+			return await postViaInvoke();
 		}
 		const requestId = makeId("chat_req");
 		const response = await new Promise<{
@@ -747,7 +773,21 @@ export function useChatSession() {
 			result?: ChatApiResult;
 			ok?: boolean;
 		}>((resolve, reject) => {
-			wsRequestResolversRef.current.set(requestId, { resolve, reject });
+			const timeoutId = setTimeout(() => {
+				const pending = wsRequestResolversRef.current.get(requestId);
+				if (!pending) {
+					return;
+				}
+				wsRequestResolversRef.current.delete(requestId);
+				pending.reject(
+					new Error("Chat request timed out waiting for websocket response"),
+				);
+			}, CHAT_WS_REQUEST_TIMEOUT_MS);
+			wsRequestResolversRef.current.set(requestId, {
+				resolve,
+				reject,
+				timeoutId,
+			});
 			socket.send(
 				JSON.stringify({
 					requestId,
@@ -774,12 +814,12 @@ export function useChatSession() {
 		};
 		const rejectPendingRequests = (errorMessage: string) => {
 			for (const pending of wsRequestResolversRef.current.values()) {
+				clearTimeout(pending.timeoutId);
 				pending.reject(new Error(errorMessage));
 			}
 			wsRequestResolversRef.current.clear();
 		};
 		const setTransportUnavailableErrorIfActive = () => {
-			wsConnectErrorRef.current = new Error(CHAT_TRANSPORT_UNAVAILABLE_MESSAGE);
 			if (
 				!activeSessionIdRef.current &&
 				wsRequestResolversRef.current.size === 0
@@ -803,7 +843,6 @@ export function useChatSession() {
 				void connect();
 			}, delayMs);
 		};
-		wsConnectErrorRef.current = null;
 		resetWsReadyPromise();
 		const connect = async () => {
 			let endpoint = "";
@@ -852,7 +891,6 @@ export function useChatSession() {
 				}
 				reconnectAttempt = 0;
 				hasWsConnectedOnceRef.current = true;
-				wsConnectErrorRef.current = null;
 				setChatTransportState("connected");
 				wsReadyResolveRef.current?.();
 				wsReadyResolveRef.current = null;
@@ -881,6 +919,7 @@ export function useChatSession() {
 					if (!resolver) {
 						return;
 					}
+					clearTimeout(resolver.timeoutId);
 					wsRequestResolversRef.current.delete(parsed.requestId);
 					if (parsed.error) {
 						resolver.reject(new Error(parsed.error));
@@ -893,9 +932,6 @@ export function useChatSession() {
 				if (disposed || wsRef.current !== socket) {
 					return;
 				}
-				wsConnectErrorRef.current = new Error(
-					CHAT_TRANSPORT_UNAVAILABLE_MESSAGE,
-				);
 			};
 			socket.onclose = () => {
 				if (wsRef.current === socket) {
@@ -933,6 +969,19 @@ export function useChatSession() {
 					.join(", ");
 				setError(message);
 				setStatus("error");
+				return;
+			}
+			const credentialError = resolveCredentialError(parsed.data);
+			if (credentialError) {
+				setError(credentialError);
+				setStatus("error");
+				addMessage({
+					id: makeId("error"),
+					sessionId: null,
+					role: "error",
+					content: credentialError,
+					createdAt: Date.now(),
+				});
 				return;
 			}
 
@@ -1001,6 +1050,19 @@ export function useChatSession() {
 					.join(", ");
 				setError(message);
 				setStatus("error");
+				return;
+			}
+			const credentialError = resolveCredentialError(parsed.data);
+			if (credentialError) {
+				setError(credentialError);
+				setStatus("error");
+				addMessage({
+					id: makeId("error"),
+					sessionId: activeSessionId,
+					role: "error",
+					content: credentialError,
+					createdAt: Date.now(),
+				});
 				return;
 			}
 
@@ -1180,6 +1242,20 @@ export function useChatSession() {
 				}
 
 				if (result?.finishReason === "error") {
+					if (!resolvedAssistantText) {
+						const toolError = Array.isArray(result?.toolCalls)
+							? result.toolCalls.find((call) => call.error)?.error
+							: undefined;
+						addMessage({
+							id: makeId("error"),
+							sessionId: activeSessionId,
+							role: "error",
+							content:
+								toolError?.trim() ||
+								"Runtime turn failed before an assistant response was produced.",
+							createdAt: Date.now(),
+						});
+					}
 					setStatus("failed");
 				} else if (result?.finishReason === "aborted") {
 					setStatus("cancelled");

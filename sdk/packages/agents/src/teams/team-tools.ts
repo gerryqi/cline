@@ -1,6 +1,8 @@
+import { basename, resolve } from "node:path";
 import type { providers as LlmsProviders } from "@cline/llms";
 import { type Tool, validateWithZod, zodToJsonSchema } from "@cline/shared";
 import { z } from "zod";
+import { getClineDefaultSystemPrompt } from "../prompts/cline.js";
 import { createTool } from "../tools/create.js";
 import type { AgentConfig, AgentHooks, BasicLogger } from "../types.js";
 import type { AgentTeamsRuntime, TeamRuntimeState } from "./multi-agent.js";
@@ -211,11 +213,14 @@ type TeamListOutcomesInput = z.infer<typeof TeamListOutcomesInputSchema>;
 export interface TeamTeammateRuntimeConfig {
 	providerId: string;
 	modelId: string;
+	cwd?: string;
 	apiKey?: string;
 	baseUrl?: string;
 	headers?: Record<string, string>;
 	knownModels?: Record<string, LlmsProviders.ModelInfo>;
 	thinking?: boolean;
+	clineWorkspaceMetadata?: string;
+	clineIdeName?: string;
 	maxIterations?: number;
 	hooks?: AgentHooks;
 	extensions?: AgentConfig["extensions"];
@@ -243,6 +248,42 @@ export interface BootstrapAgentTeamsResult {
 	tools: Tool[];
 	restoredFromPersistence: boolean;
 	restoredTeammates: string[];
+}
+
+function buildFallbackWorkspaceMetadata(cwd: string): string {
+	const rootPath = resolve(cwd);
+	return `# Workspace Configuration\n${JSON.stringify(
+		{
+			workspaces: {
+				[rootPath]: {
+					hint: basename(rootPath),
+				},
+			},
+		},
+		null,
+		2,
+	)}`;
+}
+
+function buildTeammateSystemPrompt(
+	spec: TeamTeammateSpec,
+	teammateRuntime: TeamTeammateRuntimeConfig,
+): string {
+	if (teammateRuntime.providerId !== "cline") {
+		return spec.rolePrompt;
+	}
+	const cwd = teammateRuntime.cwd?.trim() || process.cwd();
+	const metadata =
+		teammateRuntime.clineWorkspaceMetadata?.trim() ||
+		buildFallbackWorkspaceMetadata(cwd);
+	const rolePrompt = spec.rolePrompt.trim();
+	const teammateRules = rolePrompt ? `# Team Teammate Role\n${rolePrompt}` : "";
+	return getClineDefaultSystemPrompt(
+		teammateRuntime.clineIdeName?.trim() || "Terminal Shell",
+		cwd,
+		metadata,
+		teammateRules,
+	);
 }
 
 function spawnTeamTeammate(
@@ -274,7 +315,10 @@ function spawnTeamTeammate(
 			headers: options.teammateRuntime.headers,
 			knownModels: options.teammateRuntime.knownModels,
 			thinking: options.teammateRuntime.thinking,
-			systemPrompt: options.spec.rolePrompt,
+			systemPrompt: buildTeammateSystemPrompt(
+				options.spec,
+				options.teammateRuntime,
+			),
 			maxIterations:
 				options.spec.maxIterations ?? options.teammateRuntime.maxIterations,
 			tools: teammateTools,

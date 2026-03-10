@@ -27,6 +27,18 @@ service ClineGateway {
   rpc RequestToolApproval(RequestToolApprovalRequest) returns (RequestToolApprovalResponse);
   rpc RespondToolApproval(RespondToolApprovalRequest) returns (RespondToolApprovalResponse);
   rpc ListPendingApprovals(ListPendingApprovalsRequest) returns (ListPendingApprovalsResponse);
+  rpc CreateSchedule(CreateScheduleRequest) returns (CreateScheduleResponse);
+  rpc GetSchedule(GetScheduleRequest) returns (GetScheduleResponse);
+  rpc ListSchedules(ListSchedulesRequest) returns (ListSchedulesResponse);
+  rpc UpdateSchedule(UpdateScheduleRequest) returns (UpdateScheduleResponse);
+  rpc DeleteSchedule(DeleteScheduleRequest) returns (DeleteScheduleResponse);
+  rpc PauseSchedule(PauseScheduleRequest) returns (PauseScheduleResponse);
+  rpc ResumeSchedule(ResumeScheduleRequest) returns (ResumeScheduleResponse);
+  rpc TriggerScheduleNow(TriggerScheduleNowRequest) returns (TriggerScheduleNowResponse);
+  rpc ListScheduleExecutions(ListScheduleExecutionsRequest) returns (ListScheduleExecutionsResponse);
+  rpc GetScheduleStats(GetScheduleStatsRequest) returns (GetScheduleStatsResponse);
+  rpc GetActiveScheduledExecutions(GetActiveScheduledExecutionsRequest) returns (GetActiveScheduledExecutionsResponse);
+  rpc GetUpcomingScheduledRuns(GetUpcomingScheduledRunsRequest) returns (GetUpcomingScheduledRunsResponse);
 }
 
 message HealthRequest {}
@@ -338,4 +350,220 @@ message PendingApproval {
 
 message ListPendingApprovalsResponse {
   repeated PendingApproval approvals = 1;
+}
+
+message Schedule {
+  string schedule_id = 1;
+  string name = 2;
+  string cron_pattern = 3;
+  string prompt = 4;
+  string provider = 5;
+  string model = 6;
+  string mode = 7;
+  string workspace_root = 8;
+  string cwd = 9;
+  string system_prompt = 10;
+  int32 max_iterations = 11;
+  bool has_max_iterations = 12;
+  int32 timeout_seconds = 13;
+  bool has_timeout_seconds = 14;
+  int32 max_parallel = 15;
+  bool enabled = 16;
+  string created_at = 17;
+  string updated_at = 18;
+  string last_run_at = 19;
+  string next_run_at = 20;
+  string created_by = 21;
+  string tags_json = 22;
+  string metadata_json = 23;
+}
+
+message ScheduleExecution {
+  string execution_id = 1;
+  string schedule_id = 2;
+  string session_id = 3;
+  string triggered_at = 4;
+  string started_at = 5;
+  string ended_at = 6;
+  string status = 7;
+  int32 exit_code = 8;
+  bool has_exit_code = 9;
+  string error_message = 10;
+  int32 iterations = 11;
+  bool has_iterations = 12;
+  int32 tokens_used = 13;
+  bool has_tokens_used = 14;
+  double cost_usd = 15;
+  bool has_cost_usd = 16;
+}
+
+message CreateScheduleRequest {
+  string name = 1;
+  string cron_pattern = 2;
+  string prompt = 3;
+  string provider = 4;
+  string model = 5;
+  string mode = 6;
+  string workspace_root = 7;
+  string cwd = 8;
+  string system_prompt = 9;
+  int32 max_iterations = 10;
+  bool has_max_iterations = 11;
+  int32 timeout_seconds = 12;
+  bool has_timeout_seconds = 13;
+  int32 max_parallel = 14;
+  bool enabled = 15;
+  string created_by = 16;
+  string tags_json = 17;
+  string metadata_json = 18;
+}
+
+message CreateScheduleResponse {
+  Schedule schedule = 1;
+}
+
+message GetScheduleRequest {
+  string schedule_id = 1;
+}
+
+message GetScheduleResponse {
+  Schedule schedule = 1;
+}
+
+message ListSchedulesRequest {
+  int32 limit = 1;
+  bool has_enabled = 2;
+  bool enabled = 3;
+  string tags_json = 4;
+}
+
+message ListSchedulesResponse {
+  repeated Schedule schedules = 1;
+}
+
+message UpdateScheduleRequest {
+  string schedule_id = 1;
+  string name = 2;
+  bool has_name = 3;
+  string cron_pattern = 4;
+  bool has_cron_pattern = 5;
+  string prompt = 6;
+  bool has_prompt = 7;
+  string provider = 8;
+  bool has_provider = 9;
+  string model = 10;
+  bool has_model = 11;
+  string mode = 12;
+  bool has_mode = 13;
+  string workspace_root = 14;
+  bool has_workspace_root = 15;
+  string cwd = 16;
+  bool has_cwd = 17;
+  string system_prompt = 18;
+  bool has_system_prompt = 19;
+  int32 max_iterations = 20;
+  bool has_max_iterations = 21;
+  bool clear_max_iterations = 22;
+  int32 timeout_seconds = 23;
+  bool has_timeout_seconds = 24;
+  bool clear_timeout_seconds = 25;
+  int32 max_parallel = 26;
+  bool has_max_parallel = 27;
+  bool enabled = 28;
+  bool has_enabled = 29;
+  string created_by = 30;
+  bool has_created_by = 31;
+  bool clear_created_by = 32;
+  string tags_json = 33;
+  bool has_tags_json = 34;
+  string metadata_json = 35;
+  bool has_metadata_json = 36;
+}
+
+message UpdateScheduleResponse {
+  bool updated = 1;
+  Schedule schedule = 2;
+}
+
+message DeleteScheduleRequest {
+  string schedule_id = 1;
+}
+
+message DeleteScheduleResponse {
+  bool deleted = 1;
+}
+
+message PauseScheduleRequest {
+  string schedule_id = 1;
+}
+
+message PauseScheduleResponse {
+  bool updated = 1;
+  Schedule schedule = 2;
+}
+
+message ResumeScheduleRequest {
+  string schedule_id = 1;
+}
+
+message ResumeScheduleResponse {
+  bool updated = 1;
+  Schedule schedule = 2;
+}
+
+message TriggerScheduleNowRequest {
+  string schedule_id = 1;
+}
+
+message TriggerScheduleNowResponse {
+  ScheduleExecution execution = 1;
+}
+
+message ListScheduleExecutionsRequest {
+  string schedule_id = 1;
+  string status = 2;
+  int32 limit = 3;
+}
+
+message ListScheduleExecutionsResponse {
+  repeated ScheduleExecution executions = 1;
+}
+
+message GetScheduleStatsRequest {
+  string schedule_id = 1;
+}
+
+message GetScheduleStatsResponse {
+  int32 total_runs = 1;
+  double success_rate = 2;
+  double avg_duration_seconds = 3;
+  ScheduleExecution last_failure = 4;
+}
+
+message ActiveScheduledExecution {
+  string execution_id = 1;
+  string schedule_id = 2;
+  string session_id = 3;
+  string started_at = 4;
+  string timeout_at = 5;
+}
+
+message GetActiveScheduledExecutionsRequest {}
+
+message GetActiveScheduledExecutionsResponse {
+  repeated ActiveScheduledExecution executions = 1;
+}
+
+message GetUpcomingScheduledRunsRequest {
+  int32 limit = 1;
+}
+
+message UpcomingScheduledRun {
+  string schedule_id = 1;
+  string name = 2;
+  string next_run_at = 3;
+}
+
+message GetUpcomingScheduledRunsResponse {
+  repeated UpcomingScheduledRun runs = 1;
 }

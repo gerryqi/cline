@@ -34,3 +34,44 @@ describe("buildSessionStartInput", () => {
 		expect(built.sessionInput.config.maxIterations).toBeUndefined();
 	});
 });
+
+describe("rpc-runtime payload parsing", () => {
+	it("normalizes null maxIterations in start payload to undefined", async () => {
+		const { parseStartPayload } = await import("./session-helpers");
+		const parsed = parseStartPayload(
+			JSON.stringify({
+				provider: "cline",
+				model: "anthropic/claude-sonnet-4.6",
+				workspaceRoot: process.cwd(),
+				cwd: process.cwd(),
+				enableTools: true,
+				enableSpawn: false,
+				enableTeams: false,
+				autoApproveTools: true,
+				maxIterations: null,
+			}),
+		);
+		expect(parsed.maxIterations).toBeUndefined();
+	});
+
+	it("normalizes null maxIterations in send payload config to undefined", async () => {
+		const { parseSendPayload } = await import("./session-helpers");
+		const parsed = parseSendPayload(
+			JSON.stringify({
+				prompt: "hey",
+				config: {
+					provider: "cline",
+					model: "anthropic/claude-sonnet-4.6",
+					workspaceRoot: process.cwd(),
+					cwd: process.cwd(),
+					enableTools: true,
+					enableSpawn: false,
+					enableTeams: false,
+					autoApproveTools: true,
+					maxIterations: null,
+				},
+			}),
+		);
+		expect(parsed.config.maxIterations).toBeUndefined();
+	});
+});
