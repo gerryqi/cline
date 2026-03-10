@@ -5,10 +5,12 @@ import {
 	Bot,
 	ChevronDown,
 	ChevronRight,
+	Clock3,
 	FileEdit,
 	FileSearch,
 	Loader2,
 	Search,
+	ShieldAlert,
 	Terminal,
 } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
@@ -31,8 +33,8 @@ type ChatMessagesProps = {
 	error: string | null;
 	streamingMessageId?: string | null;
 	pendingToolApprovals: ToolApprovalRequestItem[];
-	onApproveToolApproval: (requestId: string) => void;
-	onRejectToolApproval: (requestId: string) => void;
+	onApproveToolApproval: (requestId: string) => void | Promise<void>;
+	onRejectToolApproval: (requestId: string) => void | Promise<void>;
 	onStartChat?: (prompt: string) => void;
 };
 
@@ -75,6 +77,12 @@ function ChatMessagesImpl({
 		Boolean(error) && (!lastErrorMessage || lastErrorMessage.content !== error);
 	const [showSwitchTransition, setShowSwitchTransition] = useState(false);
 	const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+	const [toolApprovalActions, setToolApprovalActions] = useState<
+		Record<string, "approving" | "rejecting">
+	>({});
+	const [toolApprovalErrors, setToolApprovalErrors] = useState<
+		Record<string, string>
+	>({});
 	const showIdleDetails =
 		!hasMessages && !isSessionSwitching && !showSwitchTransition;
 
@@ -150,6 +158,61 @@ function ChatMessagesImpl({
 		};
 	}, [messages.length, pendingToolApprovals.length, scrollToBottom]);
 
+	useEffect(() => {
+		const activeRequestIds = new Set(
+			pendingToolApprovals.map((item) => item.requestId),
+		);
+		setToolApprovalActions((prev) =>
+			Object.fromEntries(
+				Object.entries(prev).filter(([requestId]) =>
+					activeRequestIds.has(requestId),
+				),
+			),
+		);
+		setToolApprovalErrors((prev) =>
+			Object.fromEntries(
+				Object.entries(prev).filter(([requestId]) =>
+					activeRequestIds.has(requestId),
+				),
+			),
+		);
+	}, [pendingToolApprovals]);
+
+	const handleToolApprovalDecision = useCallback(
+		async (
+			requestId: string,
+			action: "approving" | "rejecting",
+			fn: (requestId: string) => void | Promise<void>,
+		) => {
+			setToolApprovalActions((prev) => ({ ...prev, [requestId]: action }));
+			setToolApprovalErrors((prev) => {
+				if (!prev[requestId]) {
+					return prev;
+				}
+				const next = { ...prev };
+				delete next[requestId];
+				return next;
+			});
+			try {
+				await Promise.resolve(fn(requestId));
+			} catch (err) {
+				const message =
+					err instanceof Error ? err.message : "Could not submit decision.";
+				setToolApprovalErrors((prev) => ({ ...prev, [requestId]: message }));
+			} finally {
+				setToolApprovalActions((prev) => {
+					if (!prev[requestId]) {
+						return prev;
+					}
+					const next = { ...prev };
+					delete next[requestId];
+					return next;
+				});
+			}
+		},
+		[],
+	);
+
 	return (
 		<div className="relative h-full min-h-0 min-w-0">
 			<ScrollArea className="h-full min-h-0 min-w-0" ref={scrollAreaRef}>
@@ -164,53 +227,25 @@ function ChatMessagesImpl({
 					) : (
 						<div className="flex flex-col gap-2 w-full h-full">
 							{pendingToolApprovals.length > 0 ? (
-								<div className="rounded-xl border border-border bg-card p-3">
-									<div className="text-sm font-medium text-foreground">
-										Tool approval required
-									</div>
-									<div className="mt-2 flex flex-col gap-2">
-										{pendingToolApprovals.map((item) => {
-											const inputPreview = item.input
-												? JSON.stringify(item.input)
-												: "{}";
-											return (
-												<div
-													className="rounded-lg border border-border/80 bg-background/50 p-3"
-													key={item.requestId}
-												>
-													<div className="text-sm text-foreground">
-														{item.toolName}
-													</div>
-													<div className="mt-1 text-xs text-muted-foreground break-all">
-														{inputPreview}
-													</div>
-													<div className="mt-2 flex items-center gap-2">
-														<Button
-															onClick={() =>
-																onApproveToolApproval(item.requestId)
-															}
-															size="sm"
-															type="button"
-															variant="default"
-														>
-															Approve
-														</Button>
-														<Button
-															onClick={() =>
-																onRejectToolApproval(item.requestId)
-															}
-															size="sm"
-															type="button"
-															variant="outline"
-														>
-															Reject
-														</Button>
-													</div>
-												</div>
-											);
-										})}
-									</div>
-								</div>
+								<ToolApprovalPanel
+									items={pendingToolApprovals}
+									onApprove={(requestId) =>
+										handleToolApprovalDecision(
+											requestId,
+											"approving",
+											onApproveToolApproval,
+										)
+									}
+									onReject={(requestId) =>
+										handleToolApprovalDecision(
+											requestId,
+											"rejecting",
+											onRejectToolApproval,
+										)
+									}
+									pendingActions={toolApprovalActions}
+									requestErrors={toolApprovalErrors}
+								/>
 							) : null}
 							{messages.map((message) => (
 								<MessageBubble
@@ -281,6 +316,121 @@ function ChatMessagesImpl({
 }
 
 export const ChatMessages = memo(ChatMessagesImpl);
+
+function formatApprovalTimestamp(raw: string): string {
+	const parsed = new Date(raw);
+	if (Number.isNaN(parsed.getTime())) {
+		return "Pending now";
+	}
+	return parsed.toLocaleString();
+}
+
+function formatApprovalInput(input: unknown): string {
+	if (input == null) {
+		return "{}";
+	}
+	if (typeof input === "string") {
+		return input;
+	}
+	try {
+		return JSON.stringify(input, null, 2);
+	} catch {
+		return String(input);
+	}
+}
+
+function ToolApprovalPanel({
+	items,
+	pendingActions,
+	requestErrors,
+	onApprove,
+	onReject,
+}: {
+	items: ToolApprovalRequestItem[];
+	pendingActions: Record<string, "approving" | "rejecting">;
+	requestErrors: Record<string, string>;
+	onApprove: (requestId: string) => void;
+	onReject: (requestId: string) => void;
+}) {
+	return (
+		<section className="rounded-xl border border-amber-400/40 bg-amber-500/5 p-3">
+			<div className="flex items-center gap-2 text-sm font-medium text-foreground">
+				<ShieldAlert className="h-4 w-4 text-amber-500" />
+				Tool approval required
+			</div>
+			<p className="mt-1 text-xs text-muted-foreground">
+				Review each tool call and approve or reject it before execution.
+			</p>
+			<div className="mt-3 flex flex-col gap-2">
+				{items.map((item) => {
+					const pendingAction = pendingActions[item.requestId];
+					const isPending = Boolean(pendingAction);
+					const error = requestErrors[item.requestId];
+					return (
+						<div
+							className="rounded-lg border border-border/80 bg-background/70 p-3"
+							key={item.requestId}
+						>
+							<div className="flex items-center justify-between gap-2">
+								<div className="text-sm font-medium text-foreground">
+									{item.toolName}
+								</div>
+								<div className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+									<Clock3 className="h-3 w-3" />
+									{formatApprovalTimestamp(item.createdAt)}
+								</div>
+							</div>
+							<div className="mt-1 text-[11px] text-muted-foreground">
+								Request {item.requestId}
+								{item.iteration != null ? ` · Iteration ${item.iteration}` : ""}
+							</div>
+							<pre className="mt-2 max-h-44 overflow-auto rounded-md border border-border/70 bg-background p-2 text-xs text-muted-foreground">
+								{formatApprovalInput(item.input)}
+							</pre>
+							{error ? (
+								<div className="mt-2 text-xs text-destructive">{error}</div>
+							) : null}
+							<div className="mt-2 flex items-center gap-2">
+								<Button
+									disabled={isPending}
+									onClick={() => onApprove(item.requestId)}
+									size="sm"
+									type="button"
+									variant="default"
+								>
+									{pendingAction === "approving" ? (
+										<>
+											<Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+											Approving...
+										</>
+									) : (
+										"Approve"
+									)}
+								</Button>
+								<Button
+									disabled={isPending}
+									onClick={() => onReject(item.requestId)}
+									size="sm"
+									type="button"
+									variant="outline"
+								>
+									{pendingAction === "rejecting" ? (
+										<>
+											<Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+											Rejecting...
+										</>
+									) : (
+										"Reject"
+									)}
+								</Button>
+							</div>
+						</div>
+					);
+				})}
+			</div>
+		</section>
+	);
+}
 
 function MessageBubble({
 	message,

@@ -160,7 +160,7 @@ export class GeminiHandler extends BaseHandler {
 			requestConfig.tools = [{ functionDeclarations }];
 			requestConfig.toolConfig = {
 				functionCallingConfig: {
-					mode: FunctionCallingConfigMode.ANY,
+					mode: FunctionCallingConfigMode.AUTO,
 				},
 			};
 		}
