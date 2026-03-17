@@ -31,9 +31,9 @@ const navCategories = [
 	"General",
 	"Providers",
 	"Extensions",
-	"Features",
 	"MCP",
 	"Routine",
+	"Features",
 	"Account",
 ] as const;
 

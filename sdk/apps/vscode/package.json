@@ -1,7 +1,7 @@
 {
-	"name": "cline-vscode",
+	"name": "@cline/vscode",
 	"displayName": "Cline Chat",
-	"description": "VS Code extension chat panel backed by the Cline RPC runtime.",
+	"description": "Autonomous coding agent right in your IDE, capable of creating/editing files, running commands, using the browser, and more with your permission every step of the way. Backed by the Cline CLI runtime.",
 	"version": "0.0.0",
 	"private": true,
 	"publisher": "cline",
@@ -17,15 +17,17 @@
 		"commands": [
 			{
 				"command": "clineVscode.openChat",
-				"title": "Cline: Open RPC Chat"
+				"title": "Cline: Open Chat"
 			}
 		]
 	},
 	"scripts": {
-		"build": "rm -rf dist && bun build ./src/extension.ts --outdir ./dist --target=node --format=cjs --external=vscode",
+		"build:webview": "cd ./src/webview && bun run build",
+		"build": "rm -rf dist && bun run build:webview && bun build ./src/extension.ts --outdir ./dist --target=node --format=cjs --external=vscode",
 		"watch": "bun build ./src/extension.ts --outdir ./dist --target=node --format=cjs --external=vscode --watch",
 		"typecheck": "tsc --noEmit",
-		"clean": "rm -rf dist"
+		"clean": "rm -rf dist",
+		"dev": "bun run watch"
 	},
 	"dependencies": {
 		"@cline/rpc": "workspace:*",

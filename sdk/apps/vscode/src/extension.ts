@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { getRpcServerHealth, RpcSessionClient } from "@cline/rpc";
 import type {
@@ -9,11 +10,10 @@ import type {
 	RpcProviderModel,
 } from "@cline/shared";
 import * as vscode from "vscode";
-import { getWebviewHtml } from "./webview-html";
 import type {
 	WebviewInboundMessage,
 	WebviewOutboundMessage,
-} from "./webview-messages";
+} from "./webview-protocol";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_RPC_ADDRESS = "127.0.0.1:4317";
@@ -22,16 +22,23 @@ export function activate(context: vscode.ExtensionContext): void {
 	const openChat = vscode.commands.registerCommand(
 		"clineVscode.openChat",
 		() => {
+			const localResourceRoots = [
+				vscode.Uri.joinPath(context.extensionUri, "dist", "webview"),
+			];
 			const panel = vscode.window.createWebviewPanel(
-				"clineRpcChat",
-				"Cline RPC Chat",
+				"clineChat",
+				"Cline Chat",
 				vscode.ViewColumn.One,
 				{
 					enableScripts: true,
 					retainContextWhenHidden: true,
+					localResourceRoots,
 				},
 			);
-			const controller = new RpcChatWebviewController(panel);
+			const controller = new RpcChatWebviewController(
+				panel,
+				context.extensionUri,
+			);
 			context.subscriptions.push(controller);
 		},
 	);
@@ -44,6 +51,7 @@ export function deactivate(): void {
 
 class RpcChatWebviewController implements vscode.Disposable {
 	private readonly panel: vscode.WebviewPanel;
+	private readonly extensionUri: vscode.Uri;
 	private readonly disposables: vscode.Disposable[] = [];
 	private client: RpcSessionClient | undefined;
 	private rpcAddress = "";
@@ -55,9 +63,9 @@ class RpcChatWebviewController implements vscode.Disposable {
 	private sending = false;
 	private streamedAssistantText = "";
 
-	constructor(panel: vscode.WebviewPanel) {
+	constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
 		this.panel = panel;
-		this.panel.webview.html = getWebviewHtml(this.panel.webview);
+		this.extensionUri = extensionUri;
 		this.disposables.push(
 			this.panel.webview.onDidReceiveMessage(
 				(message: WebviewInboundMessage) => {
@@ -68,6 +76,7 @@ class RpcChatWebviewController implements vscode.Disposable {
 				this.dispose();
 			}),
 		);
+		void this.initializeWebview();
 	}
 
 	public dispose(): void {
@@ -114,7 +123,7 @@ class RpcChatWebviewController implements vscode.Disposable {
 			const ensuredAddress = await this.ensureRpcAddress();
 			await this.post({
 				type: "status",
-				text: `RPC ready at ${ensuredAddress}`,
+				text: ensuredAddress ? "Cline is Ready" : "Failed to connect to Cline",
 			});
 			const defaults = this.resolveWorkspaceDefaults();
 			await this.post({ type: "defaults", defaults });
@@ -122,6 +131,99 @@ class RpcChatWebviewController implements vscode.Disposable {
 		} catch (error) {
 			await this.postError(error);
 		}
+	}
+
+	private async initializeWebview(): Promise<void> {
+		try {
+			this.panel.webview.html = await this.getWebviewHtml();
+		} catch (error) {
+			await this.postError(error);
+		}
+	}
+
+	private async getWebviewHtml(): Promise<string> {
+		const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+		if (devServerUrl) {
+			return this.getDevWebviewHtml(devServerUrl);
+		}
+		return this.getProductionWebviewHtml();
+	}
+
+	private getDevWebviewHtml(devServerUrl: string): string {
+		const host = new URL(devServerUrl).host;
+		const csp = [
+			"default-src 'none'",
+			`img-src ${this.panel.webview.cspSource} data: ${devServerUrl}`,
+			`style-src ${this.panel.webview.cspSource} 'unsafe-inline' ${devServerUrl}`,
+			`font-src ${this.panel.webview.cspSource} ${devServerUrl}`,
+			`script-src 'unsafe-inline' ${devServerUrl}`,
+			`connect-src ${devServerUrl} ws://${host} ws://localhost:${new URL(devServerUrl).port}`,
+		].join("; ");
+
+		return `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta http-equiv="Content-Security-Policy" content="${csp}" />
+	<script type="module">
+		import RefreshRuntime from "${devServerUrl}/@react-refresh";
+		RefreshRuntime.injectIntoGlobalHook(window);
+		window.$RefreshReg$ = () => {};
+		window.$RefreshSig$ = () => (type) => type;
+		window.__vite_plugin_react_preamble_installed__ = true;
+	</script>
+	<script type="module" src="${devServerUrl}/@vite/client"></script>
+</head>
+<body>
+	<div id="root"></div>
+	<script type="module" src="${devServerUrl}/src/main.tsx"></script>
+</body>
+</html>`;
+	}
+
+	private async getProductionWebviewHtml(): Promise<string> {
+		const webview = this.panel.webview;
+		const distDir = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
+		const indexPath = join(distDir.fsPath, "index.html");
+		const nonce = createNonce();
+		let html = await vscode.workspace.fs
+			.readFile(vscode.Uri.file(indexPath))
+			.then((buffer) => Buffer.from(buffer).toString("utf8"));
+
+		html = html.replace(
+			/<(script|link)([^>]+?(?:src|href))="([^"]+)"([^>]*)>/g,
+			(_match, tag, attrPrefix, assetPath, suffix) => {
+				if (
+					assetPath.startsWith("http://") ||
+					assetPath.startsWith("https://") ||
+					assetPath.startsWith("data:")
+				) {
+					return `<${tag}${attrPrefix}="${assetPath}"${suffix}>`;
+				}
+				const normalizedAssetPath = assetPath.replace(/^\.?\//, "");
+				const assetUri = webview.asWebviewUri(
+					vscode.Uri.joinPath(distDir, normalizedAssetPath),
+				);
+				const nonceAttr = tag === "script" ? ` nonce="${nonce}"` : "";
+				return `<${tag}${nonceAttr}${attrPrefix}="${assetUri.toString()}"${suffix}>`;
+			},
+		);
+
+		const csp = [
+			"default-src 'none'",
+			`img-src ${webview.cspSource} data:`,
+			`style-src ${webview.cspSource} 'unsafe-inline'`,
+			`font-src ${webview.cspSource}`,
+			`script-src 'nonce-${nonce}'`,
+		].join("; ");
+
+		if (html.includes("<head>")) {
+			html = html.replace(
+				"<head>",
+				`<head>\n<meta http-equiv="Content-Security-Policy" content="${csp}" />`,
+			);
+		}
+
+		return html;
 	}
 
 	private resolveWorkspaceDefaults(): {
@@ -470,4 +572,14 @@ class RpcChatWebviewController implements vscode.Disposable {
 		const text = error instanceof Error ? error.message : String(error);
 		await this.post({ type: "error", text });
 	}
+}
+
+function createNonce(): string {
+	const chars =
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+	let nonce = "";
+	for (let index = 0; index < 32; index += 1) {
+		nonce += chars.charAt(Math.floor(Math.random() * chars.length));
+	}
+	return nonce;
 }

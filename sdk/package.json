@@ -16,6 +16,7 @@
 		"cli": "bun --conditions=development --cwd apps/cli ./src/index.ts",
 		"code": "bun unlink && bun link && bun --conditions=development -F @cline/code dev",
 		"desktop": "bun --conditions=development -F @cline/desktop dev",
+		"vscode": "bun --conditions=development -F @cline/vscode dev",
 		"clean": "bun --parallel -F '*' clean",
 		"types": "bun --parallel -F '*' typecheck",
 		"test": "bun --parallel -F './packages/**' test & bun -F './apps/cli' test",
