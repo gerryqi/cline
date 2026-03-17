@@ -5,8 +5,8 @@ import {
 	type UserInstructionConfigWatcher,
 } from "@cline/core/server";
 import type { providers } from "@cline/llms";
-import { askQuestionInTerminal, requestToolApproval } from "../approval";
-import { handleEvent, handleTeamEvent } from "../events";
+import { askQuestionInTerminal, requestToolApproval } from "../utils/approval";
+import { handleEvent, handleTeamEvent } from "../utils/events";
 import { createRuntimeHooks } from "../utils/hooks";
 import {
 	c,

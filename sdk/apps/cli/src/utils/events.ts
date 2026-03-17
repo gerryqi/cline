@@ -1,13 +1,13 @@
 import type { AgentEvent, TeamEvent } from "@cline/agents";
-import { formatToolInput, formatToolOutput, truncate } from "./utils/helpers";
+import { formatToolInput, formatToolOutput, truncate } from "./helpers";
 import {
 	c,
 	emitJsonLine,
 	getCurrentOutputMode,
 	write,
 	writeErr,
-} from "./utils/output";
-import type { Config } from "./utils/types";
+} from "./output";
+import type { Config } from "./types";
 
 // =============================================================================
 // Inline stream state

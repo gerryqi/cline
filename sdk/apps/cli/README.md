@@ -1,4 +1,4 @@
-# Cline Cli Lite
+# Cline CLI Lite
 
 Cline CLI built with Cline SDK. 
 
@@ -142,9 +142,34 @@ clite connect telegram -m my_bot -k 123456:ABCDEF... --enable-tools
 clite connect telegram -m my_bot -k 123456:ABCDEF... --hook-command '/Users/me/bin/on-connector-event'
 # In Telegram chats, use /tools, /yolo, /cwd <path>, /reset, /whereami, /stop
 
+# Bridge a Google Chat app into RPC-backed chat sessions (webhook mode)
+clite connect gchat --base-url https://your-domain.com
+# Foreground mode for local debugging / logs in the active terminal
+clite connect gchat -i --base-url https://your-domain.com --port 8787
+# Receive all-space messages through Workspace Events / Pub/Sub
+clite connect gchat --base-url https://your-domain.com --pubsub-topic projects/my-project/topics/chat-events --impersonate-user admin@example.com
+# Enable tools explicitly only if you trust the Google Chat surface
+clite connect gchat --base-url https://your-domain.com --enable-tools
+
+# Bridge a WhatsApp Business webhook into RPC-backed chat sessions
+clite connect whatsapp --base-url https://your-domain.com
+# Foreground mode for local debugging / logs in the active terminal
+clite connect whatsapp -i --base-url https://your-domain.com --port 8787
+# Override Meta credentials directly instead of relying on environment variables
+clite connect whatsapp --base-url https://your-domain.com --phone-number-id 1234567890 --access-token token --app-secret secret --verify-token verify
+# Enable tools explicitly only if you trust the WhatsApp surface
+clite connect whatsapp --base-url https://your-domain.com --enable-tools
+
 # Stop connector bridges and delete their sessions
 clite connect --stop
 clite connect --stop telegram
+clite connect --stop gchat
+clite connect --stop whatsapp
+
+# Connector implementation notes
+# - adapter files keep transport-specific setup and schedule-delivery rules
+# - shared logic for flags/process helpers, thread bindings, session bootstrap,
+#   and turn/approval handling lives under apps/cli/src/connectors/
 
 # Open the CLI runtime log file
 clite dev log
@@ -241,60 +266,74 @@ RPC runtime note:
 
 | Flag | Description |
 |------|-------------|
-| `-s, --system <prompt>` | System prompt for the agent |
-| `-m, --model <id>` | Model ID (default: provider's first model from bundled catalog; fallback `claude-sonnet-4-6`) |
-| `-p, --provider <id>` | Provider ID (default: anthropic) |
+| `-s, --system <prompt>` | Override the system prompt |
+| `-p, --provider <id>` | Provider id (default: `cline`) |
+| `-m, --model <id>` | Model id (default: `anthropic/claude-sonnet-4.6`) |
 | `-k, --key <api-key>` | API key override for this run |
-| `-n, --max-iterations <n>` | Max agentic loop iterations (optional; unset means unbounded) |
-| `-i, --interactive` | Interactive mode |
-| `-u, --usage` | Show token usage and estimated cost (when available) |
-| `-t, --timings` | Show timing info |
-| `--thinking` | Enable model thinking/reasoning when supported |
-| `--refresh-models` | Refresh model catalog from provider endpoints for this run |
-| `--mode <act\|plan>` | Agent mode for tool presets (default: `act`) |
+| `-i, --interactive` | Interactive multi-turn mode |
+| `--session <id>` | Resume an interactive session |
+| `--mode <act\|plan>` | Tool preset mode (default: `act`) |
+| `-n, --max-iterations <n>` | Cap agent loop iterations |
+| `--cwd <path>` | Working directory for tools |
+| `--thinking` | Enable model reasoning when supported |
+| `-u, --usage` | Show token usage and estimated cost |
+| `-t, --timings` | Show timing details |
 | `--output <text\|json>` | Output format (default: `text`) |
-| `--json` | Shorthand for `--output json` (NDJSON stream) |
-| `--sandbox` | Run with isolated local state; avoids writing to `~/.cline` |
-| `--sandbox-dir <path>` | Sandbox state directory (default: `$CLINE_SANDBOX_DATA_DIR` or `/tmp/cline-sandbox`) |
-| `--tools` | Enable default tools (enabled by default) |
+| `--json` | Shorthand for `--output json` |
+| `--refresh-models` | Refresh the provider model catalog for this run |
+| `--sandbox` | Use isolated local state instead of `~/.cline` |
+| `--sandbox-dir <path>` | Sandbox state dir (default: `$CLINE_SANDBOX_DATA_DIR` or `/tmp/cline-sandbox`) |
 | `--no-tools` | Disable default tools |
-| `--spawn` | Enable `spawn_agent` (enabled by default) |
 | `--no-spawn` | Disable `spawn_agent` |
-| `--teams` | Enable team tools/runtime (enabled by default) |
 | `--no-teams` | Disable team tools/runtime |
-| `--auto-approve-tools` | Auto-approve tool calls by default (default behavior) |
-| `--require-tool-approval` | Require approval before each tool call by default |
-| `--tool-enable <name>` | Explicitly enable a specific tool |
-| `--tool-disable <name>` | Explicitly disable a specific tool |
-| `--tool-autoapprove <name>` | Auto-approve a specific tool |
-| `--tool-require-approval <name>` | Require approval for a specific tool |
-| `--team-name <name>` | Team name used for team runtime state (default: generated as `agent-team-<id>`) |
-| `--mission-step-interval <n>` | Mission log update interval in meaningful steps (default: `3`) |
-| `--mission-time-interval-ms <ms>` | Mission log update interval in milliseconds (default: `120000`) |
-| `--cwd <path>` | Working directory for built-in tools (default: current directory) |
-| `--session <id>` | Resume interactive chat from a saved session id |
+| `--auto-approve-tools` | Skip tool approval prompts |
+| `--require-tool-approval` | Require approval for every tool call |
+| `--tool-enable <name>` | Explicitly enable one tool |
+| `--tool-disable <name>` | Explicitly disable one tool |
+| `--tool-autoapprove <name>` | Always approve one tool |
+| `--tool-require-approval <name>` | Always require approval for one tool |
+| `--team-name <name>` | Override the runtime team state name |
+| `--mission-step-interval <n>` | Mission log update cadence in meaningful steps |
+| `--mission-time-interval-ms <ms>` | Mission log update cadence in milliseconds |
 | `-h, --help` | Show help (exits immediately) |
 | `-v, --version` | Show version (exits immediately) |
 
 `--output json` is non-interactive and requires either a prompt argument or piped stdin.
 
-Subcommands:
+Top-level commands:
 
-- `clite auth` - Run interactive auth setup TUI
-- `clite auth <provider>` - Run OAuth login for `cline`, `openai-codex`, or `oca`
-- `clite connect <adapter>` - Launch an adapter bridge; `telegram` currently runs in the background by default (`-i` keeps it in the foreground), supports `--hook-command`, and `/reset`, `/whereami`, `/stop`
-- Connector slash commands are shared across connector chat surfaces: `/reset`, `/whereami`, `/tools`, `/yolo`, `/cwd <path>`, `/stop`
-- Interactive CLI can use the same slash-command parser only when `CLINE_ENABLE_CHAT_COMMANDS=1`
-- `clite dev log` - Open the CLI runtime log file (`~/.cline/data/logs/clite.log`)
-- `clite config` - Open interactive config view (workflows/rules/skills/hooks/agents)
-- `clite rpc start` - Start the RPC gateway
-- `clite rpc status` - Check whether the RPC gateway is healthy
-- `clite rpc stop` - Request graceful shutdown of the RPC gateway
-- `clite rpc ensure` - Ensure a compatible runtime-capable RPC server is available and return the effective address
-- `clite rpc register` - Register a client id/type (+ optional metadata) with the RPC gateway
-- `clite schedule create` - Create a scheduled runtime job, optionally with `--metadata-json` or `--delivery-*` flags to route results back through a connector
-- `clite schedule list|get|update|pause|resume|delete|trigger|history|stats|active|upcoming|import|export` - Manage schedule definitions and execution history
-- `clite list ...` - List workflows/rules/skills/agents/history/hooks/mcp
+- `clite config` - Open the interactive config view
+- `clite auth <provider>` - Authenticate or seed provider credentials
+- `clite connect <adapter>` - Run a chat connector bridge (`telegram`, `gchat`, `whatsapp`)
+- `clite connect --stop [adapter]` - Stop connector bridge processes and their sessions
+- `clite list <workflows|rules|skills|agents|history|hooks|mcp>` - List configs, history, or hook paths
+- `clite schedule <command>` - Create and manage scheduled runs
+- `clite sessions <list|update|delete>` - Inspect or edit saved sessions
+- `clite dev log` - Open the CLI runtime log file
+- `clite hook` - Handle a hook payload from stdin
+- `clite rpc <command>` - Manage the local RPC runtime server
+
+Connector shortcuts:
+
+- `clite connect telegram -m <bot> -k <token>` - Start the Telegram bridge
+- `clite connect gchat --base-url <url>` - Start the Google Chat webhook bridge
+- `clite connect whatsapp --base-url <url>` - Start the WhatsApp webhook bridge
+- `clite connect <adapter> --help` - Show adapter-specific options and examples
+- `--hook-command <command>` - Run a shell command for connector events
+
+RPC and schedule shortcuts:
+
+- `clite rpc <start|status|stop|ensure> [--address <host:port>]` - Manage the RPC server
+- `clite rpc register --client-type <type> --client-id <id>` - Register a client with the RPC server
+- `clite rpc ensure --json` - Ensure a compatible RPC server and print JSON
+- `clite schedule create <name> --cron "<expr>" --prompt "<text>" --workspace <path>` - Create a scheduled run
+- `clite schedule <create|list|get|update|pause|resume|delete|trigger|history|stats|active|upcoming|import|export>` - Manage schedules and execution history
+
+Behavior notes:
+
+- `clite auth` without a provider opens the interactive auth setup TUI.
+- Connector slash commands are shared across connector chat surfaces: `/reset`, `/whereami`, `/tools`, `/yolo`, `/cwd <path>`, `/stop`.
+- Interactive CLI can use the same slash-command parser only when `CLINE_ENABLE_CHAT_COMMANDS=1`.
 
 Auth quick-setup flags:
 
@@ -433,3 +472,13 @@ Custom provider registry notes:
 - CLI does not perform direct file/db message persistence in run/interactive paths.
 - CLI owns the user-instruction watcher (rules/workflows/skills) because prompt assembly uses rule context before session start; the watcher is disposed on all exit paths.
 - RPC runtime uses the same prompt resolver and accepts optional `rules` in runtime config (or `systemPrompt` when fully prebuilt by the caller).
+
+### Connector runtime behavior
+
+- Telegram, Google Chat, and WhatsApp all reuse the same shared connector runtime formatting path.
+- Assistant text streams incrementally into the chat surface.
+- Tool activity is summarized as compact start/error messages with short argument previews.
+- Required tool approvals are posted back into the chat thread and accept `Y` / `N` replies.
+- Google Chat serves its webhook at `/api/webhooks/gchat`; configure the Google Chat App URL as `<base-url>/api/webhooks/gchat`.
+- Webhook-based connectors are hosted through a shared CLI `node:http` server helper rather than `Bun.serve`.
+- WhatsApp serves its webhook at `/api/webhooks/whatsapp`; configure the Meta callback URL as `<base-url>/api/webhooks/whatsapp`.

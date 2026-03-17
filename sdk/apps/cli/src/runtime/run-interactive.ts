@@ -8,12 +8,12 @@ import {
 import type { providers } from "@cline/llms";
 import { render } from "ink";
 import React from "react";
-import { askQuestionInTerminal, requestToolApproval } from "../approval";
+import { InteractiveTui } from "../tui/interactive-tui";
+import { askQuestionInTerminal, requestToolApproval } from "../utils/approval";
 import {
 	type ChatCommandState,
 	maybeHandleChatCommand,
-} from "../chat-commands";
-import { InteractiveTui } from "../tui/interactive-tui";
+} from "../utils/chat-commands";
 import { createRuntimeHooks } from "../utils/hooks";
 import { setActiveCliSession, writeErr } from "../utils/output";
 import { loadInteractiveResumeMessages } from "../utils/resume";

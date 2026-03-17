@@ -19,6 +19,7 @@ import {
 } from "./commands/auth";
 import { runConnectCommand } from "./commands/connect";
 import { runDevCommand } from "./commands/dev";
+import { showHelp, showVersion } from "./commands/help";
 import { runHookCommand } from "./commands/hook";
 import { runHistoryListCommand, runListCommand } from "./commands/list";
 import {
@@ -29,7 +30,6 @@ import {
 	runRpcStopCommand,
 } from "./commands/rpc";
 import { runScheduleCommand } from "./commands/schedule";
-import { showHelp, showVersion } from "./help";
 import { createCliLoggerAdapter } from "./logging/adapter";
 import { resolveSystemPrompt } from "./runtime/prompt";
 import { runAgent } from "./runtime/run-agent";

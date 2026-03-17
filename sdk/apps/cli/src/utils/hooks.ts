@@ -6,7 +6,7 @@ import type {
 import { createSubprocessHooks } from "@cline/agents";
 import type { HookSessionContext } from "@cline/shared";
 import { formatHookDispatchOutput } from "../commands/hook";
-import { closeInlineStreamIfNeeded } from "../events";
+import { closeInlineStreamIfNeeded } from "./events";
 import {
 	c,
 	emitJsonLine,

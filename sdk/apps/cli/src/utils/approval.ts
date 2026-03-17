@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline";
 import type { ToolApprovalRequest, ToolApprovalResult } from "@cline/agents";
-import { truncate } from "./utils/helpers";
-import { c, getActiveCliSession, write } from "./utils/output";
+import { truncate } from "./helpers";
+import { c, getActiveCliSession, write } from "./output";
 
 // =============================================================================
 // Desktop tool approval
