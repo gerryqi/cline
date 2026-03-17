@@ -159,6 +159,11 @@ export interface AgentHookControl {
 	 */
 	cancel?: boolean;
 	/**
+	 * Request explicit approval before executing the active tool call.
+	 * Only applied for `onToolCallStart`.
+	 */
+	review?: boolean;
+	/**
 	 * Optional context appended to the conversation as a user text block.
 	 */
 	context?: string;
@@ -924,6 +929,7 @@ export interface PendingToolCall {
 	name: string;
 	input: unknown;
 	signature?: string;
+	review?: boolean;
 }
 
 /**

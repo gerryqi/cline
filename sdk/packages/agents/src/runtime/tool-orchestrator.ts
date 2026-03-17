@@ -85,8 +85,11 @@ export class ToolOrchestrator {
 							call,
 						},
 					});
-					if (mergedControl && Object.hasOwn(mergedControl, "overrideInput")) {
+					if (mergedControl?.overrideInput !== undefined) {
 						call.input = mergedControl.overrideInput;
+					}
+					if (mergedControl?.review) {
+						call.review = true;
 					}
 					if (mergedControl?.cancel) {
 						cancelRequested = true;

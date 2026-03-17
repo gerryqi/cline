@@ -9,6 +9,10 @@ import type { providers } from "@cline/llms";
 import { render } from "ink";
 import React from "react";
 import { askQuestionInTerminal, requestToolApproval } from "../approval";
+import {
+	type ChatCommandState,
+	maybeHandleChatCommand,
+} from "../chat-commands";
 import { InteractiveTui } from "../tui/interactive-tui";
 import { createRuntimeHooks } from "../utils/hooks";
 import { setActiveCliSession, writeErr } from "../utils/output";
@@ -65,6 +69,7 @@ export async function runInteractive(
 	);
 
 	const hooks = createRuntimeHooks();
+	const enableChatCommands = process.env.CLINE_ENABLE_CHAT_COMMANDS === "1";
 	const autoApproveAllRef = {
 		current: config.toolPolicies["*"]?.autoApprove !== false,
 	};
@@ -92,28 +97,41 @@ export async function runInteractive(
 		sessionManager,
 		resumeSessionId,
 	);
-	const started = await sessionManager.start({
-		source: SessionSource.CLI,
-		config: {
-			...config,
-			hooks,
-			onTeamEvent: (event) => {
-				uiEvents.emit("team", event);
+	const chatCommandState: ChatCommandState = {
+		enableTools: config.enableTools,
+		autoApproveTools: autoApproveAllRef.current,
+		cwd: config.cwd,
+		workspaceRoot: config.workspaceRoot?.trim() || config.cwd,
+	};
+	let activeSessionId = "";
+	const startSession = async (initial?: typeof initialMessages) => {
+		const started = await sessionManager.start({
+			source: SessionSource.CLI,
+			config: {
+				...config,
+				enableTools: chatCommandState.enableTools,
+				cwd: chatCommandState.cwd,
+				workspaceRoot: chatCommandState.workspaceRoot,
+				hooks,
+				onTeamEvent: (event) => {
+					uiEvents.emit("team", event);
+				},
 			},
-		},
-		interactive: true,
-		initialMessages,
-		userInstructionWatcher,
-		onTeamRestored: () => {},
-	});
-	setActiveCliSession({
-		manifestPath: started.manifestPath,
-		transcriptPath: started.transcriptPath,
-		hookPath: started.hookPath,
-		messagesPath: started.messagesPath,
-		manifest: started.manifest,
-	});
-	const activeSessionId = started.sessionId;
+			interactive: true,
+			initialMessages: initial,
+			userInstructionWatcher,
+			onTeamRestored: () => {},
+		});
+		setActiveCliSession({
+			manifestPath: started.manifestPath,
+			transcriptPath: started.transcriptPath,
+			hookPath: started.hookPath,
+			messagesPath: started.messagesPath,
+			manifest: started.manifest,
+		});
+		activeSessionId = started.sessionId;
+	};
+	await startSession(initialMessages);
 
 	let isRunning = false;
 	let abortRequested = false;
@@ -179,6 +197,52 @@ export async function runInteractive(
 				abortRequested = false;
 				isRunning = true;
 				try {
+					let commandOutput: string | undefined;
+					if (
+						await maybeHandleChatCommand(input, {
+							enabled: enableChatCommands,
+							getState: () => ({
+								...chatCommandState,
+								autoApproveTools: autoApproveAllRef.current,
+							}),
+							setState: async (next) => {
+								chatCommandState.enableTools = next.enableTools;
+								chatCommandState.autoApproveTools = next.autoApproveTools;
+								chatCommandState.cwd = next.cwd;
+								chatCommandState.workspaceRoot = next.workspaceRoot;
+								autoApproveAllRef.current = next.autoApproveTools;
+							},
+							reply: async (text) => {
+								commandOutput = text;
+							},
+							reset: async () => {
+								if (activeSessionId) {
+									await sessionManager.stop(activeSessionId);
+								}
+								await startSession([]);
+							},
+							stop: async () => {
+								requestExit();
+							},
+							describe: () =>
+								[
+									`sessionId=${activeSessionId}`,
+									`tools=${chatCommandState.enableTools ? "on" : "off"}`,
+									`yolo=${autoApproveAllRef.current ? "on" : "off"}`,
+									`cwd=${chatCommandState.cwd}`,
+									`workspaceRoot=${chatCommandState.workspaceRoot}`,
+								].join("\n"),
+						})
+					) {
+						return {
+							usage: {
+								inputTokens: 0,
+								outputTokens: 0,
+							},
+							iterations: 0,
+							commandOutput,
+						};
+					}
 					const userInput = await buildUserInputMessage(
 						input,
 						userInstructionWatcher,

@@ -147,12 +147,30 @@ flowchart TD
 
 1. Terminal mode (default): prompt on TTY, deny required approvals on non-TTY.
 2. Desktop file-IPC mode (`CLINE_TOOL_APPROVAL_MODE=desktop`): write requests to `CLINE_TOOL_APPROVAL_DIR`, poll for decision JSON, timeout if no decision.
+3. Hook-requested review: `tool_call_before` hooks can return `review: true` to force the normal approval request flow for that tool call before execution.
 
 ### CLI RPC server lifecycle
 
 - `clite rpc start`: starts in-process gateway if no server is already active.
 - `clite rpc status`: probes server health.
 - `clite rpc stop`: requests graceful shutdown.
+
+### CLI connector bridge flow
+
+`clite connect <adapter>` adds a long-running host integration path on top of the existing CLI RPC bootstrap:
+
+1. The command dispatches through a connector registry, so adapter-specific bridges can share one CLI entrypoint.
+2. The Telegram connector launches a detached background bridge by default (`-i` keeps it foregrounded), ensures a compatible local RPC server (`clite rpc ensure` behavior), and registers a `cli` client with `transport=telegram`.
+3. CLI runs the Chat SDK Telegram adapter in polling mode, so Telegram talks to the laptop bridge process while the RPC server remains bound to localhost.
+4. Each Telegram thread gets one RPC runtime session id plus a persisted serialized thread binding, allowing both later user messages and out-of-band schedule deliveries to target the same conversation.
+5. First incoming message starts `StartRuntimeSession`; later messages call `SendRuntimeSession` against the stored session id.
+6. `runtime.chat.text_delta` events are converted into a streamed Telegram reply via Chat SDK's post+edit fallback.
+7. Connector processes also subscribe to RPC server events such as `schedule.execution.completed`; if schedule metadata includes a matching `delivery` target, the connector restores the adapter thread and posts the result back through the adapter.
+8. Connector subprocess hooks reuse the same execution primitive exported by `@cline/agents` (`runSubprocessEvent(...)`), while connector event payload schemas live in `@cline/shared` because they are host/transport contracts rather than agent lifecycle contracts.
+9. A shared chat-command parser handles connector slash commands such as `/reset`, `/whereami`, `/tools`, `/yolo`, and `/cwd`; the same parser is available to interactive CLI input but remains disabled there by default.
+10. `/reset` in Telegram clears the stored session binding and best-effort stops/deletes the matching RPC session, `/whereami` reports the delivery thread id, `/tools` and `/yolo` update runtime safety posture, `/cwd` updates cwd/workspace root, and `/stop` shuts down the bridge process itself.
+11. Telegram sessions start with tools/spawn/teams disabled by default; enabling tools for a thread also enables spawn/team tools for that thread. Changing `/tools`, `/yolo`, or `/cwd` clears the current session binding so the next user message starts a fresh runtime with the updated config. The connector also exits when the RPC server broadcasts `rpc.server.shutting_down` or when its server event stream fails, so `clite rpc stop` tears down the background poller instead of leaving it running against a dead server.
+12. `clite connect --stop` enumerates adapter state files under `~/.cline/data/connectors/`, terminates matching bridge processes, and deletes sessions whose persisted metadata belongs to that adapter; `clite connect --stop <adapter>` scopes the same cleanup to a single adapter implementation.
 
 ## OAuth Refresh Ownership
 

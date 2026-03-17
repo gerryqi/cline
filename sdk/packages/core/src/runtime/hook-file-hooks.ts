@@ -89,6 +89,7 @@ function mergeHookControls(
 	];
 	return {
 		cancel: current.cancel === true || next.cancel === true ? true : undefined,
+		review: current.review === true || next.review === true ? true : undefined,
 		context: contexts || undefined,
 		overrideInput:
 			next.overrideInput !== undefined
@@ -117,6 +118,7 @@ function parseHookControl(value: unknown): AgentHookControl | undefined {
 					: undefined;
 	return {
 		cancel: typeof record.cancel === "boolean" ? record.cancel : undefined,
+		review: typeof record.review === "boolean" ? record.review : undefined,
 		context,
 		overrideInput: Object.hasOwn(record, "overrideInput")
 			? record.overrideInput

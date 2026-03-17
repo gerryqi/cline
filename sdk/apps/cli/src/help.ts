@@ -9,6 +9,8 @@ ${c.bold}USAGE${c.reset}
   clite -i                    Interactive mode
   clite config                Open interactive config view
   clite auth <provider>       Authenticate with a provider (cline|openai-codex|oca)
+  clite connect <adapter>     Launch an adapter bridge into RPC chat sessions
+  clite connect --stop        Stop running adapter bridges and their sessions
   clite dev log               Open the CLI runtime log file
   clite hook < payload.json   Handle hook payload from stdin
   clite schedule <command>    Manage scheduled agent runs via RPC server
@@ -53,6 +55,18 @@ ${c.bold}OPTIONS${c.reset}
     -k, --apikey <key>        API key for auth quick setup
     -m, --modelid <id>        Model ID for auth quick setup
     -b, --baseurl <url>       Base URL for auth quick setup (openai/openai-native)
+  connect telegram options:
+    -m, --bot-username <name> Telegram bot username
+    -k, --bot-token <token>   Telegram bot token
+    --provider <id>           Provider override for Telegram sessions
+    --model <id>              Model override for Telegram sessions
+    --api-key <key>           Provider API key override for Telegram sessions
+    --enable-tools            Enable tools for Telegram sessions (off by default)
+    --hook-command <command>  Run a shell command for connector events
+                              Connector hook payloads use the shared ConnectorHookEvent schema
+  connect stop:
+    clite connect --stop              Stop all running adapters and their sessions
+    clite connect --stop telegram     Stop all Telegram adapters and their sessions
   -h, --help                  Show this help
   -v, --version               Show version
 
@@ -76,6 +90,7 @@ ${c.bold}INTERNAL${c.reset}
 						  Ensure compatible runtime server, auto-selecting a new port when needed
   clite schedule create <name> --cron "<expr>" --prompt "<text>" --workspace <path>
 						  Create a scheduled agent execution
+						  Add --delivery-adapter telegram --delivery-thread <thread-id> --delivery-bot <bot> to route results back through a connector
   clite schedule <create|list|get|update|pause|resume|delete|trigger|history|stats|active|upcoming|import|export>
 						  Manage schedules and execution history
   clite dev log

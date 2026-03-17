@@ -27,12 +27,14 @@
 		"release": "bun run build && bun run pack prepare && npm publish --access public && bun run pack restore"
 	},
 	"dependencies": {
+		"@chat-adapter/telegram": "^4.20.0",
 		"@cline/agents": "workspace:*",
 		"@cline/core": "workspace:*",
 		"@cline/llms": "workspace:*",
 		"@cline/rpc": "workspace:*",
 		"@cline/shared": "workspace:*",
 		"better-sqlite3": "^11.10.0",
+		"chat": "^4.20.0",
 		"ink": "^6.8.0",
 		"nanoid": "^5.1.6",
 		"open": "^10.2.0",

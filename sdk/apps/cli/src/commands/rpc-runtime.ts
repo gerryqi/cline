@@ -44,6 +44,29 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 		sessionManager,
 		eventClient,
 	});
+	const stopTrackedSessions = async (
+		shutdownReason: "rpc_runtime_dispose" | "rpc_runtime_shutdown",
+	): Promise<void> => {
+		const sessionIds = [...activeSessions];
+		await Promise.allSettled(
+			sessionIds.map(async (sessionId) => {
+				try {
+					await sessionManager.abort(sessionId);
+				} catch {
+					// Best-effort abort before stop.
+				}
+				try {
+					await sessionManager.stop(sessionId);
+				} catch {
+					// Best-effort stop during runtime teardown.
+				}
+			}),
+		);
+		if (shutdownReason === "rpc_runtime_shutdown") {
+			activeSessions.clear();
+			sessionModes.clear();
+		}
+	};
 
 	return {
 		startSession: async (request) => {
@@ -195,6 +218,7 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 		runProviderOAuthLogin: async (provider) => runProviderOAuthLogin(provider),
 		dispose: async () => {
 			unsubscribeEventBridge();
+			await stopTrackedSessions("rpc_runtime_shutdown");
 			await sessionManager.dispose("rpc_runtime_shutdown");
 			flushCliLoggerAdapters();
 			activeSessions.clear();

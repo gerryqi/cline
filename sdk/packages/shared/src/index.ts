@@ -1,3 +1,11 @@
+export type {
+	ConnectorHookEvent,
+	ConnectorHookEventName,
+} from "./connectors/events";
+export {
+	ConnectorHookEventNameSchema,
+	ConnectorHookEventSchema,
+} from "./connectors/events";
 export {
 	MODELS_DEV_PROVIDER_KEY_ENTRIES,
 	MODELS_DEV_PROVIDER_KEY_MAP,

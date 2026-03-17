@@ -159,6 +159,7 @@ This is intended to be the portable client integration API for CLI/desktop/edito
   - shebang present: uses shebang interpreter + script path
   - no shebang: uses interpreter fallback by extension (`.sh` -> `bash`, `.js` -> `node`, `.ts` -> `bun run`) and defaults to `bash` for legacy extensionless files
 - This avoids direct file spawning failures like `EACCES` on non-executable hook files.
+- `tool_call` hooks can return `review: true` in hook control output to force the normal approval callback flow for that tool call before execution. This lets hooks selectively require approval for cases such as `run_commands` inputs starting with `git`.
 - When no explicit host-provided runtime hooks are configured, core now writes baseline hook lifecycle audit entries to the session `*.hooks.jsonl` artifact so hosts can display real execution status.
 
 ## Runtime Logger Forwarding

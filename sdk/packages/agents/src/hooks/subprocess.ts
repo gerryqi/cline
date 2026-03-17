@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import type {
 	HookSessionContext,
 	HookSessionContextProvider,
@@ -15,6 +14,10 @@ import type {
 	AgentHookTurnEndContext,
 	ToolCallRecord,
 } from "../types.js";
+import {
+	type RunSubprocessEventResult,
+	runSubprocessEvent,
+} from "./subprocess-runner.js";
 
 export const HookEventNameSchema = z.enum([
 	"agent_start",
@@ -35,6 +38,7 @@ const StringMapSchema = z.record(z.string(), z.string());
 export interface HookOutput {
 	contextModification: string;
 	cancel: boolean;
+	review?: boolean;
 	errorMessage: string;
 }
 
@@ -42,6 +46,7 @@ export const HookOutputSchema = z
 	.object({
 		contextModification: z.string().optional(),
 		cancel: z.boolean().optional(),
+		review: z.boolean().optional(),
 		errorMessage: z.string().optional(),
 		context: z.string().optional(),
 		overrideInput: z.unknown().optional(),
@@ -277,30 +282,9 @@ export interface RunHookOptions {
 	timeoutMs?: number;
 }
 
-export interface RunHookResult {
-	exitCode: number | null;
-	stdout: string;
-	stderr: string;
-	parsedJson?: unknown;
-	parseError?: string;
-	timedOut?: boolean;
-}
+export type RunHookResult = RunSubprocessEventResult;
 
 const DEFAULT_HOOK_COMMAND = ["agent", "hook"];
-
-function formatSpawnError(error: unknown, command: string[]): Error {
-	const err = error instanceof Error ? error : new Error(String(error));
-	const withCode = err as Error & { code?: string };
-	const commandLabel = command.join(" ");
-	if (withCode.code === "EACCES") {
-		return new Error(
-			`Failed to execute hook command "${commandLabel}" (EACCES). Configure hooks with an explicit interpreter/command array (for example: ["bash", "/path/to/TaskComplete"]) or make the script executable with a valid shebang.`,
-		);
-	}
-	return new Error(
-		`Failed to execute hook command "${commandLabel}": ${err.message}`,
-	);
-}
 
 /**
  * Dispatch a single hook event to an external CLI.
@@ -311,106 +295,13 @@ export async function runHook(
 	options: RunHookOptions = {},
 ): Promise<RunHookResult | undefined> {
 	const command = options.command ?? DEFAULT_HOOK_COMMAND;
-	if (command.length === 0) {
-		throw new Error("runHook requires a non-empty command");
-	}
-	const detached = !!options.detached;
-
-	const child = spawn(command[0], command.slice(1), {
+	return await runSubprocessEvent(payload, {
+		command,
 		cwd: options.cwd,
 		env: options.env,
-		stdio: detached ? ["pipe", "ignore", "ignore"] : ["pipe", "pipe", "pipe"],
-		detached,
+		detached: options.detached,
+		timeoutMs: options.timeoutMs,
 	});
-
-	const body = JSON.stringify(payload);
-	if (!child.stdin) {
-		throw new Error("runHook failed to create stdin pipe");
-	}
-	child.stdin.write(body);
-	child.stdin.end();
-
-	if (detached) {
-		await new Promise<void>((resolve, reject) => {
-			child.once("error", (error) => {
-				reject(formatSpawnError(error, command));
-			});
-			child.once("spawn", () => resolve());
-		});
-		child.unref();
-		return;
-	}
-
-	let stdout = "";
-	let stderr = "";
-	let timedOut = false;
-	let timeoutId: NodeJS.Timeout | undefined;
-	if (!child.stdout || !child.stderr) {
-		throw new Error("runHook failed to create stdout/stderr pipes");
-	}
-	child.stdout.on("data", (chunk: Buffer | string) => {
-		stdout += chunk.toString();
-	});
-	child.stderr.on("data", (chunk: Buffer | string) => {
-		stderr += chunk.toString();
-	});
-
-	return await new Promise<RunHookResult>((resolve, reject) => {
-		child.once("error", (error) => {
-			reject(formatSpawnError(error, command));
-		});
-		if ((options.timeoutMs ?? 0) > 0) {
-			timeoutId = setTimeout(() => {
-				timedOut = true;
-				child.kill("SIGKILL");
-			}, options.timeoutMs);
-		}
-		child.once("close", (exitCode) => {
-			if (timeoutId) {
-				clearTimeout(timeoutId);
-			}
-			const { parsedJson, parseError } = parseHookStdout(stdout);
-			resolve({
-				exitCode,
-				stdout,
-				stderr,
-				parsedJson,
-				parseError,
-				timedOut,
-			});
-		});
-	});
-}
-
-function parseHookStdout(stdout: string): {
-	parsedJson?: unknown;
-	parseError?: string;
-} {
-	const trimmed = stdout.trim();
-	if (!trimmed) {
-		return {};
-	}
-
-	const lines = trimmed
-		.split("\n")
-		.map((line) => line.trim())
-		.filter(Boolean);
-	const prefixed = lines
-		.filter((line) => line.startsWith("HOOK_CONTROL\t"))
-		.map((line) => line.slice("HOOK_CONTROL\t".length));
-
-	const candidate =
-		prefixed.length > 0 ? prefixed[prefixed.length - 1] : trimmed;
-	try {
-		return { parsedJson: JSON.parse(candidate) };
-	} catch (error) {
-		return {
-			parseError:
-				error instanceof Error
-					? error.message
-					: "Failed to parse hook stdout JSON",
-		};
-	}
 }
 
 export interface SubprocessHooksOptions {
@@ -465,6 +356,7 @@ function toHookControl(value: unknown): AgentHookControl | undefined {
 	const maybe = parsed.data;
 	const hasControlKey =
 		"cancel" in maybe ||
+		"review" in maybe ||
 		"context" in maybe ||
 		"contextModification" in maybe ||
 		"overrideInput" in maybe ||
@@ -483,6 +375,7 @@ function toHookControl(value: unknown): AgentHookControl | undefined {
 					: undefined;
 	return {
 		cancel: typeof maybe.cancel === "boolean" ? maybe.cancel : undefined,
+		review: typeof maybe.review === "boolean" ? maybe.review : undefined,
 		context: contextFromHook,
 		overrideInput: Object.hasOwn(maybe, "overrideInput")
 			? maybe.overrideInput

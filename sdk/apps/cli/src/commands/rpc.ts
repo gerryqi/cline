@@ -256,6 +256,30 @@ async function ensureCompatibleRpcAddress(
 	};
 }
 
+export async function ensureRpcRuntimeAddress(
+	requestedAddress: string,
+): Promise<string> {
+	const ensured = await ensureCompatibleRpcAddress(requestedAddress, {
+		forceKillIncompatible: true,
+	});
+	return await ensureRpcRuntimeAddressFromResolved(ensured);
+}
+
+async function ensureRpcRuntimeAddressFromResolved(ensured: {
+	address: string;
+	action: "reuse" | "new-port" | "started";
+}): Promise<string> {
+	if (ensured.action !== "reuse") {
+		spawnRpcStartDetached(ensured.address);
+	}
+
+	if (!(await waitForRuntimeReady(ensured.address))) {
+		throw new Error(`failed to ensure rpc runtime at ${ensured.address}`);
+	}
+
+	return ensured.address;
+}
+
 export async function runRpcEnsureCommand(
 	rawArgs: string[],
 	writeln: (text?: string) => void,
@@ -266,13 +290,10 @@ export async function runRpcEnsureCommand(
 	const ensured = await ensureCompatibleRpcAddress(requestedAddress, {
 		forceKillIncompatible: true,
 	});
-
-	if (ensured.action !== "reuse") {
-		spawnRpcStartDetached(ensured.address);
-	}
-
-	if (!(await waitForRuntimeReady(ensured.address))) {
-		writeErr(`failed to ensure rpc runtime at ${ensured.address}`);
+	try {
+		await ensureRpcRuntimeAddressFromResolved(ensured);
+	} catch (error) {
+		writeErr(error instanceof Error ? error.message : String(error));
 		return 1;
 	}
 

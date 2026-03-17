@@ -937,7 +937,7 @@ export class Agent {
 			};
 		}
 
-		const autoApprove = policy.autoApprove !== false;
+		const autoApprove = policy.autoApprove !== false && call.review !== true;
 		if (autoApprove) {
 			return { allowed: true };
 		}
@@ -947,7 +947,7 @@ export class Agent {
 			call.id,
 			call.input,
 			context,
-			policy,
+			call.review === true ? { ...policy, autoApprove: false } : policy,
 		);
 		if (!approval.approved) {
 			return {

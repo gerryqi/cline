@@ -40,6 +40,47 @@ function parseList(raw: string | undefined): string[] | undefined {
 	return out.length > 0 ? out : undefined;
 }
 
+function parseJsonObjectFlag(
+	raw: string | undefined,
+): Record<string, unknown> | undefined {
+	if (!raw?.trim()) {
+		return undefined;
+	}
+	const parsed = JSON.parse(raw) as unknown;
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		throw new Error("metadata JSON must be an object");
+	}
+	return parsed as Record<string, unknown>;
+}
+
+function mergeScheduleDeliveryMetadata(
+	base: Record<string, unknown> | undefined,
+	rawArgs: string[],
+): Record<string, unknown> | undefined {
+	const adapter = getFlagValue(rawArgs, "--delivery-adapter")?.trim();
+	const threadId = getFlagValue(rawArgs, "--delivery-thread")?.trim();
+	const channelId = getFlagValue(rawArgs, "--delivery-channel")?.trim();
+	const botUserName = getFlagValue(rawArgs, "--delivery-bot")?.trim();
+	if (!adapter && !threadId && !channelId && !botUserName) {
+		return base;
+	}
+	const next = { ...(base ?? {}) };
+	const existingDelivery =
+		next.delivery &&
+		typeof next.delivery === "object" &&
+		!Array.isArray(next.delivery)
+			? (next.delivery as Record<string, unknown>)
+			: {};
+	next.delivery = {
+		...existingDelivery,
+		...(adapter ? { adapter } : {}),
+		...(threadId ? { threadId } : {}),
+		...(channelId ? { channelId } : {}),
+		...(botUserName ? { botUserName } : {}),
+	};
+	return next;
+}
+
 function isJsonPath(path: string): boolean {
 	return path.toLowerCase().endsWith(".json");
 }
@@ -111,21 +152,22 @@ export async function runScheduleCommand(
 	rawArgs: string[],
 	io: CommandIo,
 ): Promise<number> {
-	const subcommand = rawArgs[1]?.trim().toLowerCase();
-	if (!subcommand) {
-		io.writeErr("missing schedule subcommand");
-		return 1;
-	}
-
-	const requestedAddress = resolveRpcAddress(rawArgs);
-	const ensured = await ensureSchedulerRpc(requestedAddress, io);
-	if (!ensured.ok) {
-		io.writeErr(`failed to ensure rpc server at ${requestedAddress}`);
-		return 1;
-	}
-
-	const client = new RpcSessionClient({ address: ensured.address });
+	let client: RpcSessionClient | undefined;
 	try {
+		const subcommand = rawArgs[1]?.trim().toLowerCase();
+		if (!subcommand) {
+			io.writeErr("missing schedule subcommand");
+			return 1;
+		}
+
+		const requestedAddress = resolveRpcAddress(rawArgs);
+		const ensured = await ensureSchedulerRpc(requestedAddress, io);
+		if (!ensured.ok) {
+			io.writeErr(`failed to ensure rpc server at ${requestedAddress}`);
+			return 1;
+		}
+
+		client = new RpcSessionClient({ address: ensured.address });
 		if (subcommand === "create") {
 			const name = rawArgs[2]?.trim() || "";
 			const cronPattern = getFlagValue(rawArgs, "--cron") ?? "";
@@ -139,6 +181,10 @@ export async function runScheduleCommand(
 				);
 				return 1;
 			}
+			const metadata = mergeScheduleDeliveryMetadata(
+				parseJsonObjectFlag(getFlagValue(rawArgs, "--metadata-json")),
+				rawArgs,
+			);
 			const created = await client.createSchedule({
 				name,
 				cronPattern,
@@ -159,6 +205,7 @@ export async function runScheduleCommand(
 				enabled: !hasFlag(rawArgs, "--disabled"),
 				createdBy: getFlagValue(rawArgs, "--created-by"),
 				tags: parseList(getFlagValue(rawArgs, "--tags")),
+				metadata,
 			});
 			if (!created) {
 				io.writeErr("failed to create schedule");
@@ -313,6 +360,10 @@ export async function runScheduleCommand(
 				emitJsonOrText(rawArgs, io, schedule ?? { updated: false });
 				return schedule ? 0 : 1;
 			}
+			const metadata = mergeScheduleDeliveryMetadata(
+				parseJsonObjectFlag(getFlagValue(rawArgs, "--metadata-json")),
+				rawArgs,
+			);
 			const updated = await client.updateSchedule(scheduleId, {
 				name: getFlagValue(rawArgs, "--name"),
 				cronPattern: getFlagValue(rawArgs, "--cron"),
@@ -344,6 +395,7 @@ export async function runScheduleCommand(
 				tags: getFlagValue(rawArgs, "--tags")
 					? parseList(getFlagValue(rawArgs, "--tags"))
 					: undefined,
+				metadata,
 			});
 			if (!updated) {
 				io.writeErr(`schedule not found: ${scheduleId}`);
@@ -451,7 +503,10 @@ export async function runScheduleCommand(
 
 		io.writeErr(`unknown schedule subcommand "${subcommand}"`);
 		return 1;
+	} catch (error) {
+		io.writeErr(error instanceof Error ? error.message : String(error));
+		return 1;
 	} finally {
-		client.close();
+		client?.close();
 	}
 }

@@ -32,6 +32,7 @@ interface InteractiveTurnResult {
 		totalCost?: number;
 	};
 	iterations: number;
+	commandOutput?: string;
 }
 
 interface InteractiveTuiProps {
@@ -809,12 +810,15 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 			const startedAt = performance.now();
 			try {
 				const result = await onSubmit(prompt, uiMode);
+				if (result.commandOutput) {
+					appendLine(result.commandOutput);
+				}
 				const tokens = result.usage.inputTokens + result.usage.outputTokens;
 				setLastTotalTokens(tokens);
 				if (typeof result.usage.totalCost === "number") {
 					setLastTotalCost(result.usage.totalCost);
 				}
-				if (config.showTimings || config.showUsage) {
+				if (!result.commandOutput && (config.showTimings || config.showUsage)) {
 					const elapsed = ((performance.now() - startedAt) / 1000).toFixed(2);
 					const parts: string[] = [];
 					if (config.showTimings) {

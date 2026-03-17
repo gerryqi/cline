@@ -17,6 +17,7 @@ import {
 	parseAuthCommandArgs,
 	runAuthCommand,
 } from "./commands/auth";
+import { runConnectCommand } from "./commands/connect";
 import { runDevCommand } from "./commands/dev";
 import { runHookCommand } from "./commands/hook";
 import { runHistoryListCommand, runListCommand } from "./commands/list";
@@ -64,6 +65,13 @@ export async function runCli(): Promise<void> {
 	installStreamErrorGuards();
 
 	const rawArgs = process.argv.slice(2);
+	if (rawArgs[0] === "connect") {
+		const code = await runConnectCommand(rawArgs, {
+			writeln,
+			writeErr,
+		});
+		process.exit(code);
+	}
 	const launchConfigView = rawArgs[0]?.trim().toLowerCase() === "config";
 	const parsedArgsInput = launchConfigView ? rawArgs.slice(1) : rawArgs;
 	let args = parseArgs(parsedArgsInput);

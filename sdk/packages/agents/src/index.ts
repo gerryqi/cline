@@ -39,6 +39,8 @@ export type {
 	HookEventPayload,
 	RunHookOptions,
 	RunHookResult,
+	RunSubprocessEventOptions,
+	RunSubprocessEventResult,
 	SubprocessHookControl,
 	SubprocessHooksOptions,
 } from "./hooks/node.js";
@@ -48,6 +50,7 @@ export {
 	HookEventPayloadSchema,
 	parseHookEventPayload,
 	runHook,
+	runSubprocessEvent,
 } from "./hooks/node.js";
 
 // =============================================================================

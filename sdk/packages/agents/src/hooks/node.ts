@@ -11,3 +11,8 @@ export {
 	type SubprocessHookControl,
 	type SubprocessHooksOptions,
 } from "./subprocess.js";
+export {
+	type RunSubprocessEventOptions,
+	type RunSubprocessEventResult,
+	runSubprocessEvent,
+} from "./subprocess-runner.js";

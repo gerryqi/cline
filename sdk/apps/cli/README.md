@@ -129,6 +129,23 @@ clite auth --provider openai-native --apikey sk-... --modelid gpt-5 --baseurl ht
 # Authenticate OAuth providers explicitly
 clite auth <cline|openai-codex|oca>
 
+# Bridge a Telegram bot into RPC-backed chat sessions (polling mode)
+clite connect telegram -m my_bot -k 123456:ABCDEF...
+# Foreground mode for local debugging / logs in the active terminal
+clite connect telegram -i -m my_bot -k 123456:ABCDEF...
+# Reuse the last-used provider/model, but keep tools off by default for safety
+# Override provider/model if needed
+clite connect telegram -m my_bot -k 123456:ABCDEF... --provider cline --model openai/gpt-5.3-codex
+# Enable tools explicitly only if you trust the Telegram surface
+clite connect telegram -m my_bot -k 123456:ABCDEF... --enable-tools
+# Dispatch connector lifecycle/message events to an external hook command
+clite connect telegram -m my_bot -k 123456:ABCDEF... --hook-command '/Users/me/bin/on-connector-event'
+# In Telegram chats, use /tools, /yolo, /cwd <path>, /reset, /whereami, /stop
+
+# Stop connector bridges and delete their sessions
+clite connect --stop
+clite connect --stop telegram
+
 # Open the CLI runtime log file
 clite dev log
 
@@ -176,6 +193,16 @@ clite schedule create "Daily code review" \
   --timeout 3600 \
   --max-iterations 50 \
   --tags automation,review
+
+# Route a scheduled result back to a Telegram thread handled by the connector
+# First, send /whereami to your bot in Telegram to get the thread id
+clite schedule create "Daily summary" \
+  --cron "0 9 * * *" \
+  --prompt "Summarize yesterday's activity in this workspace." \
+  --workspace /path/to/repo \
+  --delivery-adapter telegram \
+  --delivery-bot my_bot \
+  --delivery-thread telegram:123456789
 clite schedule list
 clite schedule get <schedule-id>
 clite schedule trigger <schedule-id>
@@ -255,6 +282,9 @@ Subcommands:
 
 - `clite auth` - Run interactive auth setup TUI
 - `clite auth <provider>` - Run OAuth login for `cline`, `openai-codex`, or `oca`
+- `clite connect <adapter>` - Launch an adapter bridge; `telegram` currently runs in the background by default (`-i` keeps it in the foreground), supports `--hook-command`, and `/reset`, `/whereami`, `/stop`
+- Connector slash commands are shared across connector chat surfaces: `/reset`, `/whereami`, `/tools`, `/yolo`, `/cwd <path>`, `/stop`
+- Interactive CLI can use the same slash-command parser only when `CLINE_ENABLE_CHAT_COMMANDS=1`
 - `clite dev log` - Open the CLI runtime log file (`~/.cline/data/logs/clite.log`)
 - `clite config` - Open interactive config view (workflows/rules/skills/hooks/agents)
 - `clite rpc start` - Start the RPC gateway
@@ -262,7 +292,7 @@ Subcommands:
 - `clite rpc stop` - Request graceful shutdown of the RPC gateway
 - `clite rpc ensure` - Ensure a compatible runtime-capable RPC server is available and return the effective address
 - `clite rpc register` - Register a client id/type (+ optional metadata) with the RPC gateway
-- `clite schedule create` - Create a scheduled runtime job
+- `clite schedule create` - Create a scheduled runtime job, optionally with `--metadata-json` or `--delivery-*` flags to route results back through a connector
 - `clite schedule list|get|update|pause|resume|delete|trigger|history|stats|active|upcoming|import|export` - Manage schedule definitions and execution history
 - `clite list ...` - List workflows/rules/skills/agents/history/hooks/mcp
 

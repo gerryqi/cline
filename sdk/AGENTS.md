@@ -87,6 +87,23 @@ flowchart LR
 3. If RPC still cannot be reached, CLI falls back to local in-process `CoreSessionService` storage/runtime wiring.
 4. CLI treats RPC `startRuntimeSession` artifact fields as optional at start time; runtime artifacts can be materialized after the first turn send.
 
+### `apps/cli` connector flow (latest)
+
+1. `clite connect <adapter> ...` dispatches through a connector registry, so adapter integrations can be added without changing the CLI entrypoint contract.
+2. `clite connect telegram -m <bot-username> -k <bot-token>` launches a background Telegram bridge by default (`-i` keeps it attached) and ensures a compatible local RPC server via the same bootstrap path as other CLI RPC flows.
+3. CLI registers a `cli` RPC client tagged with connector metadata such as `transport=telegram`.
+4. CLI starts the Chat SDK Telegram adapter in polling mode, so the laptop process reads updates directly from Telegram without exposing the RPC port.
+5. On the first mention/DM in a Telegram thread, CLI starts one RPC runtime session, stores the `sessionId`, and persists the serialized Chat SDK thread so later messages and schedule deliveries can target the same conversation.
+6. Later messages in that Telegram thread reuse the same RPC `sessionId` and call `sendRuntimeSession(...)` to continue the conversation.
+7. Runtime `runtime.chat.text_delta` events are streamed back to Telegram through Chat SDK's post+edit fallback, so users see the answer update incrementally in the Telegram app without a separate placeholder post.
+8. Connector processes also subscribe to RPC server events such as `schedule.execution.completed`; when a schedule has matching `metadata.delivery`, the connector restores the target thread and posts the routine result back into the adapter thread.
+9. Connector event hooks can be dispatched through `--hook-command <command>` (or `CLINE_CONNECT_HOOK_COMMAND`) for events like connector start/stop, inbound messages, completed replies, and scheduled deliveries.
+10. The subprocess execution mechanism for both agent hooks and connector hooks is shared from `@cline/agents` (`packages/agents/src/hooks/subprocess-runner.ts`), while connector event schemas live in `@cline/shared` (`packages/shared/src/connectors/events.ts`) because they are transport/host contracts rather than agent lifecycle contracts.
+11. Telegram sessions start with tools/spawn/teams disabled by default; turning tools on for a thread also enables spawn/team tools for that thread. Changing `/tools`, `/yolo`, or `/cwd` clears the current RPC session binding so the next user message starts a fresh session with the updated runtime config. `/reset` stops and deletes the current RPC session for that Telegram thread, `/whereami` returns the delivery thread id for schedule targeting, and `/stop` shuts down the bridge process.
+12. Telegram connectors also stop themselves when the RPC server broadcasts `rpc.server.shutting_down` or when the server event stream fails, so `clite rpc stop` tears down the background bridge instead of leaving polling processes behind.
+13. The same slash-command parser is shared for connector chat surfaces and interactive CLI input, but CLI handling stays disabled by default unless `CLINE_ENABLE_CHAT_COMMANDS=1` is set.
+14. `clite connect --stop` stops all running connector adapters and deletes their adapter-owned sessions; `clite connect --stop <adapter>` scopes the cleanup to one adapter by consulting its persisted connector state files.
+
 ### OAuth refresh ownership
 
 - OAuth token refresh is owned by `@cline/core` session runtime (not UI/CLI clients).
@@ -126,6 +143,12 @@ flowchart LR
 5. On first prompt send, extension starts a runtime session (`startRuntimeSession`) with webview-selected config.
 6. Extension streams `runtime.chat.*` events via `streamEvents` for incremental text/tool updates and sends turns via `sendRuntimeSession`.
 7. Webview controls support abort (`abortRuntimeSession`) and reset/new session (`stopRuntimeSession` + fresh start).
+
+### Tool approval matching
+
+- `tool_call_before` hooks can now return `review: true` in `AgentHookControl`.
+- When `review: true` is returned, the runtime routes the tool call through the normal host approval callback / RPC approval flow before execution.
+- This enables selective approval flows such as requiring approval for `run_commands` calls whose input starts with `git`, without changing default tool policy behavior for other calls.
 
 ### `apps/code` canonical chat transport schema
 

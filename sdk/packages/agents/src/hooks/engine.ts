@@ -202,6 +202,7 @@ function mergeControl(
 
 	const merged: AgentHookControl = {
 		cancel: !!(base?.cancel || next?.cancel),
+		review: !!(base?.review || next?.review),
 		context: [base?.context, next?.context]
 			.filter((value): value is string => typeof value === "string" && !!value)
 			.join("\n"),

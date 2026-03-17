@@ -260,6 +260,128 @@ describe("Agent", () => {
 		expect(result.text).toBe("Done");
 	});
 
+	it("requests approval when a tool_call_before hook returns review", async () => {
+		const { Agent } = await import("./agent.js");
+		const runCommandsTool = createTool({
+			name: "run_commands",
+			description: "Run shell commands",
+			inputSchema: {
+				type: "object",
+				properties: {
+					commands: {
+						type: "array",
+						items: { type: "string" },
+					},
+				},
+				required: ["commands"],
+			},
+			execute: async (input: { commands: string[] }) => input.commands,
+		}) as Tool;
+		const handler = makeHandler([
+			[
+				{
+					type: "tool_calls",
+					id: "r1",
+					tool_call: {
+						call_id: "call_1",
+						function: {
+							name: "run_commands",
+							arguments: JSON.stringify({ commands: ["git status"] }),
+						},
+					},
+				},
+				{ type: "usage", id: "r1", inputTokens: 20, outputTokens: 8 },
+				{ type: "done", id: "r1", success: true },
+			],
+			[
+				{ type: "text", id: "r2", text: "Done" },
+				{ type: "usage", id: "r2", inputTokens: 12, outputTokens: 4 },
+				{ type: "done", id: "r2", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const approval = vi.fn().mockResolvedValue({ approved: true });
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "Use tools",
+			tools: [runCommandsTool],
+			hooks: {
+				onToolCallStart: async () => ({
+					review: true,
+					context: "Git commands require explicit user approval.",
+				}),
+			},
+			requestToolApproval: approval,
+		});
+
+		const result = await agent.run("check git status");
+
+		expect(approval).toHaveBeenCalledTimes(1);
+		expect(result.finishReason).toBe("completed");
+		expect(result.toolCalls[0]?.error).toBeUndefined();
+		expect(result.toolCalls[0]?.output).toEqual(["git status"]);
+	});
+
+	it("does not request approval when no hook asks for review", async () => {
+		const { Agent } = await import("./agent.js");
+		const runCommandsTool = createTool({
+			name: "run_commands",
+			description: "Run shell commands",
+			inputSchema: {
+				type: "object",
+				properties: {
+					commands: {
+						type: "array",
+						items: { type: "string" },
+					},
+				},
+				required: ["commands"],
+			},
+			execute: async (input: { commands: string[] }) => input.commands,
+		}) as Tool;
+		const handler = makeHandler([
+			[
+				{
+					type: "tool_calls",
+					id: "r1",
+					tool_call: {
+						call_id: "call_1",
+						function: {
+							name: "run_commands",
+							arguments: JSON.stringify({ commands: ["git status"] }),
+						},
+					},
+				},
+				{ type: "usage", id: "r1", inputTokens: 20, outputTokens: 8 },
+				{ type: "done", id: "r1", success: true },
+			],
+			[
+				{ type: "text", id: "r2", text: "Done" },
+				{ type: "usage", id: "r2", inputTokens: 12, outputTokens: 4 },
+				{ type: "done", id: "r2", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const approval = vi.fn().mockResolvedValue({ approved: true });
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "Use tools",
+			tools: [runCommandsTool],
+			requestToolApproval: approval,
+		});
+
+		const result = await agent.run("check git status");
+
+		expect(approval).not.toHaveBeenCalled();
+		expect(result.finishReason).toBe("completed");
+		expect(result.toolCalls[0]?.error).toBeUndefined();
+		expect(result.toolCalls[0]?.output).toEqual(["git status"]);
+	});
+
 	it("finalizes streamed tool arguments at end of turn", async () => {
 		const { Agent } = await import("./agent.js");
 		const teamLogTool = createTool({

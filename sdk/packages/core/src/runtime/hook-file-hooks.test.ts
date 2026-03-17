@@ -72,4 +72,35 @@ describe("createHookConfigFileHooks", () => {
 			await rm(workspace, { recursive: true, force: true });
 		}
 	});
+
+	it("parses review control from hook output", async () => {
+		const { workspace } = await createWorkspaceWithHook(
+			"PreToolUse.ts",
+			'console.log(\'HOOK_CONTROL\\t{"review":true,"context":"needs-review"}\')\n',
+		);
+		try {
+			const hooks = createHookConfigFileHooks({
+				cwd: workspace,
+				workspacePath: workspace,
+			});
+			expect(hooks?.onToolCallStart).toBeTypeOf("function");
+			const control = await hooks?.onToolCallStart?.({
+				agentId: "agent_1",
+				conversationId: "conv_1",
+				parentAgentId: null,
+				iteration: 1,
+				call: {
+					id: "call_1",
+					name: "run_commands",
+					input: { commands: ["git status"] },
+				},
+			});
+			expect(control).toMatchObject({
+				review: true,
+				context: "needs-review",
+			});
+		} finally {
+			await rm(workspace, { recursive: true, force: true });
+		}
+	});
 });
