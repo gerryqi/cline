@@ -140,13 +140,6 @@ export function createConnectorRuntimeTurnStream(input: {
 	onFailed?: (error: Error) => Promise<void>;
 }): AsyncIterable<string> {
 	let lastStatusMessage = "";
-	const postStatus = async (message: string): Promise<void> => {
-		if (!message || message === lastStatusMessage) {
-			return;
-		}
-		lastStatusMessage = message;
-		await input.onToolStatus?.(message);
-	};
 
 	return {
 		[Symbol.asyncIterator]: async function* () {
@@ -154,11 +147,28 @@ export function createConnectorRuntimeTurnStream(input: {
 			let notify: (() => void) | undefined;
 			let streamedText = "";
 			let closed = false;
+			let hasStreamedOutput = false;
 
 			const push = (item: QueueItem) => {
+				if (item.type === "chunk" && item.value) {
+					hasStreamedOutput = true;
+				}
 				queue.push(item);
 				notify?.();
 				notify = undefined;
+			};
+
+			const postStatus = async (message: string): Promise<void> => {
+				if (!message || message === lastStatusMessage) {
+					return;
+				}
+				lastStatusMessage = message;
+				const prefix = hasStreamedOutput ? "\n\n" : "";
+				push({
+					type: "chunk",
+					value: `${prefix}${message}\n\n`,
+				});
+				await input.onToolStatus?.(message);
 			};
 
 			const stopStreaming = input.client.streamEvents(
