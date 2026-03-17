@@ -19,6 +19,17 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_RPC_ADDRESS = "127.0.0.1:4317";
 
 export function activate(context: vscode.ExtensionContext): void {
+	// Sidebar webview (default)
+	const sidebarProvider = new ClineChatViewProvider(context.extensionUri);
+	context.subscriptions.push(
+		vscode.window.registerWebviewViewProvider(
+			"clineVscode.chatView",
+			sidebarProvider,
+			{ webviewOptions: { retainContextWhenHidden: true } },
+		),
+	);
+
+	// Editor panel command (alternative)
 	const openChat = vscode.commands.registerCommand(
 		"clineVscode.openChat",
 		() => {
@@ -36,8 +47,9 @@ export function activate(context: vscode.ExtensionContext): void {
 				},
 			);
 			const controller = new RpcChatWebviewController(
-				panel,
+				panel.webview,
 				context.extensionUri,
+				panel.onDidDispose,
 			);
 			context.subscriptions.push(controller);
 		},
@@ -49,8 +61,35 @@ export function deactivate(): void {
 	// no-op; webview controllers are disposed by VS Code subscriptions
 }
 
+class ClineChatViewProvider implements vscode.WebviewViewProvider {
+	private readonly extensionUri: vscode.Uri;
+
+	constructor(extensionUri: vscode.Uri) {
+		this.extensionUri = extensionUri;
+	}
+
+	public resolveWebviewView(
+		webviewView: vscode.WebviewView,
+		_context: vscode.WebviewViewResolveContext,
+		_token: vscode.CancellationToken,
+	): void {
+		webviewView.webview.options = {
+			enableScripts: true,
+			localResourceRoots: [
+				vscode.Uri.joinPath(this.extensionUri, "dist", "webview"),
+			],
+		};
+		const controller = new RpcChatWebviewController(
+			webviewView.webview,
+			this.extensionUri,
+			webviewView.onDidDispose,
+		);
+		webviewView.onDidDispose(() => controller.dispose());
+	}
+}
+
 class RpcChatWebviewController implements vscode.Disposable {
-	private readonly panel: vscode.WebviewPanel;
+	private readonly webview: vscode.Webview;
 	private readonly extensionUri: vscode.Uri;
 	private readonly disposables: vscode.Disposable[] = [];
 	private client: RpcSessionClient | undefined;
@@ -63,19 +102,25 @@ class RpcChatWebviewController implements vscode.Disposable {
 	private sending = false;
 	private streamedAssistantText = "";
 
-	constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
-		this.panel = panel;
+	constructor(
+		webview: vscode.Webview,
+		extensionUri: vscode.Uri,
+		onDidDispose?: vscode.Event<void>,
+	) {
+		this.webview = webview;
 		this.extensionUri = extensionUri;
 		this.disposables.push(
-			this.panel.webview.onDidReceiveMessage(
-				(message: WebviewInboundMessage) => {
-					void this.handleMessage(message);
-				},
-			),
-			this.panel.onDidDispose(() => {
-				this.dispose();
+			this.webview.onDidReceiveMessage((message: WebviewInboundMessage) => {
+				void this.handleMessage(message);
 			}),
 		);
+		if (onDidDispose) {
+			this.disposables.push(
+				onDidDispose(() => {
+					this.dispose();
+				}),
+			);
+		}
 		void this.initializeWebview();
 	}
 
@@ -135,7 +180,7 @@ class RpcChatWebviewController implements vscode.Disposable {
 
 	private async initializeWebview(): Promise<void> {
 		try {
-			this.panel.webview.html = await this.getWebviewHtml();
+			this.webview.html = await this.getWebviewHtml();
 		} catch (error) {
 			await this.postError(error);
 		}
@@ -153,9 +198,9 @@ class RpcChatWebviewController implements vscode.Disposable {
 		const host = new URL(devServerUrl).host;
 		const csp = [
 			"default-src 'none'",
-			`img-src ${this.panel.webview.cspSource} data: ${devServerUrl}`,
-			`style-src ${this.panel.webview.cspSource} 'unsafe-inline' ${devServerUrl}`,
-			`font-src ${this.panel.webview.cspSource} ${devServerUrl}`,
+			`img-src ${this.webview.cspSource} data: ${devServerUrl}`,
+			`style-src ${this.webview.cspSource} 'unsafe-inline' ${devServerUrl}`,
+			`font-src ${this.webview.cspSource} ${devServerUrl}`,
 			`script-src 'unsafe-inline' ${devServerUrl}`,
 			`connect-src ${devServerUrl} ws://${host} ws://localhost:${new URL(devServerUrl).port}`,
 		].join("; ");
@@ -181,7 +226,7 @@ class RpcChatWebviewController implements vscode.Disposable {
 	}
 
 	private async getProductionWebviewHtml(): Promise<string> {
-		const webview = this.panel.webview;
+		const webview = this.webview;
 		const distDir = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
 		const indexPath = join(distDir.fsPath, "index.html");
 		const nonce = createNonce();
@@ -565,7 +610,7 @@ class RpcChatWebviewController implements vscode.Disposable {
 	}
 
 	private async post(message: WebviewOutboundMessage): Promise<void> {
-		await this.panel.webview.postMessage(message);
+		await this.webview.postMessage(message);
 	}
 
 	private async postError(error: unknown): Promise<void> {

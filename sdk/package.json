@@ -3,7 +3,8 @@
 	"private": true,
 	"workspaces": [
 		"packages/*",
-		"apps/*"
+		"apps/*",
+		"apps/vscode/src/webview"
 	],
 	"scripts": {
 		"prepare": "husky",

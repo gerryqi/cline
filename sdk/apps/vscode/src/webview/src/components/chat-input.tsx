@@ -76,87 +76,7 @@ export function ChatInputBar({
 	};
 
 	return (
-		<Card className="composer overflow-hidden rounded-2xl">
-			<CardContent className="composer__settings">
-				<div className="grid gap-2">
-					<Label htmlFor="provider-select">Provider</Label>
-					<NativeSelect
-						id="provider-select"
-						className=""
-						value={provider}
-						onChange={(event) => onProviderChange(event.target.value)}
-					>
-						{providers.length === 0 ? (
-							<NativeSelectOption value="">
-								No providers available
-							</NativeSelectOption>
-						) : (
-							providers.map((item) => (
-								<NativeSelectOption key={item.id} value={item.id}>
-									{item.name} ({item.id})
-								</NativeSelectOption>
-							))
-						)}
-					</NativeSelect>
-				</div>
-				<div className="grid gap-2">
-					<Label htmlFor="model-select">Model</Label>
-					<NativeSelect
-						id="model-select"
-						value={model}
-						onChange={(event) => onModelChange(event.target.value)}
-					>
-						{models.length === 0 ? (
-							<NativeSelectOption value="">
-								No models available
-							</NativeSelectOption>
-						) : (
-							models.map((item) => (
-								<NativeSelectOption key={item.id} value={item.id}>
-									{item.name || item.id}
-								</NativeSelectOption>
-							))
-						)}
-					</NativeSelect>
-				</div>
-				<div className="flex gap-2">
-					<Label htmlFor="workspace-input">Workspace</Label>
-					<Input id="workspace-input" value={workspaceRoot} readOnly />
-				</div>
-				<div className="grid gap-2">
-					<Label htmlFor="system-prompt">System Prompt</Label>
-					<Textarea
-						id="system-prompt"
-						className="min-h-26 resize-y"
-						value={systemPrompt}
-						onChange={(event) => onSystemPromptChange(event.target.value)}
-						placeholder="Optional"
-					/>
-				</div>
-				<div className="composer__toggles">
-					<Toggle
-						label="Tools"
-						checked={enableTools}
-						onChange={onEnableToolsChange}
-					/>
-					<Toggle
-						label="Spawn"
-						checked={enableSpawn}
-						onChange={onEnableSpawnChange}
-					/>
-					<Toggle
-						label="Teams"
-						checked={enableTeams}
-						onChange={onEnableTeamsChange}
-					/>
-					<Toggle
-						label="Auto-approve"
-						checked={autoApproveTools}
-						onChange={onAutoApproveToolsChange}
-					/>
-				</div>
-			</CardContent>
-
+		<Card className="composer overflow-hidden">
 			<CardContent className="composer__prompt">
 				<Textarea
 					className="min-h-42 resize-y"
@@ -172,6 +92,45 @@ export function ChatInputBar({
 					placeholder="Enter your prompt here..."
 				/>
 				<div className="composer__actions">
+					<div className="grid gap-2">
+						<NativeSelect
+							id="provider-select"
+							className=""
+							value={provider}
+							onChange={(event) => onProviderChange(event.target.value)}
+						>
+							{providers.length === 0 ? (
+								<NativeSelectOption value="">
+									No providers available
+								</NativeSelectOption>
+							) : (
+								providers.map((item) => (
+									<NativeSelectOption key={item.id} value={item.id}>
+										{item.name} ({item.id})
+									</NativeSelectOption>
+								))
+							)}
+						</NativeSelect>
+					</div>
+					<div className="grid gap-2">
+						<NativeSelect
+							id="model-select"
+							value={model}
+							onChange={(event) => onModelChange(event.target.value)}
+						>
+							{models.length === 0 ? (
+								<NativeSelectOption value="">
+									No models available
+								</NativeSelectOption>
+							) : (
+								models.map((item) => (
+									<NativeSelectOption key={item.id} value={item.id}>
+										{item.name || item.id}
+									</NativeSelectOption>
+								))
+							)}
+						</NativeSelect>
+					</div>
 					<div className="composer__buttons">
 						<Button variant="secondary" onClick={onReset}>
 							New Session
@@ -183,6 +142,47 @@ export function ChatInputBar({
 						>
 							{sending ? "Abort" : "Send"}
 						</Button>
+					</div>
+				</div>
+				<div className="flex gap-2">
+					<Label className="text-sm">Workspace</Label>
+					<Input
+						id="workspace-input"
+						value={workspaceRoot}
+						readOnly
+						disabled={true}
+					/>
+				</div>
+				<div className="hidden">
+					<Label htmlFor="system-prompt">System Prompt</Label>
+					<Textarea
+						id="system-prompt"
+						className="min-h-26 resize-y"
+						value={systemPrompt}
+						onChange={(event) => onSystemPromptChange(event.target.value)}
+						placeholder="Optional"
+					/>
+					<div className="flex flex-col justify-between sm:flex-row sm:items-center gap-2">
+						<Toggle
+							label="Tools"
+							checked={enableTools}
+							onChange={onEnableToolsChange}
+						/>
+						<Toggle
+							label="Spawn"
+							checked={enableSpawn}
+							onChange={onEnableSpawnChange}
+						/>
+						<Toggle
+							label="Teams"
+							checked={enableTeams}
+							onChange={onEnableTeamsChange}
+						/>
+						<Toggle
+							label="Auto-approve"
+							checked={autoApproveTools}
+							onChange={onAutoApproveToolsChange}
+						/>
 					</div>
 				</div>
 			</CardContent>
@@ -202,7 +202,7 @@ function Toggle({
 	return (
 		<div className="toggle flex items-center gap-2.5">
 			<Switch checked={checked} onCheckedChange={(value) => onChange(value)} />
-			<Label>{label}</Label>
+			<Label className="text-xs">{label}</Label>
 		</div>
 	);
 }

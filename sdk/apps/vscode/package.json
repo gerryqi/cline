@@ -17,9 +17,28 @@
 		"commands": [
 			{
 				"command": "clineVscode.openChat",
-				"title": "Cline: Open Chat"
+				"title": "Cline: Open Chat in Editor"
 			}
-		]
+		],
+		"viewsContainers": {
+			"activitybar": [
+				{
+					"id": "cline",
+					"title": "Cline",
+					"icon": "src/public/icon.svg"
+				}
+			]
+		},
+		"views": {
+			"cline": [
+				{
+					"type": "webview",
+					"id": "clineVscode.chatView",
+					"name": "Chat",
+					"icon": "src/public/icon.svg"
+				}
+			]
+		}
 	},
 	"scripts": {
 		"build:webview": "cd ./src/webview && bun run build",

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
+import { Button } from "./ui/button";
 
 export type ChatMessageItem = {
 	id: string;
@@ -14,11 +15,13 @@ export function ChatMessages({
 	status,
 	sessionId,
 	sending,
+	onReset,
 }: {
 	_messages: ChatMessageItem[];
 	status: string;
 	sessionId?: string;
 	sending: boolean;
+	onReset: () => void;
 }) {
 	const viewportRef = useRef<HTMLDivElement>(null);
 
@@ -30,14 +33,20 @@ export function ChatMessages({
 	}, [_messages, sending]);
 
 	const displayMessages = useMemo(() => _messages, [_messages]);
+	const isNewSession = useMemo(() => !_messages?.length, [_messages]);
 
 	return (
 		<Card className="chat-stage min-h-0 overflow-hidden rounded-2xl">
 			<CardHeader className="chat-stage__header">
-				<CardTitle className="text-3xl">Cline</CardTitle>
+				{isNewSession && <CardTitle className="text-3xl">Cline</CardTitle>}
 				<div className="chat-stage__status">
-					<span>{status}</span>
+					<span>{status.includes("Failed") ? status : null}</span>
 					{sessionId ? <code>{sessionId}</code> : null}
+					{!isNewSession && (
+						<Button variant="secondary" onClick={onReset}>
+							New Session
+						</Button>
+					)}
 				</div>
 			</CardHeader>
 			<Separator />
@@ -45,11 +54,6 @@ export function ChatMessages({
 				ref={viewportRef}
 				className="chat-stage__messages overflow-auto"
 			>
-				{displayMessages.length === 0 ? (
-					<div className="message message--meta">
-						Pick a provider & model before sending a prompt.
-					</div>
-				) : null}
 				{displayMessages.map((message) => (
 					<Card
 						key={message.id}
