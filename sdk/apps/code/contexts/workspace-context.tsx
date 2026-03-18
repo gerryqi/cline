@@ -6,7 +6,9 @@ type WorkspaceContextValue = {
 	workspaceRoot: string;
 	workspaces: string[];
 	listWorkspaces: () => Promise<string[]>;
+	refreshWorkspaces: () => Promise<void>;
 	switchWorkspace: (workspacePath: string) => Promise<boolean>;
+	pickWorkspaceDirectory: (initialPath?: string) => Promise<string | null>;
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);

@@ -22,6 +22,7 @@ Startup flow:
 4. The UI keeps one persistent socket and sends chat commands (`start`, `send`, `abort`, `reset`) over that connection.
 5. If websocket command/response transport is unavailable during a turn, the UI falls back to the direct Tauri command path (`chat_session_command`) so requests are still delivered.
 6. Host/runtime communication is handled by `scripts/chat-runtime-bridge.ts` using `@clinebot/core` RPC bridge helper re-exports.
+7. Session process context resolves `workspaceRoot` from git root and uses that same path as default `cwd` for chat runtime and git operations unless explicitly overridden.
 
 Chat transport envelope:
 

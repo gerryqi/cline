@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, FolderCode, GitBranch, Plus, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -19,30 +19,47 @@ function formatWorkspacePath(path: string): string {
 	return path;
 }
 
+function normalizeWorkspacePath(path: string): string {
+	const normalized = path.trim().replace(/[\\/]+$/, "");
+	if (!normalized) {
+		return "";
+	}
+	if (/^[A-Za-z]:/.test(normalized)) {
+		return normalized.toLowerCase();
+	}
+	return normalized;
+}
+
 export function WorkspaceSelector({
 	currentBranch,
 	workspaceRoot,
 	onListGitBranches,
-	onListWorkspaces,
+	workspaces,
+	onRefreshWorkspaces,
 	onSwitchGitBranch,
 	onSwitchWorkspace,
+	onPickWorkspaceDirectory,
 	onCreateGitBranch,
 }: {
 	currentBranch: string;
 	workspaceRoot: string;
 	onListGitBranches: () => Promise<{ current: string; branches: string[] }>;
-	onListWorkspaces: () => Promise<string[]>;
+	workspaces: string[];
+	onRefreshWorkspaces: () => Promise<void>;
 	onSwitchGitBranch: (branch: string) => Promise<boolean>;
 	onSwitchWorkspace: (workspacePath: string) => Promise<boolean>;
+	onPickWorkspaceDirectory?: (initialPath?: string) => Promise<string | null>;
 	onCreateGitBranch?: (branchName: string) => Promise<boolean>;
 }) {
 	const [open, setOpen] = useState(false);
 	const [search, setSearch] = useState("");
 	const [branches, setBranches] = useState<string[]>([]);
-	const [workspaces, setWorkspaces] = useState<string[]>([]);
 	const [loadingBranches, setLoadingBranches] = useState(false);
 	const [switching, setSwitching] = useState(false);
 	const [switchingWorkspace, setSwitchingWorkspace] = useState(false);
+	const [pickingWorkspace, setPickingWorkspace] = useState(false);
+	const [showWorkspacePathInput, setShowWorkspacePathInput] = useState(false);
+	const [workspacePathInput, setWorkspacePathInput] = useState("");
 	const [showCreateBranch, setShowCreateBranch] = useState(false);
 	const [newBranchName, setNewBranchName] = useState("");
 
@@ -54,28 +71,24 @@ export function WorkspaceSelector({
 		const parts = trimmed.split(/[\\/]/);
 		return parts[parts.length - 1] || "workspace";
 	}, [workspaceRoot]);
-
-	// Preload workspaces on mount so the dropdown is instant
-	useEffect(() => {
-		let cancelled = false;
-		onListWorkspaces()
-			.then((results) => {
-				if (!cancelled) setWorkspaces(results);
-			})
-			.catch(() => {});
-		return () => {
-			cancelled = true;
-		};
-	}, [onListWorkspaces]);
+	const normalizedWorkspaceRoot = useMemo(
+		() => normalizeWorkspacePath(workspaceRoot),
+		[workspaceRoot],
+	);
 
 	const openMenu = async () => {
 		setOpen(true);
 		setSearch("");
+		setShowWorkspacePathInput(false);
+		setWorkspacePathInput("");
 		setShowCreateBranch(false);
 		setNewBranchName("");
 		setLoadingBranches(true);
 		try {
-			const branchPayload = await onListGitBranches();
+			const [branchPayload] = await Promise.all([
+				onListGitBranches(),
+				onRefreshWorkspaces(),
+			]);
 			setBranches(branchPayload.branches);
 		} finally {
 			setLoadingBranches(false);
@@ -86,6 +99,8 @@ export function WorkspaceSelector({
 		if (branch === currentBranch || switching) {
 			setOpen(false);
 			setSearch("");
+			setShowWorkspacePathInput(false);
+			setWorkspacePathInput("");
 			return;
 		}
 		setSwitching(true);
@@ -99,7 +114,11 @@ export function WorkspaceSelector({
 
 	const handleWorkspaceSelect = async (nextWorkspacePath: string) => {
 		const next = nextWorkspacePath.trim();
-		if (!next || next === workspaceRoot || switchingWorkspace) {
+		if (
+			!next ||
+			normalizeWorkspacePath(next) === normalizedWorkspaceRoot ||
+			switchingWorkspace
+		) {
 			return;
 		}
 		setSwitchingWorkspace(true);
@@ -111,10 +130,32 @@ export function WorkspaceSelector({
 		}
 	};
 
-	const handleSwitchWorkspacePath = () => {
-		const proposed = window.prompt("Enter workspace path", workspaceRoot);
-		if (!proposed?.trim()) return;
-		void handleWorkspaceSelect(proposed.trim());
+	const handleSwitchWorkspacePath = async () => {
+		if (pickingWorkspace || switchingWorkspace) {
+			return;
+		}
+		if (onPickWorkspaceDirectory) {
+			setPickingWorkspace(true);
+			try {
+				const picked = await onPickWorkspaceDirectory(workspaceRoot);
+				if (picked?.trim()) {
+					await handleWorkspaceSelect(picked.trim());
+				}
+			} finally {
+				setPickingWorkspace(false);
+			}
+			return;
+		}
+		setShowWorkspacePathInput(true);
+		setWorkspacePathInput(workspaceRoot);
+	};
+
+	const handleSubmitWorkspacePath = () => {
+		const proposed = workspacePathInput.trim();
+		if (!proposed) {
+			return;
+		}
+		void handleWorkspaceSelect(proposed);
 	};
 
 	const handleCreateBranch = async () => {
@@ -176,6 +217,8 @@ export function WorkspaceSelector({
 						className="fixed inset-0 z-40 cursor-default h-auto rounded-none opacity-0"
 						onClick={() => {
 							setOpen(false);
+							setShowWorkspacePathInput(false);
+							setWorkspacePathInput("");
 							setShowCreateBranch(false);
 							setNewBranchName("");
 							setSearch("");
@@ -214,43 +257,83 @@ export function WorkspaceSelector({
 												No workspaces found
 											</div>
 										) : (
-											filteredWorkspaces.map((wp) => (
-												<Button
-													variant="ghost"
-													key={wp}
-													disabled={switchingWorkspace}
-													onClick={() => {
-														void handleWorkspaceSelect(wp);
-													}}
-													className={cn(
-														"flex items-center justify-between h-auto rounded-md p-2 text-left w-full",
-														wp === workspaceRoot
-															? "bg-accent"
-															: "hover:bg-accent/50",
-													)}
-												>
-													<div className="flex items-center gap-2 min-w-0 w-full">
-														<FolderCode className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
-														<span className="text-xs text-foreground truncate inline-flex">
-															{formatWorkspacePath(wp)}
-														</span>
-													</div>
-													{wp === workspaceRoot && (
-														<Check className="h-3 w-3 text-foreground shrink-0 ml-2" />
-													)}
-												</Button>
-											))
+											filteredWorkspaces.map((wp) => {
+												const isActive =
+													normalizeWorkspacePath(wp) ===
+													normalizedWorkspaceRoot;
+												return (
+													<Button
+														variant="ghost"
+														key={wp}
+														disabled={switchingWorkspace}
+														onClick={() => {
+															void handleWorkspaceSelect(wp);
+														}}
+														className={cn(
+															"flex items-center justify-between h-auto rounded-md p-2 text-left w-full",
+															isActive ? "bg-accent" : "hover:bg-accent/50",
+														)}
+													>
+														<div className="flex items-center gap-2 min-w-0 w-full">
+															<FolderCode className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+															<span className="text-xs text-foreground truncate inline-flex">
+																{formatWorkspacePath(wp)}
+															</span>
+														</div>
+														{isActive && (
+															<Check className="h-3 w-3 text-foreground shrink-0 ml-2" />
+														)}
+													</Button>
+												);
+											})
 										)}
 									</div>
 									<Button
 										variant="ghost"
-										onClick={handleSwitchWorkspacePath}
-										disabled={switchingWorkspace}
+										onClick={() => {
+											void handleSwitchWorkspacePath();
+										}}
+										disabled={switchingWorkspace || pickingWorkspace}
 										size="sm"
 										className="justify-start w-full mt-0.5 text-xs text-muted-foreground"
 									>
-										Switch workspace path...
+										{pickingWorkspace
+											? "Opening folder picker..."
+											: "Switch workspace path..."}
 									</Button>
+									{showWorkspacePathInput ? (
+										<div className="mt-1 flex items-center gap-1">
+											<Input
+												autoFocus
+												value={workspacePathInput}
+												onChange={(event) =>
+													setWorkspacePathInput(event.target.value)
+												}
+												onKeyDown={(event) => {
+													if (event.key === "Enter") {
+														event.preventDefault();
+														handleSubmitWorkspacePath();
+													}
+													if (event.key === "Escape") {
+														event.preventDefault();
+														setShowWorkspacePathInput(false);
+														setWorkspacePathInput("");
+													}
+												}}
+												placeholder="/path/to/workspace"
+												className="h-7 text-xs"
+											/>
+											<Button
+												size="sm"
+												variant="secondary"
+												onClick={handleSubmitWorkspacePath}
+												disabled={switchingWorkspace}
+												className="h-7 px-2 text-xs"
+											>
+												Go
+											</Button>
+										</div>
+									) : null}
 								</div>
 
 								{/* Branches section */}

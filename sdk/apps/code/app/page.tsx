@@ -36,6 +36,17 @@ type WorkspaceSessionItem = {
 	workspaceRoot?: string;
 };
 
+function normalizeWorkspacePath(path: string): string {
+	const normalized = path.trim().replace(/[\\/]+$/, "");
+	if (!normalized) {
+		return "";
+	}
+	if (/^[A-Za-z]:/.test(normalized)) {
+		return normalized.toLowerCase();
+	}
+	return normalized;
+}
+
 function toThreadTitle(options: { title?: string; prompt?: string }): string {
 	const preferredTitle = options.title?.trim();
 	if (preferredTitle) {
@@ -342,44 +353,54 @@ function ChatThreadPane({
 		[getWorkspaceCwd],
 	);
 
-	const listWorkspaces = useCallback(async (): Promise<string[]> => {
-		const roots = new Set<string>();
-		const current = (
-			workspaceRef.current.workspaceRoot ||
-			workspaceRef.current.cwd ||
-			""
-		).trim();
-		if (current) {
-			roots.add(current);
-		}
-
-		try {
-			const discovered = await invoke<WorkspaceSessionItem[]>(
-				"list_discovered_sessions",
-				{ limit: 20 },
-			).catch(() => []);
-
-			for (const session of discovered) {
-				const candidate = (session.workspaceRoot || session.cwd || "").trim();
-				if (candidate) {
-					roots.add(candidate);
-				}
+	const listWorkspaces = useCallback(
+		async (preferredWorkspace?: string): Promise<string[]> => {
+			const roots = new Set<string>();
+			const preferred = (preferredWorkspace || "").trim();
+			if (preferred) {
+				roots.add(preferred);
 			}
-		} catch {
-			// Keep fallback to current workspace when history is unavailable.
-		}
+			const current = (
+				workspaceRef.current.workspaceRoot ||
+				workspaceRef.current.cwd ||
+				""
+			).trim();
+			if (current) {
+				roots.add(current);
+			}
 
-		return [...roots].sort((a, b) => a.localeCompare(b));
-	}, []);
+			try {
+				const discovered = await invoke<WorkspaceSessionItem[]>(
+					"list_discovered_sessions",
+					{ limit: 20 },
+				).catch(() => []);
 
-	const refreshWorkspaces = useCallback(async () => {
-		try {
-			const results = await listWorkspaces();
-			setWorkspaces(results);
-		} finally {
-			setWorkspacesLoaded(true);
-		}
-	}, [listWorkspaces]);
+				for (const session of discovered) {
+					const candidate = (session.workspaceRoot || session.cwd || "").trim();
+					if (candidate) {
+						roots.add(candidate);
+					}
+				}
+			} catch {
+				// Keep fallback to current workspace when history is unavailable.
+			}
+
+			return [...roots].sort((a, b) => a.localeCompare(b));
+		},
+		[],
+	);
+
+	const refreshWorkspaces = useCallback(
+		async (preferredWorkspace?: string) => {
+			try {
+				const results = await listWorkspaces(preferredWorkspace);
+				setWorkspaces(results);
+			} finally {
+				setWorkspacesLoaded(true);
+			}
+		},
+		[listWorkspaces],
+	);
 
 	useEffect(() => {
 		void refreshWorkspaces();
@@ -391,12 +412,24 @@ function ChatThreadPane({
 			if (!nextWorkspace) {
 				return false;
 			}
+			const normalizedNext = normalizeWorkspacePath(nextWorkspace);
+			const normalizedCurrent = normalizeWorkspacePath(
+				workspaceRef.current.workspaceRoot || workspaceRef.current.cwd || "",
+			);
+			if (normalizedNext === normalizedCurrent) {
+				return true;
+			}
 
 			setConfig((prev) => ({
 				...prev,
 				workspaceRoot: nextWorkspace,
 				cwd: nextWorkspace,
 			}));
+			setWorkspaces((prev) => {
+				const next = new Set(prev);
+				next.add(nextWorkspace);
+				return [...next].sort((a, b) => a.localeCompare(b));
+			});
 
 			// Fire git branch + workspace list refresh in the background
 			invoke<{ branch?: string }>("get_git_branch", {
@@ -411,11 +444,32 @@ function ChatThreadPane({
 				});
 
 			// Re-fetch workspace list so the new root appears
-			void refreshWorkspaces();
+			void refreshWorkspaces(nextWorkspace);
 
 			return true;
 		},
 		[setConfig, refreshWorkspaces],
+	);
+
+	const pickWorkspaceDirectory = useCallback(
+		async (initialPath?: string): Promise<string | null> => {
+			try {
+				const selected = await invoke<string | null>(
+					"pick_workspace_directory",
+					{
+						initialPath: initialPath?.trim() || undefined,
+					},
+				);
+				if (typeof selected !== "string") {
+					return null;
+				}
+				const trimmed = selected.trim();
+				return trimmed.length > 0 ? trimmed : null;
+			} catch {
+				return null;
+			}
+		},
+		[],
 	);
 
 	useEffect(() => {
@@ -583,9 +637,20 @@ function ChatThreadPane({
 			workspaceRoot: resolvedWorkspaceRoot,
 			workspaces,
 			listWorkspaces,
+			refreshWorkspaces: async () => {
+				await refreshWorkspaces();
+			},
 			switchWorkspace,
+			pickWorkspaceDirectory,
 		}),
-		[resolvedWorkspaceRoot, workspaces, listWorkspaces, switchWorkspace],
+		[
+			resolvedWorkspaceRoot,
+			workspaces,
+			listWorkspaces,
+			refreshWorkspaces,
+			switchWorkspace,
+			pickWorkspaceDirectory,
+		],
 	);
 
 	const isAppReady =

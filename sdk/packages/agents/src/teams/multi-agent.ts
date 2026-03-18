@@ -84,6 +84,7 @@ export type TeamEvent =
 			agentId: string;
 			result?: AgentResult;
 			error?: Error;
+			messages?: AgentResult["messages"];
 	  }
 	| { type: TeamMessageType.AgentEvent; agentId: string; event: AgentEvent }
 	| {
@@ -242,7 +243,12 @@ export class AgentTeam {
 			return result;
 		} catch (error) {
 			const err = error instanceof Error ? error : new Error(String(error));
-			this.emitEvent({ type: TeamMessageType.TaskEnd, agentId, error: err });
+			this.emitEvent({
+				type: TeamMessageType.TaskEnd,
+				agentId,
+				error: err,
+				messages: agent.getMessages(),
+			});
 			throw error;
 		}
 	}
@@ -268,7 +274,12 @@ export class AgentTeam {
 			return result;
 		} catch (error) {
 			const err = error instanceof Error ? error : new Error(String(error));
-			this.emitEvent({ type: TeamMessageType.TaskEnd, agentId, error: err });
+			this.emitEvent({
+				type: TeamMessageType.TaskEnd,
+				agentId,
+				error: err,
+				messages: agent.getMessages(),
+			});
 			throw error;
 		}
 	}
@@ -323,6 +334,7 @@ export class AgentTeam {
 					type: TeamMessageType.TaskEnd,
 					agentId: task.agentId,
 					error: err,
+					messages: agent.getMessages(),
 				});
 				return {
 					agentId: task.agentId,
@@ -384,6 +396,7 @@ export class AgentTeam {
 					type: TeamMessageType.TaskEnd,
 					agentId: task.agentId,
 					error: err,
+					messages: agent.getMessages(),
 				});
 				results.push({
 					agentId: task.agentId,
@@ -462,7 +475,12 @@ export class AgentTeam {
 				}
 			} catch (error) {
 				const err = error instanceof Error ? error : new Error(String(error));
-				this.emitEvent({ type: TeamMessageType.TaskEnd, agentId, error: err });
+				this.emitEvent({
+					type: TeamMessageType.TaskEnd,
+					agentId,
+					error: err,
+					messages: agent.getMessages(),
+				});
 				results.push({
 					agentId,
 					result: undefined as unknown as AgentResult,
@@ -1274,7 +1292,12 @@ export class AgentTeamsRuntime {
 			return result;
 		} catch (error) {
 			const err = error instanceof Error ? error : new Error(String(error));
-			this.emitEvent({ type: TeamMessageType.TaskEnd, agentId, error: err });
+			this.emitEvent({
+				type: TeamMessageType.TaskEnd,
+				agentId,
+				error: err,
+				messages: member.agent.getMessages(),
+			});
 			this.appendMissionLog({
 				agentId,
 				taskId: options?.taskId,

@@ -98,6 +98,8 @@ flowchart LR
 3. Team lifecycle is append-only in `team_events`, with materialized projections in `team_tasks`, `team_runs`, `team_outcomes`, and `team_outcome_fragments`.
 4. On restart, `DefaultRuntimeBuilder` restores the team snapshot by `teamName` and marks stale queued/running runs as `interrupted` for deterministic recovery.
 5. `DefaultSessionManager` keeps the lead loop alive while async teammate runs are active and auto-continues the lead agent with system-delivered run terminal updates when runs complete/fail/cancel/interrupted.
+6. Failed teammate task events now include the teammate conversation snapshot; core persists that message history to the team-task sub-session `*.messages.json` even when the run fails.
+7. Root session message artifacts are persisted for both successful and failed turns, so rendered conversation history is not lost when a turn exits with an error.
 
 ## CLI (`@clinebot/cli`)
 

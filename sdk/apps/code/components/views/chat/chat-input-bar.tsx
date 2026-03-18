@@ -135,8 +135,10 @@ export function ChatInputBar({
 }: ChatInputBarProps) {
 	const {
 		workspaceRoot,
-		listWorkspaces: onListWorkspaces,
+		workspaces,
+		refreshWorkspaces: onRefreshWorkspaces,
 		switchWorkspace: onSwitchWorkspace,
+		pickWorkspaceDirectory: onPickWorkspaceDirectory,
 	} = useWorkspace();
 	const isBusy =
 		status === "starting" || status === "running" || status === "stopping";
@@ -471,9 +473,11 @@ export function ChatInputBar({
 					<WorkspaceSelector
 						currentBranch={gitBranch}
 						onListGitBranches={onListGitBranches}
-						onListWorkspaces={onListWorkspaces}
+						onRefreshWorkspaces={onRefreshWorkspaces}
+						onPickWorkspaceDirectory={onPickWorkspaceDirectory}
 						onSwitchGitBranch={onSwitchGitBranch}
 						onSwitchWorkspace={onSwitchWorkspace}
+						workspaces={workspaces}
 						workspaceRoot={workspaceRoot}
 					/>
 					<button

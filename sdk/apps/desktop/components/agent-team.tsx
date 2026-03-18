@@ -23,8 +23,6 @@ import { buildTeamStatusBoardDto } from "@/lib/team-status-board";
 import type { StartSessionRequest } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const DEFAULT_SYSTEM_PROMPT =
-	"You are Cline, an AI coding agent. Follow user requests and use tools when needed.";
 const TAB_NAMES = [
 	"Members",
 	"Tasks",
@@ -101,7 +99,7 @@ export function AgentTeam() {
 		provider: "cline",
 		model: "anthropic/claude-sonnet-4-6",
 		apiKey: "",
-		systemPrompt: DEFAULT_SYSTEM_PROMPT,
+		systemPrompt: undefined,
 		maxIterations: undefined,
 		enableTools: true,
 		enableSpawn: true,

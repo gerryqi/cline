@@ -733,28 +733,38 @@ export class DefaultSessionManager implements SessionManager {
 		const shouldContinue =
 			session.started || session.agent.getMessages().length > 0;
 		const baselineMessages = session.agent.getMessages();
-		const result = shouldContinue
-			? await this.runWithAuthRetry(
-					session,
-					() => session.agent.continue(prompt, userImages, userFiles),
-					baselineMessages,
-				)
-			: await this.runWithAuthRetry(
-					session,
-					() => session.agent.run(prompt, userImages, userFiles),
-					baselineMessages,
-				);
-		session.started = true;
-		const persistedMessages = withLatestAssistantTurnMetadata(
-			result.messages,
-			result,
-		);
-		await this.invoke<void>(
-			"persistSessionMessages",
-			session.sessionId,
-			persistedMessages,
-		);
-		return result;
+		try {
+			const result = shouldContinue
+				? await this.runWithAuthRetry(
+						session,
+						() => session.agent.continue(prompt, userImages, userFiles),
+						baselineMessages,
+					)
+				: await this.runWithAuthRetry(
+						session,
+						() => session.agent.run(prompt, userImages, userFiles),
+						baselineMessages,
+					);
+			session.started = true;
+			const persistedMessages = withLatestAssistantTurnMetadata(
+				result.messages,
+				result,
+			);
+			await this.invoke<void>(
+				"persistSessionMessages",
+				session.sessionId,
+				persistedMessages,
+			);
+			return result;
+		} catch (error) {
+			// Persist whatever was rendered so far even when a turn fails.
+			await this.invoke<void>(
+				"persistSessionMessages",
+				session.sessionId,
+				session.agent.getMessages(),
+			);
+			throw error;
+		}
 	}
 
 	private async prepareTurnInput(
@@ -1068,6 +1078,7 @@ export class DefaultSessionManager implements SessionManager {
 						event.agentId,
 						"failed",
 						`[error] ${event.error.message}`,
+						event.messages,
 					);
 					break;
 				}

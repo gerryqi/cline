@@ -55,16 +55,13 @@ type ChatWsChunkEvent = {
 	event: AgentChunkEvent;
 };
 
-const DEFAULT_SYSTEM_PROMPT =
-	"You are Cline, an AI coding agent. Follow user requests and use tools when needed.";
-
 export const DEFAULT_CHAT_CONFIG: ChatSessionConfig = {
 	workspaceRoot: "",
 	cwd: "",
 	provider: "cline",
 	model: models.CLINE_DEFAULT_MODEL,
 	apiKey: "",
-	systemPrompt: DEFAULT_SYSTEM_PROMPT,
+	systemPrompt: undefined,
 	maxIterations: undefined,
 	enableTools: true,
 	enableSpawn: true,

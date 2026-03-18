@@ -216,6 +216,7 @@ Three interfaces define the storage contract consumed by session management:
 ### Session lifecycle through storage
 
 `CoreSessionService` (`packages/core/src/session/session-service.ts`) wires `SqliteSessionStore` + `SessionArtifacts` together. `DefaultSessionManager` (`packages/core/src/session/default-session-manager.ts`) consumes a `SessionBackend` (either local `CoreSessionService` or remote `RpcCoreSessionService`) and exposes the high-level `SessionManager` interface (start, send, abort, stop, dispose, read artifacts).
+`DefaultSessionManager` persists `messages.json` for both successful and failed turns, and team task failure events now carry teammate message snapshots so failed team-task sub-sessions also retain their rendered message history.
 
 ## Tooling and Standards
 

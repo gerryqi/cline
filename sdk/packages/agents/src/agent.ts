@@ -720,10 +720,14 @@ export class Agent {
 				if (successfulToolCalls > 0) {
 					consecutiveMistakes = 0;
 				} else if (failedToolCalls > 0) {
+					const failedToolCallDetails =
+						this.buildFailedToolCallFeedback(toolResults);
 					const shouldContinue = await this.recordMistake({
 						iteration,
 						reason: "tool_execution_failed",
-						details: `${failedToolCalls} tool call(s) failed`,
+						details: `${failedToolCalls} tool call(s) failed${
+							failedToolCallDetails ? `: ${failedToolCallDetails}` : ""
+						}`,
 						consecutiveMistakes: () => consecutiveMistakes,
 						setConsecutiveMistakes: (value) => {
 							consecutiveMistakes = value;
@@ -877,6 +881,25 @@ export class Agent {
 			})
 			.join("; ");
 		return `One or more tool calls were invalid or missing required parameters (${details}). Retry with valid tool names and arguments.`;
+	}
+
+	private buildFailedToolCallFeedback(toolResults: ToolCallRecord[]): string {
+		const failed = toolResults.filter((record) => !!record.error);
+		if (failed.length === 0) {
+			return "";
+		}
+		const details = failed
+			.slice(0, 3)
+			.map((record) => {
+				const message = String(record.error ?? "unknown tool error")
+					.replace(/\s+/g, " ")
+					.trim();
+				return `${record.name}: ${message}`;
+			})
+			.join("; ");
+		return failed.length > 3
+			? `${details}; +${failed.length - 3} more failed tool call(s)`
+			: details;
 	}
 
 	private async recordMistake(input: {

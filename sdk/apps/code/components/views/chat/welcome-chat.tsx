@@ -19,6 +19,17 @@ interface QuickAction {
 	description: string;
 	prompt: string;
 }
+
+function normalizeWorkspacePath(path: string): string {
+	const normalized = path.trim().replace(/[\\/]+$/, "");
+	if (!normalized) {
+		return "";
+	}
+	if (/^[A-Za-z]:/.test(normalized)) {
+		return normalized.toLowerCase();
+	}
+	return normalized;
+}
 function toWorkspaceName(path: string): string {
 	const trimmed = path.trim().replace(/[\\/]+$/, "");
 	if (!trimmed) return "workspace";
@@ -54,7 +65,12 @@ export function WelcomeScreen({
 
 	const handleSelectWorkspace = useCallback(
 		async (path: string) => {
-			if (path === workspaceRoot || switchingWorkspace) return;
+			if (
+				normalizeWorkspacePath(path) ===
+					normalizeWorkspacePath(workspaceRoot) ||
+				switchingWorkspace
+			)
+				return;
 			setSwitchingWorkspace(true);
 			await switchWorkspace(path);
 			setSwitchingWorkspace(false);
@@ -89,39 +105,44 @@ export function WelcomeScreen({
 						<CommandList>
 							<CommandEmpty>No workspaces found.</CommandEmpty>
 							<CommandGroup>
-								{workspaces.map((wsPath) => (
-									<CommandItem
-										key={wsPath}
-										value={wsPath}
-										onSelect={() => {
-											void handleSelectWorkspace(wsPath);
-										}}
-										disabled={switchingWorkspace}
-										className="gap-3 py-2.5"
-									>
-										<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-secondary">
-											<FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
-										</div>
-										<div className="min-w-0 flex-1">
-											<div className="flex items-center gap-2">
-												<p className="truncate text-sm font-medium text-foreground">
-													{toWorkspaceName(wsPath)}
-												</p>
-												{wsPath === workspaceRoot && (
-													<span className="rounded-full bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-														Active
-													</span>
-												)}
+								{workspaces.map((wsPath) => {
+									const isActive =
+										normalizeWorkspacePath(wsPath) ===
+										normalizeWorkspacePath(workspaceRoot);
+									return (
+										<CommandItem
+											key={wsPath}
+											value={wsPath}
+											onSelect={() => {
+												void handleSelectWorkspace(wsPath);
+											}}
+											disabled={switchingWorkspace}
+											className="gap-3 py-2.5"
+										>
+											<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-secondary">
+												<FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
 											</div>
-											<p className="truncate text-xs text-muted-foreground">
-												{formatWorkspaceLabel(wsPath)}
-											</p>
-										</div>
-										{wsPath === workspaceRoot && (
-											<Check className="ml-auto h-4 w-4 text-primary" />
-										)}
-									</CommandItem>
-								))}
+											<div className="min-w-0 flex-1">
+												<div className="flex items-center gap-2">
+													<p className="truncate text-sm font-medium text-foreground">
+														{toWorkspaceName(wsPath)}
+													</p>
+													{isActive && (
+														<span className="rounded-full bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+															Active
+														</span>
+													)}
+												</div>
+												<p className="truncate text-xs text-muted-foreground">
+													{formatWorkspaceLabel(wsPath)}
+												</p>
+											</div>
+											{isActive && (
+												<Check className="ml-auto h-4 w-4 text-primary" />
+											)}
+										</CommandItem>
+									);
+								})}
 							</CommandGroup>
 						</CommandList>
 					</Command>

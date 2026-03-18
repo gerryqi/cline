@@ -3740,8 +3740,22 @@ fn list_existing_teams() -> Result<Vec<String>, String> {
 fn get_process_context(context: State<'_, AppContext>) -> ProcessContext {
     ProcessContext {
         workspace_root: context.workspace_root.clone(),
-        cwd: context.launch_cwd.clone(),
+        cwd: context.workspace_root.clone(),
     }
+}
+
+#[tauri::command]
+fn pick_workspace_directory(initial_path: Option<String>) -> Option<String> {
+    let mut dialog = rfd::FileDialog::new();
+    if let Some(path) = initial_path
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        dialog = dialog.set_directory(path);
+    }
+    dialog
+        .pick_folder()
+        .map(|path| path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -3749,7 +3763,7 @@ fn get_git_branch(context: State<'_, AppContext>, cwd: Option<String>) -> GitBra
     let target_cwd = cwd
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| context.launch_cwd.clone());
+        .unwrap_or_else(|| context.workspace_root.clone());
 
     GitBranchContext {
         branch: resolve_git_branch(&target_cwd),
@@ -3761,7 +3775,7 @@ fn list_git_branches(context: State<'_, AppContext>, cwd: Option<String>) -> Git
     let target_cwd = cwd
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| context.launch_cwd.clone());
+        .unwrap_or_else(|| context.workspace_root.clone());
 
     resolve_git_branches(&target_cwd)
 }
@@ -3775,7 +3789,7 @@ fn checkout_git_branch(
     let target_cwd = cwd
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| context.launch_cwd.clone());
+        .unwrap_or_else(|| context.workspace_root.clone());
 
     run_checkout_git_branch(&target_cwd, &branch)?;
     Ok(GitBranchContext {
@@ -4898,6 +4912,7 @@ fn main() {
             read_team_history,
             list_existing_teams,
             get_process_context,
+            pick_workspace_directory,
             get_git_branch,
             list_git_branches,
             checkout_git_branch,

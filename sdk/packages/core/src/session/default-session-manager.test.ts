@@ -237,6 +237,74 @@ describe("DefaultSessionManager", () => {
 		});
 	});
 
+	it("persists rendered messages when a turn fails", async () => {
+		const sessionId = "sess-failed-turn";
+		const manifest = createManifest(sessionId);
+		const persistSessionMessages = vi.fn();
+		const sessionService = {
+			ensureSessionsDir: vi.fn().mockReturnValue("/tmp/sessions"),
+			createRootSessionWithArtifacts: vi.fn().mockResolvedValue({
+				manifestPath: "/tmp/manifest-failed-turn.json",
+				transcriptPath: "/tmp/transcript-failed-turn.log",
+				hookPath: "/tmp/hook-failed-turn.log",
+				messagesPath: "/tmp/messages-failed-turn.json",
+				manifest,
+			}),
+			persistSessionMessages,
+			updateSessionStatus: vi.fn().mockResolvedValue({ updated: true }),
+			writeSessionManifest: vi.fn(),
+			listSessions: vi.fn().mockResolvedValue([]),
+			deleteSession: vi.fn().mockResolvedValue({ deleted: true }),
+		};
+		const runtimeBuilder = {
+			build: vi.fn().mockReturnValue({
+				tools: [],
+				shutdown: vi.fn(),
+			}),
+		};
+		const renderedMessages = [
+			{ role: "user", content: [{ type: "text", text: "hello" }] },
+			{ role: "assistant", content: [{ type: "text", text: "partial" }] },
+		];
+		const manager = new DefaultSessionManager({
+			distinctId,
+			sessionService: sessionService as never,
+			runtimeBuilder,
+			createAgent: () =>
+				({
+					run: vi.fn().mockRejectedValue(new Error("boom")),
+					continue: vi.fn(),
+					abort: vi.fn(),
+					restore: vi.fn(),
+					shutdown: vi.fn().mockResolvedValue(undefined),
+					getMessages: vi
+						.fn()
+						.mockReturnValueOnce([])
+						.mockReturnValue(renderedMessages),
+					messages: [],
+				}) as never,
+		});
+
+		await expect(
+			manager.start({
+				config: createConfig({ sessionId }),
+				prompt: "hello",
+				interactive: false,
+			}),
+		).rejects.toThrow("boom");
+
+		expect(persistSessionMessages).toHaveBeenCalledTimes(1);
+		expect(persistSessionMessages).toHaveBeenCalledWith(
+			sessionId,
+			renderedMessages,
+		);
+		expect(sessionService.updateSessionStatus).toHaveBeenCalledWith(
+			sessionId,
+			"failed",
+			1,
+		);
+	});
+
 	it("uses run for first send then continue for subsequent sends", async () => {
 		const sessionId = "sess-2";
 		const manifest = createManifest(sessionId);
@@ -811,6 +879,90 @@ describe("DefaultSessionManager", () => {
 			sessionId,
 			"completed",
 			0,
+		);
+	});
+
+	it("persists failed teammate task messages for team-task sub-sessions", async () => {
+		const sessionId = "sess-team-task-failure-messages";
+		const manifest = createManifest(sessionId);
+		const sessionService = {
+			ensureSessionsDir: vi.fn().mockReturnValue("/tmp/sessions"),
+			createRootSessionWithArtifacts: vi.fn().mockResolvedValue({
+				manifestPath: "/tmp/manifest-team-task-failure-messages.json",
+				transcriptPath: "/tmp/transcript-team-task-failure-messages.log",
+				hookPath: "/tmp/hook-team-task-failure-messages.log",
+				messagesPath: "/tmp/messages-team-task-failure-messages.json",
+				manifest,
+			}),
+			persistSessionMessages: vi.fn(),
+			updateSessionStatus: vi.fn().mockResolvedValue({ updated: true }),
+			writeSessionManifest: vi.fn(),
+			listSessions: vi.fn().mockResolvedValue([]),
+			deleteSession: vi.fn().mockResolvedValue({ deleted: true }),
+			onTeamTaskStart: vi.fn().mockResolvedValue(undefined),
+			onTeamTaskEnd: vi.fn().mockResolvedValue(undefined),
+		};
+
+		let onTeamEvent: ((event: unknown) => void) | undefined;
+		const runtimeBuilder = {
+			build: vi
+				.fn()
+				.mockImplementation(
+					(input: { onTeamEvent?: (event: unknown) => void }) => {
+						onTeamEvent = input.onTeamEvent;
+						return {
+							tools: [],
+							shutdown: vi.fn(),
+						};
+					},
+				),
+		};
+
+		const failedMessages = [
+			{ role: "user", content: [{ type: "text", text: "delegated prompt" }] },
+			{ role: "assistant", content: [{ type: "text", text: "partial work" }] },
+		];
+		const manager = new DefaultSessionManager({
+			distinctId,
+			sessionService: sessionService as never,
+			runtimeBuilder,
+			createAgent: () =>
+				({
+					run: vi.fn().mockImplementation(async () => {
+						onTeamEvent?.({
+							type: "task_start",
+							agentId: "providers-investigator",
+							message: "Investigate provider boundaries",
+						});
+						onTeamEvent?.({
+							type: "task_end",
+							agentId: "providers-investigator",
+							error: new Error("401 Unauthorized"),
+							messages: failedMessages,
+						});
+						return createResult({ text: "lead handled failure" });
+					}),
+					continue: vi.fn(),
+					abort: vi.fn(),
+					shutdown: vi.fn().mockResolvedValue(undefined),
+					getMessages: vi.fn().mockReturnValue([]),
+					messages: [],
+				}) as never,
+		});
+
+		await manager.start({
+			config: createConfig({ sessionId }),
+			prompt: "run teammate work",
+			interactive: false,
+		});
+
+		expect(sessionService.onTeamTaskStart).toHaveBeenCalledTimes(1);
+		expect(sessionService.onTeamTaskEnd).toHaveBeenCalledWith(
+			sessionId,
+			"providers-investigator",
+			"failed",
+			"[error] 401 Unauthorized",
+			failedMessages,
 		);
 	});
 });

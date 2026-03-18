@@ -1,357 +1,53 @@
 "use client";
 
-import { models } from "@clinebot/llms";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { serializeAttachments } from "@/hooks/chat-session/attachments";
+import {
+	CHAT_TRANSPORT_UNAVAILABLE_MESSAGE,
+	CHAT_WS_ENDPOINT_RETRY_ATTEMPTS,
+	CHAT_WS_ENDPOINT_RETRY_DELAY_MS,
+	CHAT_WS_RECONNECT_BASE_DELAY_MS,
+	CHAT_WS_RECONNECT_MAX_DELAY_MS,
+	CHAT_WS_REQUEST_TIMEOUT_MS,
+	getInitialChatConfig,
+} from "@/hooks/chat-session/constants";
+import {
+	buildToolPayloadString,
+	extractAssistantTextFromRpcMessages,
+	inferHydratedChatStatus,
+	makeId,
+	normalizeRuntimeConfig,
+	resolveCredentialError,
+} from "@/hooks/chat-session/helpers";
+import type {
+	AgentChunkEvent,
+	ChatApiResult,
+	ChatSessionHookEvent,
+	ChatTransportState,
+	ChatWsChunkEvent,
+	ChatWsResponseEvent,
+	CoreLogChunk,
+	ProcessContext,
+	ToolApprovalRequestItem,
+	ToolCallEndEvent,
+	ToolCallStartEvent,
+} from "@/hooks/chat-session/types";
 import {
 	type ChatMessage,
 	type ChatSessionConfig,
 	ChatSessionConfigSchema,
 	type ChatSessionStatus,
 } from "@/lib/chat-schema";
-import { readModelSelectionStorageFromWindow } from "@/lib/model-selection";
 import {
 	buildSessionDiffState,
 	EMPTY_DIFF_SUMMARY,
 	type SessionDiffSummary,
 	type SessionFileDiff,
-	type SessionHookEvent,
 } from "@/lib/session-diff";
-import type {
-	SessionHistoryItem,
-	SessionHistoryStatus,
-} from "@/lib/session-history";
+import type { SessionHistoryItem } from "@/lib/session-history";
 
-type ProcessContext = {
-	workspaceRoot: string;
-	cwd: string;
-};
-
-type AgentChunkEvent = {
-	sessionId: string;
-	stream: string;
-	chunk: string;
-	ts: number;
-};
-
-type ChatWsResponseEvent = {
-	type: "chat_response";
-	requestId: string;
-	response?: {
-		sessionId?: string;
-		result?: ChatApiResult;
-		ok?: boolean;
-	};
-	error?: string;
-};
-
-type ChatWsChunkEvent = {
-	type: "chat_event";
-	event: AgentChunkEvent;
-};
-
-type CoreLogChunk = {
-	level?: string;
-	message?: string;
-	metadata?: unknown;
-};
-
-type ToolCallStartEvent = {
-	toolCallId?: string;
-	toolName?: string;
-	input?: unknown;
-};
-
-type ToolCallEndEvent = {
-	toolCallId?: string;
-	toolName?: string;
-	input?: unknown;
-	output?: unknown;
-	error?: string;
-	durationMs?: number;
-};
-
-type ToolApprovalRequestItem = {
-	requestId: string;
-	sessionId: string;
-	createdAt: string;
-	toolCallId: string;
-	toolName: string;
-	input?: unknown;
-	iteration?: number;
-	agentId?: string;
-	conversationId?: string;
-};
-
-type ChatApiResult = {
-	text: string;
-	inputTokens?: number;
-	outputTokens?: number;
-	usage?: {
-		inputTokens?: number;
-		outputTokens?: number;
-		totalCost?: number;
-	};
-	iterations?: number;
-	finishReason?: "completed" | "max_iterations" | "aborted" | "error";
-	toolCalls?: Array<{
-		name: string;
-		input?: unknown;
-		output?: unknown;
-		error?: string;
-		durationMs?: number;
-	}>;
-	messages?: unknown[];
-};
-
-type RpcMessageLike = {
-	role?: string;
-	content?: unknown;
-};
-
-type SerializedAttachmentFile = {
-	name: string;
-	content: string;
-};
-
-type SerializedAttachments = {
-	userImages: string[];
-	userFiles: SerializedAttachmentFile[];
-};
-type ChatTransportState = "connecting" | "reconnecting" | "connected";
-
-const DEFAULT_SYSTEM_PROMPT =
-	"You are Cline, an AI coding agent. Follow user requests and use tools when needed.";
-const CHAT_TRANSPORT_UNAVAILABLE_MESSAGE =
-	"Chat connection is unavailable. Reopen the app window to restore realtime chat.";
-const CHAT_WS_ENDPOINT_RETRY_ATTEMPTS = 60;
-const CHAT_WS_ENDPOINT_RETRY_DELAY_MS = 100;
-const CHAT_WS_RECONNECT_BASE_DELAY_MS = 300;
-const CHAT_WS_RECONNECT_MAX_DELAY_MS = 3000;
-const CHAT_WS_REQUEST_TIMEOUT_MS = 120000;
-const OAUTH_MANAGED_PROVIDERS = new Set(["cline", "oca", "openai-codex"]);
-
-export const DEFAULT_CHAT_CONFIG: ChatSessionConfig = {
-	workspaceRoot: "",
-	cwd: "",
-	provider: "anthropic",
-	model: models.ANTHROPIC_DEFAULT_MODEL,
-	mode: "act",
-	apiKey: process.env.ANTHROPIC_API_KEY || "",
-	systemPrompt: DEFAULT_SYSTEM_PROMPT,
-	maxIterations: undefined,
-	enableTools: true,
-	enableSpawn: true,
-	enableTeams: true,
-	autoApproveTools: true,
-	teamName: "app-team",
-	missionStepInterval: 3,
-	missionTimeIntervalMs: 120000,
-};
-
-function getInitialChatConfig(): ChatSessionConfig {
-	const selection = readModelSelectionStorageFromWindow();
-	const rememberedProvider = selection.lastProvider.trim();
-	const rememberedModelForProvider = rememberedProvider
-		? selection.lastModelByProvider[rememberedProvider]
-		: undefined;
-	const rememberedModelForDefaultProvider =
-		selection.lastModelByProvider[DEFAULT_CHAT_CONFIG.provider];
-	const provider = rememberedProvider || DEFAULT_CHAT_CONFIG.provider;
-	const model =
-		rememberedModelForProvider ||
-		(provider === DEFAULT_CHAT_CONFIG.provider
-			? rememberedModelForDefaultProvider
-			: undefined) ||
-		DEFAULT_CHAT_CONFIG.model;
-
-	return {
-		...DEFAULT_CHAT_CONFIG,
-		provider,
-		model,
-	};
-}
-
-function makeId(prefix: string): string {
-	return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function stringifyRpcMessageContent(content: unknown): string {
-	if (typeof content === "string") {
-		return content;
-	}
-	if (Array.isArray(content)) {
-		const parts: string[] = [];
-		for (const block of content) {
-			if (typeof block === "string") {
-				if (block.trim()) {
-					parts.push(block);
-				}
-				continue;
-			}
-			if (!block || typeof block !== "object") {
-				continue;
-			}
-			const obj = block as Record<string, unknown>;
-			const text = obj.text;
-			if (typeof text === "string" && text.trim()) {
-				parts.push(text);
-			}
-		}
-		return parts.join("\n");
-	}
-	if (content && typeof content === "object") {
-		const obj = content as Record<string, unknown>;
-		const text = obj.text;
-		if (typeof text === "string") {
-			return text;
-		}
-	}
-	return "";
-}
-
-function extractAssistantTextFromRpcMessages(messages: unknown): string {
-	if (!Array.isArray(messages)) {
-		return "";
-	}
-	for (let i = messages.length - 1; i >= 0; i -= 1) {
-		const message = messages[i] as RpcMessageLike;
-		if (message?.role !== "assistant") {
-			continue;
-		}
-		const text = stringifyRpcMessageContent(message.content).trim();
-		if (text) {
-			return text;
-		}
-	}
-	return "";
-}
-
-function buildToolPayloadString(options: {
-	toolName: string;
-	input: unknown;
-	output: unknown;
-	error?: string;
-}): string {
-	const { toolName, input, output, error } = options;
-	return JSON.stringify({
-		toolName,
-		input,
-		result: error ? error : output,
-		isError: Boolean(error),
-	});
-}
-
-function normalizeRuntimeConfig(config: ChatSessionConfig): ChatSessionConfig {
-	return {
-		...config,
-		enableSpawn: false,
-		enableTeams: false,
-	};
-}
-
-function resolveCredentialError(config: ChatSessionConfig): string | null {
-	const providerId = config.provider.trim().toLowerCase();
-	if (!providerId) {
-		return "Provider is required before starting a chat session.";
-	}
-	if (OAUTH_MANAGED_PROVIDERS.has(providerId)) {
-		return null;
-	}
-	if (config.apiKey.trim().length > 0) {
-		return null;
-	}
-	return `Missing API key for provider "${config.provider}". Add credentials in Settings, or switch providers.`;
-}
-
-function mapHistoryStatusToChatStatus(
-	status: SessionHistoryStatus,
-): ChatSessionStatus {
-	switch (status) {
-		case "running":
-			return "running";
-		case "completed":
-			return "completed";
-		case "failed":
-			return "failed";
-		case "cancelled":
-			return "cancelled";
-		default:
-			return "idle";
-	}
-}
-
-type ChatSessionHookEvent = SessionHookEvent & {
-	inputTokens?: number;
-	outputTokens?: number;
-};
-
-function inferHydratedChatStatus(
-	fallback: SessionHistoryStatus,
-	messages: ChatMessage[],
-): ChatSessionStatus {
-	if (fallback === "failed") {
-		return "failed";
-	}
-	if (fallback === "cancelled") {
-		return "cancelled";
-	}
-	const meaningfulMessages = messages.filter((message) => {
-		if (message.role !== "user" && message.role !== "assistant") {
-			return false;
-		}
-		return message.content.trim().length > 0;
-	});
-	if (meaningfulMessages.length === 0) {
-		return mapHistoryStatusToChatStatus(fallback);
-	}
-	if (fallback === "running") {
-		const lastMeaningful = meaningfulMessages[meaningfulMessages.length - 1];
-		if (lastMeaningful?.role === "assistant") {
-			return "completed";
-		}
-	}
-	return mapHistoryStatusToChatStatus(fallback);
-}
-
-async function readFileAsDataUrl(file: File): Promise<string> {
-	return await new Promise((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onload = () => {
-			const value = typeof reader.result === "string" ? reader.result : "";
-			resolve(value);
-		};
-		reader.onerror = () => {
-			reject(reader.error ?? new Error("failed reading file"));
-		};
-		reader.readAsDataURL(file);
-	});
-}
-
-async function serializeAttachments(
-	files: File[],
-): Promise<SerializedAttachments> {
-	const userImages: string[] = [];
-	const userFiles: SerializedAttachmentFile[] = [];
-
-	for (const file of files) {
-		if (file.type.startsWith("image/")) {
-			const dataUrl = await readFileAsDataUrl(file);
-			if (dataUrl) {
-				userImages.push(dataUrl);
-			}
-			continue;
-		}
-
-		const content = await file.text();
-		userFiles.push({
-			name: file.name,
-			content,
-		});
-	}
-
-	return { userImages, userFiles };
-}
+export { DEFAULT_CHAT_CONFIG } from "@/hooks/chat-session/constants";
 
 export function useChatSession() {
 	const [sessionId, setSessionId] = useState<string | null>(null);
@@ -404,6 +100,7 @@ export function useChatSession() {
 			}
 		>
 	>(new Map());
+	const messagesRef = useRef<ChatMessage[]>([]);
 
 	useEffect(() => {
 		activeSessionIdRef.current = sessionId;
@@ -412,6 +109,10 @@ export function useChatSession() {
 	useEffect(() => {
 		activeAssistantMessageIdRef.current = activeAssistantMessageId;
 	}, [activeAssistantMessageId]);
+
+	useEffect(() => {
+		messagesRef.current = messages;
+	}, [messages]);
 
 	const refreshSessionDiffSummary = useCallback(
 		async (targetSessionId: string) => {
@@ -515,9 +216,19 @@ export function useChatSession() {
 				if (message.id !== id) {
 					return message;
 				}
+				const existing = message.content;
+				if (existing.endsWith(chunk)) {
+					return message;
+				}
+				if (chunk.startsWith(existing)) {
+					return {
+						...message,
+						content: chunk,
+					};
+				}
 				return {
 					...message,
-					content: `${message.content}${chunk}`,
+					content: `${existing}${chunk}`,
 				};
 			}),
 		);
@@ -528,8 +239,8 @@ export function useChatSession() {
 			const ctx = await invoke<ProcessContext>("get_process_context");
 			setConfig((prev) => ({
 				...prev,
-				workspaceRoot: ctx.workspaceRoot,
-				cwd: ctx.cwd || ctx.workspaceRoot,
+				workspaceRoot: ctx.workspaceRoot || ctx.cwd,
+				cwd: ctx.workspaceRoot || ctx.cwd,
 			}));
 		} catch {
 			// Ignore in non-Tauri mode.
@@ -607,17 +318,27 @@ export function useChatSession() {
 			let listeningAssistantId = activeAssistantMessageIdRef.current;
 			if (payload.stream === "chat_text") {
 				if (!listeningAssistantId) {
-					const assistantId = makeId("assistant");
-					listeningAssistantId = assistantId;
-					activeAssistantMessageIdRef.current = assistantId;
-					setActiveAssistantMessageId(assistantId);
-					addMessage({
-						id: assistantId,
-						sessionId: listeningSessionId,
-						role: "assistant",
-						content: "",
-						createdAt: payload.ts || Date.now(),
-					});
+					const sessionMessages = messagesRef.current.filter(
+						(message) => message.sessionId === listeningSessionId,
+					);
+					const latestSessionMessage = sessionMessages.at(-1);
+					if (latestSessionMessage?.role === "assistant") {
+						listeningAssistantId = latestSessionMessage.id;
+						activeAssistantMessageIdRef.current = listeningAssistantId;
+						setActiveAssistantMessageId(listeningAssistantId);
+					} else {
+						const assistantId = makeId("assistant");
+						listeningAssistantId = assistantId;
+						activeAssistantMessageIdRef.current = assistantId;
+						setActiveAssistantMessageId(assistantId);
+						addMessage({
+							id: assistantId,
+							sessionId: listeningSessionId,
+							role: "assistant",
+							content: "",
+							createdAt: payload.ts || Date.now(),
+						});
+					}
 				}
 				appendMessageContent(listeningAssistantId, payload.chunk);
 				setRawTranscript((prev) => `${prev}${payload.chunk}`);
@@ -1384,7 +1105,7 @@ export function useChatSession() {
 				provider: session.provider || prev.provider,
 				model: session.model || prev.model,
 				workspaceRoot: session.workspaceRoot || prev.workspaceRoot,
-				cwd: session.cwd || prev.cwd,
+				cwd: session.workspaceRoot || session.cwd || prev.cwd,
 			}));
 			activeSessionIdRef.current = session.sessionId;
 			activeAssistantMessageIdRef.current = null;
