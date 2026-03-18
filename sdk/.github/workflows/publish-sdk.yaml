@@ -118,26 +118,7 @@ jobs:
 
       - name: Update all package versions
         if: steps.check_commits.outputs.skip != 'true'
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-
-          for PKG in llms agents core; do
-            node -e "
-              const fs = require('fs');
-              const pkgPath = 'packages/${PKG}/package.json';
-              const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-              pkg.version = '${VERSION}';
-              delete pkg.private;
-              // Resolve workspace:* dependencies to the shared publish version
-              for (const [dep, ver] of Object.entries(pkg.dependencies || {})) {
-                if (dep.startsWith('@clinebot/') && ver === 'workspace:*') {
-                  pkg.dependencies[dep] = '${VERSION}';
-                }
-              }
-              fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, '\t'));
-            "
-            echo "Updated @clinebot/${PKG} to ${VERSION}"
-          done
+        run: bun scripts/version.ts "${{ steps.version.outputs.version }}" --publish
 
       # Publish sequentially in dependency order: llms → agents → core
       - name: Publish @clinebot/llms

@@ -8,6 +8,7 @@ const { values, positionals } = parseArgs({
 	args: Bun.argv.slice(2),
 	options: {
 		dry: { type: "boolean", default: false },
+		publish: { type: "boolean", default: false },
 	},
 	allowPositionals: true,
 	strict: true,
@@ -15,8 +16,11 @@ const { values, positionals } = parseArgs({
 
 const version = positionals[0];
 if (!version) {
-	console.error("Usage: bun scripts/version.ts <version> [--dry]");
+	console.error("Usage: bun scripts/version.ts <version> [--dry] [--publish]");
 	console.error("Example: bun scripts/version.ts 1.2.3");
+	console.error(
+		"  --publish  Prepare for npm: remove 'private', resolve published workspace deps, strip bundled-only deps",
+	);
 	process.exit(1);
 }
 
@@ -31,6 +35,25 @@ const packagesDir = join(root, "packages");
 const dirs = await readdir(packagesDir, { withFileTypes: true });
 const workspaces = dirs.filter((d) => d.isDirectory()).map((d) => d.name);
 
+// Build a set of internal (bundled-only) package names from their package.json "internal" field.
+// When --publish is used, workspace:* deps pointing to internal packages are stripped (they're bundled
+// into the build output), while deps pointing to published packages are resolved to the concrete version.
+const internalPackages = new Set<string>();
+for (const workspace of workspaces) {
+	try {
+		const raw = await readFile(
+			join(packagesDir, workspace, "package.json"),
+			"utf-8",
+		);
+		const pkg = JSON.parse(raw);
+		if (pkg.internal) {
+			internalPackages.add(pkg.name);
+		}
+	} catch {
+		// skip
+	}
+}
+
 let updated = 0;
 
 for (const workspace of workspaces) {
@@ -40,6 +63,22 @@ for (const workspace of workspaces) {
 		const pkg = JSON.parse(raw);
 		const oldVersion = pkg.version;
 		pkg.version = version;
+
+		if (values.publish) {
+			delete pkg.private;
+			for (const [dep, ver] of Object.entries(
+				(pkg.dependencies ?? {}) as Record<string, string>,
+			)) {
+				if (dep.startsWith("@clinebot/") && ver === "workspace:*") {
+					if (!internalPackages.has(dep)) {
+						pkg.dependencies[dep] = version;
+					} else {
+						delete pkg.dependencies[dep];
+					}
+				}
+			}
+		}
+
 		const out = `${JSON.stringify(pkg, null, "\t")}\n`;
 
 		if (values.dry) {

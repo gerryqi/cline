@@ -27,5 +27,6 @@
 	"dependencies": {
 		"@clinebot/shared": "workspace:*"
 	},
-	"private": true
+	"private": true,
+	"internal": true
 }
