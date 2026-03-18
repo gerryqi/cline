@@ -151,6 +151,13 @@ flowchart LR
 - When `review: true` is returned, the runtime routes the tool call through the normal host approval callback / RPC approval flow before execution.
 - This enables selective approval flows such as requiring approval for `run_commands` calls whose input starts with `git`, without changing default tool policy behavior for other calls.
 
+### Model-aware default editor tool routing
+
+- Default tool selection in `@clinebot/core` runtime builder now considers `modelId` during builtin tool assembly.
+- In `act` mode, model IDs containing `codex` or `gpt` (case-insensitive) enable `apply_patch` and disable `editor`.
+- For other model IDs, runtime keeps the previous default (`editor` enabled, `apply_patch` disabled unless explicitly configured elsewhere).
+- `plan` mode remains read-only and does not switch to `apply_patch`.
+
 ### Cline sub-agent prompt metadata
 
 - For `providerId=cline`, spawned sub-agents (`spawn_agent`) now guarantee `# Workspace Configuration ...` metadata is present at the end of their system prompt.

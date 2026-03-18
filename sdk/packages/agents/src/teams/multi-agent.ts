@@ -751,6 +751,9 @@ export interface TeamRunRecord {
 	endedAt?: Date;
 	leaseOwner?: string;
 	heartbeatAt?: Date;
+	lastProgressAt?: Date;
+	lastProgressMessage?: string;
+	currentActivity?: string;
 	result?: AgentResult;
 	error?: string;
 }
@@ -1339,6 +1342,9 @@ export class AgentTeamsRuntime {
 			startedAt: new Date(0),
 			leaseOwner: options?.leaseOwner,
 			heartbeatAt: undefined,
+			lastProgressAt: new Date(),
+			lastProgressMessage: "queued",
+			currentActivity: "queued",
 		};
 		this.runs.set(runId, record);
 		this.runQueue.push(runId);
@@ -1392,18 +1398,14 @@ export class AgentTeamsRuntime {
 		run.status = "running";
 		run.startedAt = new Date();
 		run.heartbeatAt = new Date();
+		run.currentActivity = "run_started";
 		this.emitEvent({ type: TeamMessageType.RunStarted, run: { ...run } });
 
 		const heartbeatTimer = setInterval(() => {
 			if (run.status !== "running") {
 				return;
 			}
-			run.heartbeatAt = new Date();
-			this.emitEvent({
-				type: TeamMessageType.RunProgress,
-				run: { ...run },
-				message: "heartbeat",
-			});
+			this.recordRunProgress(run, "heartbeat");
 		}, 2000);
 
 		try {
@@ -1414,6 +1416,7 @@ export class AgentTeamsRuntime {
 			run.status = "completed";
 			run.result = result;
 			run.endedAt = new Date();
+			run.currentActivity = "completed";
 			this.emitEvent({ type: TeamMessageType.RunCompleted, run: { ...run } });
 		} catch (error) {
 			const message =
@@ -1429,13 +1432,10 @@ export class AgentTeamsRuntime {
 					Date.now() + Math.min(30000, 1000 * 2 ** run.retryCount),
 				);
 				this.runQueue.push(run.id);
-				this.emitEvent({
-					type: TeamMessageType.RunProgress,
-					run: { ...run },
-					message: `retry_scheduled_${run.retryCount}`,
-				});
+				this.recordRunProgress(run, `retry_scheduled_${run.retryCount}`);
 			} else {
 				run.status = "failed";
+				run.currentActivity = "failed";
 				this.emitEvent({ type: TeamMessageType.RunFailed, run: { ...run } });
 			}
 		} finally {
@@ -1504,6 +1504,7 @@ export class AgentTeamsRuntime {
 		run.status = "cancelled";
 		run.error = reason;
 		run.endedAt = new Date();
+		run.currentActivity = "cancelled";
 		const queueIndex = this.runQueue.indexOf(runId);
 		if (queueIndex >= 0) {
 			this.runQueue.splice(queueIndex, 1);
@@ -1525,6 +1526,7 @@ export class AgentTeamsRuntime {
 			run.status = "interrupted";
 			run.error = reason;
 			run.endedAt = new Date();
+			run.currentActivity = "interrupted";
 			interrupted.push({ ...run });
 			this.emitEvent({
 				type: TeamMessageType.RunInterrupted,
@@ -1787,6 +1789,8 @@ export class AgentTeamsRuntime {
 	}
 
 	private trackMeaningfulEvent(agentId: string, event: AgentEvent): void {
+		this.recordRunActivityFromAgentEvent(agentId, event);
+
 		if (event.type === "iteration_end" && event.hadToolCalls) {
 			this.recordProgressStep(
 				agentId,
@@ -1823,6 +1827,60 @@ export class AgentTeamsRuntime {
 				summary: event.error.message,
 			});
 		}
+	}
+
+	private recordRunActivityFromAgentEvent(
+		agentId: string,
+		event: AgentEvent,
+	): void {
+		let activity: string | undefined;
+		switch (event.type) {
+			case "iteration_start":
+				activity = `iteration_${event.iteration}_started`;
+				break;
+			case "content_start":
+				if (event.contentType === "tool") {
+					activity = `running_tool_${event.toolName ?? "unknown"}`;
+				}
+				break;
+			case "content_end":
+				if (event.contentType === "tool") {
+					activity = event.error
+						? `tool_${event.toolName ?? "unknown"}_error`
+						: `finished_tool_${event.toolName ?? "unknown"}`;
+				}
+				break;
+			case "done":
+				activity = "finalizing_response";
+				break;
+			case "error":
+				activity = "run_error";
+				break;
+			default:
+				break;
+		}
+		if (!activity) {
+			return;
+		}
+		for (const run of this.runs.values()) {
+			if (run.agentId !== agentId || run.status !== "running") {
+				continue;
+			}
+			this.recordRunProgress(run, activity);
+		}
+	}
+
+	private recordRunProgress(run: TeamRunRecord, message: string): void {
+		const now = new Date();
+		run.heartbeatAt = now;
+		run.lastProgressAt = now;
+		run.lastProgressMessage = message;
+		run.currentActivity = message;
+		this.emitEvent({
+			type: TeamMessageType.RunProgress,
+			run: { ...run },
+			message,
+		});
 	}
 
 	private recordProgressStep(

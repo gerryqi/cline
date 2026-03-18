@@ -445,4 +445,22 @@ describe("createAgentTeamsTools runtime behavior", () => {
 			"One or more runs did not complete successfully: run_bad:failed(Auth expired)",
 		);
 	});
+
+	it("sets long timeout for team await tools", () => {
+		const runtime = new AgentTeamsRuntime({ teamName: "test-team" });
+		const tools = createAgentTeamsTools({
+			runtime,
+			requesterId: "lead",
+			teammateRuntime: {
+				providerId: "anthropic",
+				modelId: "claude-sonnet-4-5-20250929",
+			},
+		});
+		const awaitRun = tools.find((tool) => tool.name === "team_await_run");
+		const awaitAllRuns = tools.find(
+			(tool) => tool.name === "team_await_all_runs",
+		);
+		expect(awaitRun?.timeoutMs).toBe(60 * 60 * 1000);
+		expect(awaitAllRuns?.timeoutMs).toBe(60 * 60 * 1000);
+	});
 });

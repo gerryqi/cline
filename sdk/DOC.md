@@ -847,9 +847,9 @@ Agent teams enable the lead agent to spawn, coordinate, and communicate with mul
 | `team_complete_task` | Complete a shared task |
 | `team_block_task` | Block a shared task |
 | `team_run_task` | Delegate a task to a teammate (sync or async) |
-| `team_list_runs` | List async teammate runs |
-| `team_await_run` | Wait for one async run by `runId` |
-| `team_await_all_runs` | Wait for all active async runs |
+| `team_list_runs` | List async teammate runs, including live activity/progress metadata (`currentActivity`, `lastProgressMessage`, `lastProgressAt`, `heartbeatAt`) |
+| `team_await_run` | Wait for one async run by `runId` (long timeout: 1 hour) |
+| `team_await_all_runs` | Wait for all active async runs (long timeout: 1 hour) |
 | `team_cancel_run` | Cancel one async run |
 | `team_send_message` | Send a direct teammate message |
 | `team_broadcast` | Broadcast a message to teammates |

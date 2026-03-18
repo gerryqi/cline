@@ -157,6 +157,7 @@ const DEFAULT_OUTCOME_REQUIRED_SECTIONS = [
 	"boundary_analysis",
 	"interface_proposal",
 ];
+const TEAM_AWAIT_TIMEOUT_MS = 60 * 60 * 1000;
 
 const TeamCreateOutcomeInputSchema = z.object({
 	title: z.string().describe("Outcome title"),
@@ -601,7 +602,7 @@ export function createAgentTeamsTools(
 		createTool<TeamListRunsInput, ReturnType<AgentTeamsRuntime["listRuns"]>>({
 			name: "team_list_runs",
 			description:
-				"List teammate runs started with team_run_task in async mode.",
+				"List teammate runs started with team_run_task in async mode, including live activity/progress fields when available.",
 			inputSchema: zodToJsonSchema(TeamListRunsInputSchema),
 			execute: async (input) =>
 				options.runtime.listRuns(
@@ -616,8 +617,10 @@ export function createAgentTeamsTools(
 			Awaited<ReturnType<AgentTeamsRuntime["awaitRun"]>>
 		>({
 			name: "team_await_run",
-			description: "Wait for one async run by runId.",
+			description:
+				"Wait for one async run by runId. Uses a long timeout for legitimate teammate work.",
 			inputSchema: zodToJsonSchema(TeamAwaitRunInputSchema),
+			timeoutMs: TEAM_AWAIT_TIMEOUT_MS,
 			execute: async (input) => {
 				const validatedInput = validateWithZod(TeamAwaitRunInputSchema, input);
 				const run = await options.runtime.awaitRun(validatedInput.runId);
@@ -647,8 +650,10 @@ export function createAgentTeamsTools(
 			Awaited<ReturnType<AgentTeamsRuntime["awaitAllRuns"]>>
 		>({
 			name: "team_await_all_runs",
-			description: "Wait for all active async runs to complete.",
+			description:
+				"Wait for all active async runs to complete. Uses a long timeout for legitimate teammate work.",
 			inputSchema: zodToJsonSchema(TeamAwaitAllRunsInputSchema),
+			timeoutMs: TEAM_AWAIT_TIMEOUT_MS,
 			execute: async (input) => {
 				validateWithZod(TeamAwaitAllRunsInputSchema, input);
 				const runs = await options.runtime.awaitAllRuns();

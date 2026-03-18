@@ -100,6 +100,7 @@ flowchart LR
 5. `DefaultSessionManager` keeps the lead loop alive while async teammate runs are active and auto-continues the lead agent with system-delivered run terminal updates when runs complete/fail/cancel/interrupted.
 6. Failed teammate task events now include the teammate conversation snapshot; core persists that message history to the team-task sub-session `*.messages.json` even when the run fails.
 7. Root session message artifacts are persisted for both successful and failed turns, so rendered conversation history is not lost when a turn exits with an error.
+8. Team async run records now carry live activity metadata (`currentActivity`, `lastProgressMessage`, `lastProgressAt`, `heartbeatAt`) surfaced by `team_list_runs`, and `team_await_run`/`team_await_all_runs` use a 1-hour tool timeout to avoid premature 30s failures during valid parallel teammate work.
 
 ## CLI (`@clinebot/cli`)
 
