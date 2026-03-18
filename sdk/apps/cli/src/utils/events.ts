@@ -116,11 +116,11 @@ export function handleEvent(event: AgentEvent, _config: Config): void {
 		case "done": {
 			closeInlineStreamIfNeeded();
 			const iterations = event.iterations;
-			const usage = (event as any).usage;
+			const usage = event.usage;
 			if (usage) {
 				const costStr = formatUsd(usage.totalCost ?? 0);
 				write(
-					`\n${c.dim}── finished in ${iterations} turns | ${costStr} | token used: ${usage.inputTokens} input | ${usage.outputTokens} output ──${c.reset}\n`,
+					`\n${c.dim}── finished in ${iterations} turns | ${costStr} | ${usage.inputTokens}/${usage.outputTokens} tokens used ──${c.reset}\n`,
 				);
 			} else {
 				write(

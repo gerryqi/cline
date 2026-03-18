@@ -32,6 +32,12 @@ export interface FileReadExecutorOptions {
 	includeLineNumbers?: boolean;
 }
 
+const DEFAULT_FILE_READ_OPTIONS: Required<FileReadExecutorOptions> = {
+	maxFileSizeBytes: 10_000_000, // 10MB default limit
+	encoding: "utf-8", // Default to UTF-8 encoding
+	includeLineNumbers: true, // Include line numbers by default
+};
+
 /**
  * Create a file read executor using Node.js fs module
  *
@@ -48,11 +54,10 @@ export interface FileReadExecutorOptions {
 export function createFileReadExecutor(
 	options: FileReadExecutorOptions = {},
 ): FileReadExecutor {
-	const {
-		maxFileSizeBytes = 10_000_000,
-		encoding = "utf-8",
-		includeLineNumbers = false,
-	} = options;
+	const { maxFileSizeBytes, encoding, includeLineNumbers } = {
+		...DEFAULT_FILE_READ_OPTIONS,
+		...options,
+	};
 
 	return async (filePath: string, _context: ToolContext): Promise<string> => {
 		const resolvedPath = path.isAbsolute(filePath)

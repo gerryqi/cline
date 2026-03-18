@@ -17,7 +17,7 @@ describe("createFileReadExecutor", () => {
 				conversationId: "conv-1",
 				iteration: 1,
 			});
-			expect(result).toBe("hello absolute path");
+			expect(result).toBe("1 | hello absolute path");
 		} finally {
 			await fs.rm(dir, { recursive: true, force: true });
 		}

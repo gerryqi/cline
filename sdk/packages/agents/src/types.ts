@@ -126,6 +126,8 @@ export interface AgentDoneEvent {
 	text: string;
 	/** Total number of iterations */
 	iterations: number;
+	/** Aggregated usage information */
+	usage?: AgentUsage;
 }
 
 export interface AgentErrorEvent {
