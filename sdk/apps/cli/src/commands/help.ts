@@ -23,6 +23,7 @@ export function showHelp(): void {
 			['echo "prompt" | clite', "Read the prompt from stdin"],
 		]),
 		renderSection("COMMANDS", [
+			["clite version", "Show version"],
 			["clite config", "Open the interactive config view"],
 			["clite auth <provider>", "Authenticate or seed provider credentials"],
 			[
@@ -54,6 +55,10 @@ export function showHelp(): void {
 			["-n, --max-iterations <n>", "Cap agent loop iterations"],
 			["--cwd <path>", "Working directory for tools"],
 			["--thinking", "Enable model reasoning when supported"],
+			[
+				"--reasoning-effort <none|low|medium|high|xhigh>",
+				"Set explicit model reasoning effort",
+			],
 			["-u, --usage", "Show token usage and estimated cost"],
 			["-t, --timings", "Show timing details"],
 			["--output <text|json>", "Output format (default: text)"],

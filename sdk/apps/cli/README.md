@@ -276,6 +276,7 @@ RPC runtime note:
 | `-n, --max-iterations <n>` | Cap agent loop iterations |
 | `--cwd <path>` | Working directory for tools |
 | `--thinking` | Enable model reasoning when supported |
+| `--reasoning-effort <none\|low\|medium\|high\|xhigh>` | Set explicit model reasoning effort (default: `none`, or `medium` when `--thinking` is set) |
 | `-u, --usage` | Show token usage and estimated cost |
 | `-t, --timings` | Show timing details |
 | `--output <text\|json>` | Output format (default: `text`) |
@@ -303,6 +304,7 @@ RPC runtime note:
 Top-level commands:
 
 - `clite config` - Open the interactive config view
+- `clite version` - Show CLI version
 - `clite auth <provider>` - Authenticate or seed provider credentials
 - `clite connect <adapter>` - Run a chat connector bridge (`telegram`, `gchat`, `whatsapp`)
 - `clite connect --stop [adapter]` - Stop connector bridge processes and their sessions

@@ -101,6 +101,10 @@ export async function runCli(): Promise<void> {
 		const code = await runDevCommand(rawArgs, { writeln, writeErr });
 		process.exit(code);
 	}
+	if (rawArgs[0] === "version") {
+		showVersion();
+		process.exit(0);
+	}
 	if (rawArgs[0] === "rpc") {
 		const {
 			runRpcEnsureCommand,
@@ -302,6 +306,12 @@ export async function runCli(): Promise<void> {
 		writeErr(`invalid mode "${args.invalidMode}" (expected "act" or "plan")`);
 		process.exit(1);
 	}
+	if (args.invalidReasoningEffort) {
+		writeErr(
+			`invalid reasoning effort "${args.invalidReasoningEffort}" (expected "none", "low", "medium", "high", or "xhigh")`,
+		);
+		process.exit(1);
+	}
 	setCurrentOutputMode(args.outputMode);
 	const defaultToolAutoApprove = args.defaultToolAutoApprove;
 	const mergedToolPolicies = mergeToolPolicies({}, args.toolPolicies);
@@ -411,6 +421,8 @@ export async function runCli(): Promise<void> {
 			}
 		}
 		const knownModelIds = knownModels ? Object.keys(knownModels) : [];
+		const effectiveReasoningEffort =
+			args.reasoningEffort ?? (args.thinking ? "medium" : "none");
 		const loggerAdapter = createCliLoggerAdapter({
 			runtime: "cli",
 			component: "main",
@@ -436,7 +448,11 @@ export async function runCli(): Promise<void> {
 			sandboxDataDir,
 			showUsage: args.showUsage,
 			showTimings: args.showTimings,
-			thinking: args.thinking,
+			thinking: effectiveReasoningEffort === "none" ? false : args.thinking,
+			reasoningEffort:
+				effectiveReasoningEffort === "none"
+					? undefined
+					: effectiveReasoningEffort,
 			outputMode: args.outputMode,
 			mode: args.mode,
 			logger: loggerAdapter.core,

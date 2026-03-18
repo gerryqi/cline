@@ -112,7 +112,10 @@ export async function runAgent(
 				return;
 			}
 			writeln(`\n${c.dim}[abort] requested${c.reset}`);
+			return;
 		}
+		process.exitCode = 130;
+		process.exit(130);
 	};
 	const handleSigterm = () => {
 		if (abortAll() && config.outputMode === "json") {

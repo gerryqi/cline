@@ -157,7 +157,11 @@ export async function runInteractive(
 
 	const handleSigint = () => {
 		if (isRunning) {
-			abortAll();
+			if (abortAll()) {
+				return;
+			}
+			process.exitCode = 130;
+			process.exit(130);
 			return;
 		}
 		requestExit();

@@ -47,6 +47,7 @@ describe("parseArgs", () => {
 			mode: "act",
 			sandbox: false,
 			thinking: false,
+			reasoningEffort: undefined,
 			liveModelCatalog: false,
 			enableSpawnAgent: true,
 			enableAgentTeams: true,
@@ -85,6 +86,8 @@ describe("parseArgs", () => {
 			"--usage",
 			"--timings",
 			"--thinking",
+			"--reasoning-effort",
+			"high",
 			"--refresh-models",
 			"--mode",
 			"plan",
@@ -101,6 +104,7 @@ describe("parseArgs", () => {
 		expect(parsed.showUsage).toBe(true);
 		expect(parsed.showTimings).toBe(true);
 		expect(parsed.thinking).toBe(true);
+		expect(parsed.reasoningEffort).toBe("high");
 		expect(parsed.liveModelCatalog).toBe(true);
 		expect(parsed.outputMode).toBe("text");
 		expect(parsed.mode).toBe("plan");
@@ -158,6 +162,15 @@ describe("parseArgs", () => {
 		const parsedInvalid = parseArgs(["--mode", "build"]);
 		expect(parsedInvalid.mode).toBe("act");
 		expect(parsedInvalid.invalidMode).toBe("build");
+	});
+
+	it("parses and validates reasoning effort", () => {
+		const parsedXhigh = parseArgs(["--reasoning-effor", "xhigh"]);
+		expect(parsedXhigh.reasoningEffort).toBe("xhigh");
+
+		const parsedInvalid = parseArgs(["--reasoning-effort", "ultra"]);
+		expect(parsedInvalid.reasoningEffort).toBeUndefined();
+		expect(parsedInvalid.invalidReasoningEffort).toBe("ultra");
 	});
 
 	it("parses session resume flag", () => {

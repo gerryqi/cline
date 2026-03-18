@@ -123,6 +123,7 @@ describe("cli e2e", () => {
 		expect(asText(result.stdout)).toContain("--output <text|json>");
 		expect(asText(result.stdout)).toContain("--sandbox");
 		expect(asText(result.stdout)).toContain("--thinking");
+		expect(asText(result.stdout)).toContain("--reasoning-effort");
 		expect(asText(result.stdout)).toContain("--refresh-models");
 		expect(asText(result.stdout)).toContain(
 			"clite list <workflows|rules|skills|agents|history|hooks|mcp>",
@@ -131,6 +132,12 @@ describe("cli e2e", () => {
 
 	it("prints version output", () => {
 		const result = runCli(["--version"], { env: createIsolatedEnv() });
+		expect(result.status).toBe(0);
+		expect(asText(result.stdout).trim()).toBe(cliPackage.version);
+	});
+
+	it("prints version output via version command", () => {
+		const result = runCli(["version"], { env: createIsolatedEnv() });
 		expect(result.status).toBe(0);
 		expect(asText(result.stdout).trim()).toBe(cliPackage.version);
 	});

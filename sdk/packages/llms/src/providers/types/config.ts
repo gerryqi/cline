@@ -118,7 +118,7 @@ export interface TokenConfig {
  */
 export interface ReasoningConfig {
 	/** Reasoning effort level */
-	reasoningEffort?: "low" | "medium" | "high";
+	reasoningEffort?: "low" | "medium" | "high" | "xhigh";
 	/** Extended thinking budget in tokens */
 	thinkingBudgetTokens?: number;
 	/** Enable thinking with provider/model defaults when supported */

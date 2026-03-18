@@ -9,6 +9,9 @@ import type {
 
 export type CliOutputMode = "text" | "json";
 export type CliAgentMode = AgentMode;
+export type CliReasoningEffort = NonNullable<
+	NonNullable<LlmsProviders.ProviderSettings["reasoning"]>["effort"]
+>;
 
 export interface Config extends Omit<CoreSessionConfig, "apiKey" | "mode"> {
 	apiKey: string;
@@ -74,9 +77,11 @@ export interface ParsedArgs {
 	outputMode: CliOutputMode;
 	mode: CliAgentMode;
 	thinking: boolean;
+	reasoningEffort?: CliReasoningEffort;
 	liveModelCatalog: boolean;
 	invalidOutputMode?: string;
 	invalidMode?: string;
+	invalidReasoningEffort?: string;
 	sandbox: boolean;
 	sandboxDir?: string;
 	enableSpawnAgent: boolean;

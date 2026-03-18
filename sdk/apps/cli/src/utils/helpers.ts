@@ -389,6 +389,7 @@ export function parseArgs(args: string[]): ParsedArgs {
 		mode: "act",
 		sandbox: false,
 		thinking: false,
+		reasoningEffort: undefined,
 		liveModelCatalog: false,
 		enableSpawnAgent: true,
 		enableAgentTeams: true,
@@ -415,6 +416,19 @@ export function parseArgs(args: string[]): ParsedArgs {
 			result.showTimings = true;
 		} else if (arg === "--thinking") {
 			result.thinking = true;
+		} else if (arg === "--reasoning-effort" || arg === "--reasoning-effor") {
+			const effort = (args[++i] ?? "").trim().toLowerCase();
+			if (
+				effort === "none" ||
+				effort === "low" ||
+				effort === "medium" ||
+				effort === "high" ||
+				effort === "xhigh"
+			) {
+				result.reasoningEffort = effort;
+			} else if (effort) {
+				result.invalidReasoningEffort = effort;
+			}
 		} else if (arg === "--refresh-models") {
 			result.liveModelCatalog = true;
 		} else if (arg === "--json") {

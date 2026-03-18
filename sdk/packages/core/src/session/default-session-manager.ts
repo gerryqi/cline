@@ -319,10 +319,16 @@ export class DefaultSessionManager implements SessionManager {
 			baseUrl: config.baseUrl ?? settings.baseUrl,
 			headers: config.headers ?? settings.headers,
 			reasoning:
-				typeof config.thinking === "boolean"
+				typeof config.thinking === "boolean" ||
+				typeof config.reasoningEffort === "string"
 					? {
 							...(settings.reasoning ?? {}),
-							enabled: config.thinking,
+							...(typeof config.thinking === "boolean"
+								? { enabled: config.thinking }
+								: {}),
+							...(typeof config.reasoningEffort === "string"
+								? { effort: config.reasoningEffort }
+								: {}),
 						}
 					: settings.reasoning,
 		};
@@ -440,6 +446,8 @@ export class DefaultSessionManager implements SessionManager {
 			knownModels: providerConfig.knownModels,
 			providerConfig,
 			thinking: effectiveConfig.thinking,
+			reasoningEffort:
+				effectiveConfig.reasoningEffort ?? providerConfig.reasoningEffort,
 			systemPrompt: effectiveConfig.systemPrompt,
 			maxIterations: effectiveConfig.maxIterations,
 			tools,

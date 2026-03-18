@@ -658,9 +658,9 @@ export const AgentResultSchema = z.object({
 /**
  * Reasoning effort level for capable models
  */
-export type ReasoningEffort = "low" | "medium" | "high";
+export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";
 
-export const ReasoningEffortSchema = z.enum(["low", "medium", "high"]);
+export const ReasoningEffortSchema = z.enum(["low", "medium", "high", "xhigh"]);
 
 /**
  * Configuration for creating an Agent

@@ -28,6 +28,10 @@ export interface CoreModelConfig {
 	 * Request model-side thinking/reasoning when supported.
 	 */
 	thinking?: boolean;
+	/**
+	 * Explicit reasoning effort override for capable models.
+	 */
+	reasoningEffort?: LlmsProviders.ProviderConfig["reasoningEffort"];
 }
 
 export interface CoreRuntimeFeatures {

@@ -57,7 +57,7 @@ export type AuthSettings = z.infer<typeof AuthSettingsSchema>;
 /**
  * Reasoning/thinking configuration
  */
-const ReasoningLevelSchema = z.enum(["none", "low", "medium", "high"]);
+const ReasoningLevelSchema = z.enum(["none", "low", "medium", "high", "xhigh"]);
 
 export const ReasoningSettingsSchema = z.object({
 	/** Enable thinking with provider/model defaults when supported */

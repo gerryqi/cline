@@ -216,6 +216,17 @@ function isUnimplementedRpcMethodError(error: unknown): boolean {
 	return message.toUpperCase().includes("UNIMPLEMENTED");
 }
 
+function isSessionNotFoundError(error: unknown): boolean {
+	if (error && typeof error === "object" && "code" in error) {
+		const code = Number((error as { code?: unknown }).code);
+		if (code === 5) {
+			return true;
+		}
+	}
+	const message = error instanceof Error ? error.message : String(error);
+	return message.toLowerCase().includes("session not found");
+}
+
 function emitAgentEvent(
 	listeners: Set<(event: unknown) => void>,
 	sessionId: string,
@@ -746,7 +757,10 @@ function createRpcRuntimeCliSessionManager(
 			try {
 				await client.stopRuntimeSession(sessionId);
 			} catch (error) {
-				if (!isUnimplementedRpcMethodError(error)) {
+				if (
+					!isUnimplementedRpcMethodError(error) &&
+					!isSessionNotFoundError(error)
+				) {
 					throw error;
 				}
 			}
