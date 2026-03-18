@@ -150,8 +150,9 @@ export class OpenAIBaseHandler extends BaseHandler {
 		};
 
 		// Add max tokens if configured
-		if (modelInfo.maxTokens) {
-			requestOptions.max_completion_tokens = modelInfo.maxTokens;
+		const maxTokens = modelInfo.maxTokens ?? this.config.maxOutputTokens;
+		if (maxTokens) {
+			requestOptions.max_completion_tokens = maxTokens;
 		}
 
 		// Add temperature if not a reasoning model

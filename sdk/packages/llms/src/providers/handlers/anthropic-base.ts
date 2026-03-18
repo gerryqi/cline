@@ -145,7 +145,7 @@ export class AnthropicHandler extends BaseHandler {
 				thinking: reasoningOn
 					? { type: "enabled", budget_tokens: budgetTokens }
 					: undefined,
-				max_tokens: model.info.maxTokens || 8192,
+				max_tokens: model.info.maxTokens ?? this.config.maxOutputTokens ?? 8192,
 				temperature: reasoningOn ? undefined : 0,
 				system: supportsPromptCache
 					? [

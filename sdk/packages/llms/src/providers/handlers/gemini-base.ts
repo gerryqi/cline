@@ -138,6 +138,7 @@ export class GeminiHandler extends BaseHandler {
 			abortSignal,
 			systemInstruction: systemPrompt,
 			temperature: info.temperature ?? 1,
+			maxOutputTokens: info.maxTokens ?? this.config.maxOutputTokens,
 		};
 
 		// Add thinking config only when explicitly requested and supported.

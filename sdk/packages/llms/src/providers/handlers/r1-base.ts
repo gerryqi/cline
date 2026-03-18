@@ -155,8 +155,9 @@ export class R1BaseHandler extends BaseHandler {
 		};
 
 		// Add max tokens if configured
-		if (modelInfo.maxTokens) {
-			requestOptions.max_completion_tokens = modelInfo.maxTokens;
+		const maxTokens = modelInfo.maxTokens ?? this.config.maxOutputTokens;
+		if (maxTokens) {
+			requestOptions.max_completion_tokens = maxTokens;
 		}
 
 		// Only set temperature for non-reasoner models

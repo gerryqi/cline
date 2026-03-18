@@ -120,11 +120,11 @@ export function handleEvent(event: AgentEvent, _config: Config): void {
 			if (usage) {
 				const costStr = formatUsd(usage.totalCost ?? 0);
 				write(
-					`\n${c.dim}── finished in ${iterations} turns | ${costStr} | ${usage.inputTokens}/${usage.outputTokens} tokens used ──${c.reset}\n`,
+					`\n${c.dim}── finished in ${iterations} turns | ${costStr} | ${usage.inputTokens}/${usage.outputTokens} tokens used ──${c.reset}`,
 				);
 			} else {
 				write(
-					`\n${c.dim}── finished: ${event.reason} (${iterations} iterations) ──${c.reset}\n`,
+					`\n${c.dim}── finished: ${event.reason} (${iterations} iterations) ──${c.reset}`,
 				);
 			}
 			activeInlineStream = undefined;

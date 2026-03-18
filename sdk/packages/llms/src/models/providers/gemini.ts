@@ -15,7 +15,7 @@ export const GEMINI_PROVIDER: ModelCollection = {
 	provider: {
 		id: "gemini",
 		name: "Google Gemini",
-		description: "Google's multimodal AI models",
+		description: "Google Gemini API",
 		protocol: "gemini",
 		baseUrl: "https://generativelanguage.googleapis.com",
 		defaultModelId: GEMINI_DEFAULT_MODEL,
