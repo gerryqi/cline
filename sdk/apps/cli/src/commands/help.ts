@@ -53,6 +53,10 @@ export function showHelp(): void {
 			["--session <id>", "Resume an interactive session"],
 			["--mode <act|plan>", "Tool preset mode (default: act)"],
 			["-n, --max-iterations <n>", "Cap agent loop iterations"],
+			[
+				"--max-consecutive-mistakes <n>",
+				"Consecutive internal mistake limit (default: 3)",
+			],
 			["--cwd <path>", "Working directory for tools"],
 			["--thinking", "Enable model reasoning when supported"],
 			[
@@ -75,7 +79,9 @@ export function showHelp(): void {
 			["--no-spawn", "Disable spawn_agent"],
 			["--no-teams", "Disable agent-team tools"],
 			["--auto-approve-tools", "Skip tool approval prompts"],
+			["--yolo", "Alias for --auto-approve-tools"],
 			["--require-tool-approval", "Require approval for every tool call"],
+			["--no-yolo", "Alias for --require-tool-approval"],
 			["--tool-enable <name>", "Explicitly enable one tool"],
 			["--tool-disable <name>", "Explicitly disable one tool"],
 			["--tool-autoapprove <name>", "Always approve one tool"],

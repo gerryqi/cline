@@ -465,7 +465,11 @@ export function parseArgs(args: string[]): ParsedArgs {
 			result.enableTools = false;
 		} else if (arg === "--auto-approve-tools") {
 			result.defaultToolAutoApprove = true;
+		} else if (arg === "--yolo") {
+			result.defaultToolAutoApprove = true;
 		} else if (arg === "--require-tool-approval") {
+			result.defaultToolAutoApprove = false;
+		} else if (arg === "--no-yolo") {
 			result.defaultToolAutoApprove = false;
 		} else if (arg === "--tool-enable") {
 			const name = (args[++i] ?? "").trim();
@@ -519,6 +523,14 @@ export function parseArgs(args: string[]): ParsedArgs {
 			result.sessionId = args[++i] ?? "";
 		} else if (arg === "-n" || arg === "--max-iterations") {
 			result.maxIterations = Number.parseInt(args[++i], 10);
+		} else if (arg === "--max-consecutive-mistakes") {
+			const raw = (args[++i] ?? "").trim();
+			const parsed = Number.parseInt(raw, 10);
+			if (raw && Number.isInteger(parsed) && parsed >= 1) {
+				result.maxConsecutiveMistakes = parsed;
+			} else if (raw) {
+				result.invalidMaxConsecutiveMistakes = raw;
+			}
 		} else if (!arg.startsWith("-")) {
 			positional.push(arg);
 		}

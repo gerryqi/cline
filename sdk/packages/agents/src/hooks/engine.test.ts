@@ -42,6 +42,7 @@ describe("HookEngine", () => {
 		expect(calls).toEqual(["a-high", "z-low"]);
 		expect(result.control).toEqual({
 			cancel: true,
+			review: false,
 			context: "from-a\nfrom-z",
 			overrideInput: { safe: true },
 		});

@@ -1,6 +1,8 @@
 import type {
 	AgentConfig,
 	AgentHooks,
+	ConsecutiveMistakeLimitContext,
+	ConsecutiveMistakeLimitDecision,
 	HookErrorMode,
 	TeamEvent,
 	Tool,
@@ -65,4 +67,9 @@ export interface CoreSessionConfig
 	pluginPaths?: string[];
 	extensions?: AgentConfig["extensions"];
 	onTeamEvent?: (event: TeamEvent) => void;
+	onConsecutiveMistakeLimitReached?: (
+		context: ConsecutiveMistakeLimitContext,
+	) =>
+		| Promise<ConsecutiveMistakeLimitDecision>
+		| ConsecutiveMistakeLimitDecision;
 }

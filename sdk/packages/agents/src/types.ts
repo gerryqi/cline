@@ -138,6 +138,30 @@ export interface AgentErrorEvent {
 	iteration: number;
 }
 
+export interface ConsecutiveMistakeLimitContext {
+	iteration: number;
+	consecutiveMistakes: number;
+	maxConsecutiveMistakes: number;
+	reason: "api_error" | "invalid_tool_call" | "tool_execution_failed";
+	details?: string;
+}
+
+export type ConsecutiveMistakeLimitDecision =
+	| {
+			action: "continue";
+			/**
+			 * Optional guidance appended as a user message before continuing.
+			 */
+			guidance?: string;
+	  }
+	| {
+			action: "stop";
+			/**
+			 * Optional reason surfaced when stopping due to the limit.
+			 */
+			reason?: string;
+	  };
+
 // =============================================================================
 // Hooks
 // =============================================================================
@@ -730,6 +754,13 @@ export interface AgentConfig {
 	 */
 	apiTimeoutMs?: number;
 	/**
+	 * Maximum consecutive internal mistakes before escalation.
+	 * Mistakes include API turn failures, invalid/missing tool-call arguments,
+	 * and iterations where every executed tool call fails.
+	 * @default 3
+	 */
+	maxConsecutiveMistakes?: number;
+	/**
 	 * Optional runtime file-content loader used when user files are attached.
 	 * When omitted, attached files will be represented as loader errors.
 	 */
@@ -798,6 +829,14 @@ export interface AgentConfig {
 		request: ToolApprovalRequest,
 	) => Promise<ToolApprovalResult> | ToolApprovalResult;
 	/**
+	 * Optional callback invoked when consecutive mistakes reach maxConsecutiveMistakes.
+	 */
+	onConsecutiveMistakeLimitReached?: (
+		context: ConsecutiveMistakeLimitContext,
+	) =>
+		| Promise<ConsecutiveMistakeLimitDecision>
+		| ConsecutiveMistakeLimitDecision;
+	/**
 	 * Optional logger for tracing agent loop lifecycle and recoverable failures.
 	 */
 	logger?: BasicLogger;
@@ -845,6 +884,7 @@ export const AgentConfigSchema = z.object({
 	maxParallelToolCalls: z.number().int().positive().default(8),
 	maxTokensPerTurn: z.number().positive().optional(),
 	apiTimeoutMs: z.number().positive().default(120000),
+	maxConsecutiveMistakes: z.number().int().positive().default(3),
 	userFileContentLoader: z
 		.function()
 		.input([z.string()])
@@ -911,6 +951,46 @@ export const AgentConfigSchema = z.object({
 			]),
 		)
 		.optional(),
+	onConsecutiveMistakeLimitReached: z
+		.function()
+		.input([
+			z.object({
+				iteration: z.number().int().positive(),
+				consecutiveMistakes: z.number().int().positive(),
+				maxConsecutiveMistakes: z.number().int().positive(),
+				reason: z.enum([
+					"api_error",
+					"invalid_tool_call",
+					"tool_execution_failed",
+				]),
+				details: z.string().optional(),
+			}),
+		])
+		.output(
+			z.union([
+				z.object({
+					action: z.literal("continue"),
+					guidance: z.string().optional(),
+				}),
+				z.object({
+					action: z.literal("stop"),
+					reason: z.string().optional(),
+				}),
+				z.promise(
+					z.union([
+						z.object({
+							action: z.literal("continue"),
+							guidance: z.string().optional(),
+						}),
+						z.object({
+							action: z.literal("stop"),
+							reason: z.string().optional(),
+						}),
+					]),
+				),
+			]),
+		)
+		.optional(),
 	logger: z.custom<BasicLogger>().optional(),
 
 	// Cancellation
@@ -942,6 +1022,12 @@ export interface ProcessedTurn {
 	reasoning?: string;
 	/** Tool calls requested by the model */
 	toolCalls: PendingToolCall[];
+	/** Model-emitted tool calls that were invalid or missing required fields */
+	invalidToolCalls: Array<{
+		id: string;
+		name?: string;
+		reason: "missing_name" | "missing_arguments" | "invalid_arguments";
+	}>;
 	/** Token usage for this turn */
 	usage: {
 		inputTokens: number;

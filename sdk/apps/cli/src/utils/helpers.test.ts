@@ -177,6 +177,26 @@ describe("parseArgs", () => {
 		const parsed = parseArgs(["--session", "session_123"]);
 		expect(parsed.sessionId).toBe("session_123");
 	});
+
+	it("parses max consecutive mistakes when valid", () => {
+		const parsed = parseArgs(["--max-consecutive-mistakes", "5"]);
+		expect(parsed.maxConsecutiveMistakes).toBe(5);
+		expect(parsed.invalidMaxConsecutiveMistakes).toBeUndefined();
+	});
+
+	it("supports yolo aliases for tool auto-approval", () => {
+		const parsedYolo = parseArgs(["--yolo"]);
+		expect(parsedYolo.defaultToolAutoApprove).toBe(true);
+
+		const parsedNoYolo = parseArgs(["--no-yolo"]);
+		expect(parsedNoYolo.defaultToolAutoApprove).toBe(false);
+	});
+
+	it("records invalid max consecutive mistakes values", () => {
+		const parsed = parseArgs(["--max-consecutive-mistakes", "0"]);
+		expect(parsed.maxConsecutiveMistakes).toBeUndefined();
+		expect(parsed.invalidMaxConsecutiveMistakes).toBe("0");
+	});
 });
 
 describe("format helpers", () => {

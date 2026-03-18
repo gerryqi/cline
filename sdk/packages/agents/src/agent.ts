@@ -26,6 +26,7 @@ import type {
 	AgentResult,
 	AgentUsage,
 	BasicLogger,
+	ConsecutiveMistakeLimitDecision,
 	PendingToolCall,
 	Tool,
 	ToolApprovalResult,
@@ -71,6 +72,7 @@ export class Agent {
 			| "tools"
 			| "maxParallelToolCalls"
 			| "apiTimeoutMs"
+			| "maxConsecutiveMistakes"
 			| "maxTokensPerTurn"
 			| "reminderAfterIterations"
 			| "reminderText"
@@ -102,6 +104,7 @@ export class Agent {
 			maxIterations: config.maxIterations,
 			maxParallelToolCalls: config.maxParallelToolCalls ?? 8,
 			apiTimeoutMs: config.apiTimeoutMs ?? 120000,
+			maxConsecutiveMistakes: config.maxConsecutiveMistakes ?? 3,
 			maxTokensPerTurn: config.maxTokensPerTurn ?? 8192,
 			reminderAfterIterations: config.reminderAfterIterations ?? 50,
 			reminderText: config.reminderText ?? DEFAULT_REMINDER_TEXT,
@@ -410,6 +413,7 @@ export class Agent {
 			cacheWriteTokens: 0,
 			totalCost: undefined,
 		};
+		let consecutiveMistakes = 0;
 
 		try {
 			if (!this.conversationStore.isSessionStarted()) {
@@ -536,12 +540,45 @@ export class Agent {
 					);
 				}
 
-				const { turn, assistantMessage } = await this.turnProcessor.processTurn(
-					this.conversationStore.getMessages(),
-					turnSystemPrompt,
-					this.config.tools,
-					abortSignal,
-				);
+				let turn: Awaited<ReturnType<TurnProcessor["processTurn"]>>["turn"];
+				let assistantMessage:
+					| Awaited<
+							ReturnType<TurnProcessor["processTurn"]>
+					  >["assistantMessage"]
+					| undefined;
+				try {
+					({ turn, assistantMessage } = await this.turnProcessor.processTurn(
+						this.conversationStore.getMessages(),
+						turnSystemPrompt,
+						this.config.tools,
+						abortSignal,
+					));
+				} catch (error) {
+					const message =
+						error instanceof Error ? error.message : String(error);
+					this.conversationStore.appendMessage({
+						role: "user",
+						content: [
+							{
+								type: "text",
+								text: `The previous turn failed with an API/runtime error: ${message}. Retry and continue from the latest state.`,
+							},
+						],
+					});
+					const shouldContinue = await this.recordMistake({
+						iteration,
+						reason: "api_error",
+						details: message,
+						consecutiveMistakes: () => consecutiveMistakes,
+						setConsecutiveMistakes: (value) => {
+							consecutiveMistakes = value;
+						},
+					});
+					if (shouldContinue) {
+						continue;
+					}
+					throw error;
+				}
 				if (assistantMessage) {
 					this.conversationStore.appendMessage(assistantMessage);
 				}
@@ -586,7 +623,35 @@ export class Agent {
 					totalCost: totalUsage.totalCost,
 				});
 
+				if (turn.invalidToolCalls.length > 0) {
+					this.conversationStore.appendMessage({
+						role: "user",
+						content: [
+							{
+								type: "text",
+								text: this.buildInvalidToolCallFeedback(turn.invalidToolCalls),
+							},
+						],
+					});
+					const shouldContinue = await this.recordMistake({
+						iteration,
+						reason: "invalid_tool_call",
+						details: `${turn.invalidToolCalls.length} invalid tool call(s)`,
+						consecutiveMistakes: () => consecutiveMistakes,
+						setConsecutiveMistakes: (value) => {
+							consecutiveMistakes = value;
+						},
+					});
+					if (shouldContinue) {
+						continue;
+					}
+					throw new Error(
+						`maximum consecutive mistakes reached (${this.config.maxConsecutiveMistakes})`,
+					);
+				}
+
 				if (turn.toolCalls.length === 0) {
+					consecutiveMistakes = 0;
 					// Check completion guard before allowing the loop to end.
 					// If the guard returns a nudge string, inject it and continue.
 					const guardNudge = this.config.completionGuard?.();
@@ -648,6 +713,28 @@ export class Agent {
 						text: this.config.reminderText,
 					}),
 				);
+				const successfulToolCalls = toolResults.filter(
+					(record) => !record.error,
+				).length;
+				const failedToolCalls = toolResults.length - successfulToolCalls;
+				if (successfulToolCalls > 0) {
+					consecutiveMistakes = 0;
+				} else if (failedToolCalls > 0) {
+					const shouldContinue = await this.recordMistake({
+						iteration,
+						reason: "tool_execution_failed",
+						details: `${failedToolCalls} tool call(s) failed`,
+						consecutiveMistakes: () => consecutiveMistakes,
+						setConsecutiveMistakes: (value) => {
+							consecutiveMistakes = value;
+						},
+					});
+					if (!shouldContinue) {
+						throw new Error(
+							`maximum consecutive mistakes reached (${this.config.maxConsecutiveMistakes})`,
+						);
+					}
+				}
 
 				this.emit({
 					type: "iteration_end",
@@ -768,6 +855,107 @@ export class Agent {
 		});
 		await this.lifecycle.shutdown();
 		return result;
+	}
+
+	private buildInvalidToolCallFeedback(
+		invalidToolCalls: Array<{
+			id: string;
+			name?: string;
+			reason: "missing_name" | "missing_arguments" | "invalid_arguments";
+		}>,
+	): string {
+		const details = invalidToolCalls
+			.map((call) => {
+				const name = call.name?.trim() || "(unknown tool)";
+				const reason =
+					call.reason === "missing_name"
+						? "missing tool name"
+						: call.reason === "missing_arguments"
+							? "missing arguments"
+							: "arguments were invalid JSON";
+				return `${name} [${call.id}]: ${reason}`;
+			})
+			.join("; ");
+		return `One or more tool calls were invalid or missing required parameters (${details}). Retry with valid tool names and arguments.`;
+	}
+
+	private async recordMistake(input: {
+		iteration: number;
+		reason: "api_error" | "invalid_tool_call" | "tool_execution_failed";
+		details?: string;
+		consecutiveMistakes: () => number;
+		setConsecutiveMistakes: (value: number) => void;
+	}): Promise<boolean> {
+		const next = input.consecutiveMistakes() + 1;
+		input.setConsecutiveMistakes(next);
+		const errorMessage =
+			input.details?.trim() || `consecutive mistake (${input.reason})`;
+		this.emit({
+			type: "error",
+			error: new Error(errorMessage),
+			recoverable: true,
+			iteration: input.iteration,
+		});
+		this.log("warn", "Recorded consecutive mistake", {
+			agentId: this.agentId,
+			conversationId: this.conversationStore.getConversationId(),
+			runId: this.activeRunId || this.conversationStore.getConversationId(),
+			iteration: input.iteration,
+			reason: input.reason,
+			details: input.details,
+			consecutiveMistakes: next,
+			maxConsecutiveMistakes: this.config.maxConsecutiveMistakes,
+		});
+		if (next < this.config.maxConsecutiveMistakes) {
+			return true;
+		}
+
+		const decision = await this.resolveConsecutiveMistakeDecision({
+			iteration: input.iteration,
+			consecutiveMistakes: next,
+			maxConsecutiveMistakes: this.config.maxConsecutiveMistakes,
+			reason: input.reason,
+			details: input.details,
+		});
+		if (decision.action === "continue") {
+			const guidance = decision.guidance?.trim();
+			if (guidance) {
+				this.conversationStore.appendMessage({
+					role: "user",
+					content: [{ type: "text", text: guidance }],
+				});
+			}
+			input.setConsecutiveMistakes(0);
+			return true;
+		}
+		return false;
+	}
+
+	private async resolveConsecutiveMistakeDecision(input: {
+		iteration: number;
+		consecutiveMistakes: number;
+		maxConsecutiveMistakes: number;
+		reason: "api_error" | "invalid_tool_call" | "tool_execution_failed";
+		details?: string;
+	}): Promise<ConsecutiveMistakeLimitDecision> {
+		const callback = this.config.onConsecutiveMistakeLimitReached;
+		if (!callback) {
+			return {
+				action: "stop",
+				reason: `maximum consecutive mistakes reached (${input.maxConsecutiveMistakes})`,
+			};
+		}
+		try {
+			return await callback(input);
+		} catch (error) {
+			return {
+				action: "stop",
+				reason:
+					error instanceof Error
+						? error.message
+						: `maximum consecutive mistakes reached (${input.maxConsecutiveMistakes})`,
+			};
+		}
 	}
 
 	private async ensureExtensionsInitialized(): Promise<void> {

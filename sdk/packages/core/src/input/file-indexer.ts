@@ -4,6 +4,7 @@ import path from "node:path";
 import { isMainThread, parentPort, Worker } from "node:worker_threads";
 
 const DEFAULT_INDEX_TTL_MS = 15_000;
+const WORKER_INDEX_REQUEST_TIMEOUT_MS = 1_000;
 const DEFAULT_EXCLUDE_DIRS = new Set([
 	".git",
 	"node_modules",
@@ -196,7 +197,21 @@ class FileIndexWorkerClient {
 	requestIndex(cwd: string): Promise<string[]> {
 		const requestId = ++this.nextRequestId;
 		const result = new Promise<string[]>((resolve, reject) => {
-			this.pending.set(requestId, { resolve, reject });
+			const timeout = setTimeout(() => {
+				this.pending.delete(requestId);
+				reject(new Error("Timed out waiting for file index worker response"));
+			}, WORKER_INDEX_REQUEST_TIMEOUT_MS);
+			timeout.unref();
+			this.pending.set(requestId, {
+				resolve: (files) => {
+					clearTimeout(timeout);
+					resolve(files);
+				},
+				reject: (reason) => {
+					clearTimeout(timeout);
+					reject(reason);
+				},
+			});
 		});
 
 		const message: IndexRequestMessage = {

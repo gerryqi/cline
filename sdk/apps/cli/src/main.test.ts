@@ -7,6 +7,80 @@ const mockState = vi.hoisted(() => ({
 	runInteractiveImports: 0,
 	runAgentCalls: 0,
 }));
+const authMocks = vi.hoisted(() => ({
+	ensureOAuthProviderApiKey: vi.fn(),
+	getPersistedProviderApiKey: vi.fn(() => undefined),
+	isOAuthProvider: vi.fn(() => false),
+	normalizeProviderId: vi.fn((providerId?: string) => providerId ?? "cline"),
+	parseAuthCommandArgs: vi.fn(),
+	runAuthCommand: vi.fn(),
+}));
+const sessionMocks = vi.hoisted(() => ({
+	deleteSession: vi.fn(),
+	listSessions: vi.fn(async () => []),
+	updateSession: vi.fn(),
+}));
+const llmMocks = vi.hoisted(() => ({
+	resolveProviderConfig: vi.fn(async () => undefined),
+}));
+const promptMocks = vi.hoisted(() => ({
+	resolveSystemPrompt: vi.fn(async () => "system prompt"),
+}));
+const runtimeMocks = vi.hoisted(() => ({
+	runAgent: vi.fn(async () => {
+		mockState.runAgentCalls += 1;
+	}),
+	runInteractive: vi.fn(),
+}));
+const loggingMocks = vi.hoisted(() => ({
+	createCliLoggerAdapter: vi.fn(() => ({
+		core: undefined,
+		runtimeConfig: undefined,
+	})),
+	flushCliLoggerAdapters: vi.fn(),
+}));
+
+vi.mock("./runtime/run-agent", () => {
+	mockState.runAgentImports += 1;
+	return {
+		runAgent: runtimeMocks.runAgent,
+	};
+});
+vi.mock("./runtime/run-interactive", () => {
+	mockState.runInteractiveImports += 1;
+	return {
+		runInteractive: runtimeMocks.runInteractive,
+	};
+});
+vi.mock("./utils/session", () => sessionMocks);
+vi.mock("@clinebot/core/server", () => ({
+	createTeamName: vi.fn(() => "team-test"),
+	createUserInstructionConfigWatcher: vi.fn(() => ({
+		start: vi.fn(async () => {}),
+		stop: vi.fn(() => {}),
+	})),
+	loadRulesForSystemPromptFromWatcher: vi.fn(() => []),
+	migrateLegacyProviderSettings: vi.fn(() => {}),
+	ProviderSettingsManager: class {
+		getLastUsedProviderSettings() {
+			return undefined;
+		}
+		getProviderSettings() {
+			return undefined;
+		}
+		saveProviderSettings() {}
+	},
+}));
+vi.mock("./commands/auth", () => authMocks);
+vi.mock("@clinebot/llms", () => ({
+	providers: {
+		resolveProviderConfig: llmMocks.resolveProviderConfig,
+	},
+}));
+vi.mock("./runtime/prompt", () => ({
+	resolveSystemPrompt: promptMocks.resolveSystemPrompt,
+}));
+vi.mock("./logging/adapter", () => loggingMocks);
 
 describe("runCli lightweight command dispatch", () => {
 	afterEach(() => {
@@ -22,24 +96,6 @@ describe("runCli lightweight command dispatch", () => {
 	it("does not load runtime modules for sessions list", async () => {
 		mockState.runAgentImports = 0;
 		mockState.runInteractiveImports = 0;
-
-		vi.mock("./runtime/run-agent", () => {
-			mockState.runAgentImports += 1;
-			return {
-				runAgent: vi.fn(),
-			};
-		});
-		vi.mock("./runtime/run-interactive", () => {
-			mockState.runInteractiveImports += 1;
-			return {
-				runInteractive: vi.fn(),
-			};
-		});
-		vi.mock("./utils/session", () => ({
-			deleteSession: vi.fn(),
-			listSessions: vi.fn(async () => []),
-			updateSession: vi.fn(),
-		}));
 
 		const exitSignal = new Error("process.exit");
 		vi.spyOn(process, "exit").mockImplementation(((code?: string | number) => {
@@ -63,64 +119,6 @@ describe("runCli lightweight command dispatch", () => {
 		mockState.runAgentImports = 0;
 		mockState.runInteractiveImports = 0;
 		mockState.runAgentCalls = 0;
-
-		vi.mock("@clinebot/core/server", () => ({
-			createTeamName: vi.fn(() => "team-test"),
-			createUserInstructionConfigWatcher: vi.fn(() => ({
-				start: vi.fn(async () => {}),
-				stop: vi.fn(() => {}),
-			})),
-			loadRulesForSystemPromptFromWatcher: vi.fn(() => []),
-			migrateLegacyProviderSettings: vi.fn(() => {}),
-			ProviderSettingsManager: class {
-				getLastUsedProviderSettings() {
-					return undefined;
-				}
-				getProviderSettings() {
-					return undefined;
-				}
-				saveProviderSettings() {}
-			},
-		}));
-		vi.mock("./commands/auth", () => ({
-			ensureOAuthProviderApiKey: vi.fn(),
-			getPersistedProviderApiKey: vi.fn(() => undefined),
-			isOAuthProvider: vi.fn(() => false),
-			normalizeProviderId: vi.fn(
-				(providerId?: string) => providerId ?? "cline",
-			),
-			parseAuthCommandArgs: vi.fn(),
-			runAuthCommand: vi.fn(),
-		}));
-		vi.mock("@clinebot/llms", () => ({
-			providers: {
-				resolveProviderConfig: vi.fn(async () => undefined),
-			},
-		}));
-		vi.mock("./runtime/prompt", () => ({
-			resolveSystemPrompt: vi.fn(async () => "system prompt"),
-		}));
-		vi.mock("./runtime/run-agent", () => {
-			mockState.runAgentImports += 1;
-			return {
-				runAgent: vi.fn(async () => {
-					mockState.runAgentCalls += 1;
-				}),
-			};
-		});
-		vi.mock("./runtime/run-interactive", () => {
-			mockState.runInteractiveImports += 1;
-			return {
-				runInteractive: vi.fn(),
-			};
-		});
-		vi.mock("./logging/adapter", () => ({
-			createCliLoggerAdapter: vi.fn(() => ({
-				core: undefined,
-				runtimeConfig: undefined,
-			})),
-			flushCliLoggerAdapters: vi.fn(),
-		}));
 
 		Object.defineProperty(process.stdin, "isTTY", {
 			value: true,

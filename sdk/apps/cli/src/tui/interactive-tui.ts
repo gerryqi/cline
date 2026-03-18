@@ -919,12 +919,14 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 			activeCompletionMode === "slash" && slashResults.length > 0;
 		const hasCompletionMenu = hasMentionMenu || hasSlashMenu;
 
-		if (key.shift && key.tab) {
+		const isShiftTab = (key.shift && key.tab) || value === "\u001b[Z";
+		if (isShiftTab) {
 			setAutoApproveAll((prev) => !prev);
 			return;
 		}
 
-		if (key.tab) {
+		const isTab = key.tab || value === "\t";
+		if (isTab) {
 			if (hasMentionMenu) {
 				const selectedPath = mentionResults[fileMentionSelectedIndex];
 				if (selectedPath) {

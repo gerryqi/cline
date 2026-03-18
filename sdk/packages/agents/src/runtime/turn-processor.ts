@@ -115,6 +115,7 @@ export class TurnProcessor {
 		}
 
 		const toolCalls = this.finalizePendingToolCalls(pendingToolCallsMap);
+		const invalidToolCalls = this.collectInvalidToolCalls(pendingToolCallsMap);
 		const assistantContent: providers.ContentBlock[] = [];
 
 		if (text) {
@@ -168,6 +169,7 @@ export class TurnProcessor {
 				text,
 				reasoning: reasoning || undefined,
 				toolCalls,
+				invalidToolCalls,
 				usage,
 				truncated,
 				responseId,
@@ -241,6 +243,37 @@ export class TurnProcessor {
 			});
 		}
 		return toolCalls;
+	}
+
+	private collectInvalidToolCalls(
+		pendingMap: Map<
+			string,
+			{ name?: string; arguments: string; signature?: string }
+		>,
+	): Array<{
+		id: string;
+		name?: string;
+		reason: "missing_name" | "missing_arguments" | "invalid_arguments";
+	}> {
+		const invalid: Array<{
+			id: string;
+			name?: string;
+			reason: "missing_name" | "missing_arguments" | "invalid_arguments";
+		}> = [];
+		for (const [id, pending] of pendingMap.entries()) {
+			if (!pending.name) {
+				invalid.push({ id, reason: "missing_name" });
+				continue;
+			}
+			if (!pending.arguments) {
+				invalid.push({ id, name: pending.name, reason: "missing_arguments" });
+				continue;
+			}
+			if (this.tryParseJson(pending.arguments) === undefined) {
+				invalid.push({ id, name: pending.name, reason: "invalid_arguments" });
+			}
+		}
+		return invalid;
 	}
 
 	private tryParseJson(value: string): unknown | undefined {

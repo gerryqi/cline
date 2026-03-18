@@ -450,6 +450,7 @@ export class DefaultSessionManager implements SessionManager {
 				effectiveConfig.reasoningEffort ?? providerConfig.reasoningEffort,
 			systemPrompt: effectiveConfig.systemPrompt,
 			maxIterations: effectiveConfig.maxIterations,
+			maxConsecutiveMistakes: effectiveConfig.maxConsecutiveMistakes,
 			tools,
 			hooks: effectiveHooks,
 			extensions: effectiveExtensions,
@@ -459,6 +460,8 @@ export class DefaultSessionManager implements SessionManager {
 			toolPolicies: input.toolPolicies ?? this.defaultToolPolicies,
 			requestToolApproval:
 				input.requestToolApproval ?? this.defaultRequestToolApproval,
+			onConsecutiveMistakeLimitReached:
+				effectiveConfig.onConsecutiveMistakeLimitReached,
 			completionGuard: runtime.completionGuard,
 			logger: runtime.logger ?? effectiveConfig.logger,
 			onEvent: (event: AgentEvent) => {

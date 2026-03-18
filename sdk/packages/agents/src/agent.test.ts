@@ -197,6 +197,86 @@ describe("Agent", () => {
 		expect(logger.error).not.toHaveBeenCalled();
 	});
 
+	it("fails after reaching max consecutive mistakes by default", async () => {
+		const { Agent } = await import("./agent.js");
+		const handler = makeHandler([
+			[
+				{
+					type: "done",
+					id: "r1",
+					success: false,
+					error: "upstream api timeout",
+				},
+			],
+			[
+				{
+					type: "done",
+					id: "r2",
+					success: false,
+					error: "upstream api timeout",
+				},
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "Handle retries",
+			tools: [],
+			maxConsecutiveMistakes: 2,
+		});
+
+		await expect(agent.run("retry")).rejects.toThrow("upstream api timeout");
+		expect(handler.createMessage).toHaveBeenCalledTimes(2);
+	});
+
+	it("continues after mistake limit when callback returns continue", async () => {
+		const { Agent } = await import("./agent.js");
+		const handler = makeHandler([
+			[
+				{
+					type: "done",
+					id: "r1",
+					success: false,
+					error: "temporary api failure",
+				},
+			],
+			[
+				{
+					type: "done",
+					id: "r2",
+					success: false,
+					error: "temporary api failure",
+				},
+			],
+			[
+				{ type: "text", id: "r3", text: "Recovered" },
+				{ type: "usage", id: "r3", inputTokens: 3, outputTokens: 2 },
+				{ type: "done", id: "r3", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const onConsecutiveMistakeLimitReached = vi.fn().mockResolvedValue({
+			action: "continue",
+			guidance: "mistake_limit_reached: continue and recover",
+		});
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "Handle retries",
+			tools: [],
+			maxConsecutiveMistakes: 2,
+			onConsecutiveMistakeLimitReached,
+		});
+
+		const result = await agent.run("retry");
+		expect(onConsecutiveMistakeLimitReached).toHaveBeenCalledTimes(1);
+		expect(result.finishReason).toBe("completed");
+		expect(result.text).toBe("Recovered");
+	});
+
 	it("executes tool calls and applies tool policy approval", async () => {
 		const { Agent } = await import("./agent.js");
 		const mathTool: Tool<{ a: number; b: number }, { total: number }> =

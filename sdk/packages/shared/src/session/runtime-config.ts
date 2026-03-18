@@ -19,5 +19,6 @@ export interface SessionExecutionConfig {
 	teamName?: string;
 	missionLogIntervalSteps?: number;
 	missionLogIntervalMs?: number;
+	maxConsecutiveMistakes?: number;
 	toolPolicies?: Record<string, ToolPolicy>;
 }

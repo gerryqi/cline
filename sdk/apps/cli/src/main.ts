@@ -312,6 +312,11 @@ export async function runCli(): Promise<void> {
 		);
 		process.exit(1);
 	}
+	if (args.invalidMaxConsecutiveMistakes) {
+		writeln(
+			`${c.dim}[warn] ignoring invalid --max-consecutive-mistakes value "${args.invalidMaxConsecutiveMistakes}" (expected integer >= 1)${c.reset}`,
+		);
+	}
 	setCurrentOutputMode(args.outputMode);
 	const defaultToolAutoApprove = args.defaultToolAutoApprove;
 	const mergedToolPolicies = mergeToolPolicies({}, args.toolPolicies);
@@ -444,6 +449,7 @@ export async function runCli(): Promise<void> {
 				rules: loadRulesForSystemPromptFromWatcher(userInstructionWatcher),
 			}),
 			maxIterations: args.maxIterations,
+			maxConsecutiveMistakes: args.maxConsecutiveMistakes ?? 3,
 			sandbox: sandboxEnabled,
 			sandboxDataDir,
 			showUsage: args.showUsage,

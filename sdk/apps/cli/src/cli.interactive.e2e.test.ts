@@ -48,7 +48,11 @@ function runInteractiveCli(
 	const teamDir = mkdtempSync(path.join(os.tmpdir(), "cli-int-teams-"));
 	tempDirs.push(homeDir, dataDir, sessionDir, teamDir);
 
-	const scriptedInput = steps
+	const scriptedInput = [
+		...steps,
+		// Exit each interactive run explicitly so tests do not idle until timeout.
+		{ delaySeconds: 0.2, input: "\u0003" },
+	]
 		.map(
 			(step) =>
 				`sleep ${step.delaySeconds}; printf ${toShellSingleQuotedLiteral(step.input)}`,
@@ -118,7 +122,7 @@ describe("cli interactive e2e", () => {
 
 	it("toggles plan/act mode with Tab", () => {
 		const result = runInteractiveCli([
-			{ delaySeconds: 1.0, input: "\t" },
+			{ delaySeconds: 1.4, input: "\t" },
 			{ delaySeconds: 0.8, input: "" },
 		]);
 		const output = outputOf(result);
@@ -128,7 +132,7 @@ describe("cli interactive e2e", () => {
 
 	it("toggles auto-approve-all with Shift+Tab", () => {
 		const result = runInteractiveCli([
-			{ delaySeconds: 1.0, input: "\u001b[Z" },
+			{ delaySeconds: 1.4, input: "\u001b[Z" },
 			{ delaySeconds: 0.8, input: "" },
 		]);
 		const output = outputOf(result);

@@ -109,6 +109,13 @@ clite --team-name my-team "Continue yesterday's team workflow"
 # Show usage stats (tokens + estimated cost when available)
 clite -u -t "Explain quantum computing"
 
+# Override consecutive internal mistake limit for this run (default: 3)
+clite --max-consecutive-mistakes 5 "Fix failing tests"
+# Common with auto-approve/yolo-style runs
+clite --auto-approve-tools --max-consecutive-mistakes 5 "Refactor this package"
+# Alias
+clite --yolo --max-consecutive-mistakes 5 "Refactor this package"
+
 # Stream structured NDJSON output
 clite --output json "Summarize this repository"
 # equivalent

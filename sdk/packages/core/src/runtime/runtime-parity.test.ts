@@ -45,6 +45,13 @@ function legacyBuildRuntimeEnvironment(
 	return tools;
 }
 
+function normalizeParityToolNames(toolNames: string[]): string[] {
+	// Skills are discovered from user/workspace config and can appear in tests
+	// depending on the machine state. They are intentionally excluded from
+	// strict legacy parity checks.
+	return toolNames.filter((toolName) => toolName !== "skills");
+}
+
 function makeEmptyWorkspaceCwd(): string {
 	return mkdtempSync(join(tmpdir(), "runtime-parity-"));
 }
@@ -71,8 +78,10 @@ describe("runtime tool parity", () => {
 			enableAgentTeams: false,
 		};
 		const createSpawnTool = makeSpawnTool;
-		const expected = legacyBuildRuntimeEnvironment(config, createSpawnTool).map(
-			(tool) => tool.name,
+		const expected = normalizeParityToolNames(
+			legacyBuildRuntimeEnvironment(config, createSpawnTool).map(
+				(tool) => tool.name,
+			),
 		);
 		const actual = new DefaultRuntimeBuilder()
 			.build({
@@ -81,7 +90,7 @@ describe("runtime tool parity", () => {
 			})
 			.tools.map((tool) => tool.name);
 
-		expect(actual).toEqual(expected);
+		expect(normalizeParityToolNames(actual)).toEqual(expected);
 	});
 
 	it("matches legacy tool list when only spawn is enabled", () => {
@@ -96,8 +105,10 @@ describe("runtime tool parity", () => {
 			enableAgentTeams: false,
 		};
 		const createSpawnTool = makeSpawnTool;
-		const expected = legacyBuildRuntimeEnvironment(config, createSpawnTool).map(
-			(tool) => tool.name,
+		const expected = normalizeParityToolNames(
+			legacyBuildRuntimeEnvironment(config, createSpawnTool).map(
+				(tool) => tool.name,
+			),
 		);
 		const actual = new DefaultRuntimeBuilder()
 			.build({
@@ -106,7 +117,7 @@ describe("runtime tool parity", () => {
 			})
 			.tools.map((tool) => tool.name);
 
-		expect(actual).toEqual(expected);
+		expect(normalizeParityToolNames(actual)).toEqual(expected);
 	});
 
 	it("matches legacy tool list when tools+spawn are disabled", () => {
@@ -120,13 +131,13 @@ describe("runtime tool parity", () => {
 			enableSpawnAgent: false,
 			enableAgentTeams: false,
 		};
-		const expected = legacyBuildRuntimeEnvironment(config).map(
-			(tool) => tool.name,
+		const expected = normalizeParityToolNames(
+			legacyBuildRuntimeEnvironment(config).map((tool) => tool.name),
 		);
 		const actual = new DefaultRuntimeBuilder()
 			.build({ config })
 			.tools.map((tool) => tool.name);
 
-		expect(actual).toEqual(expected);
+		expect(normalizeParityToolNames(actual)).toEqual(expected);
 	});
 });

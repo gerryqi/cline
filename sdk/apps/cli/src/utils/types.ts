@@ -91,6 +91,8 @@ export interface ParsedArgs {
 	provider?: string;
 	sessionId?: string;
 	maxIterations?: number;
+	maxConsecutiveMistakes?: number;
+	invalidMaxConsecutiveMistakes?: string;
 	cwd?: string;
 	teamName?: string;
 	missionLogIntervalSteps?: number;

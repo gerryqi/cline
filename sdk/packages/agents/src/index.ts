@@ -118,6 +118,8 @@ export {
 	type AgentUsage,
 	AgentUsageSchema,
 	type BasicLogger,
+	type ConsecutiveMistakeLimitContext,
+	type ConsecutiveMistakeLimitDecision,
 	type ContentBlock,
 	type HookErrorMode,
 	type Message,

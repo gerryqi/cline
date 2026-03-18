@@ -329,6 +329,8 @@ interface ParsedArgs {
   provider?: string             // -p / --provider
   sessionId?: string            // --session
   maxIterations?: number        // -n / --max-iterations (optional; unset is unbounded)
+  maxConsecutiveMistakes?: number   // --max-consecutive-mistakes (default 3)
+  invalidMaxConsecutiveMistakes?: string // warning-only invalid value capture
   cwd?: string                  // --cwd
   teamName?: string             // --team-name
   missionLogIntervalSteps?: number  // --mission-step-interval
@@ -612,6 +614,7 @@ When any agent command starts, the CLI automatically attempts to connect to the 
 | `--provider <id>` | `-p` | string | `cline` | LLM provider ID |
 | `--key <api-key>` | `-k` | string | — | API key override for this run |
 | `--max-iterations <n>` | `-n` | number | *(unbounded)* | Max agentic loop iterations (optional; unset is unbounded) |
+| `--max-consecutive-mistakes <n>` | — | number | `3` | Max consecutive internal mistakes before escalation (invalid values are ignored with warning) |
 | `--usage` | `-u` | boolean | `false` | Print token usage and estimated cost after each run |
 | `--timings` | `-t` | boolean | `false` | Print elapsed time after each run |
 | `--thinking` | — | boolean | `false` | Enable model thinking/reasoning when supported |
@@ -624,7 +627,9 @@ When any agent command starts, the CLI automatically attempts to connect to the 
 | `--tools` | — | boolean | `true` | Enable built-in tools (default on) |
 | `--no-tools` | — | boolean | — | Disable all built-in tools |
 | `--auto-approve-tools` | — | boolean | `true` | Auto-approve tool calls by default |
+| `--yolo` | — | boolean | `true` | Alias for `--auto-approve-tools` |
 | `--require-tool-approval` | — | boolean | `false` | Require approval before each tool call by default |
+| `--no-yolo` | — | boolean | `false` | Alias for `--require-tool-approval` |
 | `--tool-enable <name>` | — | string | — | Explicitly enable a specific tool |
 | `--tool-disable <name>` | — | string | — | Explicitly disable a specific tool |
 | `--tool-autoapprove <name>` | — | string | — | Auto-approve a specific tool |
@@ -638,6 +643,10 @@ When any agent command starts, the CLI automatically attempts to connect to the 
 | `--session <id>` | — | string | — | Resume interactive chat from a saved session ID |
 | `--mission-step-interval <n>` | — | number | `3` | Mission log interval in steps |
 | `--mission-time-interval-ms <n>` | — | number | `120000` | Mission log interval in milliseconds |
+
+`--max-consecutive-mistakes` is a per-session override for the current run only. The counter tracks consecutive internal failures (API turn failures, invalid/missing tool-call params, and iterations where all tool calls fail). Any successful tool execution resets the counter to `0`. At the limit:
+- with auto-approve/yolo-style runs (`--auto-approve-tools`), the run stops with failure
+- with approval mode (`--require-tool-approval`), CLI prompts `mistake_limit_reached` and asks how to continue, then resets the counter when continuing
 
 ---
 
