@@ -385,6 +385,11 @@ export async function runCli(): Promise<void> {
 			runtime: "cli",
 			component: "main",
 		});
+		loggerAdapter.core?.info?.("CLI run started", {
+			interactive: args.interactive === true,
+			hasPrompt: !!args.prompt?.trim(),
+			cwd,
+		});
 
 		const config: Config = {
 			providerId: provider,

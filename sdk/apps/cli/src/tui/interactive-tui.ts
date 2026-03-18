@@ -1,6 +1,4 @@
-import { execFile } from "node:child_process";
 import { basename } from "node:path";
-import { promisify } from "node:util";
 import type { AgentEvent, TeamEvent } from "@clinebot/agents";
 import { Box, Text, useInput } from "ink";
 import React, {
@@ -20,10 +18,9 @@ import {
 } from "../runtime/interactive-welcome";
 import { formatToolInput, formatToolOutput, truncate } from "../utils/helpers";
 import { c, formatUsd } from "../utils/output";
+import { type RepoStatus, readRepoStatus } from "../utils/repo-status";
 import type { Config } from "../utils/types";
 import { WelcomeView } from "./components/WelcomeView";
-
-const execFileAsync = promisify(execFile);
 
 interface InteractiveTurnResult {
 	usage: {
@@ -39,6 +36,7 @@ interface InteractiveTuiProps {
 	config: Config;
 	welcomeLine?: string;
 	initialView?: "chat" | "config";
+	initialRepoStatus?: RepoStatus;
 	workflowSlashCommands?: InteractiveSlashCommand[];
 	loadConfigData: () => Promise<InteractiveConfigData>;
 	subscribeToEvents: (handlers: {
@@ -79,7 +77,6 @@ interface SlashQueryInfo {
 const MAX_LINES_FALLBACK = 40;
 const MAX_BUFFERED_LINES = 500;
 const DEFAULT_CONTEXT_WINDOW = 200000;
-const MOUSE_UPDATE_THROTTLE_MS = 33;
 const COMPLETION_DEBOUNCE_MS = 120;
 const MAX_COMPLETION_RESULTS = 8;
 const MAX_MENU_ITEMS_VISIBLE = 5;
@@ -219,50 +216,6 @@ function getVisibleWindow<T>(
 	return { items: items.slice(startIndex, endIndex), startIndex };
 }
 
-async function readGitBranch(cwd: string): Promise<string | null> {
-	try {
-		const { stdout } = await execFileAsync(
-			"git",
-			["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"],
-			{ encoding: "utf8" },
-		);
-		const branch = stdout.trim();
-		return branch.length > 0 ? branch : null;
-	} catch {
-		return null;
-	}
-}
-
-async function readGitDiffStats(
-	cwd: string,
-): Promise<{ files: number; additions: number; deletions: number } | null> {
-	try {
-		const { stdout } = await execFileAsync(
-			"git",
-			["-C", cwd, "diff", "--shortstat"],
-			{ encoding: "utf8" },
-		);
-		const output = stdout.trim();
-		if (!output) {
-			return null;
-		}
-		const filesMatch = output.match(/(\d+)\s+file/);
-		const additionsMatch = output.match(/(\d+)\s+insertion/);
-		const deletionsMatch = output.match(/(\d+)\s+deletion/);
-		return {
-			files: filesMatch ? Number.parseInt(filesMatch[1] ?? "0", 10) : 0,
-			additions: additionsMatch
-				? Number.parseInt(additionsMatch[1] ?? "0", 10)
-				: 0,
-			deletions: deletionsMatch
-				? Number.parseInt(deletionsMatch[1] ?? "0", 10)
-				: 0,
-		};
-	} catch {
-		return null;
-	}
-}
-
 function resolveModelContextWindow(config: Config): number {
 	const modelInfo = (config.knownModels?.[config.modelId] ?? {}) as {
 		contextWindow?: number;
@@ -318,21 +271,20 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 	// Slash command completion
 	const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
 
-	// Mouse tracking
-	const [mouseOffsetX, setMouseOffsetX] = useState(0);
-	const [mouseOffsetY, setMouseOffsetY] = useState(0);
+	const mouseOffsetX = 0;
+	const mouseOffsetY = 0;
 
 	// Usage statistics
 	const [lastTotalTokens, setLastTotalTokens] = useState(0);
 	const [lastTotalCost, setLastTotalCost] = useState(0);
 
 	// Git status
-	const [gitBranch, setGitBranch] = useState<string | null>(null);
-	const [gitDiffStats, setGitDiffStats] = useState<{
-		files: number;
-		additions: number;
-		deletions: number;
-	} | null>(null);
+	const [repoStatus, setRepoStatus] = useState<RepoStatus>(
+		props.initialRepoStatus ?? {
+			branch: null,
+			diffStats: null,
+		},
+	);
 
 	// Config view
 	const [isConfigViewOpen, setIsConfigViewOpen] = useState(
@@ -354,7 +306,6 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 	const mentionSearchTimerRef = useRef<NodeJS.Timeout | null>(null);
 	const mentionSearchCounterRef = useRef(0);
 	const turnErrorReportedRef = useRef(false);
-	const lastMouseUpdateRef = useRef(0);
 	const configLoadCounterRef = useRef(0);
 
 	const workspaceName = useMemo(
@@ -424,8 +375,18 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 	}, [configData, configTab]);
 
 	const refreshRepoStatus = useCallback(() => {
-		void readGitBranch(config.cwd).then(setGitBranch);
-		void readGitDiffStats(config.cwd).then(setGitDiffStats);
+		void readRepoStatus(config.cwd).then((nextStatus) => {
+			setRepoStatus((currentStatus) => {
+				const sameBranch = currentStatus.branch === nextStatus.branch;
+				const sameDiffStats =
+					currentStatus.diffStats?.files === nextStatus.diffStats?.files &&
+					currentStatus.diffStats?.additions ===
+						nextStatus.diffStats?.additions &&
+					currentStatus.diffStats?.deletions ===
+						nextStatus.diffStats?.deletions;
+				return sameBranch && sameDiffStats ? currentStatus : nextStatus;
+			});
+		});
 	}, [config.cwd]);
 
 	const closeConfigView = useCallback(() => {
@@ -486,55 +447,9 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 	}, [refreshRepoStatus]);
 
 	useEffect(() => {
-		if (!process.stdin.isTTY || !process.stdout.isTTY) {
-			return;
-		}
-		process.stdout.write("\u001b[?1003h\u001b[?1006h");
-		const onData = (chunk: Buffer | string) => {
-			const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
-			if (!text.includes("\u001b[<")) {
-				return;
-			}
-			const now = Date.now();
-			if (now - lastMouseUpdateRef.current < MOUSE_UPDATE_THROTTLE_MS) {
-				return;
-			}
-			lastMouseUpdateRef.current = now;
-			// biome-ignore lint/suspicious/noControlCharactersInRegex: we are specifically looking for mouse event escape sequences here
-			const matches = [...text.matchAll(/\u001b\[<\d+;(\d+);(\d+)[mM]/g)];
-			const last = matches[matches.length - 1];
-			if (!last) {
-				return;
-			}
-			const x = Number.parseInt(last[1] ?? "0", 10);
-			const y = Number.parseInt(last[2] ?? "0", 10);
-			if (!Number.isFinite(x) || !Number.isFinite(y)) {
-				return;
-			}
-			const columns = process.stdout.columns ?? 120;
-			const rows = process.stdout.rows ?? 40;
-			const nextX = Math.max(
-				-4,
-				Math.min(4, Math.round(((x / columns) * 2 - 1) * 4)),
-			);
-			const nextY = Math.max(
-				-1,
-				Math.min(1, Math.round(((y / rows) * 2 - 1) * 1)),
-			);
-			setMouseOffsetX(nextX);
-			setMouseOffsetY(nextY);
-		};
-		process.stdin.on("data", onData);
-		return () => {
-			process.stdin.off("data", onData);
-			process.stdout.write("\u001b[?1003l\u001b[?1006l");
-		};
-	}, []);
-
-	useEffect(() => {
 		if (!mentionInfo.inMentionMode) {
-			setIsSearchingMentions(false);
-			setFileMentionResults([]);
+			setIsSearchingMentions((current) => (current ? false : current));
+			setFileMentionResults((current) => (current.length > 0 ? [] : current));
 			if (mentionSearchTimerRef.current) {
 				clearTimeout(mentionSearchTimerRef.current);
 				mentionSearchTimerRef.current = null;
@@ -1110,6 +1025,8 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 		() => createContextBar(lastTotalTokens, contextWindowSize),
 		[lastTotalTokens, contextWindowSize],
 	);
+	const gitBranch = repoStatus.branch;
+	const gitDiffStats = repoStatus.diffStats;
 
 	// Render sections
 	const renderWelcome = shouldShowWelcome

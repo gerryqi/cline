@@ -19,7 +19,7 @@ import { CoreSessionService } from "./session-service";
 const DEFAULT_RPC_ADDRESS =
 	process.env.CLINE_RPC_ADDRESS?.trim() || getRpcServerDefaultAddress();
 
-type SessionBackend = RpcCoreSessionService | CoreSessionService;
+export type SessionBackend = RpcCoreSessionService | CoreSessionService;
 
 let cachedBackend: SessionBackend | undefined;
 let backendInitPromise: Promise<SessionBackend> | undefined;
@@ -41,24 +41,35 @@ export interface CreateSessionHostOptions {
 
 export type SessionHost = SessionManager;
 
-function isLikelyScriptEntryPath(pathValue: string | undefined): boolean {
-	if (!pathValue) {
-		return false;
-	}
-	return /\.(?:[cm]?[jt]s|tsx?)$/i.test(pathValue);
-}
-
 function startRpcServerInBackground(address: string): void {
-	const launcher = process.argv[0];
-	const entry = process.argv[1];
-	const startArgs = ["rpc", "start", "--address", address];
-	const args =
-		entry && isLikelyScriptEntryPath(entry) ? [entry, ...startArgs] : startArgs;
+	const launcher = process.execPath;
+	const entryArg = process.argv[1]?.trim();
+	if (!entryArg) {
+		return;
+	}
+	const entry = resolve(process.cwd(), entryArg);
+	if (!existsSync(entry)) {
+		return;
+	}
+	const conditionsArg = process.execArgv.find((arg) =>
+		arg.startsWith("--conditions="),
+	);
+	const args = [
+		...(conditionsArg ? [conditionsArg] : []),
+		entry,
+		"rpc",
+		"start",
+		"--address",
+		address,
+	];
 
 	const child = spawn(launcher, args, {
 		detached: true,
 		stdio: "ignore",
-		env: process.env,
+		env: {
+			...process.env,
+			CLINE_NO_INTERACTIVE: "1",
+		},
 		cwd: process.cwd(),
 	});
 	child.unref();
@@ -116,7 +127,7 @@ function resolveHostDistinctId(explicitDistinctId: string | undefined): string {
 	return generatedDistinctId;
 }
 
-async function resolveBackend(
+export async function resolveSessionBackend(
 	options: CreateSessionHostOptions,
 ): Promise<SessionBackend> {
 	if (cachedBackend) {
@@ -179,7 +190,8 @@ async function resolveBackend(
 export async function createSessionHost(
 	options: CreateSessionHostOptions,
 ): Promise<SessionHost> {
-	const backend = options.sessionService ?? (await resolveBackend(options));
+	const backend =
+		options.sessionService ?? (await resolveSessionBackend(options));
 	return new DefaultSessionManager({
 		sessionService: backend,
 		defaultToolExecutors: options.defaultToolExecutors,

@@ -16,12 +16,14 @@ import {
 } from "../utils/chat-commands";
 import { createRuntimeHooks } from "../utils/hooks";
 import { c, setActiveCliSession, writeErr, writeln } from "../utils/output";
+import { readRepoStatus } from "../utils/repo-status";
 import { loadInteractiveResumeMessages } from "../utils/resume";
 import { createDefaultCliSessionManager } from "../utils/session";
 import {
 	formatPreviewMessageText,
 	getLastSessionPreviewMessages,
 } from "../utils/session-message-summary";
+import { resetTerminalState } from "../utils/terminal";
 import type { Config } from "../utils/types";
 import { setActiveRuntimeAbort } from "./active-runtime";
 import { loadInteractiveConfigData } from "./interactive-config";
@@ -67,6 +69,7 @@ export async function runInteractive(
 		clineApiBaseUrl: options?.clineApiBaseUrl,
 		clineProviderSettings: options?.clineProviderSettings,
 	});
+	const initialRepoStatus = await readRepoStatus(config.cwd);
 	void prewarmFileIndex(config.cwd);
 	const workflowSlashCommands = listInteractiveSlashCommands(
 		userInstructionWatcher,
@@ -254,6 +257,7 @@ export async function runInteractive(
 			config,
 			welcomeLine: clineWelcomeLine ?? undefined,
 			initialView: options?.initialView ?? "chat",
+			initialRepoStatus,
 			workflowSlashCommands,
 			loadConfigData: async () =>
 				loadInteractiveConfigData({
@@ -365,6 +369,7 @@ export async function runInteractive(
 	try {
 		await inkApp.waitUntilExit();
 	} finally {
+		resetTerminalState();
 		process.off("SIGINT", handleSigint);
 		process.off("SIGTERM", handleSigterm);
 		unsubscribe();

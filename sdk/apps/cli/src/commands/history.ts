@@ -113,7 +113,7 @@ interface HistoryListViewProps {
 
 function HistoryListView({ rows, onSelect, onExit }: HistoryListViewProps) {
 	const [selectedIndex, setSelectedIndex] = useState(0);
-	const pageSize = Math.max(1, (process.stdout.rows ?? 24) - 10); // Leave room for header and footer
+	const pageSize = Math.max(1, (process.stdout.rows ?? 24) / 4); // Leave room for header and footer
 
 	const visibleWindow = useMemo(() => {
 		const start = Math.max(0, selectedIndex - Math.floor(pageSize / 2));

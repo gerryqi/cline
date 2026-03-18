@@ -229,9 +229,13 @@ export {
 } from "../session/session-graph";
 export type {
 	CreateSessionHostOptions,
+	SessionBackend,
 	SessionHost,
 } from "../session/session-host";
-export { createSessionHost } from "../session/session-host";
+export {
+	createSessionHost,
+	resolveSessionBackend,
+} from "../session/session-host";
 export type {
 	SendSessionInput,
 	SessionAccumulatedUsage,

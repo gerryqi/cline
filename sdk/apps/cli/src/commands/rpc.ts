@@ -1,7 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import { isAbsolute, resolve as resolvePath } from "node:path";
-import type { RpcChatStartSessionRequest } from "@clinebot/core";
 import {
 	getRpcServerHealth,
 	RpcSessionClient,
@@ -86,39 +85,15 @@ function isUnimplementedError(error: unknown): boolean {
 async function hasRuntimeMethods(address: string): Promise<boolean> {
 	const client = new RpcSessionClient({ address });
 	try {
-		const probeRequest: RpcChatStartSessionRequest = {
-			workspaceRoot: process.cwd(),
-			cwd: process.cwd(),
-			provider: "cline",
-			model: "openai/gpt-5.3-codex",
-			mode: "act",
-			apiKey: "",
-			enableTools: false,
-			enableSpawn: false,
-			enableTeams: false,
-			autoApproveTools: true,
-			teamName: "rpc-probe",
-			missionStepInterval: 3,
-			missionTimeIntervalMs: 120000,
-		};
-		const started = await client.startRuntimeSession(probeRequest);
-		if (!started.sessionId.trim()) {
-			return false;
-		}
-		let stopSupported = true;
+		// Probe a runtime-only method without creating any session side effects.
 		try {
-			await client.stopRuntimeSession(started.sessionId);
+			await client.stopRuntimeSession("__rpc_probe__");
 		} catch (error) {
 			if (isUnimplementedError(error)) {
-				stopSupported = false;
+				return false;
 			}
 		}
-		try {
-			await client.deleteSession(started.sessionId, true);
-		} catch {
-			// best effort cleanup
-		}
-		return stopSupported;
+		return true;
 	} catch (error) {
 		return !isUnimplementedError(error);
 	} finally {
