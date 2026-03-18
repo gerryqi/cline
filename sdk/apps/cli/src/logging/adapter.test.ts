@@ -124,4 +124,22 @@ describe("createCliLoggerAdapter", () => {
 			restoreEnv(snapshot);
 		}
 	});
+
+	it("falls back when log destination path is not writable", () => {
+		const snapshot = withEnvSnapshot();
+		delete process.env.CLINE_DATA_DIR;
+		process.env.CLINE_LOG_PATH = "/dev/null/clite.log";
+		delete process.env.CLINE_LOG_LEVEL;
+		delete process.env.CLINE_LOG_NAME;
+		delete process.env.CLINE_LOG_ENABLED;
+
+		try {
+			expect(() => {
+				const adapter = createCliLoggerAdapter({ runtime: "cli" });
+				adapter.core.info?.("fallback path test");
+			}).not.toThrow();
+		} finally {
+			restoreEnv(snapshot);
+		}
+	});
 });

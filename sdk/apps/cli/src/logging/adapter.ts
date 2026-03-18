@@ -1,5 +1,12 @@
-import { existsSync, statSync, truncateSync } from "node:fs";
-import { join } from "node:path";
+import {
+	closeSync,
+	existsSync,
+	mkdirSync,
+	openSync,
+	statSync,
+	truncateSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import type { BasicLogger, RpcChatRuntimeLoggerConfig } from "@clinebot/core";
 import { resolveClineDataDir } from "@clinebot/core";
 import pino, {
@@ -93,14 +100,11 @@ function getOrCreatePinoLogger(
 		return cached.logger;
 	}
 
-	cleanupStaleLogFile(config.destination);
-	startLogCleanupTimer(config.destination);
-
-	const destination = pino.destination({
-		dest: config.destination,
-		mkdir: true,
-		sync: false,
-	});
+	const destination = createWritableDestination(config.destination);
+	if (destination) {
+		cleanupStaleLogFile(config.destination);
+		startLogCleanupTimer(config.destination);
+	}
 	const created = pino(
 		{
 			name: config.name,
@@ -108,10 +112,27 @@ function getOrCreatePinoLogger(
 			timestamp: pino.stdTimeFunctions.isoTime,
 			enabled: config.enabled,
 		},
-		destination,
+		destination ?? pino.destination(2),
 	);
 	loggerCache.set(key, { logger: created, destination });
 	return created;
+}
+
+function createWritableDestination(
+	destinationPath: string,
+): DestinationStream | undefined {
+	try {
+		mkdirSync(dirname(destinationPath), { recursive: true });
+		const fd = openSync(destinationPath, "a");
+		closeSync(fd);
+		return pino.destination({
+			dest: destinationPath,
+			mkdir: true,
+			sync: false,
+		});
+	} catch {
+		return undefined;
+	}
 }
 
 function cleanupStaleLogFile(destination: string): void {

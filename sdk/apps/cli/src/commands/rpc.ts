@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:net";
+import { isAbsolute, resolve as resolvePath } from "node:path";
 import type { RpcChatStartSessionRequest } from "@clinebot/core";
 import {
 	getRpcServerHealth,
@@ -151,12 +152,28 @@ async function findAvailableAddress(baseAddress: string): Promise<string> {
 }
 
 function spawnRpcStartDetached(address: string): void {
-	const launcher = process.argv[0];
-	const entry = process.argv[1];
+	const launcher = process.execPath;
+	const entryArg = process.argv[1];
+	const entry = entryArg?.trim()
+		? isAbsolute(entryArg)
+			? entryArg
+			: resolvePath(process.cwd(), entryArg)
+		: undefined;
 	if (!entry) {
 		throw new Error("unable to resolve CLI entrypoint for detached rpc start");
 	}
-	const child = spawn(launcher, [entry, "rpc", "start", "--address", address], {
+	const conditionsArg = process.execArgv.find((arg) =>
+		arg.startsWith("--conditions="),
+	);
+	const childArgs = [
+		...(conditionsArg ? [conditionsArg] : []),
+		entry,
+		"rpc",
+		"start",
+		"--address",
+		address,
+	];
+	const child = spawn(launcher, childArgs, {
 		detached: true,
 		stdio: "ignore",
 		env: process.env,
