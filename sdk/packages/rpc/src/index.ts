@@ -20,6 +20,7 @@ export {
 	runRpcRuntimeEventBridge,
 } from "./runtime-chat-stream-bridge.js";
 export {
+	getRpcServerDefaultAddress,
 	getRpcServerHandle,
 	getRpcServerHealth,
 	registerRpcClient,

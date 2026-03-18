@@ -203,6 +203,10 @@ function App() {
 	return (
 		<div className="app-shell">
 			<ChatMessages
+				onReset={() => {
+					postToHost({ type: "reset" });
+					setStatus("Resetting session...");
+				}}
 				_messages={messages}
 				status={status}
 				sessionId={sessionId}
@@ -264,10 +268,6 @@ function App() {
 				onAbort={() => {
 					postToHost({ type: "abort" });
 					setStatus("Abort requested...");
-				}}
-				onReset={() => {
-					postToHost({ type: "reset" });
-					setStatus("Resetting session...");
 				}}
 			/>
 		</div>

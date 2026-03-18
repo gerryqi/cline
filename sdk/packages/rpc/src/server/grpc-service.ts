@@ -5,7 +5,7 @@ import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import type { ProtoGrpcType } from "./proto-types.js";
 
-export const DEFAULT_ADDRESS = "127.0.0.1:4317";
+export const DEFAULT_RPC_ADDRESS = "127.0.0.1:4317";
 export const PACKAGE_NAME = "cline.rpc.v1";
 export const SERVICE_NAME = "ClineGateway";
 

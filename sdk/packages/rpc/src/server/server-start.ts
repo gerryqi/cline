@@ -3,7 +3,7 @@ import { SchedulerService } from "@clinebot/scheduler";
 import * as grpc from "@grpc/grpc-js";
 import type { RpcServerHandle, RpcServerOptions } from "../types.js";
 import {
-	DEFAULT_ADDRESS,
+	DEFAULT_RPC_ADDRESS,
 	loadGatewayService,
 	parseAddress,
 } from "./grpc-service.js";
@@ -97,7 +97,10 @@ export async function startRpcServer(
 	}
 
 	singletonStartPromise = new Promise<RpcServerHandle>((resolve, reject) => {
-		const address = options.address?.trim() || DEFAULT_ADDRESS;
+		const address =
+			options.address?.trim() ||
+			process.env.CLINE_RPC_ADDRESS?.trim() ||
+			DEFAULT_RPC_ADDRESS;
 		try {
 			parseAddress(address);
 		} catch (error) {
@@ -760,4 +763,8 @@ export async function stopRpcServer(): Promise<void> {
 	if (singletonHandle) {
 		await singletonHandle.stop();
 	}
+}
+
+export function getRpcServerDefaultAddress(): string {
+	return DEFAULT_RPC_ADDRESS;
 }

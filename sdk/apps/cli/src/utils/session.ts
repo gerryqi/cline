@@ -16,7 +16,11 @@ import {
 	SessionSource,
 	SqliteSessionStore,
 } from "@clinebot/core/server";
-import { getRpcServerHealth, RpcSessionClient } from "@clinebot/rpc";
+import {
+	getRpcServerDefaultAddress,
+	getRpcServerHealth,
+	RpcSessionClient,
+} from "@clinebot/rpc";
 import type {
 	RpcChatMessage,
 	RpcChatRunTurnRequest,
@@ -27,9 +31,8 @@ import type {
 } from "@clinebot/shared";
 import { resolveSessionDataDir } from "@clinebot/shared/storage";
 
-const DEFAULT_RPC_ADDRESS =
-	process.env.CLINE_RPC_ADDRESS?.trim() || "127.0.0.1:4317";
-const activeRpcAddress = DEFAULT_RPC_ADDRESS;
+const activeRpcAddress =
+	process.env.CLINE_RPC_ADDRESS?.trim() || getRpcServerDefaultAddress();
 
 let coreSessions: RpcCoreSessionService | undefined;
 let localSessions: CoreSessionService | undefined;

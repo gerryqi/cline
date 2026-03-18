@@ -32,7 +32,6 @@ export function ChatInputBar({
 	onAutoApproveToolsChange,
 	onSend,
 	onAbort,
-	onReset,
 }: {
 	providers: Array<{
 		id: string;
@@ -62,7 +61,6 @@ export function ChatInputBar({
 	onAutoApproveToolsChange: (value: boolean) => void;
 	onSend: (prompt: string) => void;
 	onAbort: () => void;
-	onReset: () => void;
 }) {
 	const [inputValue, setInputValue] = useState("");
 
@@ -132,9 +130,6 @@ export function ChatInputBar({
 						</NativeSelect>
 					</div>
 					<div className="composer__buttons">
-						<Button variant="secondary" onClick={onReset}>
-							New Session
-						</Button>
 						<Button
 							variant={sending ? "destructive" : "default"}
 							disabled={status?.includes("Failed")}

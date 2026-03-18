@@ -55,6 +55,10 @@ export async function stopRpcServer(): Promise<never> {
 	throw browserOnlyError();
 }
 
+export function getRpcServerDefaultAddress(): never {
+	throw browserOnlyError();
+}
+
 export type {
 	PendingApproval,
 	RoutedEvent,

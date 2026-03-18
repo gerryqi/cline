@@ -1,7 +1,11 @@
 import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { getRpcServerHealth, RpcSessionClient } from "@clinebot/rpc";
+import {
+	getRpcServerDefaultAddress,
+	getRpcServerHealth,
+	RpcSessionClient,
+} from "@clinebot/rpc";
 import type {
 	RpcChatRunTurnRequest,
 	RpcChatStartSessionRequest,
@@ -16,7 +20,7 @@ import type {
 } from "./webview-protocol";
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_RPC_ADDRESS = "127.0.0.1:4317";
+const DEFAULT_RPC_ADDRESS = getRpcServerDefaultAddress();
 
 export function activate(context: vscode.ExtensionContext): void {
 	// Sidebar webview (default)

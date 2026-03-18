@@ -6,7 +6,7 @@ import type {
 	ToolApprovalRequest,
 	ToolApprovalResult,
 } from "@clinebot/agents";
-import { getRpcServerHealth } from "@clinebot/rpc";
+import { getRpcServerDefaultAddress, getRpcServerHealth } from "@clinebot/rpc";
 import { resolveSessionDataDir } from "@clinebot/shared/storage";
 import { nanoid } from "nanoid";
 import type { ToolExecutors } from "../default-tools";
@@ -17,7 +17,7 @@ import type { SessionManager } from "./session-manager";
 import { CoreSessionService } from "./session-service";
 
 const DEFAULT_RPC_ADDRESS =
-	process.env.CLINE_RPC_ADDRESS?.trim() || "127.0.0.1:4317";
+	process.env.CLINE_RPC_ADDRESS?.trim() || getRpcServerDefaultAddress();
 
 type SessionBackend = RpcCoreSessionService | CoreSessionService;
 
