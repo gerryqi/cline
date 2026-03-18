@@ -259,3 +259,104 @@ describe("zod schema conversion", () => {
 		expect(schema.properties).toHaveProperty("args");
 	});
 });
+
+describe("default editor tool", () => {
+	it("accepts null for unused optional fields on str_replace", async () => {
+		const execute = vi.fn(async () => "patched");
+		const tools = createDefaultTools({
+			executors: {
+				editor: execute,
+			},
+			enableReadFiles: false,
+			enableSearch: false,
+			enableBash: false,
+			enableWebFetch: false,
+			enableSkills: false,
+			enableAskQuestion: false,
+			enableApplyPatch: false,
+			enableEditor: true,
+		});
+		const editorTool = tools.find((tool) => tool.name === "editor");
+		expect(editorTool).toBeDefined();
+		if (!editorTool) {
+			throw new Error("Expected editor tool to be defined.");
+		}
+
+		const result = await editorTool.execute(
+			{
+				command: "str_replace",
+				path: "/tmp/example.ts",
+				old_str: "before",
+				new_str: "after",
+				file_text: null,
+				insert_line: null,
+			},
+			{
+				agentId: "agent-1",
+				conversationId: "conv-1",
+				iteration: 1,
+			},
+		);
+
+		expect(result).toEqual({
+			query: "str_replace:/tmp/example.ts",
+			result: "patched",
+			success: true,
+		});
+		expect(execute).toHaveBeenCalledWith(
+			expect.objectContaining({
+				command: "str_replace",
+				path: "/tmp/example.ts",
+				old_str: "before",
+				new_str: "after",
+				file_text: null,
+				insert_line: null,
+			}),
+			process.cwd(),
+			expect.objectContaining({
+				agentId: "agent-1",
+				conversationId: "conv-1",
+				iteration: 1,
+			}),
+		);
+	});
+
+	it("still rejects null for required insert fields", async () => {
+		const execute = vi.fn(async () => "patched");
+		const tools = createDefaultTools({
+			executors: {
+				editor: execute,
+			},
+			enableReadFiles: false,
+			enableSearch: false,
+			enableBash: false,
+			enableWebFetch: false,
+			enableSkills: false,
+			enableAskQuestion: false,
+			enableApplyPatch: false,
+			enableEditor: true,
+		});
+		const editorTool = tools.find((tool) => tool.name === "editor");
+		expect(editorTool).toBeDefined();
+		if (!editorTool) {
+			throw new Error("Expected editor tool to be defined.");
+		}
+
+		await expect(
+			editorTool.execute(
+				{
+					command: "insert",
+					path: "/tmp/example.ts",
+					new_str: "after",
+					insert_line: null,
+				},
+				{
+					agentId: "agent-1",
+					conversationId: "conv-1",
+					iteration: 1,
+				},
+			),
+		).rejects.toThrow(/insert_line is required for command=insert/);
+		expect(execute).not.toHaveBeenCalled();
+	});
+});

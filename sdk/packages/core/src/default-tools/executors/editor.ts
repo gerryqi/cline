@@ -116,7 +116,7 @@ async function createFile(
 async function replaceInFile(
 	filePath: string,
 	oldStr: string,
-	newStr: string | undefined,
+	newStr: string | null | undefined,
 	encoding: BufferEncoding,
 	maxDiffLines: number,
 ): Promise<string> {
@@ -183,7 +183,7 @@ export function createEditorExecutor(
 
 		switch (input.command) {
 			case "create":
-				if (input.file_text === undefined) {
+				if (input.file_text == null) {
 					throw new Error(
 						"Parameter `file_text` is required for command: create",
 					);
@@ -191,7 +191,7 @@ export function createEditorExecutor(
 				return createFile(filePath, input.file_text, encoding);
 
 			case "str_replace":
-				if (input.old_str === undefined) {
+				if (input.old_str == null) {
 					throw new Error(
 						"Parameter `old_str` is required for command: str_replace",
 					);
@@ -205,12 +205,12 @@ export function createEditorExecutor(
 				);
 
 			case "insert":
-				if (input.insert_line === undefined) {
+				if (input.insert_line == null) {
 					throw new Error(
 						"Parameter `insert_line` is required for insert command.",
 					);
 				}
-				if (input.new_str === undefined) {
+				if (input.new_str == null) {
 					throw new Error(
 						"Parameter `new_str` is required for insert command.",
 					);

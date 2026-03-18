@@ -90,37 +90,37 @@ export const EditFileInputSchema = z
 		path: z.string().min(1).describe("Absolute file path"),
 		file_text: z
 			.string()
-			.optional()
+			.nullish()
 			.describe("Full file content required for 'create' command"),
 		old_str: z
 			.string()
-			.optional()
+			.nullish()
 			.describe(
 				"Exact text to replace (must match exactly once) for 'str_replace' command",
 			),
 		new_str: z
 			.string()
-			.optional()
+			.nullish()
 			.describe("Replacement text for 'str_replace' or 'insert' commands"),
 		insert_line: z
 			.number()
 			.int()
-			.optional()
+			.nullish()
 			.describe("Optional one-based line index for 'insert' command"),
 	})
-	.refine((v) => v.command !== "create" || v.file_text !== undefined, {
+	.refine((v) => v.command !== "create" || v.file_text != null, {
 		path: ["file_text"],
 		message: "file_text is required for command=create",
 	})
-	.refine((v) => v.command !== "str_replace" || v.old_str !== undefined, {
+	.refine((v) => v.command !== "str_replace" || v.old_str != null, {
 		path: ["old_str"],
 		message: "old_str is required for command=str_replace",
 	})
-	.refine((v) => v.command !== "insert" || v.insert_line !== undefined, {
+	.refine((v) => v.command !== "insert" || v.insert_line != null, {
 		path: ["insert_line"],
 		message: "insert_line is required for command=insert",
 	})
-	.refine((v) => v.command !== "insert" || v.new_str !== undefined, {
+	.refine((v) => v.command !== "insert" || v.new_str != null, {
 		path: ["new_str"],
 		message: "new_str is required for command=insert",
 	});
