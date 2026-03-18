@@ -27,7 +27,7 @@ function ButtonGroup({
 	...props
 }: React.ComponentProps<"div"> & VariantProps<typeof buttonGroupVariants>) {
 	return (
-		// biome-ignore lint/a11y/useSemanticElements: Root element is a div for flexibility in child components
+		// biome-ignore lint/a11y/useSemanticElements: fieldset would break layout styling
 		<div
 			role="group"
 			data-slot="button-group"

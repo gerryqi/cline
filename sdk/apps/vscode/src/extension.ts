@@ -92,13 +92,14 @@ type StartConfig = {
 	workspaceRoot: string;
 	systemPrompt: string;
 	maxIterations?: number;
+	thinking?: boolean;
 	enableTools: boolean;
 	enableSpawnAgent: boolean;
 	enableAgentTeams: boolean;
 	teamName: string;
 	missionLogIntervalSteps: number;
 	missionLogIntervalMs: number;
-	mode: "act";
+	mode: "act" | "plan";
 	apiKey: string;
 };
 
@@ -112,6 +113,7 @@ type ProviderListItem = {
 type LlmModelInfo = {
 	name?: string;
 	capabilities?: string[];
+	thinkingConfig?: unknown;
 };
 
 class CoreChatWebviewController implements vscode.Disposable {
@@ -316,17 +318,19 @@ class CoreChatWebviewController implements vscode.Disposable {
 		const ids = llmModels
 			.getProviderIds()
 			.sort((a: string, b: string) => a.localeCompare(b));
-		const providers: ProviderListItem[] = await Promise.all(
-			ids.map(async (id: string) => {
-				const info = await llmModels.getProvider(id);
-				return {
-					id,
-					name: info?.name ?? id,
-					enabled: Boolean(state.providers[id]?.settings),
-					defaultModelId: info?.defaultModelId,
-				};
-			}),
-		);
+		const providers: ProviderListItem[] = (
+			await Promise.all(
+				ids.map(async (id: string) => {
+					const info = await llmModels.getProvider(id);
+					return {
+						id,
+						name: info?.name ?? id,
+						enabled: Boolean(state.providers[id]?.settings),
+						defaultModelId: info?.defaultModelId,
+					};
+				}),
+			)
+		).filter((provider: ProviderListItem) => provider.enabled);
 		await this.post({ type: "providers", providers });
 
 		const selected =
@@ -334,7 +338,6 @@ class CoreChatWebviewController implements vscode.Disposable {
 				providers.find(
 					(item: ProviderListItem) => item.id === preferredProvider,
 				)) ||
-			providers.find((item: ProviderListItem) => item.enabled) ||
 			providers[0];
 		if (selected) {
 			await this.loadModels(selected.id);
@@ -356,6 +359,9 @@ class CoreChatWebviewController implements vscode.Disposable {
 				id: modelId,
 				name: info.name ?? modelId,
 				supportsAttachments: info.capabilities?.includes("files"),
+				supportsThinking:
+					Boolean(info.thinkingConfig) ||
+					info.capabilities?.includes("reasoning"),
 				supportsVision: info.capabilities?.includes("images"),
 			}));
 		await this.post({
@@ -370,8 +376,10 @@ class CoreChatWebviewController implements vscode.Disposable {
 		config?: {
 			provider?: string;
 			model?: string;
+			mode?: "act" | "plan";
 			systemPrompt?: string;
 			maxIterations?: number;
+			thinking?: boolean;
 			enableTools?: boolean;
 			enableSpawn?: boolean;
 			enableTeams?: boolean;
@@ -434,17 +442,15 @@ class CoreChatWebviewController implements vscode.Disposable {
 	private async ensureSession(config?: {
 		provider?: string;
 		model?: string;
+		mode?: "act" | "plan";
 		systemPrompt?: string;
 		maxIterations?: number;
+		thinking?: boolean;
 		enableTools?: boolean;
 		enableSpawn?: boolean;
 		enableTeams?: boolean;
 		autoApproveTools?: boolean;
 	}): Promise<StartConfig> {
-		if (this.sessionId && this.startConfig) {
-			return this.startConfig;
-		}
-
 		const defaults = this.resolveWorkspaceDefaults();
 		const providerId = llmProviders.normalizeProviderId(
 			config?.provider?.trim() || "cline",
@@ -464,10 +470,11 @@ class CoreChatWebviewController implements vscode.Disposable {
 			cwd: defaults.cwd,
 			providerId,
 			modelId,
-			mode: "act",
+			mode: config?.mode === "plan" ? "plan" : "act",
 			apiKey: "",
 			systemPrompt: resolvedSystemPrompt,
 			maxIterations: normalizedMaxIterations,
+			thinking: config?.thinking === true,
 			enableTools: config?.enableTools !== false,
 			enableSpawnAgent: config?.enableSpawn !== false,
 			enableAgentTeams: config?.enableTeams === true,
@@ -475,6 +482,14 @@ class CoreChatWebviewController implements vscode.Disposable {
 			missionLogIntervalSteps: 3,
 			missionLogIntervalMs: 120000,
 		};
+
+		if (this.sessionId && this.startConfig) {
+			if (areStartConfigsEqual(this.startConfig, startConfig)) {
+				return this.startConfig;
+			}
+			await this.stopExistingSession();
+		}
+
 		const toolPolicies: Record<string, ToolPolicy> = {
 			"*": {
 				autoApprove: config?.autoApproveTools !== false,
@@ -497,6 +512,20 @@ class CoreChatWebviewController implements vscode.Disposable {
 		this.startEventStream(sessionId);
 		await this.post({ type: "session_started", sessionId });
 		return startConfig;
+	}
+
+	private async stopExistingSession(): Promise<void> {
+		if (this.sessionId && this.host) {
+			try {
+				await this.host.stop(this.sessionId);
+			} catch {
+				// best-effort cleanup before starting a replacement session
+			}
+		}
+		this.stopEventStream();
+		this.sessionId = undefined;
+		this.startConfig = undefined;
+		this.streamedAssistantText = "";
 	}
 
 	private startEventStream(sessionId: string): void {
@@ -532,6 +561,12 @@ class CoreChatWebviewController implements vscode.Disposable {
 				void this.post({
 					type: "tool_event",
 					text: `Running ${agentEvent.toolName ?? "tool"}...`,
+					event: {
+						toolCallId: agentEvent.toolCallId,
+						toolName: agentEvent.toolName,
+						status: "running",
+						input: agentEvent.input,
+					},
 				});
 				return;
 			}
@@ -545,6 +580,13 @@ class CoreChatWebviewController implements vscode.Disposable {
 					text: agentEvent.error
 						? `${agentEvent.toolName ?? "tool"} failed: ${agentEvent.error}`
 						: `${agentEvent.toolName ?? "tool"} completed`,
+					event: {
+						toolCallId: agentEvent.toolCallId,
+						toolName: agentEvent.toolName,
+						status: agentEvent.error ? "failed" : "completed",
+						output: agentEvent.output,
+						error: agentEvent.error,
+					},
 				});
 			}
 		});
@@ -590,18 +632,8 @@ class CoreChatWebviewController implements vscode.Disposable {
 	}
 
 	private async resetSession(): Promise<void> {
-		if (this.sessionId && this.host) {
-			try {
-				await this.host.stop(this.sessionId);
-			} catch {
-				// ignore stop errors on reset
-			}
-		}
-		this.stopEventStream();
-		this.sessionId = undefined;
-		this.startConfig = undefined;
+		await this.stopExistingSession();
 		this.sending = false;
-		this.streamedAssistantText = "";
 		await this.post({ type: "reset_done" });
 	}
 
@@ -627,6 +659,26 @@ class CoreChatWebviewController implements vscode.Disposable {
 		const text = error instanceof Error ? error.message : String(error);
 		await this.post({ type: "error", text });
 	}
+}
+
+function areStartConfigsEqual(a: StartConfig, b: StartConfig): boolean {
+	return (
+		a.providerId === b.providerId &&
+		a.modelId === b.modelId &&
+		a.cwd === b.cwd &&
+		a.workspaceRoot === b.workspaceRoot &&
+		a.systemPrompt === b.systemPrompt &&
+		a.maxIterations === b.maxIterations &&
+		a.thinking === b.thinking &&
+		a.enableTools === b.enableTools &&
+		a.enableSpawnAgent === b.enableSpawnAgent &&
+		a.enableAgentTeams === b.enableAgentTeams &&
+		a.teamName === b.teamName &&
+		a.missionLogIntervalSteps === b.missionLogIntervalSteps &&
+		a.missionLogIntervalMs === b.missionLogIntervalMs &&
+		a.mode === b.mode &&
+		a.apiKey === b.apiKey
+	);
 }
 
 function createNonce(): string {

@@ -5,6 +5,7 @@
 	"version": "0.0.0",
 	"private": true,
 	"publisher": "cline",
+	"icon": "src/webview/public/icon.png",
 	"license": "Apache-2.0",
 	"engines": {
 		"vscode": "^1.90.0"
@@ -25,7 +26,7 @@
 				{
 					"id": "cline",
 					"title": "Cline",
-					"icon": "src/public/icon.svg"
+					"icon": "src/webview/public/icon.svg"
 				}
 			]
 		},
@@ -35,7 +36,7 @@
 					"type": "webview",
 					"id": "clineVscode.chatView",
 					"name": "Chat",
-					"icon": "src/public/icon.svg"
+					"icon": "src/webview/public/icon.svg"
 				}
 			]
 		}
@@ -49,9 +50,11 @@
 		"dev": "bun run watch"
 	},
 	"dependencies": {
+		"@ai-sdk/react": "^3.0.118",
 		"@clinebot/agents": "workspace:*",
 		"@clinebot/core": "workspace:*",
-		"@clinebot/llms": "workspace:*"
+		"@clinebot/llms": "workspace:*",
+		"ai": "^6.0.116"
 	},
 	"devDependencies": {
 		"@types/node": "^25.3.5",
