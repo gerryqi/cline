@@ -23,7 +23,6 @@ import {
 	formatPreviewMessageText,
 	getLastSessionPreviewMessages,
 } from "../utils/session-message-summary";
-import { resetTerminalState } from "../utils/terminal";
 import type { Config } from "../utils/types";
 import { setActiveRuntimeAbort } from "./active-runtime";
 import { loadInteractiveConfigData } from "./interactive-config";
@@ -369,7 +368,6 @@ export async function runInteractive(
 	try {
 		await inkApp.waitUntilExit();
 	} finally {
-		resetTerminalState();
 		process.off("SIGINT", handleSigint);
 		process.off("SIGTERM", handleSigterm);
 		unsubscribe();
