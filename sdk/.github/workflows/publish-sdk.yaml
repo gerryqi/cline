@@ -21,7 +21,7 @@ on:
     - cron: "0 2 * * *"
 
 permissions:
-  contents: read
+  contents: write
   id-token: write # Required for npm trusted publishing (OIDC)
   checks: write # Required by test workflow
   pull-requests: write # Required by test workflow
@@ -164,6 +164,27 @@ jobs:
           cd packages/core
           npm publish --tag "$CHANNEL" --access restricted
 
+      - name: Create package tags for production publish
+        if: steps.check_commits.outputs.skip != 'true' && steps.channel.outputs.channel == 'latest'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          for PKG in llms agents core; do
+            TAG="sdk/${PKG}/v${VERSION}"
+            if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+              echo "Tag already exists locally: ${TAG}"
+            else
+              git tag -a "${TAG}" -m "@clinebot/${PKG}@${VERSION}"
+              echo "Created tag: ${TAG}"
+            fi
+
+            # Ensure remote has the tag; this is idempotent if tag already exists remotely.
+            git push origin "refs/tags/${TAG}"
+          done
+
       - name: Summary
         if: steps.check_commits.outputs.skip != 'true'
         run: |
@@ -173,3 +194,9 @@ jobs:
           echo "  - @clinebot/llms@${VERSION}"
           echo "  - @clinebot/agents@${VERSION}"
           echo "  - @clinebot/core@${VERSION}"
+          if [ "$CHANNEL" = "latest" ]; then
+            echo "✅ Created git tags:"
+            echo "  - sdk/llms/v${VERSION}"
+            echo "  - sdk/agents/v${VERSION}"
+            echo "  - sdk/core/v${VERSION}"
+          fi

@@ -31,8 +31,6 @@ export function closeInlineStreamIfNeeded(): void {
 // Agent event handler
 // =============================================================================
 
-const _isDev = process.env.NODE_ENV === "development";
-
 export function handleEvent(event: AgentEvent, _config: Config): void {
 	if (getCurrentOutputMode() === "json") {
 		emitJsonLine("stdout", { type: "agent_event", event });

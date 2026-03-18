@@ -41,6 +41,9 @@
         "react-devtools-core": "^7.0.1",
         "yaml": "^2.8.2",
       },
+      "devDependencies": {
+        "@types/react": "19.2.14",
+      },
     },
     "apps/code": {
       "name": "@clinebot/code",
