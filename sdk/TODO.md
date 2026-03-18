@@ -17,4 +17,4 @@ Items below are ideas and plans for future development. Do not pick up these tas
 [ ] New set of config files for each agent, default to cline
     [ ] ~/.cline/data/agents/cline/AGENT.md
     [ ] ~/.cline/data/agents/cline/MEMORY.md
-    [ ] ~/.cline/data/agents/cline/HEART.md
+    [ ] ~/.cline/data/agents/cline/VIRTUES.md

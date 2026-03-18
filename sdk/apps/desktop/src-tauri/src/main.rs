@@ -816,30 +816,6 @@ fn json_string_field(value: &Value, keys: &[&str]) -> Option<String> {
     None
 }
 
-fn json_bool_field(value: &Value, keys: &[&str]) -> Option<bool> {
-    for key in keys {
-        let next = value.get(key).and_then(|entry| match entry {
-            Value::Bool(flag) => Some(*flag),
-            Value::Number(number) => number.as_i64().map(|raw| raw != 0),
-            Value::String(text) => {
-                let normalized = text.trim().to_lowercase();
-                if normalized == "true" || normalized == "1" {
-                    Some(true)
-                } else if normalized == "false" || normalized == "0" {
-                    Some(false)
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        });
-        if next.is_some() {
-            return next;
-        }
-    }
-    None
-}
-
 fn normalize_chat_finish_status(status: Option<&str>) -> String {
     let Some(raw) = status else {
         return "completed".to_string();
@@ -1605,53 +1581,6 @@ where
         "failed to find a runnable bun binary. Tried: {}",
         last_not_found.join(", ")
     ))
-}
-
-fn parse_first_json_array(raw: &str) -> Option<Vec<Value>> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    if let Ok(parsed) = serde_json::from_str::<Value>(trimmed) {
-        if let Some(items) = parsed.as_array() {
-            return Some(items.clone());
-        }
-    }
-
-    for (idx, ch) in trimmed.char_indices() {
-        if ch != '{' && ch != '[' {
-            continue;
-        }
-        let candidate = &trimmed[idx..];
-        let mut stream = serde_json::Deserializer::from_str(candidate).into_iter::<Value>();
-        if let Some(Ok(parsed)) = stream.next() {
-            if let Some(items) = parsed.as_array() {
-                return Some(items.clone());
-            }
-        }
-    }
-
-    None
-}
-
-fn parse_json_array_from_output(output: &Output, context: &str) -> Result<Vec<Value>, String> {
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    if let Some(items) = parse_first_json_array(&stdout) {
-        return Ok(items);
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if let Some(items) = parse_first_json_array(&stderr) {
-        return Ok(items);
-    }
-
-    let combined = format!("{stdout}\n{stderr}");
-    if let Some(items) = parse_first_json_array(&combined) {
-        return Ok(items);
-    }
-
-    Err(format!("invalid JSON array from {context}"))
 }
 
 fn run_cli_rpc_output_command(
