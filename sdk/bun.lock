@@ -188,9 +188,9 @@
       "name": "examples",
       "dependencies": {
         "@chat-adapter/slack": "^4.16.1",
-        "@clinebot/agents": "workspace:*",
-        "@clinebot/core": "workspace:*",
-        "@clinebot/llms": "workspace:*",
+        "@clinebot/agents": "nightly",
+        "@clinebot/core": "nightly",
+        "@clinebot/llms": "nightly",
         "chat": "^4.16.1",
       },
       "devDependencies": {
@@ -2671,6 +2671,12 @@
     "dify-ai-provider/zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
 
     "eslint/chalk": ["chalk@4.1.2", "", { "dependencies": { "ansi-styles": "^4.1.0", "supports-color": "^7.1.0" } }, "sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA=="],
+
+    "examples/@clinebot/agents": ["@clinebot/agents@0.0.2", "", { "dependencies": { "@clinebot/llms": "0.0.2", "zod": "^4.3.6" } }, "sha512-yh7mYXyLB1JKkkMyWNa5byRjM4p2gboAKS7WuoAkYO5b52nDBWwb80ONxL9O3A8m7JolvRygXUrGtKOrilfw6Q=="],
+
+    "examples/@clinebot/core": ["@clinebot/core@0.0.2", "", { "dependencies": { "@clinebot/agents": "0.0.2", "@clinebot/llms": "0.0.2", "nanoid": "^5.1.7", "simple-git": "^3.32.3", "yaml": "^2.8.2", "zod": "^4.3.6" } }, "sha512-3mQ0lx+tikQoCTjs9b+cUQSX6gpd9Q+RyXkUj6ImXDW1BMwOhpTqvk/lKURAS4cSptClhB/qgttEhRq8DSAuvQ=="],
+
+    "examples/@clinebot/llms": ["@clinebot/llms@0.0.2", "", { "dependencies": { "@ai-sdk/amazon-bedrock": "^4.0.67", "@ai-sdk/google-vertex": "^4.0.74", "@ai-sdk/mistral": "^3.0.24", "@anthropic-ai/sdk": "^0.78.0", "@aws-sdk/credential-providers": "^3.922.0", "@google/genai": "^1.43.0", "@streamparser/json": "^0.0.21", "ai": "^6.0.112", "ai-sdk-provider-claude-code": "^3.4.3", "ai-sdk-provider-codex-cli": "^1.1.0", "ai-sdk-provider-opencode-sdk": "^2.1.2", "dify-ai-provider": "^1.1.0", "nanoid": "^5.1.7", "openai": "^6.25.0", "zod": "^4.3.6" }, "peerDependencies": { "@aws-sdk/client-bedrock-runtime": "^3.0.0" }, "optionalPeers": ["@aws-sdk/client-bedrock-runtime"] }, "sha512-zGlWHtE1Z+99ksD245e+si83ohwwbQQuBk+YrHBBCBzbCDBTsAGn5m678c6l0Mbk8cKvUkXRKUxQzfpy35f+Ag=="],
 
     "execa/is-stream": ["is-stream@4.0.1", "", {}, "sha512-Dnz92NInDqYckGEUJv689RbRiTSEHCQ7wOVeALbkOz999YpqT46yMRIGtSNl2iCL1waAZSx40+h59NV/EwzV/A=="],
 

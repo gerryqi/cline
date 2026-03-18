@@ -11,9 +11,9 @@
 	},
 	"dependencies": {
 		"@chat-adapter/slack": "^4.16.1",
-		"@clinebot/agents": "workspace:*",
-		"@clinebot/core": "workspace:*",
-		"@clinebot/llms": "workspace:*",
+		"@clinebot/agents": "nightly",
+		"@clinebot/core": "nightly",
+		"@clinebot/llms": "nightly",
 		"chat": "^4.16.1"
 	}
 }

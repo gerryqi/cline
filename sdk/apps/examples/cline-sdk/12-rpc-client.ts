@@ -21,6 +21,18 @@ import process from "node:process";
 import type { RpcChatStartSessionRequest } from "@clinebot/core";
 import { getRpcServerHealth, RpcSessionClient } from "@clinebot/core/server";
 
+type StreamEvent = {
+	eventId: string;
+	sessionId: string;
+	taskId?: string;
+	eventType: string;
+	payload: Record<string, unknown>;
+	sourceClientId?: string;
+	ts: string;
+};
+
+type StreamError = Error;
+
 function createRpcSessionClient(address: string): RpcSessionClient {
 	return new RpcSessionClient({ address });
 }
@@ -136,7 +148,7 @@ async function demoBasicRpcSession(
 				sessionIds: [sessionId],
 			},
 			{
-				onEvent: (event) => {
+				onEvent: (event: StreamEvent) => {
 					if (event.eventType === "runtime.chat.text_delta") {
 						const resolved = resolveTextDelta(event.payload, streamedText);
 						if (resolved.delta) {
@@ -145,7 +157,7 @@ async function demoBasicRpcSession(
 						streamedText = resolved.nextText;
 					}
 				},
-				onError: (error) => {
+				onError: (error: StreamError) => {
 					console.error("Stream error:", error.message);
 				},
 			},
@@ -218,7 +230,7 @@ async function demoRpcWithApprovals(
 				sessionIds: [sessionId],
 			},
 			{
-				onEvent: async (event) => {
+				onEvent: async (event: StreamEvent) => {
 					if (event.eventType === "approval.requested") {
 						const approvalId =
 							typeof event.payload.approvalId === "string"
@@ -249,7 +261,7 @@ async function demoRpcWithApprovals(
 						streamedText = resolved.nextText;
 					}
 				},
-				onError: (error) => {
+				onError: (error: StreamError) => {
 					console.error("Stream error:", error.message);
 				},
 			},

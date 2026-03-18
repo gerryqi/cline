@@ -1,7 +1,7 @@
 {
 	"name": "@clinebot/shared",
-	"version": "0.0.1",
-	"description": "Fast workspace file indexing with rg and fs fallback",
+	"version": "0.0.2",
+	"description": "[INTERNAL] Shared utilities, types, and schemas for Cline packages",
 	"type": "module",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",

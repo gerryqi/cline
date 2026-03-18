@@ -1,18 +1,18 @@
 /**
  * Custom Plugin Example
  *
- * Shows how to extend @clinebot/agents with your own plugins.
- * A plugin can register custom tools and hook into the agent lifecycle.
+ * Shows how to extend @clinebot/core with your own plugins.
+ * A plugin can register custom tools and hook into the session lifecycle.
  *
  * Usage:
  *   ANTHROPIC_API_KEY=sk-... bun run apps/examples/cline-plugin/index.ts
  */
 
-import { Agent, type AgentConfig, createTool } from "@clinebot/agents";
+import { createSessionHost } from "@clinebot/core/server";
 
-// The AgentExtension type — all plugins share this shape.
-// Use AgentConfig to derive it without a direct import.
-type Plugin = NonNullable<AgentConfig["extensions"]>[number];
+type SessionHost = Awaited<ReturnType<typeof createSessionHost>>;
+type SessionStartConfig = Parameters<SessionHost["start"]>[0]["config"];
+type Plugin = NonNullable<SessionStartConfig["extensions"]>[number];
 
 // =============================================================================
 // Plugin 1: Custom Tool
@@ -91,14 +91,26 @@ const metricsPlugin: Plugin = {
 // Wire it up
 // =============================================================================
 
-const agent = new Agent({
-	providerId: "anthropic",
-	modelId: "claude-sonnet-4-6",
-	apiKey: process.env.ANTHROPIC_API_KEY,
-	systemPrompt: "You are a helpful assistant. Use tools when needed.",
-	tools: [], // tools registered by plugins are merged in automatically
-	extensions: [weatherPlugin, metricsPlugin],
-});
+const sessionManager = await createSessionHost({});
 
-const result = await agent.run("What's the weather like in Tokyo and Paris?");
-console.log(`\n${result.text}`);
+try {
+	const result = await sessionManager.start({
+		config: {
+			providerId: "anthropic",
+			modelId: "claude-sonnet-4-6",
+			apiKey: process.env.ANTHROPIC_API_KEY ?? "",
+			cwd: process.cwd(),
+			enableTools: true,
+			enableSpawnAgent: false,
+			enableAgentTeams: false,
+			systemPrompt: "You are a helpful assistant. Use tools when needed.",
+			extensions: [weatherPlugin, metricsPlugin],
+		},
+		prompt: "What's the weather like in Tokyo and Paris?",
+		interactive: false,
+	});
+
+	console.log(`\n${result.result?.text ?? ""}`);
+} finally {
+	await sessionManager.dispose();
+}

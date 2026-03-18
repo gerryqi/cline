@@ -15,7 +15,6 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import process, { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";
-import type { AgentConfig } from "@clinebot/agents";
 import { createSessionHost } from "@clinebot/core/server";
 
 type ProviderOption = {
@@ -203,7 +202,7 @@ async function main() {
 	const backendMode =
 		process.env.CLINE_BACKEND_MODE === "local" ? "local" : "auto";
 
-	const hooks: NonNullable<AgentConfig["hooks"]> = {
+	const hooks = {
 		onToolCallStart: async (ctx) => {
 			console.log(`🛠️  Tool: ${ctx.call.name}`);
 			return undefined;
