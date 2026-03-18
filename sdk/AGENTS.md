@@ -86,6 +86,7 @@ flowchart LR
 2. If no healthy server is available, CLI spawns `clite rpc start` in the background and retries briefly.
 3. If RPC still cannot be reached, CLI falls back to local in-process `CoreSessionService` storage/runtime wiring.
 4. CLI treats RPC `startRuntimeSession` artifact fields as optional at start time; runtime artifacts can be materialized after the first turn send.
+5. Command-style subcommands that do not start an agent session (`--help`, `--version`, `sessions ...`, and similar lightweight dispatch paths) lazy-load runtime-only server modules so they do not inherit long-lived handles from the runtime import graph.
 
 ### `apps/cli` connector flow (latest)
 

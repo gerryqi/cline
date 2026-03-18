@@ -1,12 +1,4 @@
 import { homedir } from "node:os";
-import {
-	createTeamName,
-	createUserInstructionConfigWatcher,
-	loadRulesForSystemPromptFromWatcher,
-	migrateLegacyProviderSettings,
-	ProviderSettingsManager,
-} from "@cline/core/server";
-import { providers } from "@cline/llms";
 import type { ToolPolicy } from "@cline/shared";
 import { setHomeDir } from "@cline/shared/storage";
 import {
@@ -21,19 +13,8 @@ import { runConnectCommand } from "./commands/connect";
 import { runDevCommand } from "./commands/dev";
 import { showHelp, showVersion } from "./commands/help";
 import { runHookCommand } from "./commands/hook";
-import { runHistoryListCommand, runListCommand } from "./commands/list";
-import {
-	runRpcEnsureCommand,
-	runRpcRegisterCommand,
-	runRpcStartCommand,
-	runRpcStatusCommand,
-	runRpcStopCommand,
-} from "./commands/rpc";
 import { runScheduleCommand } from "./commands/schedule";
 import { createCliLoggerAdapter } from "./logging/adapter";
-import { resolveSystemPrompt } from "./runtime/prompt";
-import { runAgent } from "./runtime/run-agent";
-import { runInteractive } from "./runtime/run-interactive";
 import {
 	configureSandboxEnvironment,
 	parseArgs,
@@ -60,6 +41,34 @@ function mergeToolPolicies(
 	return out;
 }
 
+async function createProviderSettingsManager() {
+	const { migrateLegacyProviderSettings, ProviderSettingsManager } =
+		await import("@cline/core/server");
+	const providerSettingsManager = new ProviderSettingsManager();
+	migrateLegacyProviderSettings({ providerSettingsManager });
+	return providerSettingsManager;
+}
+
+async function loadCliRuntimeModules() {
+	const [coreServer, llms, prompt, runAgentModule] = await Promise.all([
+		import("@cline/core/server"),
+		import("@cline/llms"),
+		import("./runtime/prompt"),
+		import("./runtime/run-agent"),
+	]);
+	return {
+		coreServer,
+		llms,
+		resolveSystemPrompt: prompt.resolveSystemPrompt,
+		runAgent: runAgentModule.runAgent,
+	};
+}
+
+async function loadInteractiveRuntimeModule() {
+	const { runInteractive } = await import("./runtime/run-interactive");
+	return runInteractive;
+}
+
 export async function runCli(): Promise<void> {
 	setHomeDir(homedir());
 	installStreamErrorGuards();
@@ -83,8 +92,6 @@ export async function runCli(): Promise<void> {
 		cwd,
 		explicitDir: args.sandboxDir,
 	});
-	const providerSettingsManager = new ProviderSettingsManager();
-	migrateLegacyProviderSettings({ providerSettingsManager });
 
 	if (rawArgs[0] === "hook") {
 		const code = await runHookCommand(writeErr);
@@ -95,6 +102,13 @@ export async function runCli(): Promise<void> {
 		process.exit(code);
 	}
 	if (rawArgs[0] === "rpc") {
+		const {
+			runRpcEnsureCommand,
+			runRpcRegisterCommand,
+			runRpcStartCommand,
+			runRpcStatusCommand,
+			runRpcStopCommand,
+		} = await import("./commands/rpc");
 		const rpcSubcommand = rawArgs[1]?.trim().toLowerCase();
 		if (rpcSubcommand === "start") {
 			const code = await runRpcStartCommand(rawArgs, writeln, writeErr);
@@ -120,6 +134,7 @@ export async function runCli(): Promise<void> {
 		process.exit(1);
 	}
 	if (rawArgs[0] === "auth") {
+		const providerSettingsManager = await createProviderSettingsManager();
 		const parsedAuthArgs = parseAuthCommandArgs(rawArgs.slice(1));
 		if (parsedAuthArgs.parseError) {
 			writeErr(parsedAuthArgs.parseError);
@@ -140,6 +155,9 @@ export async function runCli(): Promise<void> {
 		process.exit(code);
 	}
 	if (rawArgs[0] === "list") {
+		const { runHistoryListCommand, runListCommand } = await import(
+			"./commands/list"
+		);
 		if (args.invalidOutputMode) {
 			writeErr(
 				`invalid output mode "${args.invalidOutputMode}" (expected "text" or "json")`,
@@ -309,6 +327,28 @@ export async function runCli(): Promise<void> {
 		process.exit(0);
 	}
 
+	if (args.outputMode === "json" && (args.interactive || !args.prompt)) {
+		writeErr(
+			"JSON output mode requires a prompt argument or piped stdin (interactive mode is unsupported)",
+		);
+		process.exit(1);
+	}
+
+	// Keep command-style subcommands on a narrow path. Runtime-only imports pull
+	// in provider resolution, config watchers, and session startup wiring that
+	// should only load when the CLI is actually starting an agent session.
+	const providerSettingsManager = await createProviderSettingsManager();
+	const {
+		coreServer: {
+			createTeamName,
+			createUserInstructionConfigWatcher,
+			loadRulesForSystemPromptFromWatcher,
+		},
+		llms: { providers },
+		resolveSystemPrompt,
+		runAgent,
+	} = await loadCliRuntimeModules();
+
 	const userInstructionWatcher = createUserInstructionConfigWatcher({
 		skills: { workspacePath: cwd },
 		rules: { workspacePath: cwd },
@@ -462,15 +502,9 @@ export async function runCli(): Promise<void> {
 			}
 		}
 
-		if (config.outputMode === "json" && (args.interactive || !args.prompt)) {
-			writeErr(
-				"JSON output mode requires a prompt argument or piped stdin (interactive mode is unsupported)",
-			);
-			process.exit(1);
-		}
-
 		// Interactive mode
 		if (args.interactive || !args.prompt) {
+			const runInteractive = await loadInteractiveRuntimeModule();
 			await runInteractive(config, userInstructionWatcher, resumeSessionId, {
 				clineApiBaseUrl: selectedProviderSettings?.baseUrl,
 				clineProviderSettings: selectedProviderSettings,

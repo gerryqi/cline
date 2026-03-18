@@ -154,6 +154,7 @@ flowchart TD
 - `clite rpc start`: starts in-process gateway if no server is already active.
 - `clite rpc status`: probes server health.
 - `clite rpc stop`: requests graceful shutdown.
+- Lightweight CLI commands that do not start a runtime session keep runtime-only imports behind lazy-load boundaries so command-style subcommands can exit without inheriting background handles from the runtime graph.
 
 ### CLI connector bridge flow
 
