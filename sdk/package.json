@@ -28,7 +28,8 @@
 		"biome": "bunx --bun @biomejs/biome",
 		"format": "bun biome format",
 		"lint": "bun biome lint",
-		"fix": "bun biome check --write --unsafe --diagnostic-level=error"
+		"fix": "bun biome check --write --unsafe --diagnostic-level=error",
+		"version": "bun scripts/version.ts && bun run build:models"
 	},
 	"lint-staged": {
 		"*": [

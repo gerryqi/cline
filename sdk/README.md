@@ -51,6 +51,7 @@ Useful workspace scripts (root `package.json`):
 - `bun run desktop` - launch desktop app directly
 - `bun run types` - typecheck all packages
 - `bun run clean` - remove build outputs across packages
+- `bun run version 1.2.3` - update all packages/* version number to v1.2.3
 
 > **RPC server requires restart after changes.** The RPC server (`clite rpc start`) loads compiled code at startup and does not hot-reload. After rebuilding any affected package, stop (`clite rpc stop`) and restart the server.
 

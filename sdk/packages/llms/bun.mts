@@ -1,7 +1,7 @@
 /// <reference types="@types/bun" />
 export {};
 
-// Only externalize published packages; bundle private workspace packages (@clinebot/shared)
+// Only externalize published packages; bundle internal workspace packages used by llms.
 const external = [
 	"@ai-sdk/amazon-bedrock",
 	"@ai-sdk/google-vertex",
@@ -27,6 +27,7 @@ const builds: Parameters<typeof Bun.build>[0][] = [
 		outdir: "./dist",
 		target: "node",
 		external,
+		packages: "bundle",
 		minify: true,
 		sourcemap: "none",
 	},
@@ -36,6 +37,7 @@ const builds: Parameters<typeof Bun.build>[0][] = [
 		target: "browser",
 		external,
 		minify: true,
+		packages: "bundle",
 		sourcemap: "none",
 	},
 ];

@@ -14,7 +14,7 @@ export const GENERATED_PROVIDER_MODELS: {
 	version: number;
 	providers: Record<string, Record<string, ModelInfo>>;
 } = {
-	version: 1773842565195,
+	version: 1773862738565,
 	providers: {
 		aihubmix: {
 			"claude-sonnet-4-6": {
@@ -1124,7 +1124,7 @@ export const GENERATED_PROVIDER_MODELS: {
 			"anthropic.claude-sonnet-4-6": {
 				id: "anthropic.claude-sonnet-4-6",
 				name: "Claude Sonnet 4.6",
-				contextWindow: 200000,
+				contextWindow: 1000000,
 				maxTokens: 64000,
 				capabilities: ["images", "files", "tools", "reasoning", "temperature"],
 				pricing: {
@@ -1138,7 +1138,7 @@ export const GENERATED_PROVIDER_MODELS: {
 			"eu.anthropic.claude-sonnet-4-6": {
 				id: "eu.anthropic.claude-sonnet-4-6",
 				name: "Claude Sonnet 4.6 (EU)",
-				contextWindow: 200000,
+				contextWindow: 1000000,
 				maxTokens: 64000,
 				capabilities: ["images", "files", "tools", "reasoning", "temperature"],
 				pricing: {
@@ -1152,7 +1152,7 @@ export const GENERATED_PROVIDER_MODELS: {
 			"global.anthropic.claude-sonnet-4-6": {
 				id: "global.anthropic.claude-sonnet-4-6",
 				name: "Claude Sonnet 4.6 (Global)",
-				contextWindow: 200000,
+				contextWindow: 1000000,
 				maxTokens: 64000,
 				capabilities: ["images", "files", "tools", "reasoning", "temperature"],
 				pricing: {
@@ -1180,7 +1180,7 @@ export const GENERATED_PROVIDER_MODELS: {
 			"us.anthropic.claude-sonnet-4-6": {
 				id: "us.anthropic.claude-sonnet-4-6",
 				name: "Claude Sonnet 4.6 (US)",
-				contextWindow: 200000,
+				contextWindow: 1000000,
 				maxTokens: 64000,
 				capabilities: ["images", "files", "tools", "reasoning", "temperature"],
 				pricing: {
@@ -1222,7 +1222,7 @@ export const GENERATED_PROVIDER_MODELS: {
 			"anthropic.claude-opus-4-6-v1": {
 				id: "anthropic.claude-opus-4-6-v1",
 				name: "Claude Opus 4.6",
-				contextWindow: 200000,
+				contextWindow: 1000000,
 				maxTokens: 128000,
 				capabilities: ["images", "files", "tools", "reasoning", "temperature"],
 				pricing: {
@@ -1236,7 +1236,7 @@ export const GENERATED_PROVIDER_MODELS: {
 			"eu.anthropic.claude-opus-4-6-v1": {
 				id: "eu.anthropic.claude-opus-4-6-v1",
 				name: "Claude Opus 4.6 (EU)",
-				contextWindow: 200000,
+				contextWindow: 1000000,
 				maxTokens: 128000,
 				capabilities: ["images", "files", "tools", "reasoning", "temperature"],
 				pricing: {
@@ -1250,7 +1250,7 @@ export const GENERATED_PROVIDER_MODELS: {
 			"global.anthropic.claude-opus-4-6-v1": {
 				id: "global.anthropic.claude-opus-4-6-v1",
 				name: "Claude Opus 4.6 (Global)",
-				contextWindow: 200000,
+				contextWindow: 1000000,
 				maxTokens: 128000,
 				capabilities: ["images", "files", "tools", "reasoning", "temperature"],
 				pricing: {
@@ -1264,7 +1264,7 @@ export const GENERATED_PROVIDER_MODELS: {
 			"us.anthropic.claude-opus-4-6-v1": {
 				id: "us.anthropic.claude-opus-4-6-v1",
 				name: "Claude Opus 4.6 (US)",
-				contextWindow: 200000,
+				contextWindow: 1000000,
 				maxTokens: 128000,
 				capabilities: ["images", "files", "tools", "reasoning", "temperature"],
 				pricing: {
@@ -5229,6 +5229,20 @@ export const GENERATED_PROVIDER_MODELS: {
 			},
 		},
 		openrouter: {
+			"minimax/minimax-m2.7": {
+				id: "minimax/minimax-m2.7",
+				name: "MiniMax M2.7",
+				contextWindow: 204800,
+				maxTokens: 131072,
+				capabilities: ["tools", "reasoning", "temperature"],
+				pricing: {
+					input: 0.3,
+					output: 1.2,
+					cacheRead: 0.06,
+					cacheWrite: 0.375,
+				},
+				releaseDate: "2026-03-18",
+			},
 			"x-ai/grok-4.20-beta": {
 				id: "x-ai/grok-4.20-beta",
 				name: "Grok 4.20 Beta",
@@ -9099,6 +9113,34 @@ export const GENERATED_PROVIDER_MODELS: {
 			},
 		},
 		"vercel-ai-gateway": {
+			"minimax/minimax-m2.7": {
+				id: "minimax/minimax-m2.7",
+				name: "Minimax M2.7",
+				contextWindow: 204800,
+				maxTokens: 131000,
+				capabilities: ["images", "files", "tools", "reasoning", "temperature"],
+				pricing: {
+					input: 0.3,
+					output: 1.2,
+					cacheRead: 0.06,
+					cacheWrite: 0.375,
+				},
+				releaseDate: "2026-03-18",
+			},
+			"minimax/minimax-m2.7-highspeed": {
+				id: "minimax/minimax-m2.7-highspeed",
+				name: "MiniMax M2.7 High Speed",
+				contextWindow: 204800,
+				maxTokens: 131100,
+				capabilities: ["images", "tools", "reasoning", "temperature"],
+				pricing: {
+					input: 0.6,
+					output: 2.4,
+					cacheRead: 0.06,
+					cacheWrite: 0.375,
+				},
+				releaseDate: "2026-03-18",
+			},
 			"openai/gpt-5.4-mini": {
 				id: "openai/gpt-5.4-mini",
 				name: "GPT 5.4 Mini",

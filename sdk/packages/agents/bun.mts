@@ -1,7 +1,7 @@
 /// <reference types="@types/bun" />
 export {};
 
-// Only externalize published packages; bundle private workspace packages (@clinebot/shared)
+// Only externalize published packages; bundle internal workspace packages used by agents.
 const external = ["@clinebot/llms", "zod"];
 
 const builds: Parameters<typeof Bun.build>[0][] = [
@@ -11,6 +11,7 @@ const builds: Parameters<typeof Bun.build>[0][] = [
 		target: "node",
 		minify: true,
 		sourcemap: "none",
+		packages: "bundle",
 		external,
 	},
 	{
@@ -19,6 +20,7 @@ const builds: Parameters<typeof Bun.build>[0][] = [
 		target: "node",
 		minify: true,
 		sourcemap: "none",
+		packages: "bundle",
 		external,
 	},
 	{
@@ -27,6 +29,7 @@ const builds: Parameters<typeof Bun.build>[0][] = [
 		target: "browser",
 		minify: true,
 		sourcemap: "none",
+		packages: "bundle",
 		external,
 	},
 ];

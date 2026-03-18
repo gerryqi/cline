@@ -10,6 +10,6 @@
 		"forceConsistentCasingInFileNames": true,
 		"resolveJsonModule": true
 	},
-	"include": ["**/*.ts", "**/*.tsx", "packages/core/bun.mts"],
+	"include": ["**/*.ts", "**/*.tsx", "**/bun.mts"],
 	"exclude": ["node_modules", "**/dist/**", "**/.next/**"]
 }

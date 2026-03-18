@@ -1,11 +1,10 @@
 /// <reference types="@types/bun" />
 export {};
 
-// Externalize rpc to avoid bundling grpc/protobuf internals into core runtime bundles.
+// Only externalize published packages; bundle internal workspace packages used by core.
 const external = [
 	"@clinebot/agents",
 	"@clinebot/llms",
-	"@clinebot/rpc",
 	"nanoid",
 	"simple-git",
 	"yaml",
@@ -19,6 +18,7 @@ const builds: Parameters<typeof Bun.build>[0][] = [
 		target: "node",
 		format: "esm",
 		minify: true,
+		packages: "bundle",
 		sourcemap: "none",
 		external,
 	},
@@ -28,6 +28,7 @@ const builds: Parameters<typeof Bun.build>[0][] = [
 		format: "esm",
 		minify: true,
 		sourcemap: "none",
+		packages: "bundle",
 		external,
 	},
 	{
@@ -36,6 +37,7 @@ const builds: Parameters<typeof Bun.build>[0][] = [
 		target: "node",
 		minify: true,
 		sourcemap: "none",
+		packages: "bundle",
 		external,
 	},
 ];

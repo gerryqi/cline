@@ -1,6 +1,6 @@
 {
 	"name": "@clinebot/shared",
-	"version": "0.0.0",
+	"version": "0.0.1",
 	"description": "Fast workspace file indexing with rg and fs fallback",
 	"type": "module",
 	"main": "dist/index.js",
