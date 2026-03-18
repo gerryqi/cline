@@ -377,6 +377,39 @@ function updateSessionById(
 	return changed ? next : current;
 }
 
+function mergeDiscoveredSessions(
+	current: SessionHistoryItem[],
+	discovered: SessionHistoryItem[],
+): SessionHistoryItem[] {
+	if (current.length === 0) {
+		return discovered;
+	}
+	const currentById = new Map(
+		current.map((session) => [session.sessionId, session]),
+	);
+	return discovered.map((session) => {
+		const existing = currentById.get(session.sessionId);
+		if (!existing) {
+			return session;
+		}
+		const existingTitle = getSessionMetadataTitle(existing.metadata);
+		if (!existingTitle) {
+			return session;
+		}
+		const incomingTitle = getSessionMetadataTitle(session.metadata);
+		if (incomingTitle === existingTitle) {
+			return session;
+		}
+		return {
+			...session,
+			metadata: {
+				...(session.metadata ?? {}),
+				title: existingTitle,
+			},
+		};
+	});
+}
+
 export function AgentSidebar({
 	onNewThread,
 	onOpenSession,
@@ -408,7 +441,12 @@ export function AgentSidebar({
 	const messageHydratedStatusRef = useRef<Map<string, SessionHistoryStatus>>(
 		new Map(),
 	);
+	const sessionsRef = useRef<SessionHistoryItem[]>([]);
 	const threadsRef = useRef<Thread[]>([]);
+
+	useEffect(() => {
+		sessionsRef.current = sessions;
+	}, [sessions]);
 
 	useEffect(() => {
 		threadsRef.current = threads;
@@ -479,13 +517,23 @@ export function AgentSidebar({
 				})
 				.filter((session) => !session.isSubagent && !session.parentSessionId)
 				.sort(compareSessionsByStartedAtDesc);
+			const mergedSessions = mergeDiscoveredSessions(
+				sessionsRef.current,
+				topLevelSessions,
+			);
 
 			setSessions((current) =>
-				areSessionsEquivalent(current, topLevelSessions)
+				areSessionsEquivalent(current, mergedSessions)
 					? current
-					: topLevelSessions,
+					: mergedSessions,
 			);
-			const mapped = topLevelSessions.map(toThread);
+			const mapped = mergedSessions.map(toThread);
+			const metadataTitleById = new Map(
+				mergedSessions.map((session) => [
+					session.sessionId,
+					getSessionMetadataTitle(session.metadata),
+				]),
+			);
 			setThreads((current) => {
 				const existingById = new Map(
 					current.map((thread) => [thread.id, thread]),
@@ -502,9 +550,10 @@ export function AgentSidebar({
 				);
 				const next = mapped.map((thread) => {
 					const existing = existingById.get(thread.id);
+					const incomingMetadataTitle = metadataTitleById.get(thread.id);
 					const keepExistingTitle =
 						Boolean(existing) &&
-						thread.title.startsWith("Session ") &&
+						!incomingMetadataTitle &&
 						!(existing?.title.startsWith("Session ") ?? true);
 					return {
 						...thread,

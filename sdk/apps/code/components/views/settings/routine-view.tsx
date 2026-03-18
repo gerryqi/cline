@@ -308,7 +308,11 @@ export function RoutineSchedulesContent() {
 
 		async function loadModelCatalog() {
 			try {
-				const response = await fetch("/api/models-catalog", {
+				const providersParam =
+					enabledProviderIds.length > 0
+						? `?providers=${encodeURIComponent(enabledProviderIds.join(","))}`
+						: "";
+				const response = await fetch(`/api/models-catalog${providersParam}`, {
 					signal: abortController.signal,
 					cache: "no-store",
 				});
@@ -333,7 +337,7 @@ export function RoutineSchedulesContent() {
 
 		void loadModelCatalog();
 		return () => abortController.abort();
-	}, []);
+	}, [enabledProviderIds]);
 
 	useEffect(() => {
 		let cancelled = false;

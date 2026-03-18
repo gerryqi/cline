@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ModelInfo } from "../src/models/schemas/index.js";
@@ -20,11 +20,25 @@ function sortObjectByKey<T>(
 	);
 }
 
+function normalizeValue(value: unknown): unknown {
+	if (Array.isArray(value)) {
+		return value.map(normalizeValue);
+	}
+	if (value && typeof value === "object") {
+		const objectValue = value as Record<string, unknown>;
+		return Object.fromEntries(
+			Object.entries(objectValue)
+				.sort(([a], [b]) => a.localeCompare(b))
+				.map(([key, nestedValue]) => [key, normalizeValue(nestedValue)]),
+		);
+	}
+	return value;
+}
+
 async function generate(): Promise<void> {
 	await generateProviderLoaders();
 
 	const providerModels: Record<string, Record<string, ModelInfo>> = {};
-	const generatedModelsVersion = Date.now();
 	let loadError: Error | undefined;
 
 	try {
@@ -43,6 +57,7 @@ async function generate(): Promise<void> {
 	}
 
 	const sortedProviders = sortObjectByKey(providerModels);
+	const generatedModelsVersion = Date.now();
 	const output = `/**
  * Auto-generated model catalog.
  *
@@ -70,6 +85,36 @@ export const GENERATED_PROVIDER_MODELS: {
 	const outputPath = join(root, OUTPUT_FILE);
 
 	mkdirSync(dirname(outputPath), { recursive: true });
+
+	if (existsSync(outputPath)) {
+		const nextProviders = normalizeValue(sortedProviders);
+		let existingProviders: unknown | undefined;
+		try {
+			const existingModule = (await import("../src/models/generated.js")) as {
+				GENERATED_PROVIDER_MODELS?: {
+					providers?: Record<string, Record<string, ModelInfo>>;
+				};
+			};
+			existingProviders = existingModule.GENERATED_PROVIDER_MODELS?.providers;
+		} catch {
+			existingProviders = undefined;
+		}
+		if (
+			existingProviders &&
+			JSON.stringify(normalizeValue(existingProviders)) ===
+				JSON.stringify(nextProviders)
+		) {
+			const totalModels = Object.values(sortedProviders).reduce(
+				(count, models) => count + Object.keys(models).length,
+				0,
+			);
+			console.log(`No changes detected for ${OUTPUT_FILE}`);
+			console.log(`Providers: ${Object.keys(sortedProviders).length}`);
+			console.log(`Models: ${totalModels}`);
+			return;
+		}
+	}
+
 	writeFileSync(outputPath, output, "utf8");
 
 	const totalModels = Object.values(sortedProviders).reduce(

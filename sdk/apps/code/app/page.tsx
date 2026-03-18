@@ -217,6 +217,7 @@ function ChatThreadPane({
 	const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
 	const hydratedSessionRef = useRef<string | null>(null);
 	const resetThreadRef = useRef<string | null>(null);
+	const manualTitleSessionRef = useRef<string | null>(null);
 	const workspaceRef = useRef({
 		cwd: config.cwd,
 		workspaceRoot: config.workspaceRoot,
@@ -424,7 +425,18 @@ function ChatThreadPane({
 	useEffect(() => {
 		if (historySession) {
 			resetThreadRef.current = null;
-			setManualTitle(getSessionMetadataTitle(historySession.metadata));
+			const nextSessionId = historySession.sessionId;
+			const metadataTitle = getSessionMetadataTitle(historySession.metadata);
+			const hasSessionChanged = manualTitleSessionRef.current !== nextSessionId;
+			if (hasSessionChanged) {
+				manualTitleSessionRef.current = nextSessionId;
+				setManualTitle(metadataTitle);
+				return;
+			}
+			// Keep locally renamed title for this session unless metadata now contains one.
+			if (!manualTitle && metadataTitle) {
+				setManualTitle(metadataTitle);
+			}
 			return;
 		}
 		if (resetThreadRef.current === threadId) {
@@ -432,11 +444,12 @@ function ChatThreadPane({
 		}
 		resetThreadRef.current = threadId;
 		hydratedSessionRef.current = null;
+		manualTitleSessionRef.current = null;
 		setPromptInput("");
 		setPendingAttachments([]);
 		setManualTitle("");
 		void reset();
-	}, [historySession, reset, threadId]);
+	}, [historySession, manualTitle, reset, threadId]);
 
 	useEffect(() => {
 		if (!historySession) {
@@ -512,7 +525,7 @@ function ChatThreadPane({
 		(message) => message.role === "user",
 	)?.content;
 	const metadataTitle =
-		getSessionMetadataTitle(historySession?.metadata) || manualTitle;
+		manualTitle || getSessionMetadataTitle(historySession?.metadata);
 	const threadTitle = toThreadTitle({
 		title: metadataTitle,
 		prompt: historySession?.prompt ?? firstUserMessage,

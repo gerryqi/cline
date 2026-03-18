@@ -100,7 +100,13 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 			activeSessions.add(started.sessionId);
 			return {
 				sessionId: started.sessionId,
-				startResult: started as unknown as Record<string, unknown>,
+				startResult: {
+					sessionId: started.sessionId,
+					manifestPath: started.manifestPath,
+					transcriptPath: started.transcriptPath,
+					hookPath: started.hookPath,
+					messagesPath: started.messagesPath,
+				},
 			};
 		},
 		sendSession: async (sessionId, requestInput) => {

@@ -176,6 +176,7 @@ export class GeminiHandler extends BaseHandler {
 			let outputTokens = 0;
 			let cacheReadTokens = 0;
 			let thoughtsTokenCount = 0;
+			let syntheticToolCallIndex = 0;
 
 			for await (const chunk of result) {
 				// Handle content parts
@@ -203,18 +204,19 @@ export class GeminiHandler extends BaseHandler {
 					if (part.functionCall) {
 						// Tool call
 						const functionCall = part.functionCall;
-						const args = Object.entries(functionCall.args ?? {}).filter(
-							([, val]) => !!val,
-						);
-
-						if (args.length > 0) {
+						const callId =
+							functionCall.id ??
+							`${responseId}_tool_${syntheticToolCallIndex++}`;
+						if (functionCall.name) {
 							yield {
 								type: "tool_calls",
 								tool_call: {
+									call_id: callId,
 									function: {
-										id: responseId,
+										id: callId,
 										name: functionCall.name,
-										arguments: functionCall.args as Record<string, unknown>,
+										arguments:
+											(functionCall.args as Record<string, unknown>) ?? {},
 									},
 								},
 								id: responseId,

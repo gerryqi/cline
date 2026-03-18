@@ -14,7 +14,7 @@ export const GENERATED_PROVIDER_MODELS: {
 	version: number;
 	providers: Record<string, Record<string, ModelInfo>>;
 } = {
-	version: 1773798019500,
+	version: 1773806103225,
 	providers: {
 		aihubmix: {
 			"claude-sonnet-4-6": {

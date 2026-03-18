@@ -25,10 +25,16 @@ import {
  * Convert messages to Gemini format
  */
 export function convertToGeminiMessages(messages: Message[]): Content[] {
-	return messages.map(convertMessage).filter((m): m is Content => m !== null);
+	const toolNameByCallId = new Map<string, string>();
+	return messages
+		.map((message) => convertMessage(message, toolNameByCallId))
+		.filter((m): m is Content => m !== null);
 }
 
-function convertMessage(message: Message): Content | null {
+function convertMessage(
+	message: Message,
+	toolNameByCallId: Map<string, string>,
+): Content | null {
 	const { role, content } = message;
 
 	// Map roles: Gemini uses "user" and "model"
@@ -43,7 +49,7 @@ function convertMessage(message: Message): Content | null {
 	}
 
 	// Array content
-	const parts = convertContentBlocks(content);
+	const parts = convertContentBlocks(content, toolNameByCallId);
 	if (parts.length === 0) {
 		return null;
 	}
@@ -54,11 +60,17 @@ function convertMessage(message: Message): Content | null {
 	};
 }
 
-function convertContentBlocks(content: ContentBlock[]): Part[] {
+function convertContentBlocks(
+	content: ContentBlock[],
+	toolNameByCallId: Map<string, string>,
+): Part[] {
 	const parts: Part[] = [];
 
 	for (const block of content) {
-		const converted = convertContentBlock(block);
+		if (block.type === "tool_use") {
+			toolNameByCallId.set(block.id, block.name);
+		}
+		const converted = convertContentBlock(block, toolNameByCallId);
 		if (converted) {
 			parts.push(converted);
 		}
@@ -67,7 +79,10 @@ function convertContentBlocks(content: ContentBlock[]): Part[] {
 	return parts;
 }
 
-function convertContentBlock(block: ContentBlock): Part | null {
+function convertContentBlock(
+	block: ContentBlock,
+	toolNameByCallId: Map<string, string>,
+): Part | null {
 	switch (block.type) {
 		case "text": {
 			const textBlock = block as TextContent;
@@ -101,6 +116,7 @@ function convertContentBlock(block: ContentBlock): Part | null {
 			const toolBlock = block as ToolUseContent;
 			const part: Part = {
 				functionCall: {
+					id: toolBlock.id,
 					name: toolBlock.name,
 					args: normalizeToolUseInput(toolBlock.input),
 				},
@@ -129,7 +145,10 @@ function convertContentBlock(block: ContentBlock): Part | null {
 
 			return {
 				functionResponse: {
-					name: resultBlock.tool_use_id, // Gemini uses the function name here
+					id: resultBlock.tool_use_id,
+					name:
+						toolNameByCallId.get(resultBlock.tool_use_id) ??
+						resultBlock.tool_use_id,
 					response: responseContent,
 				},
 			};

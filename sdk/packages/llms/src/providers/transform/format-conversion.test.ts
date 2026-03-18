@@ -56,9 +56,12 @@ describe("format conversion", () => {
 
 		const gemini = convertToGeminiMessages(messages) as any[];
 		expect(gemini[0]?.parts?.[0]?.text).toBe(fileText);
+		expect(gemini[1]?.parts?.[0]?.functionCall?.id).toBe("call_1");
 		expect(gemini[2]?.parts?.[0]?.functionResponse?.response?.result).toBe(
 			fileText,
 		);
+		expect(gemini[2]?.parts?.[0]?.functionResponse?.id).toBe("call_1");
+		expect(gemini[2]?.parts?.[0]?.functionResponse?.name).toBe("read_file");
 
 		const anthropic = convertToAnthropicMessages(messages) as any[];
 		expect(anthropic[0]?.content?.[0]).toMatchObject({
@@ -104,11 +107,62 @@ describe("format conversion", () => {
 		const assistant = gemini[1] as any;
 		expect(assistant.role).toBe("model");
 		expect(assistant.parts[0].functionCall.name).toBe("run_commands");
+		expect(assistant.parts[0].functionCall.id).toBe("call_1");
 		expect(assistant.parts[0].thoughtSignature).toBe("sig-a");
 		expect(assistant.parts[1].thought).toBe(true);
 		expect(assistant.parts[1].thoughtSignature).toBe("sig-think");
 		expect(assistant.parts[2].text).toBe("done");
 		expect(assistant.parts[2].thoughtSignature).toBe("sig-text");
+	});
+
+	it("maps out-of-order gemini tool results by call id", () => {
+		const messages: Message[] = [
+			{ role: "user", content: "check both" },
+			{
+				role: "assistant",
+				content: [
+					{
+						type: "tool_use",
+						id: "call_1",
+						name: "read_file",
+						input: { path: "a.ts" },
+					},
+					{
+						type: "tool_use",
+						id: "call_2",
+						name: "search_files",
+						input: { query: "TODO" },
+					},
+				],
+			},
+			{
+				role: "user",
+				content: [
+					{
+						type: "tool_result",
+						tool_use_id: "call_2",
+						content: '{"matches":1}',
+					},
+					{
+						type: "tool_result",
+						tool_use_id: "call_1",
+						content: '{"text":"ok"}',
+					},
+				],
+			},
+		];
+
+		const gemini = convertToGeminiMessages(messages) as any[];
+		expect(gemini[2]?.parts?.[0]?.functionResponse).toMatchObject({
+			id: "call_2",
+			name: "search_files",
+			response: { result: '{"matches":1}' },
+		});
+		expect(gemini[2]?.parts?.[1]?.functionResponse).toMatchObject({
+			id: "call_1",
+			name: "read_file",
+			response: { result: '{"text":"ok"}' },
+		});
 	});
 
 	it("converts multiple tool_result blocks for openai without dropping any", () => {

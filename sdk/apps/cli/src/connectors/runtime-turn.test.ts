@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { CliLoggerAdapter } from "../logging/adapter";
 import { createConnectorRuntimeTurnStream } from "./runtime-turn";
 
 type StreamHandlers = {
@@ -46,7 +47,7 @@ describe("createConnectorRuntimeTurnStream", () => {
 			sessionId: "session-1",
 			request: { config: {} as never, prompt: "hi" },
 			clientId: "client-1",
-			logger: { core: {} },
+			logger: { core: {} } as unknown as CliLoggerAdapter,
 			transport: "telegram",
 			conversationId: "thread-1",
 		})) {

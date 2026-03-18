@@ -1,4 +1,4 @@
-name: Publish SDK Packages
+name: Publish Main SDK Packages
 
 on:
   workflow_dispatch:
@@ -147,8 +147,6 @@ jobs:
           echo "Publishing @clinebot/llms@${{ steps.version.outputs.version }} with tag '${CHANNEL}'..."
           cd packages/llms
           npm publish --tag "$CHANNEL" --access restricted
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @clinebot/agents
         if: steps.check_commits.outputs.skip != 'true'
@@ -157,8 +155,6 @@ jobs:
           echo "Publishing @clinebot/agents@${{ steps.version.outputs.version }} with tag '${CHANNEL}'..."
           cd packages/agents
           npm publish --tag "$CHANNEL" --access restricted
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @clinebot/core
         if: steps.check_commits.outputs.skip != 'true'
@@ -167,8 +163,6 @@ jobs:
           echo "Publishing @clinebot/core@${{ steps.version.outputs.version }} with tag '${CHANNEL}'..."
           cd packages/core
           npm publish --tag "$CHANNEL" --access restricted
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Summary
         if: steps.check_commits.outputs.skip != 'true'
