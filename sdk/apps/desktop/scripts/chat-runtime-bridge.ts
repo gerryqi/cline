@@ -1,7 +1,7 @@
 import {
 	type RpcRuntimeBridgeCommandOutputLine,
 	runRpcRuntimeCommandBridge,
-} from "@clinebot/core";
+} from "@clinebot/core/server";
 
 function writeLine(line: RpcRuntimeBridgeCommandOutputLine): void {
 	process.stdout.write(`${JSON.stringify(line)}\n`);

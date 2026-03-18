@@ -30,7 +30,6 @@
 		"clean": "rm -rf dist node_modules",
 		"typecheck": "bun tsc --noEmit"
 	},
-	"private": true,
 	"internal": true,
 	"dependencies": {
 		"better-sqlite3": "^11.10.0",

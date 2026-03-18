@@ -2,10 +2,10 @@ import type {
 	RpcChatRuntimeLoggerConfig,
 	RpcChatStartSessionRequest,
 } from "@clinebot/core";
-import { RpcSessionClient } from "@clinebot/core";
 import {
 	CoreSessionService,
 	ProviderSettingsManager,
+	RpcSessionClient,
 	SqliteSessionStore,
 } from "@clinebot/core/server";
 import type { Thread } from "chat";

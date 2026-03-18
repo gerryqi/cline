@@ -33,7 +33,7 @@ jobs:
   publish-sdk:
     needs: test
     name: Publish SDK Packages
-    if: github.repository == 'cline/cline' && github.ref == 'refs/heads/main'
+    if: github.repository == 'cline/sdk-wip' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
@@ -117,6 +117,14 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Update all package versions
+        if: steps.check_commits.outputs.skip != 'true'
+        run: bun scripts/version.ts "${{ steps.version.outputs.version }}" --publish
+
+      - name: Verify packages are installable
+        if: steps.check_commits.outputs.skip != 'true'
+        run: bun scripts/verify-packages.ts
+
+      - name: Re-apply publish manifest transform
         if: steps.check_commits.outputs.skip != 'true'
         run: bun scripts/version.ts "${{ steps.version.outputs.version }}" --publish
 

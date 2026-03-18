@@ -2,11 +2,8 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import type { RpcChatStartSessionRequest } from "@clinebot/core";
-import {
-	RpcSessionClient,
-	registerRpcClient,
-	resolveClineDataDir,
-} from "@clinebot/core";
+import { resolveClineDataDir } from "@clinebot/core";
+import { RpcSessionClient, registerRpcClient } from "@clinebot/core/server";
 import { Chat, ConsoleLogger, type Thread } from "chat";
 import { ensureRpcRuntimeAddress } from "../../commands/rpc";
 import type { CliLoggerAdapter } from "../../logging/adapter";

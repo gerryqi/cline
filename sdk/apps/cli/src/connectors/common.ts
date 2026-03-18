@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import type { RpcSessionClient, RpcSessionRow } from "@clinebot/core";
 import { ensureParentDir } from "@clinebot/core";
+import type { RpcSessionClient, RpcSessionRow } from "@clinebot/core/server";
 
 export function parseBooleanFlag(rawArgs: string[], flag: string): boolean {
 	return rawArgs.includes(flag);

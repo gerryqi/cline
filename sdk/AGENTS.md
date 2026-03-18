@@ -72,6 +72,22 @@ All data is rooted at `~/.cline/data` (overridable via `CLINE_DATA_DIR`).
 ### Rebuilding
 Changes to `packages/*` require a rebuild (`bun run build:sdk`) and an RPC server restart (`clite rpc stop && clite rpc start`). Use `dev:*` scripts for automatic rebuilding during development.
 
+### Publishing SDK Packages
+- Source workspace manifests must keep real workspace dependencies declared so `bun install` and local builds resolve correctly, even when some of those dependencies are bundled out of the published tarballs.
+- `bun scripts/version.ts <version> --publish` rewrites `packages/*/package.json` into publish-ready manifests and writes a temporary backup file at `.publish-verify-package-json-backup.json`.
+- `bun scripts/verify-packages.ts` packs the publishable packages, installs them together in an isolated temp directory, verifies imports, then restores the original workspace manifests from that backup.
+- Because verification restores the manifests, you must re-run `bun scripts/version.ts <version> --publish` after verification and before any real `npm publish`.
+- Local publish flow:
+  - `bun run build`
+  - `bun run test`
+  - `bun scripts/version.ts <version> --publish`
+  - `bun scripts/verify-packages.ts`
+  - `bun scripts/version.ts <version> --publish`
+  - `cd packages/llms && npm publish`
+  - `cd ../agents && npm publish`
+  - `cd ../core && npm publish`
+- CI publish flow in `.github/workflows/publish-sdk.yaml` follows the same rule: it runs `version.ts --publish`, runs `verify-packages.ts`, then re-runs `version.ts --publish` before publishing `llms -> agents -> core`.
+
 ### Change Routing
 - **Model/Provider schemas**: `@clinebot/llms`
 - **Scheduling/Cron**: `@clinebot/scheduler`

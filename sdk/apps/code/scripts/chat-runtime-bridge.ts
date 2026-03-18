@@ -1,11 +1,13 @@
 import { homedir } from "node:os";
-import type { RpcChatTurnResult } from "@clinebot/core";
 import {
-	type RpcRuntimeBridgeCommandOutputLine,
-	runRpcRuntimeCommandBridge,
+	type RpcChatTurnResult,
 	setHomeDir,
 	setHomeDirIfUnset,
 } from "@clinebot/core";
+import {
+	type RpcRuntimeBridgeCommandOutputLine,
+	runRpcRuntimeCommandBridge,
+} from "@clinebot/core/server";
 
 function writeLine(line: RpcRuntimeBridgeCommandOutputLine): void {
 	process.stdout.write(`${JSON.stringify(line)}\n`);

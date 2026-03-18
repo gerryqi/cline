@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { getRpcServerHealth, RpcSessionClient } from "@clinebot/core";
+import { getRpcServerHealth, RpcSessionClient } from "@clinebot/core/server";
 import { runRpcEnsureCommand } from "./rpc";
 
 interface CommandIo {

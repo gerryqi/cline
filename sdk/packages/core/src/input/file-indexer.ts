@@ -233,9 +233,20 @@ class FileIndexWorkerClient {
 
 startWorkerServer();
 
-const workerClient = isMainThread ? new FileIndexWorkerClient() : null;
+let workerClient: FileIndexWorkerClient | null | undefined;
+
+function getWorkerClient(): FileIndexWorkerClient | null {
+	if (!isMainThread) {
+		return null;
+	}
+	if (workerClient === undefined) {
+		workerClient = new FileIndexWorkerClient();
+	}
+	return workerClient;
+}
 
 async function buildIndexInBackground(cwd: string): Promise<Set<string>> {
+	const workerClient = getWorkerClient();
 	if (!workerClient) {
 		return buildIndex(cwd);
 	}

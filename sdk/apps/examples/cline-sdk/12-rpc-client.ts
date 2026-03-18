@@ -19,7 +19,7 @@
 
 import process from "node:process";
 import type { RpcChatStartSessionRequest } from "@clinebot/core";
-import { getRpcServerHealth, RpcSessionClient } from "@clinebot/core";
+import { getRpcServerHealth, RpcSessionClient } from "@clinebot/core/server";
 
 function createRpcSessionClient(address: string): RpcSessionClient {
 	return new RpcSessionClient({ address });

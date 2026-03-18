@@ -3,13 +3,15 @@ import type {
 	ToolApprovalRequest,
 	ToolApprovalResult,
 } from "@clinebot/agents";
-import type { RpcSessionClient } from "@clinebot/core";
 import {
 	RPC_TEAM_LIFECYCLE_EVENT_TYPE,
 	RPC_TEAM_PROGRESS_EVENT_TYPE,
 	type TeamProgressProjectionEvent,
 } from "@clinebot/core";
-import type { DefaultSessionManager } from "@clinebot/core/server";
+import type {
+	DefaultSessionManager,
+	RpcSessionClient,
+} from "@clinebot/core/server";
 
 export function createRpcToolApprovalRequester(input: {
 	eventClient: RpcSessionClient;

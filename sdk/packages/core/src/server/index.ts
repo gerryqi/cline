@@ -2,8 +2,42 @@
  * @clinebot/core/server
  *
  * Node/runtime services for host applications (CLI, desktop runtime, servers).
+ * Includes RPC server/client bindings — requires @clinebot/rpc at runtime.
  */
 
+export {
+	getRpcServerDefaultAddress,
+	getRpcServerHealth,
+	type RpcRuntimeBridgeCommand,
+	type RpcRuntimeBridgeCommandOutputLine,
+	type RpcRuntimeBridgeControlLine,
+	type RpcRuntimeBridgeOutputLine,
+	type RpcRuntimeBridgeRequestEnvelope,
+	type RpcRuntimeBridgeResponseEnvelope,
+	RpcRuntimeChatClient,
+	type RpcRuntimeEvent,
+	type RpcRuntimeHandlers,
+	type RpcRuntimeStreamStop,
+	type RpcScheduleExecution,
+	type RpcScheduleExecutionStatus,
+	type RpcScheduleMode,
+	type RpcScheduleRecord,
+	type RpcServerHandle,
+	type RpcServerOptions,
+	type RpcSessionBackend,
+	RpcSessionClient,
+	type RpcSessionRow,
+	type RpcSessionStatus,
+	type RpcSessionUpdateInput,
+	type RpcSpawnQueueItem,
+	type RpcStreamTeamProgressHandlers,
+	registerRpcClient,
+	requestRpcServerShutdown,
+	runRpcRuntimeCommandBridge,
+	runRpcRuntimeEventBridge,
+	startRpcServer,
+	stopRpcServer,
+} from "@clinebot/rpc";
 export {
 	type ClineAccountBalance,
 	type ClineAccountOperations,

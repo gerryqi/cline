@@ -31,6 +31,10 @@ if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(version)) {
 
 const root = join(import.meta.dir, "..");
 const packagesDir = join(root, "packages");
+const publishVerifyBackupPath = join(
+	root,
+	".publish-verify-package-json-backup.json",
+);
 
 const dirs = await readdir(packagesDir, { withFileTypes: true });
 const workspaces = dirs.filter((d) => d.isDirectory()).map((d) => d.name);
@@ -39,13 +43,13 @@ const workspaces = dirs.filter((d) => d.isDirectory()).map((d) => d.name);
 // When --publish is used, workspace:* deps pointing to internal packages are stripped (they're bundled
 // into the build output), while deps pointing to published packages are resolved to the concrete version.
 const internalPackages = new Set<string>();
+const packageJsonBackups: Record<string, string> = {};
 for (const workspace of workspaces) {
 	try {
-		const raw = await readFile(
-			join(packagesDir, workspace, "package.json"),
-			"utf-8",
-		);
+		const pkgPath = join(packagesDir, workspace, "package.json");
+		const raw = await readFile(pkgPath, "utf-8");
 		const pkg = JSON.parse(raw);
+		packageJsonBackups[pkgPath] = raw;
 		if (pkg.internal) {
 			internalPackages.add(pkg.name);
 		}
@@ -55,6 +59,13 @@ for (const workspace of workspaces) {
 }
 
 let updated = 0;
+
+if (values.publish && !values.dry) {
+	await writeFile(
+		publishVerifyBackupPath,
+		`${JSON.stringify(packageJsonBackups, null, "\t")}\n`,
+	);
+}
 
 for (const workspace of workspaces) {
 	const pkgPath = join(packagesDir, workspace, "package.json");
