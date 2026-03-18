@@ -6,7 +6,7 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { ToolContext } from "@cline/agents";
+import type { ToolContext } from "@clinebot/agents";
 import type { ApplyPatchInput } from "../schemas.js";
 import type { ApplyPatchExecutor } from "../types.js";
 import {

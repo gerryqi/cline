@@ -1,7 +1,7 @@
 import { existsSync, statSync, truncateSync } from "node:fs";
 import { join } from "node:path";
-import type { BasicLogger, RpcChatRuntimeLoggerConfig } from "@cline/shared";
-import { resolveClineDataDir } from "@cline/shared/storage";
+import type { BasicLogger, RpcChatRuntimeLoggerConfig } from "@clinebot/shared";
+import { resolveClineDataDir } from "@clinebot/shared/storage";
 import pino, {
 	type DestinationStream,
 	type LevelWithSilent,

@@ -7,8 +7,8 @@ import {
 	loadSqliteDb,
 	nowIso,
 	type SqliteDb,
-} from "@cline/shared/db";
-import { resolveSessionDataDir } from "@cline/shared/storage";
+} from "@clinebot/shared/db";
+import { resolveSessionDataDir } from "@clinebot/shared/storage";
 import { getNextCronRun } from "./cron";
 import type {
 	CreateScheduleInput,

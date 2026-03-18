@@ -18,8 +18,8 @@
  */
 
 import process from "node:process";
-import { getRpcServerHealth, RpcSessionClient } from "@cline/rpc";
-import type { RpcChatStartSessionRequest } from "@cline/shared";
+import { getRpcServerHealth, RpcSessionClient } from "@clinebot/rpc";
+import type { RpcChatStartSessionRequest } from "@clinebot/shared";
 
 function createRpcSessionClient(address: string): RpcSessionClient {
 	return new RpcSessionClient({ address });

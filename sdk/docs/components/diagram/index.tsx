@@ -13,42 +13,42 @@ export function PackageDependencyGraph() {
 		{ label: string; description: string; kind: "sdk" | "app" }
 	> = {
 		shared: {
-			label: "@cline/shared",
+			label: "@clinebot/shared",
 			description: "Leaf — contracts, schemas, utilities",
 			kind: "sdk",
 		},
 		llms: {
-			label: "@cline/llms",
+			label: "@clinebot/llms",
 			description: "Depends on shared",
 			kind: "sdk",
 		},
 		agents: {
-			label: "@cline/agents",
+			label: "@clinebot/agents",
 			description: "Depends on llms, shared",
 			kind: "sdk",
 		},
 		rpc: {
-			label: "@cline/rpc",
+			label: "@clinebot/rpc",
 			description: "Leaf — gRPC gateway, no internal deps",
 			kind: "sdk",
 		},
 		core: {
-			label: "@cline/core",
+			label: "@clinebot/core",
 			description: "Depends on agents, llms, rpc, shared",
 			kind: "sdk",
 		},
 		cli: {
-			label: "@cline/cli",
+			label: "@clinebot/cli",
 			description: "App shell — depends on core, rpc, agents, llms, shared",
 			kind: "app",
 		},
 		code: {
-			label: "@cline/code",
+			label: "@clinebot/code",
 			description: "App shell — depends on core, rpc, agents, llms, shared",
 			kind: "app",
 		},
 		desktop: {
-			label: "@cline/desktop",
+			label: "@clinebot/desktop",
 			description: "App shell — depends on core, agents, llms",
 			kind: "app",
 		},
@@ -871,14 +871,14 @@ export function RuntimeAdapterDiagram() {
 	];
 
 	const apps = [
-		{ id: "cli", label: "@cline/cli", color: "amber" },
-		{ id: "code", label: "@cline/code", color: "pink" },
-		{ id: "desktop", label: "@cline/desktop", color: "orange" },
+		{ id: "cli", label: "@clinebot/cli", color: "amber" },
+		{ id: "code", label: "@clinebot/code", color: "pink" },
+		{ id: "desktop", label: "@clinebot/desktop", color: "orange" },
 	];
 
 	const sidecar = {
 		id: "rpc",
-		label: "@cline/rpc",
+		label: "@clinebot/rpc",
 		desc: "gRPC gateway (optional)",
 		color: "sky",
 	};

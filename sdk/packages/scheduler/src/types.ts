@@ -106,7 +106,7 @@ export interface ScheduleExecutionStats {
 
 export interface SchedulerRuntimeStartResult {
 	sessionId: string;
-	startResult?: import("@cline/shared").RpcChatStartSessionArtifacts;
+	startResult?: import("@clinebot/shared").RpcChatStartSessionArtifacts;
 }
 
 export interface SchedulerRuntimeSendResult {
@@ -157,4 +157,4 @@ import type {
 	RpcChatRunTurnRequest,
 	RpcChatStartSessionRequest,
 	RpcChatTurnResult,
-} from "@cline/shared";
+} from "@clinebot/shared";

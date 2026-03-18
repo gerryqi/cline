@@ -1,4 +1,4 @@
-import type { AgentEvent } from "@cline/agents";
+import type { AgentEvent } from "@clinebot/agents";
 
 type SessionManagerSubscriber = {
 	subscribe(listener: (event: unknown) => void): () => void;

@@ -16,8 +16,8 @@
  * Run: bun run 05-custom-tools.ts
  */
 
-import type { Tool } from "@cline/agents";
-import { createSessionHost } from "@cline/core/server";
+import type { Tool } from "@clinebot/agents";
+import { createSessionHost } from "@clinebot/core/server";
 
 // Example 1: Simple calculator tool
 const calculatorTool: Tool = {

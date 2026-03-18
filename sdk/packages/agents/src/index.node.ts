@@ -1,5 +1,5 @@
 /**
- * @cline/agents (Node entrypoint)
+ * @clinebot/agents (Node entrypoint)
  */
 
 export {

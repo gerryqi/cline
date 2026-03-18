@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
-import type { ToolPolicy } from "@cline/shared";
-import { setHomeDir } from "@cline/shared/storage";
+import type { ToolPolicy } from "@clinebot/shared";
+import { setHomeDir } from "@clinebot/shared/storage";
 import {
 	ensureOAuthProviderApiKey,
 	getPersistedProviderApiKey,
@@ -43,7 +43,7 @@ function mergeToolPolicies(
 
 async function createProviderSettingsManager() {
 	const { migrateLegacyProviderSettings, ProviderSettingsManager } =
-		await import("@cline/core/server");
+		await import("@clinebot/core/server");
 	const providerSettingsManager = new ProviderSettingsManager();
 	migrateLegacyProviderSettings({ providerSettingsManager });
 	return providerSettingsManager;
@@ -51,8 +51,8 @@ async function createProviderSettingsManager() {
 
 async function loadCliRuntimeModules() {
 	const [coreServer, llms, prompt, runAgentModule] = await Promise.all([
-		import("@cline/core/server"),
-		import("@cline/llms"),
+		import("@clinebot/core/server"),
+		import("@clinebot/llms"),
 		import("./runtime/prompt"),
 		import("./runtime/run-agent"),
 	]);

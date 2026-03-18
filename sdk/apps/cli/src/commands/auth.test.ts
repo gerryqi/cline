@@ -1,4 +1,4 @@
-import type { ProviderSettingsManager } from "@cline/core/server";
+import type { ProviderSettingsManager } from "@clinebot/core/server";
 import { describe, expect, it, vi } from "vitest";
 import { saveOAuthProviderSettings } from "./auth";
 

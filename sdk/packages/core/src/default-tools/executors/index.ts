@@ -48,7 +48,7 @@ export interface DefaultExecutorsOptions {
  *
  * @example
  * ```typescript
- * import { createDefaultTools, createDefaultExecutors } from "@cline/core/server"
+ * import { createDefaultTools, createDefaultExecutors } from "@clinebot/core/server"
  *
  * const executors = createDefaultExecutors({
  *   bash: { timeoutMs: 60000 },

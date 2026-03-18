@@ -14,8 +14,8 @@
 import { exec as execCb } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
-import type { ToolContext } from "@cline/agents";
-import { createSessionHost, type ToolExecutors } from "@cline/core/server";
+import type { ToolContext } from "@clinebot/agents";
+import { createSessionHost, type ToolExecutors } from "@clinebot/core/server";
 
 const exec = promisify(execCb);
 

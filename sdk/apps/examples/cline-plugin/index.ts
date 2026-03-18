@@ -1,14 +1,14 @@
 /**
  * Custom Plugin Example
  *
- * Shows how to extend @cline/agents with your own plugins.
+ * Shows how to extend @clinebot/agents with your own plugins.
  * A plugin can register custom tools and hook into the agent lifecycle.
  *
  * Usage:
  *   ANTHROPIC_API_KEY=sk-... bun run apps/examples/cline-plugin/index.ts
  */
 
-import { Agent, type AgentConfig, createTool } from "@cline/agents";
+import { Agent, type AgentConfig, createTool } from "@clinebot/agents";
 
 // The AgentExtension type — all plugins share this shape.
 // Use AgentConfig to derive it without a direct import.

@@ -21,8 +21,8 @@
  * Run: bun run 07-extensions.ts
  */
 
-import type { AgentConfig, Tool } from "@cline/agents";
-import { createSessionHost } from "@cline/core/server";
+import type { AgentConfig, Tool } from "@clinebot/agents";
+import { createSessionHost } from "@clinebot/core/server";
 
 type AgentExtension = NonNullable<AgentConfig["extensions"]>[number];
 

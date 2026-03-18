@@ -4,15 +4,15 @@ import type {
 	HookErrorMode,
 	TeamEvent,
 	Tool,
-} from "@cline/agents";
-import type { providers as LlmsProviders } from "@cline/llms";
+} from "@clinebot/agents";
+import type { providers as LlmsProviders } from "@clinebot/llms";
 import type {
 	AgentMode,
 	BasicLogger,
 	SessionExecutionConfig,
 	SessionPromptConfig,
 	SessionWorkspaceConfig,
-} from "@cline/shared";
+} from "@clinebot/shared";
 
 export type CoreAgentMode = AgentMode;
 

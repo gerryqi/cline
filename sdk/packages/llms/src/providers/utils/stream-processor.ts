@@ -5,7 +5,7 @@
  * This provides a clean interface between the streaming API and Cline's storage format.
  */
 
-import { parseJsonStream } from "@cline/shared";
+import { parseJsonStream } from "@clinebot/shared";
 import { JSONParser } from "@streamparser/json";
 import type {
 	ApiStreamChunk,

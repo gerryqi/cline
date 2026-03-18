@@ -5,7 +5,7 @@
  */
 
 // Zod Utilities
-export { validateWithZod, zodToJsonSchema } from "@cline/shared";
+export { validateWithZod, zodToJsonSchema } from "@clinebot/shared";
 // Constants
 export { ALL_DEFAULT_TOOL_NAMES, DefaultToolNames } from "./constants.js";
 // Tool Definitions
@@ -89,7 +89,7 @@ export type {
 // Convenience: Create Tools with Built-in Executors
 // =============================================================================
 
-import type { Tool } from "@cline/agents";
+import type { Tool } from "@clinebot/agents";
 import { createDefaultTools } from "./definitions.js";
 import {
 	createDefaultExecutors,
@@ -120,8 +120,8 @@ export interface CreateBuiltinToolsOptions
  *
  * @example
  * ```typescript
- * import { Agent } from "@cline/agents"
- * import { createBuiltinTools } from "@cline/core/server"
+ * import { Agent } from "@clinebot/agents"
+ * import { createBuiltinTools } from "@clinebot/core/server"
  *
  * const tools = createBuiltinTools({
  *   cwd: "/path/to/project",

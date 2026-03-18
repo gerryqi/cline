@@ -3,7 +3,7 @@ import {
 	resolveAgentConfigSearchPaths as resolveAgentConfigSearchPathsFromShared,
 	resolveAgentsConfigDirPath as resolveAgentsConfigDirPathFromShared,
 	resolveDocumentsAgentConfigDirectoryPath,
-} from "@cline/shared/storage";
+} from "@clinebot/shared/storage";
 import {
 	type AgentYamlConfig,
 	isAgentConfigYamlFile,

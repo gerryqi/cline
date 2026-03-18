@@ -1,6 +1,6 @@
 function browserOnlyError(): Error {
 	return new Error(
-		"@cline/rpc is Node-only. Use @cline/rpc/node in Node runtimes.",
+		"@clinebot/rpc is Node-only. Use @clinebot/rpc/node in Node runtimes.",
 	);
 }
 

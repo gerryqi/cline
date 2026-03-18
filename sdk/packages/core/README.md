@@ -1,279 +1,88 @@
-# @cline/core
+# @clinebot/core
 
-Package-level docs are centralized:
+`@clinebot/core` is the stateful orchestration layer of the Cline SDK. It
+connects the agent runtime, provider settings, storage, default tools, and
+session lifecycle into a host-ready runtime.
 
-- Overview: [`packages/README.md`](../README.md)
-- Architecture and interactions: [`ARCHITECTURE.md`](/Users/beatrix/dev/clinee/sdk-wip/ARCHITECTURE.md)
+## What You Get
 
-`@cline/core` is the stateful orchestration layer (runtime composition, sessions, storage, RPC session adapter).
+- session lifecycle and orchestration primitives
+- provider settings and account services
+- default runtime tools and MCP integration
+- storage-backed session and team state helpers
+- host-facing Node helpers through `@clinebot/core/server`
 
-## Cline Account Service
+## Installation
 
-`@cline/core` now exposes a typed Cline account service API for account/profile/credit reads and account switching:
+```bash
+npm install @clinebot/core
+```
 
-- `ClineAccountService` for direct authenticated API usage
-- `RpcClineAccountService` for typed account calls over `RunProviderAction`
-- `executeRpcClineAccountAction(...)` and `isRpcClineAccountActionRequest(...)` for RPC runtime handler dispatch
+## Entry Points
 
-This keeps account behavior in core and removes ad hoc account JSON parsing from host runtime handlers.
+- `@clinebot/core`: runtime-agnostic core contracts and shared utilities
+- `@clinebot/core/server`: Node/server helpers for building hosts and runtimes
 
-## RPC Session Backend
+## Typical Usage
 
-`@cline/core/server` provides the SQLite implementation for the RPC session persistence contract:
+Most host apps should start with `@clinebot/core/server`.
 
-- `SqliteRpcSessionBackend`
-- `createSqliteRpcSessionBackend(options?)`
+```ts
+import { createSessionHost } from "@clinebot/core/server";
 
-Use this backend when starting `@cline/rpc` servers so RPC remains transport-only while session persistence stays owned by `@cline/core`.
+const host = await createSessionHost({});
 
-## Default Runtime Tools
+const result = await host.start({
+	config: {
+		providerId: "anthropic",
+		modelId: "claude-sonnet-4-6",
+		apiKey: process.env.ANTHROPIC_API_KEY ?? "",
+		cwd: process.cwd(),
+		enableTools: true,
+		systemPrompt: "You are a concise assistant.",
+	},
+	prompt: "Summarize this project.",
+	interactive: false,
+});
 
-`@cline/core` now owns default runtime tool construction and Node executors.
+console.log(result.result?.text);
+await host.dispose();
+```
 
-- Use `createBuiltinTools(...)`, `createDefaultTools(...)`, and `createDefaultExecutors(...)` from `@cline/core` / `@cline/core/server`.
-- `DefaultRuntimeBuilder` injects these tools at runtime.
-- Built-in file editing now includes both `editor` operations and legacy-compatible `apply_patch`.
-- `@cline/agents` remains browser-safe and only provides the standalone `ask_question` helper tool.
+## Main APIs
 
-## Agent Plugin Loading (Path-Based)
+### Runtime and Sessions
 
-`@cline/core/server` now exposes host-side helpers to load `AgentExtension` plugins from local file paths:
+Use `@clinebot/core/server` for host-facing runtime assembly:
 
-- `loadAgentPluginFromPath(path, options?)`
-- `loadAgentPluginsFromPaths(paths, options?)`
-- `resolveAgentPluginPaths(options?)`
-- `resolveAndLoadAgentPlugins(options?)`
-- `resolvePluginConfigSearchPaths(workspacePath?)`
+- `createSessionHost(...)`
+- `DefaultSessionManager`
+- `DefaultRuntimeBuilder`
 
-These helpers are intended for the core/host boundary where plugin discovery and module loading belong.
-Loaded extensions can be passed directly to `Agent` via `AgentConfig.extensions`.
+### Default Tools
 
-Validation performed by loader:
+`@clinebot/core` owns the built-in host tools and executors:
 
-- plugin export must be an object with non-empty `name`
-- `manifest` is required
-- `manifest.capabilities` must be a non-empty string array
-- `manifest.hookStages` must be a string array when present
+- `createBuiltinTools(...)`
+- `createDefaultTools(...)`
+- `createDefaultExecutors(...)`
 
-`CoreSessionConfig` now supports plugin inputs:
+### Storage and Settings
 
-- `pluginPaths?: string[]` (file or directory paths; relative paths resolve from `config.cwd`)
-- `extensions?: AgentConfig["extensions"]` (already-loaded extension objects)
+The package also exports storage and settings helpers such as:
 
-`CoreSessionConfig` composes shared session primitives from `@cline/shared`
-(`AgentMode`, `SessionPromptConfig`, `SessionWorkspaceConfig`,
-`SessionExecutionConfig`) so host/runtime config fields stay aligned with RPC/UI
-session contracts.
+- `ProviderSettingsManager`
+- `SqliteTeamStore`
+- SQLite RPC session backend helpers from `@clinebot/core/server`
 
-During `DefaultSessionManager.start(...)`, core resolves plugin modules from:
+## Related Packages
 
-- explicit `pluginPaths`
-- shared plugin search paths (`resolvePluginConfigSearchPaths(workspaceRoot || cwd)`)
+- `@clinebot/agents`: stateless agent loop and tool primitives
+- `@clinebot/llms`: provider/model configuration and handlers
+- `@clinebot/rpc`: remote session and runtime transport
 
-It loads them via `loadAgentPluginsFromPaths(...)`, merges with `extensions`, and forwards the merged extension list to:
+## More Examples
 
-- root `Agent` instance
-- `spawn_agent` sub-agents
-- team teammate agents created through team runtime tools
-
-By default, plugin paths are loaded in an out-of-process sandbox (`resolveAndLoadAgentPlugins(...)` in `sandbox` mode). Core also exposes a reusable generic RPC subprocess primitive:
-
-- `SubprocessSandbox` (`@cline/core/server` runtime export)
-
-## Default Session Manager
-
-`@cline/core/server` now exposes `DefaultSessionManager`, a concrete runtime facade that owns:
-
-- root session lifecycle + manifest/artifact wiring
-- runtime/tool composition through `DefaultRuntimeBuilder`
-- agent lifecycle (run/continue/abort/stop/dispose)
-- session message persistence after each turn
-- session status transitions and event fanout via `CoreSessionEvent`
-
-`DefaultSessionManager.dispose(reason?)` now provides a manager-wide shutdown path that cancels and tears down all active sessions, ensuring tool/runtime resources are released on host shutdown.
-
-This is the primary API for host clients that should only consume runtime events and outputs without manually creating agents or persisting messages.
-
-Async teammate run coordination behavior:
-
-- `DefaultSessionManager` now tracks async team runs (`queued`/`running`) at the session layer.
-- Session completion is gated while async teammate runs are still in flight.
-- When teammate runs reach terminal states (`completed`, `failed`, `cancelled`, `interrupted`), core injects a synthetic continuation prompt into the same lead-agent turn flow so orchestration can continue without requiring the model to manually call `team_await_*`.
-- This keeps one-shot host calls (for example CLI `send`) alive through teammate completions and only finalizes when there are no remaining async team runs or pending run updates.
-
-## Session Telemetry Injection
-
-`@cline/core` now exposes a runtime-agnostic session telemetry contract:
-
-- `SessionTelemetry`
-- `NoOpSessionTelemetry`
-
-`DefaultSessionManager` accepts `telemetry?: SessionTelemetry` and records:
-
-- session start/end
-- user turns
-- assistant turns (including usage/cost fields)
-- tool result events
-- error events
-
-`createSessionHost(options)` forwards `options.telemetry` to `DefaultSessionManager`, so hosts (CLI/desktop/editor) can inject one telemetry adapter and reuse the same session lifecycle instrumentation.
-
-Session persistence behavior:
-
-- Root sessions are now persisted lazily on first user prompt submission (not at `start()` time).
-- Calling `stop()`/`dispose()` before any user prompt no longer creates session records/artifacts or emits `session_shutdown` audit entries for that idle session.
-- Session artifacts are stored under a single folder per concrete session id (`~/.cline/data/sessions/<sessionId>/...`) with no extra nested directories for subagent/teamtask naming.
-
-Session message history persistence now enriches the latest assistant message of each turn with metadata before writing `messages.json`:
-
-- `providerId` and `modelId`
-- `modelInfo` (`id`, `provider`)
-- `metrics` (`inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `cost`)
-- `ts` (turn completion timestamp in epoch milliseconds)
-
-`metrics.cost` is optional. When model pricing metadata is unavailable for a turn, cost remains unset instead of being coerced to `0`.
-
-## Session Host Factory
-
-`@cline/core/server` also exposes `createSessionHost(options?)`, a higher-level host entrypoint that builds a ready-to-use session manager with backend resolution:
-
-- supports `backendMode: "auto" | "rpc" | "local"`
-- auto-detects and can auto-start RPC in `"auto"` mode
-- falls back to local SQLite session storage when RPC is unavailable
-- accepts runtime defaults (`defaultToolExecutors`, `toolPolicies`, `requestToolApproval`)
-- accepts `sessionService` to force a specific backend instance
-
-This is intended to be the portable client integration API for CLI/desktop/editor hosts.
-
-## Session Context Propagation
-
-`@cline/core` runtime/session flows now consume explicit hook payload session context (`sessionContext.rootSessionId`) for subagent/session linkage, instead of relying on process-global `CLINE_SESSION_ID` mutation in `DefaultSessionManager`.
-
-## Hook Config Runtime Wiring
-
-`DefaultSessionManager` now wires discovered hook config files (for example `PostToolUse`, `TaskComplete`, `TaskCancel`) into live runtime sessions.
-
-- Hook config files are discovered from configured hook search paths and mapped to lifecycle events (`tool_call`, `tool_result`, `agent_end`, `agent_abort`, `session_shutdown`, etc.).
-- Hook files execute as external commands during agent lifecycle dispatch (`tool_call` remains blocking to allow hook control responses; other events dispatch asynchronously).
-- Hook execution now resolves explicit command arrays per hook file:
-  - shebang present: uses shebang interpreter + script path
-  - no shebang: uses interpreter fallback by extension (`.sh` -> `bash`, `.js` -> `node`, `.ts` -> `bun run`) and defaults to `bash` for legacy extensionless files
-- This avoids direct file spawning failures like `EACCES` on non-executable hook files.
-- `tool_call` hooks can return `review: true` in hook control output to force the normal approval callback flow for that tool call before execution. This lets hooks selectively require approval for cases such as `run_commands` inputs starting with `git`.
-- When no explicit host-provided runtime hooks are configured, core now writes baseline hook lifecycle audit entries to the session `*.hooks.jsonl` artifact so hosts can display real execution status.
-
-## Runtime Logger Forwarding
-
-`CoreSessionConfig` now supports an optional `logger`. `DefaultRuntimeBuilder` forwards
-this logger through the built runtime, and `DefaultSessionManager` passes it into root
-agents and spawned sub-agents, so host clients can capture agent-loop trace logs in one place.
-
-Spawned sub-agent iteration behavior:
-
-- Core does not inject a default `maxIterations` cap for `spawn_agent`.
-- If callers do not provide `maxIterations`, spawned runs are unbounded by default.
-
-## Team State Persistence Boundary
-
-Team runtime persistence is owned by `@cline/core` through `SqliteTeamStore` (`~/.cline/data/teams/teams.db` by default).
-
-`@cline/agents` team tooling emits runtime events; `@cline/core` persists:
-
-- append-only `team_events`
-- runtime snapshots (`team_runtime_snapshot`)
-- materialized `team_tasks`, `team_runs`, `team_outcomes`, `team_outcome_fragments`
-
-Recovery behavior:
-
-- On runtime bootstrap, `DefaultRuntimeBuilder` loads the last team snapshot for `teamName`.
-- In-progress queued/running rows in `team_runs` are marked `interrupted` in storage.
-- Restored in-memory runs are transitioned with `run_interrupted` lifecycle events so clients and logs stay consistent.
-
-## OAuth Callback Behavior
-
-For `openai-codex` CLI login, the local callback server now binds to the same host/port/path as the configured redirect URI (`OPENAI_CODEX_OAUTH_CONFIG.redirectUri`) to avoid localhost/127.0.0.1 mismatches on some systems.
-
-For `oca` CLI login, default callback ports are `48801-48811` (`/auth/oca`) to match existing IDCS redirect URI allowlists used by the legacy flow.
-
-## OAuth Client Callback Helper
-
-`@cline/core/server` exports `createOAuthClientCallbacks(...)` so host clients can share OAuth UX wiring while keeping client-specific browser behavior:
-
-- `onOutput(message)` receives auth instructions and URL text
-- `openUrl(url)` is optional and lets each client decide how to launch URLs (CLI, desktop, editor integrations, etc.)
-- `onOpenUrlError(...)` handles browser-launch failures without breaking login
-
-## Runtime OAuth Refresh
-
-`DefaultSessionManager` now owns OAuth access-token refresh for managed OAuth providers (`cline`, `oca`, `openai-codex`) so host clients do not need to call refresh helpers directly.
-
-- Before each turn, core resolves provider settings and refreshes tokens when they are expired or near expiry.
-- Refresh results are persisted back to provider settings (`auth.accessToken`, `auth.refreshToken`, `auth.accountId`, `auth.expiresAt`).
-- Refresh operations are single-flight per provider to avoid concurrent refresh storms in long-lived RPC runtimes.
-- When a turn fails with an auth-like error (for example HTTP 401/403), core force-refreshes once and retries the turn once.
-
-## Provider Config Hydration
-
-`DefaultSessionManager` resolves full provider runtime config from persisted provider settings before creating `Agent` instances:
-
-- Reads provider settings from `ProviderSettingsManager` (`settings/providers.json`).
-- Converts settings to `ProviderConfig` via `toProviderConfig(...)`.
-- Preserves provider-specific fields (for example `aws.*`, `gcp.*`, `azure.*`, `sap.*`, `oca.*`) so non-OpenAI-compatible handlers receive required config.
-- Applies explicit runtime overrides for `model`, `apiKey`, `baseUrl`, `headers`, and `thinking`.
-- Forwards the resolved `providerConfig` to lead agents, spawned sub-agents, and team teammates.
-
-Prompt preparation behavior:
-
-- Hosts should pass raw prompt text into session `start/send` APIs.
-- Core normalizes any existing `<user_input ...>` wrapper, resolves `@mentions` through `enrichPromptWithMentions(...)` against `workspaceRoot` (fallback `cwd`), and formats exactly one canonical `<user_input mode="...">...</user_input>` block per turn.
-- Mention-matched files are merged into `userFiles` in core before dispatching to `Agent.run(...)` / `Agent.continue(...)`.
-
-## MCP Settings Compatibility
-
-`@cline/core` loads MCP registrations from `cline_mcp_settings.json` and supports both shapes:
-
-- Preferred nested transport:
-  - `{ "mcpServers": { "docs": { "transport": { "type": "stdio", "command": "node" } } } }`
-- Legacy flat transport (still accepted):
-  - `{ "mcpServers": { "docs": { "command": "node" } } }`
-  - `{ "mcpServers": { "remote": { "url": "https://mcp.example.com", "transportType": "http" } } }`
-
-Legacy `transportType: "http"` is normalized to `transport.type: "streamableHttp"`.
-
-## Provider Settings Migration Helper
-
-`@cline/core` exposes `migrateLegacyProviderSettings(...)` to bootstrap the new provider settings file from legacy state storage:
-
-- Reads legacy files from `~/.cline/data/globalState.json` and `~/.cline/data/secrets.json` (or `CLINE_DATA_DIR`)
-- Merges missing providers into `settings/providers.json` without overwriting existing providers
-- Marks migrated provider entries with `tokenSource: "migration"`
-
-## Desktop Tool Approval Helper
-
-`@cline/core` includes a shared file-IPC helper for desktop tool approvals:
-
-- `requestDesktopToolApproval(request, options?)`
-- Writes `*.request.*.json` records and polls for matching `*.decision.*.json` responses
-- Used by CLI and desktop app runner scripts to avoid duplicated approval protocol logic
-- `options.approvalDir` and `options.sessionId` are now explicit inputs (no env fallback in core runtime helper)
-
-## Fast File Indexing
-
-`@cline/core/input` now runs fast file indexing in a dedicated Node worker thread.
-
-- `getFileIndex(cwd, options?)` keeps the same API (`Promise<Set<string>>`) and TTL caching semantics.
-- Index builds (ripgrep scan + filesystem fallback walk) execute off the main thread to reduce prompt-path latency spikes.
-- `prewarmFileIndex(cwd, options?)` still forces a rebuild and refreshes the cached set for subsequent reads.
-- Unit tests for index consumption paths (`file-indexer`, `mention-enricher`) mock `node:worker_threads` and assert index behavior independent of worker scheduling.
-
-## Type Validation Notes
-
-- Provider settings storage schemas use explicit Zod v4 record key/value signatures (`z.record(z.string(), valueSchema)`).
-
-## Testing
-
-Run tests from the workspace root:
-
-- Unit tests: `bun -F @cline/core test:unit`
-- E2E tests: `bun -F @cline/core test:e2e`
-- Full suite: `bun -F @cline/core test`
+- Repo examples: [apps/examples/cline-sdk](https://github.com/cline/cline/tree/main/apps/examples/cline-sdk)
+- Workspace overview: [README.md](https://github.com/cline/cline/blob/main/README.md)
+- API and architecture references: [DOC.md](https://github.com/cline/cline/blob/main/DOC.md), [ARCHITECTURE.md](https://github.com/cline/cline/blob/main/ARCHITECTURE.md)

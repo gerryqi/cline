@@ -2,14 +2,14 @@
  * Provider Configurations
  *
  * Pre-configured settings for all supported OpenAI-compatible providers.
- * Model data is sourced from @cline/models (the single registry).
+ * Model data is sourced from @clinebot/models (the single registry).
  */
 /** biome-ignore-all lint/style/noNonNullAssertion: static */
 
 import {
 	MODELS_DEV_PROVIDER_KEY_MAP,
 	resolveProviderModelCatalogKeys,
-} from "@cline/shared";
+} from "@clinebot/shared";
 import {
 	fetchModelsDevProviderModels,
 	sortModelsByReleaseDate,
@@ -499,7 +499,7 @@ function toRuntimeProviderDefaults(
 /**
  * All OpenAI-compatible provider configurations
  *
- * Model data is sourced from @cline/models to maintain a single source of truth.
+ * Model data is sourced from @clinebot/models to maintain a single source of truth.
  */
 export const OPENAI_COMPATIBLE_PROVIDERS: Record<string, ProviderDefaults> =
 	toRuntimeProviderDefaults(buildOpenAICompatibleProviderDefaults());

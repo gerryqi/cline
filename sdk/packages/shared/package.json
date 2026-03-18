@@ -1,5 +1,5 @@
 {
-	"name": "@cline/shared",
+	"name": "@clinebot/shared",
 	"version": "0.0.0",
 	"description": "Fast workspace file indexing with rg and fs fallback",
 	"type": "module",

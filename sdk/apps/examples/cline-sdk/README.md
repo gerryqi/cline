@@ -71,11 +71,11 @@ CLINE_BACKEND_MODE=local bun run 14-full-control.ts
 
 The Cline SDK is organized into focused packages:
 
-- **`@cline/core`** - Session management, storage, runtime orchestration
-- **`@cline/agents`** - Agent runtime loop, tools, hooks, teams
-- **`@cline/llms`** - Model catalog, provider settings, handlers
-- **`@cline/rpc`** - Remote session control (optional)
-- **`@cline/shared`** - Shared primitives and types
+- **`@clinebot/core`** - Session management, storage, runtime orchestration
+- **`@clinebot/agents`** - Agent runtime loop, tools, hooks, teams
+- **`@clinebot/llms`** - Model catalog, provider settings, handlers
+- **`@clinebot/rpc`** - Remote session control (optional)
+- **`@clinebot/shared`** - Shared primitives and types
 
 ### Session Flow
 
@@ -106,7 +106,7 @@ All tools respect the agent's working directory and can be customized with polic
 ### Minimal Session
 
 ```typescript
-import { createSessionHost } from "@cline/core/server";
+import { createSessionHost } from "@clinebot/core/server";
 
 const sessionManager = await createSessionHost({});
 
@@ -131,7 +131,7 @@ console.log(result.result?.text);
 ### With Custom Model
 
 ```typescript
-import { createSessionHost } from "@cline/core/server";
+import { createSessionHost } from "@clinebot/core/server";
 
 await sessionManager.start({
   config: {
@@ -191,8 +191,8 @@ await sessionManager.stop(sessionId);
 ### Custom Tools
 
 ```typescript
-import { createSessionHost } from "@cline/core/server";
-import type { Tool } from "@cline/agents";
+import { createSessionHost } from "@clinebot/core/server";
+import type { Tool } from "@clinebot/agents";
 
 const myTool: Tool = {
   name: "get_weather",
@@ -388,7 +388,7 @@ process.env.CLINE_SESSION_DATA_DIR = "/custom/path";
 Enable verbose logging:
 
 ```typescript
-import { createLogger } from "@cline/core/server";
+import { createLogger } from "@clinebot/core/server";
 
 const logger = createLogger({ level: "debug" });
 
@@ -405,7 +405,7 @@ await sessionManager.start({
 Mock tools and providers for unit tests:
 
 ```typescript
-import { Agent } from "@cline/agents";
+import { Agent } from "@clinebot/agents";
 
 const mockTool = {
   name: "test_tool",

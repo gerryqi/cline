@@ -1,4 +1,4 @@
-import { resolveTeamDataDir } from "@cline/shared/storage";
+import { resolveTeamDataDir } from "@clinebot/shared/storage";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentTeamsRuntime } from "./multi-agent";
 import { createAgentTeamsTools } from "./team-tools";

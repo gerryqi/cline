@@ -1,6 +1,6 @@
-# @cline/scheduler
+# @clinebot/scheduler
 
-`@cline/scheduler` provides scheduled execution primitives used by the RPC server.
+`@clinebot/scheduler` provides scheduled execution primitives used by the RPC server.
 
 ## Scope
 
@@ -24,9 +24,9 @@ Tables are created in the same SQLite DB as sessions (`~/.cline/data/sessions/se
 - `schedules`
 - `schedule_executions`
 
-Schema creation is delegated through `@cline/shared/db` `ensureSessionSchema(...)`.
+Schema creation is delegated through `@clinebot/shared/db` `ensureSessionSchema(...)`.
 
 ## Developer Verification
 
-- `bun -F @cline/scheduler test`: run scheduler unit tests (Vitest).
-- `bun -F @cline/scheduler verify:routines`: run a deterministic routine lifecycle smoke check (create/list/pause/resume/trigger/stats/delete) against a temporary SQLite DB with mocked runtime handlers.
+- `bun -F @clinebot/scheduler test`: run scheduler unit tests (Vitest).
+- `bun -F @clinebot/scheduler verify:routines`: run a deterministic routine lifecycle smoke check (create/list/pause/resume/trigger/stats/delete) against a temporary SQLite DB with mocked runtime handlers.

@@ -1,10 +1,17 @@
 {
-	"name": "@cline/core",
+	"name": "@clinebot/core",
 	"version": "0.0.0",
-	"description": "State-aware orchestration for Cline runtimes",
-	"type": "module",
 	"main": "dist/index.js",
-	"types": "dist/index.d.ts",
+	"dependencies": {
+		"@clinebot/agents": "workspace:*",
+		"@clinebot/llms": "workspace:*",
+		"@clinebot/rpc": "workspace:*",
+		"@clinebot/shared": "workspace:*",
+		"nanoid": "^5.1.6",
+		"simple-git": "^3.32.3",
+		"yaml": "^2.8.2",
+		"zod": "^4.3.6"
+	},
 	"exports": {
 		".": {
 			"development": "./src/index.ts",
@@ -37,12 +44,13 @@
 			"import": "./dist/server.browser.js"
 		}
 	},
+	"description": "State-aware orchestration for Cline Agent runtimes",
 	"files": [
 		"dist",
 		"src"
 	],
 	"scripts": {
-		"build": "bun run ./build.ts && bun tsc --emitDeclarationOnly",
+		"build": "bun run ./build.ts && bun tsc -p tsconfig.build.json",
 		"clean": "rm -rf dist node_modules",
 		"typecheck": "bun tsc -p tsconfig.dev.json --noEmit",
 		"test": "bun run test:unit && bun run test:e2e",
@@ -50,15 +58,6 @@
 		"test:e2e": "vitest run --config vitest.e2e.config.ts",
 		"test:watch": "vitest --config vitest.config.ts"
 	},
-	"dependencies": {
-		"@cline/agents": "workspace:*",
-		"@cline/llms": "workspace:*",
-		"@cline/rpc": "workspace:*",
-		"@cline/shared": "workspace:*",
-		"nanoid": "^5.1.6",
-		"simple-git": "^3.32.3",
-		"yaml": "^2.8.2",
-		"zod": "^4.3.6"
-	},
-	"private": true
+	"type": "module",
+	"types": "dist/index.d.ts"
 }

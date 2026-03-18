@@ -7,7 +7,7 @@ import type {
 	AgentResult,
 	ToolApprovalRequest,
 	ToolApprovalResult,
-} from "@cline/agents";
+} from "@clinebot/agents";
 import {
 	CoreSessionService,
 	createSessionHost,
@@ -15,8 +15,8 @@ import {
 	type SessionManifest,
 	SessionSource,
 	SqliteSessionStore,
-} from "@cline/core/server";
-import { getRpcServerHealth, RpcSessionClient } from "@cline/rpc";
+} from "@clinebot/core/server";
+import { getRpcServerHealth, RpcSessionClient } from "@clinebot/rpc";
 import type {
 	RpcChatMessage,
 	RpcChatRunTurnRequest,
@@ -24,8 +24,8 @@ import type {
 	RpcChatStartSessionArtifacts,
 	RpcChatStartSessionRequest,
 	RpcChatTurnResult,
-} from "@cline/shared";
-import { resolveSessionDataDir } from "@cline/shared/storage";
+} from "@clinebot/shared";
+import { resolveSessionDataDir } from "@clinebot/shared/storage";
 
 const DEFAULT_RPC_ADDRESS =
 	process.env.CLINE_RPC_ADDRESS?.trim() || "127.0.0.1:4317";
@@ -39,22 +39,24 @@ let initPromise:
 
 export interface CliSessionManager {
 	start(input: {
-		config: import("@cline/core/server").CoreSessionConfig & {
+		config: import("@clinebot/core/server").CoreSessionConfig & {
 			loggerConfig?: RpcChatRuntimeLoggerConfig;
 		};
-		source?: import("@cline/core/server").SessionSource;
+		source?: import("@clinebot/core/server").SessionSource;
 		prompt?: string;
 		interactive?: boolean;
-		initialMessages?: import("@cline/llms").providers.Message[];
+		initialMessages?: import("@clinebot/llms").providers.Message[];
 		userImages?: string[];
 		userFiles?: string[];
-		userInstructionWatcher?: import("@cline/core/server").UserInstructionConfigWatcher;
+		userInstructionWatcher?: import("@clinebot/core/server").UserInstructionConfigWatcher;
 		onTeamRestored?: () => void;
-		defaultToolExecutors?: Partial<import("@cline/core/server").ToolExecutors>;
-		toolPolicies?: import("@cline/agents").AgentConfig["toolPolicies"];
+		defaultToolExecutors?: Partial<
+			import("@clinebot/core/server").ToolExecutors
+		>;
+		toolPolicies?: import("@clinebot/agents").AgentConfig["toolPolicies"];
 		requestToolApproval?: (
-			request: import("@cline/agents").ToolApprovalRequest,
-		) => Promise<import("@cline/agents").ToolApprovalResult>;
+			request: import("@clinebot/agents").ToolApprovalRequest,
+		) => Promise<import("@clinebot/agents").ToolApprovalResult>;
 	}): Promise<{
 		sessionId: string;
 		manifest: SessionManifest;
@@ -72,7 +74,7 @@ export interface CliSessionManager {
 	}): Promise<AgentResult | undefined>;
 	readMessages(
 		sessionId: string,
-	): Promise<import("@cline/llms").providers.Message[]>;
+	): Promise<import("@clinebot/llms").providers.Message[]>;
 	abort(sessionId: string): Promise<void>;
 	stop(sessionId: string): Promise<void>;
 	dispose(reason?: string): Promise<void>;
@@ -171,8 +173,8 @@ export async function getCoreSessionBackend(): Promise<
 }
 
 export async function createDefaultCliSessionManager(options?: {
-	defaultToolExecutors?: Partial<import("@cline/core/server").ToolExecutors>;
-	toolPolicies?: import("@cline/agents").AgentConfig["toolPolicies"];
+	defaultToolExecutors?: Partial<import("@clinebot/core/server").ToolExecutors>;
+	toolPolicies?: import("@clinebot/agents").AgentConfig["toolPolicies"];
 	requestToolApproval?: (
 		request: ToolApprovalRequest,
 	) => Promise<ToolApprovalResult>;
@@ -505,9 +507,9 @@ function createRpcRuntimeCliSessionManager(
 	options:
 		| {
 				defaultToolExecutors?: Partial<
-					import("@cline/core/server").ToolExecutors
+					import("@clinebot/core/server").ToolExecutors
 				>;
-				toolPolicies?: import("@cline/agents").AgentConfig["toolPolicies"];
+				toolPolicies?: import("@clinebot/agents").AgentConfig["toolPolicies"];
 				requestToolApproval?: (
 					request: ToolApprovalRequest,
 				) => Promise<ToolApprovalResult>;
@@ -729,7 +731,7 @@ function createRpcRuntimeCliSessionManager(
 					: Array.isArray(parsed.messages)
 						? parsed.messages
 						: [];
-				return messages as import("@cline/llms").providers.Message[];
+				return messages as import("@clinebot/llms").providers.Message[];
 			} catch {
 				return [];
 			}

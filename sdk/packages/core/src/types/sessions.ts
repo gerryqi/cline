@@ -1,4 +1,7 @@
-import type { SessionLineage, SessionRuntimeRecordShape } from "@cline/shared";
+import type {
+	SessionLineage,
+	SessionRuntimeRecordShape,
+} from "@clinebot/shared";
 import type { SessionSource, SessionStatus } from "./common";
 
 export interface SessionRef extends SessionLineage {

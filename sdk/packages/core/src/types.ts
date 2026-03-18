@@ -1,4 +1,4 @@
-import type { providers as LlmsProviders } from "@cline/llms";
+import type { providers as LlmsProviders } from "@clinebot/llms";
 import type { CoreSessionEvent } from "./types/events";
 
 export type {

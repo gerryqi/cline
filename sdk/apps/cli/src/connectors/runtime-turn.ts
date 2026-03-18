@@ -1,5 +1,5 @@
-import type { RpcSessionClient } from "@cline/rpc";
-import type { RpcChatRunTurnRequest } from "@cline/shared";
+import type { RpcSessionClient } from "@clinebot/rpc";
+import type { RpcChatRunTurnRequest } from "@clinebot/shared";
 import type { CliLoggerAdapter } from "../logging/adapter";
 import { formatToolInput } from "../utils/helpers";
 

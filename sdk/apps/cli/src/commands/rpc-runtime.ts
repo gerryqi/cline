@@ -3,10 +3,10 @@ import {
 	CoreSessionService,
 	DefaultSessionManager,
 	SqliteSessionStore,
-} from "@cline/core/server";
-import type { providers as LlmsProviders } from "@cline/llms";
-import type { RpcRuntimeHandlers } from "@cline/rpc";
-import { RpcSessionClient } from "@cline/rpc";
+} from "@clinebot/core/server";
+import type { providers as LlmsProviders } from "@clinebot/llms";
+import type { RpcRuntimeHandlers } from "@clinebot/rpc";
+import { RpcSessionClient } from "@clinebot/rpc";
 import {
 	createCliLoggerAdapter,
 	flushCliLoggerAdapters,

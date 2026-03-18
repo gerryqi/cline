@@ -25,7 +25,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { createSessionHost } from "@cline/core/server";
+import { createSessionHost } from "@clinebot/core/server";
 
 async function demoCreateSession() {
 	console.log("\n=== Create New Session ===\n");

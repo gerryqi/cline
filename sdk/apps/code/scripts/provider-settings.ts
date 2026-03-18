@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { RpcSessionClient } from "@cline/rpc";
-import type { RpcProviderActionRequest } from "@cline/shared";
+import { RpcSessionClient } from "@clinebot/rpc";
+import type { RpcProviderActionRequest } from "@clinebot/shared";
 
 function readStdin(): string {
 	return readFileSync(0, "utf8");

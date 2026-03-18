@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createSlackAdapter, type SlackAdapter } from "@chat-adapter/slack";
-import { Agent } from "@cline/agents";
-import { providers } from "@cline/llms";
+import { Agent } from "@clinebot/agents";
+import { providers } from "@clinebot/llms";
 import {
 	Chat,
 	ConsoleLogger,

@@ -15,8 +15,8 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import process, { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";
-import type { AgentConfig } from "@cline/agents";
-import { createSessionHost } from "@cline/core/server";
+import type { AgentConfig } from "@clinebot/agents";
+import { createSessionHost } from "@clinebot/core/server";
 
 type ProviderOption = {
 	label: string;

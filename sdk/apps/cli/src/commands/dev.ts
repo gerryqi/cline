@@ -1,6 +1,6 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { resolveClineDataDir } from "@cline/shared/storage";
+import { resolveClineDataDir } from "@clinebot/shared/storage";
 import open from "open";
 
 type DevCommandIo = {

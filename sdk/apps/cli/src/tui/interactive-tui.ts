@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { basename } from "node:path";
 import { promisify } from "node:util";
-import type { AgentEvent, TeamEvent } from "@cline/agents";
+import type { AgentEvent, TeamEvent } from "@clinebot/agents";
 import { Box, Text, useInput } from "ink";
 import React, {
 	useCallback,

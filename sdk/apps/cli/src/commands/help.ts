@@ -1,4 +1,4 @@
-import { version } from "../../package.json";
+import { getCliBuildInfo } from "../utils/common";
 import { c, writeln } from "../utils/output";
 
 type HelpItem = readonly [label: string, description: string];
@@ -161,5 +161,5 @@ export function showHelp(): void {
 }
 
 export function showVersion(): void {
-	writeln(version);
+	writeln(getCliBuildInfo().version);
 }

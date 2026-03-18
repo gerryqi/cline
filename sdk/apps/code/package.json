@@ -1,5 +1,5 @@
 {
-	"name": "@cline/code",
+	"name": "@clinebot/code",
 	"version": "0.0.0",
 	"private": true,
 	"scripts": {
@@ -14,11 +14,11 @@
 	},
 	"dependencies": {
 		"@base-ui/react": "^1.2.0",
-		"@cline/agents": "workspace:*",
-		"@cline/core": "workspace:*",
-		"@cline/llms": "workspace:*",
-		"@cline/rpc": "workspace:*",
-		"@cline/shared": "workspace:*",
+		"@clinebot/agents": "workspace:*",
+		"@clinebot/core": "workspace:*",
+		"@clinebot/llms": "workspace:*",
+		"@clinebot/rpc": "workspace:*",
+		"@clinebot/shared": "workspace:*",
 		"@hookform/resolvers": "^3.9.1",
 		"@radix-ui/react-accordion": "1.2.12",
 		"@radix-ui/react-alert-dialog": "1.1.15",

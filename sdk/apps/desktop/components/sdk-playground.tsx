@@ -3,8 +3,8 @@
 import type {
 	CustomProviderConfig,
 	ProviderSelectionConfig,
-} from "@cline/llms";
-import { models } from "@cline/llms";
+} from "@clinebot/llms";
+import { models } from "@clinebot/llms";
 import {
 	AlertCircle,
 	Braces,
@@ -1279,7 +1279,7 @@ function generateConfigCode(providers: ProviderConfig[]): string {
 			return lines.join("\n");
 		});
 
-	return `import { createLlmsSdk, defineLlmsConfig } from "@cline/llms"
+	return `import { createLlmsSdk, defineLlmsConfig } from "@clinebot/llms"
 
 const config = defineLlmsConfig({
   providers: [
@@ -1742,7 +1742,7 @@ export function SdkPlayground() {
 							SDK Playground
 						</h1>
 						<p className="text-[10px] text-muted-foreground sm:text-xs">
-							Configure and test @cline/llms providers
+							Configure and test @clinebot/llms providers
 						</p>
 					</div>
 				</div>
@@ -1789,7 +1789,7 @@ export function SdkPlayground() {
 				>
 					<div className="mx-auto max-w-2xl">
 						<SectionHeader
-							description="Set up your @cline/llms providers, models, and auth"
+							description="Set up your @clinebot/llms providers, models, and auth"
 							icon={Braces}
 							title="Provider Configuration"
 						/>

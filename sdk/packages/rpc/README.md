@@ -1,11 +1,11 @@
-# @cline/rpc
+# @clinebot/rpc
 
 Package-level docs are centralized:
 
 - Overview: [`packages/README.md`](../README.md)
 - Architecture and interactions: [`ARCHITECTURE.md`](/Users/beatrix/dev/clinee/sdk-wip/ARCHITECTURE.md)
 
-`@cline/rpc` provides transport/control-plane APIs for sessions, tasks, events, spawn queues, tool approvals, and schedules.
+`@clinebot/rpc` provides transport/control-plane APIs for sessions, tasks, events, spawn queues, tool approvals, and schedules.
 It also exposes runtime session execution RPCs:
 
 - `StartRuntimeSession(request_json)` - create/start a server-side runtime session
@@ -17,9 +17,9 @@ It also exposes runtime session execution RPCs:
 - `RunProviderOAuthLogin(provider)` - provider OAuth login action
 - Schedule RPCs: `CreateSchedule`, `ListSchedules`, `UpdateSchedule`, `TriggerScheduleNow`, `ListScheduleExecutions`, `GetScheduleStats`, `GetUpcomingScheduledRuns`, and related pause/resume/delete/get APIs
 
-Runtime payload DTOs consumed by multiple hosts are defined in `@cline/shared`
-(`packages/shared/src/rpc/runtime.ts`), while transport/service wiring remains in `@cline/rpc`.
-Team progress DTOs/events are also shared from `@cline/shared`:
+Runtime payload DTOs consumed by multiple hosts are defined in `@clinebot/shared`
+(`packages/shared/src/rpc/runtime.ts`), while transport/service wiring remains in `@clinebot/rpc`.
+Team progress DTOs/events are also shared from `@clinebot/shared`:
 
 - `runtime.team.progress.v1` - typed team status-board projection snapshots
 - `runtime.team.lifecycle.v1` - typed lifecycle deltas (task/run/outcome related)
@@ -53,7 +53,7 @@ Public package exports stay stable through `packages/rpc/src/server.ts`.
 
 ## Runtime Chat Client Helpers
 
-`@cline/rpc` also exports reusable runtime chat client helpers used by app bridge scripts:
+`@clinebot/rpc` also exports reusable runtime chat client helpers used by app bridge scripts:
 
 - `RpcRuntimeChatClient` (`packages/rpc/src/runtime-chat-client.ts`)
 - `runRpcRuntimeEventBridge(...)` (`packages/rpc/src/runtime-chat-stream-bridge.ts`)
@@ -68,15 +68,15 @@ These allow host clients (for example code/desktop apps) to share one implementa
 
 ## Session Backend Injection
 
-`@cline/rpc` is transport-only for session persistence. It does not own a database-backed session store.
+`@clinebot/rpc` is transport-only for session persistence. It does not own a database-backed session store.
 
 - `startRpcServer(...)` now requires a `sessionBackend` implementation via `RpcServerOptions`.
 - Session persistence contracts live in `RpcSessionBackend` / `RpcSessionRow` / `RpcSessionUpdateInput`.
-- `@cline/core/server` provides a ready-to-use SQLite backend (`createSqliteRpcSessionBackend`).
-- Scheduled execution orchestration is provided via `@cline/scheduler` and is hosted inside the same RPC server process.
+- `@clinebot/core/server` provides a ready-to-use SQLite backend (`createSqliteRpcSessionBackend`).
+- Scheduled execution orchestration is provided via `@clinebot/scheduler` and is hosted inside the same RPC server process.
 - Runtime shutdown can now include host cleanup via optional `RpcRuntimeHandlers.dispose()`, which `startRpcServer(...)/stopRpcServer()` invokes during server stop.
 
 ## Build note
 
-`@cline/rpc` is consumed by Node-based tools (for example `@cline/cli` auth commands) from compiled `dist` exports.
-Run `bun -F @cline/rpc build` (or root `bun run build`) before invoking those commands from source checkouts.
+`@clinebot/rpc` is consumed by Node-based tools (for example `@clinebot/cli` auth commands) from compiled `dist` exports.
+Run `bun -F @clinebot/rpc build` (or root `bun run build`) before invoking those commands from source checkouts.

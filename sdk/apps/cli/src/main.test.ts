@@ -64,7 +64,7 @@ describe("runCli lightweight command dispatch", () => {
 		mockState.runInteractiveImports = 0;
 		mockState.runAgentCalls = 0;
 
-		vi.mock("@cline/core/server", () => ({
+		vi.mock("@clinebot/core/server", () => ({
 			createTeamName: vi.fn(() => "team-test"),
 			createUserInstructionConfigWatcher: vi.fn(() => ({
 				start: vi.fn(async () => {}),
@@ -92,7 +92,7 @@ describe("runCli lightweight command dispatch", () => {
 			parseAuthCommandArgs: vi.fn(),
 			runAuthCommand: vi.fn(),
 		}));
-		vi.mock("@cline/llms", () => ({
+		vi.mock("@clinebot/llms", () => ({
 			providers: {
 				resolveProviderConfig: vi.fn(async () => undefined),
 			},

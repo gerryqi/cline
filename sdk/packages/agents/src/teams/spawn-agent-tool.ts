@@ -2,14 +2,14 @@
  * Reusable spawn_agent tool for delegating tasks to sub-agents.
  */
 
-import type { providers as LlmsProviders } from "@cline/llms";
+import type { providers as LlmsProviders } from "@clinebot/llms";
 import type {
 	Tool,
 	ToolApprovalRequest,
 	ToolApprovalResult,
 	ToolContext,
 	ToolPolicy,
-} from "@cline/shared";
+} from "@clinebot/shared";
 import { Agent } from "../agent.js";
 import { createTool } from "../tools/create.js";
 import type {

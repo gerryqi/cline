@@ -1,7 +1,8 @@
 {
-	"name": "@cline/cli",
+	"name": "@clinebot/cli",
+	"displayName": "clite",
 	"version": "0.0.0",
-	"description": "A lite version of the Cline CLI for running agentic loops.",
+	"description": "[EXPERIMENTAL] A lightweight Cline CLI built with the Cline SDKs",
 	"type": "module",
 	"bin": {
 		"clite": "dist/index.js"
@@ -30,11 +31,11 @@
 		"@chat-adapter/gchat": "^4.20.2",
 		"@chat-adapter/telegram": "^4.20.2",
 		"@chat-adapter/whatsapp": "^4.20.2",
-		"@cline/agents": "workspace:*",
-		"@cline/core": "workspace:*",
-		"@cline/llms": "workspace:*",
-		"@cline/rpc": "workspace:*",
-		"@cline/shared": "workspace:*",
+		"@clinebot/agents": "workspace:*",
+		"@clinebot/core": "workspace:*",
+		"@clinebot/llms": "workspace:*",
+		"@clinebot/rpc": "workspace:*",
+		"@clinebot/shared": "workspace:*",
 		"better-sqlite3": "^11.10.0",
 		"chat": "^4.20.2",
 		"ink": "^6.8.0",
@@ -45,12 +46,5 @@
 		"react-devtools-core": "^7.0.1",
 		"yaml": "^2.8.2"
 	},
-	"keywords": [
-		"cli",
-		"llm",
-		"agents",
-		"ai",
-		"anthropic"
-	],
 	"license": "Apache-2.0"
 }

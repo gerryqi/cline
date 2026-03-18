@@ -8,9 +8,9 @@ import type {
 	HookEventPayload,
 	SubAgentEndContext,
 	SubAgentStartContext,
-} from "@cline/agents";
-import type { providers as LlmsProviders } from "@cline/llms";
-import { resolveRootSessionId } from "@cline/shared";
+} from "@clinebot/agents";
+import type { providers as LlmsProviders } from "@clinebot/llms";
+import { resolveRootSessionId } from "@clinebot/shared";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import type { SessionStatus } from "../types/common";

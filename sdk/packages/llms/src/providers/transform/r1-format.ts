@@ -8,7 +8,7 @@
  * 3. No temperature parameter for reasoner models
  */
 
-import { formatFileContentBlock } from "@cline/shared";
+import { formatFileContentBlock } from "@clinebot/shared";
 import type OpenAI from "openai";
 import type {
 	ContentBlock,

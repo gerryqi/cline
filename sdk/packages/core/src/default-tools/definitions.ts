@@ -4,8 +4,8 @@
  * Factory functions for creating the default tools.
  */
 
-import { createTool, type Tool } from "@cline/agents";
-import { validateWithZod, zodToJsonSchema } from "@cline/shared";
+import { createTool, type Tool } from "@clinebot/agents";
+import { validateWithZod, zodToJsonSchema } from "@clinebot/shared";
 import {
 	type ApplyPatchInput,
 	ApplyPatchInputSchema,
@@ -542,8 +542,8 @@ export function createAskQuestionTool(
  *
  * @example
  * ```typescript
- * import { Agent } from "@cline/agents"
- * import { createDefaultTools } from "@cline/core/server"
+ * import { Agent } from "@clinebot/agents"
+ * import { createDefaultTools } from "@clinebot/core/server"
  * import * as fs from "fs/promises"
  * import { exec } from "child_process"
  *

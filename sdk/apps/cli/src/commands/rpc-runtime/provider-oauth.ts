@@ -5,9 +5,9 @@ import {
 	loginOcaOAuth,
 	loginOpenAICodex,
 	type ProviderSettingsManager,
-} from "@cline/core/server";
-import type { providers as LlmsProviders } from "@cline/llms";
-import type { RpcOAuthProviderId } from "@cline/shared";
+} from "@clinebot/core/server";
+import type { providers as LlmsProviders } from "@clinebot/llms";
+import type { RpcOAuthProviderId } from "@clinebot/shared";
 
 export function normalizeOAuthProvider(provider: string): RpcOAuthProviderId {
 	const normalized = provider.trim().toLowerCase();

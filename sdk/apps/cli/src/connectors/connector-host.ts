@@ -1,8 +1,8 @@
-import type { RpcSessionClient } from "@cline/rpc";
+import type { RpcSessionClient } from "@clinebot/rpc";
 import type {
 	RpcChatRunTurnRequest,
 	RpcChatStartSessionRequest,
-} from "@cline/shared";
+} from "@clinebot/shared";
 import type { Thread } from "chat";
 import type { CliLoggerAdapter } from "../logging/adapter";
 import { resolveSystemPrompt } from "../runtime/prompt";

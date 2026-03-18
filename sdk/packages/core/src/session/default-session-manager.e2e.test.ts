@@ -9,8 +9,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentResult } from "@cline/agents";
-import type { providers as LlmsProviders } from "@cline/llms";
+import type { AgentResult } from "@clinebot/agents";
+import type { providers as LlmsProviders } from "@clinebot/llms";
 import { nanoid } from "nanoid";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionSource, SessionStatus } from "../types/common";

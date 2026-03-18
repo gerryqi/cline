@@ -1,6 +1,6 @@
 import { basename, resolve } from "node:path";
-import type { providers as LlmsProviders } from "@cline/llms";
-import { type Tool, validateWithZod, zodToJsonSchema } from "@cline/shared";
+import type { providers as LlmsProviders } from "@clinebot/llms";
+import { type Tool, validateWithZod, zodToJsonSchema } from "@clinebot/shared";
 import { z } from "zod";
 import { getClineDefaultSystemPrompt } from "../prompts/cline.js";
 import { createTool } from "../tools/create.js";

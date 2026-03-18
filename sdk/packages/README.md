@@ -9,36 +9,36 @@ This directory is the single documentation source for package-level responsibili
 
 | Package | Primary responsibility | Typical consumers | Internal deps |
 | --- | --- | --- | --- |
-| `@cline/shared` | Cross-package shared primitives (path resolution, session common types, indexing helpers) | `@cline/agents`, `@cline/core`, `@cline/rpc`, apps | None |
-| `@cline/llms` | Model catalog + provider settings schema + handler creation SDK | `@cline/agents`, `@cline/core`, apps | None |
-| `@cline/scheduler` | Scheduled runtime execution service (cron, limits, execution history) | `@cline/rpc` | `@cline/shared` |
-| `@cline/agents` | Stateless agent runtime loop (tools, hooks, extensions, teams, streaming) | `@cline/core`, apps | `@cline/llms`, `@cline/shared` |
-| `@cline/rpc` | gRPC session/task/event/tool-approval/schedule gateway (server + client) | `@cline/core`, apps | `@cline/scheduler`, `@cline/shared` |
-| `@cline/core` | Stateful runtime orchestration (runtime composition, session lifecycle/storage, shared persistence service with local+RPC adapters) | CLI/Desktop apps | `@cline/agents`, `@cline/llms`, `@cline/rpc`, `@cline/shared` |
+| `@clinebot/shared` | Cross-package shared primitives (path resolution, session common types, indexing helpers) | `@clinebot/agents`, `@clinebot/core`, `@clinebot/rpc`, apps | None |
+| `@clinebot/llms` | Model catalog + provider settings schema + handler creation SDK | `@clinebot/agents`, `@clinebot/core`, apps | None |
+| `@clinebot/scheduler` | Scheduled runtime execution service (cron, limits, execution history) | `@clinebot/rpc` | `@clinebot/shared` |
+| `@clinebot/agents` | Stateless agent runtime loop (tools, hooks, extensions, teams, streaming) | `@clinebot/core`, apps | `@clinebot/llms`, `@clinebot/shared` |
+| `@clinebot/rpc` | gRPC session/task/event/tool-approval/schedule gateway (server + client) | `@clinebot/core`, apps | `@clinebot/scheduler`, `@clinebot/shared` |
+| `@clinebot/core` | Stateful runtime orchestration (runtime composition, session lifecycle/storage, shared persistence service with local+RPC adapters) | CLI/Desktop apps | `@clinebot/agents`, `@clinebot/llms`, `@clinebot/rpc`, `@clinebot/shared` |
 
 ## How Packages Work Together
 
-1. `@cline/llms` defines model/provider capabilities and builds concrete handlers.
-2. `@cline/agents` runs the agent loop on top of those handlers and tool execution primitives.
-3. `@cline/core` composes runtime behavior with persistent sessions/storage and optional RPC-backed session services.
-4. `@cline/scheduler` orchestrates cron-driven runtime execution with bounded concurrency and timeout limits.
-5. `@cline/rpc` exposes cross-process/session orchestration APIs when runtime and control-plane need decoupling.
-6. `@cline/shared` provides the shared contracts and path/session primitives used across the stack.
+1. `@clinebot/llms` defines model/provider capabilities and builds concrete handlers.
+2. `@clinebot/agents` runs the agent loop on top of those handlers and tool execution primitives.
+3. `@clinebot/core` composes runtime behavior with persistent sessions/storage and optional RPC-backed session services.
+4. `@clinebot/scheduler` orchestrates cron-driven runtime execution with bounded concurrency and timeout limits.
+5. `@clinebot/rpc` exposes cross-process/session orchestration APIs when runtime and control-plane need decoupling.
+6. `@clinebot/shared` provides the shared contracts and path/session primitives used across the stack.
 
 ## Practical Boundary Rules
 
-- Put provider/model schema, cataloging, and handler wiring in `@cline/llms`.
-- Put loop/tool/hook/team execution behavior in `@cline/agents`.
-- Put persistence, session lifecycle, and runtime assembly in `@cline/core`.
-- Put scheduled execution and schedule persistence in `@cline/scheduler`.
-- Put network session routing and approval/event transport in `@cline/rpc`.
-- Put cross-package utility types and path/session constants in `@cline/shared`.
+- Put provider/model schema, cataloging, and handler wiring in `@clinebot/llms`.
+- Put loop/tool/hook/team execution behavior in `@clinebot/agents`.
+- Put persistence, session lifecycle, and runtime assembly in `@clinebot/core`.
+- Put scheduled execution and schedule persistence in `@clinebot/scheduler`.
+- Put network session routing and approval/event transport in `@clinebot/rpc`.
+- Put cross-package utility types and path/session constants in `@clinebot/shared`.
 
 ## Runtime Entry Points
 
-- Node-oriented imports: `@cline/<pkg>/node`
+- Node-oriented imports: `@clinebot/<pkg>/node`
 - Browser entry points exist for API compatibility; some packages intentionally throw in browser mode for server-only features (`agents`, `core`, `rpc`).
-- `@cline/core/server/node` contains server-side runtime/session services.
+- `@clinebot/core/server/node` contains server-side runtime/session services.
 
 ## Notes for Doc Consolidation
 

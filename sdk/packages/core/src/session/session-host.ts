@@ -5,9 +5,9 @@ import type {
 	AgentConfig,
 	ToolApprovalRequest,
 	ToolApprovalResult,
-} from "@cline/agents";
-import { getRpcServerHealth } from "@cline/rpc";
-import { resolveSessionDataDir } from "@cline/shared/storage";
+} from "@clinebot/agents";
+import { getRpcServerHealth } from "@clinebot/rpc";
+import { resolveSessionDataDir } from "@clinebot/shared/storage";
 import { nanoid } from "nanoid";
 import type { ToolExecutors } from "../default-tools";
 import { SqliteSessionStore } from "../storage/sqlite-session-store";

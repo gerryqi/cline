@@ -1,7 +1,7 @@
 /**
  * Model Information Types
  *
- * Re-exports model types from @cline/models (the single source of truth)
+ * Re-exports model types from @clinebot/models (the single source of truth)
  * and provides provider-specific helpers and aliases.
  */
 

@@ -1,4 +1,4 @@
-import type { AgentConfig, Tool } from "@cline/agents";
+import type { AgentConfig, Tool } from "@clinebot/agents";
 import { SubprocessSandbox } from "../runtime/sandbox/subprocess-sandbox";
 
 export interface PluginSandboxOptions {

@@ -2,7 +2,7 @@ import { createInterface } from "node:readline";
 import type {
 	RpcChatRunTurnRequest,
 	RpcChatStartSessionRequest,
-} from "@cline/shared";
+} from "@clinebot/shared";
 import { RpcRuntimeChatClient } from "./runtime-chat-client.js";
 import {
 	createRpcRuntimeStreamRelay,

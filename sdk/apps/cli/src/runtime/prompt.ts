@@ -1,9 +1,9 @@
-import { getClineDefaultSystemPrompt } from "@cline/agents";
+import { getClineDefaultSystemPrompt } from "@clinebot/agents";
 import {
 	buildWorkspaceMetadata,
 	resolveWorkflowSlashCommandFromWatcher,
 	type UserInstructionConfigWatcher,
-} from "@cline/core/server";
+} from "@clinebot/core/server";
 
 const WORKSPACE_CONFIGURATION_MARKER = "# Workspace Configuration";
 

@@ -8,33 +8,33 @@ For contributor workflow/setup details, see [`AGENTS.md`](/Users/beatrix/dev/cli
 
 Packages:
 
-- `packages/shared` (`@cline/shared`): cross-package primitives (paths, common types, helpers).
-- `packages/llms` (`@cline/llms`): provider settings schema, model catalog, handler creation.
-- `packages/scheduler` (`@cline/scheduler`): cron-based scheduled execution service and persistence.
-- `packages/agents` (`@cline/agents`): stateless runtime loop, tools, hooks, teams.
-- `packages/rpc` (`@cline/rpc`): transport/control-plane APIs (session CRUD, tasks, events, approvals) plus shared runtime chat client helpers.
-- `packages/core` (`@cline/core`): stateful orchestration (runtime composition, sessions, storage, RPC-backed session adapter).
+- `packages/shared` (`@clinebot/shared`): cross-package primitives (paths, common types, helpers).
+- `packages/llms` (`@clinebot/llms`): provider settings schema, model catalog, handler creation.
+- `packages/scheduler` (`@clinebot/scheduler`): cron-based scheduled execution service and persistence.
+- `packages/agents` (`@clinebot/agents`): stateless runtime loop, tools, hooks, teams.
+- `packages/rpc` (`@clinebot/rpc`): transport/control-plane APIs (session CRUD, tasks, events, approvals) plus shared runtime chat client helpers.
+- `packages/core` (`@clinebot/core`): stateful orchestration (runtime composition, sessions, storage, RPC-backed session adapter).
 
 Apps:
 
-- `apps/cli` (`@cline/cli`): command-line host/runtime wiring.
-- `apps/code` (`@cline/code`): Tauri + Next.js app host/runtime wiring.
-- `apps/desktop` (`@cline/desktop`): desktop app host/runtime wiring.
+- `apps/cli` (`@clinebot/cli`): command-line host/runtime wiring.
+- `apps/code` (`@clinebot/code`): Tauri + Next.js app host/runtime wiring.
+- `apps/desktop` (`@clinebot/desktop`): desktop app host/runtime wiring.
 - `apps/vscode` (`cline-vscode`): VS Code extension host/runtime wiring with webview chat over RPC.
 
 ## Dependency Direction
 
 ```mermaid
 flowchart LR
-  shared["@cline/shared"]
-  llms["@cline/llms"]
-  scheduler["@cline/scheduler"]
-  agents["@cline/agents"]
-  rpc["@cline/rpc"]
-  core["@cline/core"]
-  cli["@cline/cli"]
-  code["@cline/code"]
-  desktop["@cline/desktop"]
+  shared["@clinebot/shared"]
+  llms["@clinebot/llms"]
+  scheduler["@clinebot/scheduler"]
+  agents["@clinebot/agents"]
+  rpc["@clinebot/rpc"]
+  core["@clinebot/core"]
+  cli["@clinebot/cli"]
+  code["@clinebot/code"]
+  desktop["@clinebot/desktop"]
   vscode["cline-vscode"]
 
   agents --> llms
@@ -57,21 +57,21 @@ flowchart LR
 
 ### Local in-process flow
 
-1. Host (`cli` / desktop app runner) builds runtime through `@cline/core`.
-2. `@cline/core` composes tools/policies and runs `@cline/agents`.
-3. `@cline/agents` uses `@cline/llms` handlers for model calls.
-4. `@cline/core` persists session artifacts and state.
+1. Host (`cli` / desktop app runner) builds runtime through `@clinebot/core`.
+2. `@clinebot/core` composes tools/policies and runs `@clinebot/agents`.
+3. `@clinebot/agents` uses `@clinebot/llms` handlers for model calls.
+4. `@clinebot/core` persists session artifacts and state.
 
 ### RPC-backed flow
 
-1. Host uses `RpcCoreSessionService` (through `@cline/core`) for session persistence/control-plane calls.
-2. `@cline/rpc` server handles session/task/event/approval RPCs and schedule/execution RPCs.
-3. `@cline/rpc` embeds `@cline/scheduler` to trigger scheduled runtime turns with concurrency and timeout guards.
-4. SQLite session backend is provided by `@cline/core/server` (`createSqliteRpcSessionBackend`).
+1. Host uses `RpcCoreSessionService` (through `@clinebot/core`) for session persistence/control-plane calls.
+2. `@clinebot/rpc` server handles session/task/event/approval RPCs and schedule/execution RPCs.
+3. `@clinebot/rpc` embeds `@clinebot/scheduler` to trigger scheduled runtime turns with concurrency and timeout guards.
+4. SQLite session backend is provided by `@clinebot/core/server` (`createSqliteRpcSessionBackend`).
 
 ### Session persistence implementation (latest)
 
-1. `@cline/core` now routes both local (`CoreSessionService`) and RPC (`RpcCoreSessionService`) session persistence through one shared implementation: `UnifiedSessionPersistenceService`.
+1. `@clinebot/core` now routes both local (`CoreSessionService`) and RPC (`RpcCoreSessionService`) session persistence through one shared implementation: `UnifiedSessionPersistenceService`.
 2. Backend-specific differences are isolated in adapters:
    - Local adapter (`SqliteSessionStore`-backed SQL/session queue operations)
    - RPC adapter (`RpcSessionClient`-backed CRUD/queue operations)
@@ -94,20 +94,20 @@ flowchart LR
 
 ### Team runtime durability and convergence (latest)
 
-1. `@cline/agents` provides in-memory team orchestration primitives (tasks, mailbox, mission log, async run scheduler, outcome fragments/finalization gates).
-2. `@cline/core` persists team runtime state and lifecycle events through `SqliteTeamStore` (`~/.cline/data/teams/teams.db` by default).
+1. `@clinebot/agents` provides in-memory team orchestration primitives (tasks, mailbox, mission log, async run scheduler, outcome fragments/finalization gates).
+2. `@clinebot/core` persists team runtime state and lifecycle events through `SqliteTeamStore` (`~/.cline/data/teams/teams.db` by default).
 3. Team lifecycle is append-only in `team_events`, with materialized projections in `team_tasks`, `team_runs`, `team_outcomes`, and `team_outcome_fragments`.
 4. On restart, `DefaultRuntimeBuilder` restores the team snapshot by `teamName` and marks stale queued/running runs as `interrupted` for deterministic recovery.
 5. `DefaultSessionManager` keeps the lead loop alive while async teammate runs are active and auto-continues the lead agent with system-delivered run terminal updates when runs complete/fail/cancel/interrupted.
 
-## CLI (`@cline/cli`)
+## CLI (`@clinebot/cli`)
 
-`@cline/cli` is the executable shell around the runtime stack. It parses CLI input into runtime config, composes runtime capabilities via `@cline/core/node`, executes agent loops via `@cline/agents/node`, resolves provider metadata via `@cline/llms/node`, and optionally runs the RPC gateway via `@cline/rpc/node`.
+`@clinebot/cli` is the executable shell around the runtime stack. It parses CLI input into runtime config, composes runtime capabilities via `@clinebot/core/node`, executes agent loops via `@clinebot/agents/node`, resolves provider metadata via `@clinebot/llms/node`, and optionally runs the RPC gateway via `@clinebot/rpc/node`.
 
 Workspace boundary rule:
 
-- Use explicit Node runtime imports: `@cline/llms/node`, `@cline/agents/node`, `@cline/rpc/node`.
-- Import core runtime services from `@cline/core/server/node` and shared contracts from `@cline/core/node`.
+- Use explicit Node runtime imports: `@clinebot/llms/node`, `@clinebot/agents/node`, `@clinebot/rpc/node`.
+- Import core runtime services from `@clinebot/core/server/node` and shared contracts from `@clinebot/core/node`.
 
 ### Runtime composition
 
@@ -167,7 +167,7 @@ flowchart TD
 5. First incoming message starts `StartRuntimeSession`; later messages call `SendRuntimeSession` against the stored session id.
 6. `runtime.chat.text_delta` events are converted into a streamed Telegram reply via Chat SDK's post+edit fallback.
 7. Connector processes also subscribe to RPC server events such as `schedule.execution.completed`; if schedule metadata includes a matching `delivery` target, the connector restores the adapter thread and posts the result back through the adapter.
-8. Connector subprocess hooks reuse the same execution primitive exported by `@cline/agents` (`runSubprocessEvent(...)`), while connector event payload schemas live in `@cline/shared` because they are host/transport contracts rather than agent lifecycle contracts.
+8. Connector subprocess hooks reuse the same execution primitive exported by `@clinebot/agents` (`runSubprocessEvent(...)`), while connector event payload schemas live in `@clinebot/shared` because they are host/transport contracts rather than agent lifecycle contracts.
 9. A shared chat-command parser handles connector slash commands such as `/reset`, `/whereami`, `/tools`, `/yolo`, and `/cwd`; the same parser is available to interactive CLI input but remains disabled there by default.
 10. `/reset` in Telegram clears the stored session binding and best-effort stops/deletes the matching RPC session, `/whereami` reports the delivery thread id, `/tools` and `/yolo` update runtime safety posture, `/cwd` updates cwd/workspace root, and `/stop` shuts down the bridge process itself.
 11. Telegram sessions start with tools/spawn/teams disabled by default; enabling tools for a thread also enables spawn/team tools for that thread. Changing `/tools`, `/yolo`, or `/cwd` clears the current session binding so the next user message starts a fresh runtime with the updated config. The connector also exits when the RPC server broadcasts `rpc.server.shutting_down` or when its server event stream fails, so `clite rpc stop` tears down the background poller instead of leaving it running against a dead server.
@@ -175,7 +175,7 @@ flowchart TD
 
 ## OAuth Refresh Ownership
 
-OAuth token refresh is owned by `@cline/core` session runtime (not UI/CLI clients).
+OAuth token refresh is owned by `@clinebot/core` session runtime (not UI/CLI clients).
 
 Managed OAuth providers:
 
@@ -185,22 +185,22 @@ Managed OAuth providers:
 
 Core refreshes tokens pre-turn, persists refreshed credentials, and performs single-flight refresh in long-lived runtimes (for example RPC servers).
 
-## Agents Runtime (`@cline/agents`)
+## Agents Runtime (`@clinebot/agents`)
 
-`@cline/agents` is the stateless runtime layer for:
+`@clinebot/agents` is the stateless runtime layer for:
 
 - agent loop execution
 - hook dispatch and policies
 - extension contribution registration
 - in-memory team orchestration
 
-Stateful concerns (plugin discovery/loading, trust/sandbox policy, persistence) belong in `@cline/core`.
+Stateful concerns (plugin discovery/loading, trust/sandbox policy, persistence) belong in `@clinebot/core`.
 
 ### Runtime layers
 
 ```mermaid
 flowchart TD
-  Host["Host App / @cline/core"] --> Agent["Agent"]
+  Host["Host App / @clinebot/core"] --> Agent["Agent"]
   Agent --> Bus["AgentRuntimeBus"]
   Agent --> Conversation["ConversationStore"]
   Agent --> LifecycleOrchestrator["LifecycleOrchestrator"]
@@ -347,13 +347,13 @@ Extensions are manifest-first and follow a deterministic setup lifecycle:
 
 No dynamic extension registration occurs during `run`.
 
-Inside `@cline/agents`:
+Inside `@clinebot/agents`:
 
 - validate extension manifests
 - register contributions via `setup(api)`
 - register hook handlers to `HookEngine`
 
-Outside `@cline/agents` (in `@cline/core`):
+Outside `@clinebot/agents` (in `@clinebot/core`):
 
 - discover modules from disk
 - load/instantiate modules
@@ -369,9 +369,9 @@ Outside `@cline/agents` (in `@cline/core`):
 - Hook routing is stage-indexed; dispatch does not scan unrelated handlers.
 - Extension contribution setup runs once per agent lifecycle.
 
-## Desktop App (`@cline/desktop`)
+## Desktop App (`@clinebot/desktop`)
 
-`@cline/desktop` splits responsibilities into four layers:
+`@clinebot/desktop` splits responsibilities into four layers:
 
 1. Frontend (Next.js): Kanban board UI and user interactions.
 2. Desktop runtime (Tauri/Rust): process orchestration and transport bridge.
@@ -380,8 +380,8 @@ Outside `@cline/agents` (in `@cline/core`):
 
 Boundary rule:
 
-- Frontend/browser modules: `@cline/llms/browser`
-- Node runtime hosts (CLI/Tauri scripts): `@cline/llms/node`, `@cline/agents/node`, `@cline/core/node`, `@cline/core/server/node`, `@cline/rpc/node`
+- Frontend/browser modules: `@clinebot/llms/browser`
+- Node runtime hosts (CLI/Tauri scripts): `@clinebot/llms/node`, `@clinebot/agents/node`, `@clinebot/core/node`, `@clinebot/core/server/node`, `@clinebot/rpc/node`
 
 ### Layer details
 
@@ -407,7 +407,7 @@ RPC runtime (`apps/cli/src/commands/rpc.ts`, `apps/cli/src/commands/rpc-runtime.
 
 - hosts shared runtime handlers (`start/send/abort runtime session`)
 - publishes runtime chat events (`runtime.chat.text_delta`, `runtime.chat.tool_call_*`)
-- owns stateful runtime/session lifecycle via `@cline/core/server`
+- owns stateful runtime/session lifecycle via `@clinebot/core/server`
 
 CLI + Agents (`apps/cli/src/index.ts`):
 

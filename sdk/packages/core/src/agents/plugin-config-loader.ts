@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import type { AgentConfig } from "@cline/agents";
-import { resolvePluginConfigSearchPaths as resolvePluginConfigSearchPathsFromShared } from "@cline/shared/storage";
+import type { AgentConfig } from "@clinebot/agents";
+import { resolvePluginConfigSearchPaths as resolvePluginConfigSearchPathsFromShared } from "@clinebot/shared/storage";
 import { loadAgentPluginsFromPaths } from "./plugin-loader";
 import { loadSandboxedPlugins } from "./plugin-sandbox";
 

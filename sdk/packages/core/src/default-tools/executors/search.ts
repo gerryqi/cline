@@ -6,7 +6,7 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { ToolContext } from "@cline/agents";
+import type { ToolContext } from "@clinebot/agents";
 import { getFileIndex } from "../../input";
 import type { SearchExecutor } from "../types.js";
 

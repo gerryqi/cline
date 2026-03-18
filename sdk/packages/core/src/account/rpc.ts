@@ -1,7 +1,7 @@
 import type {
 	RpcClineAccountActionRequest,
 	RpcProviderActionRequest,
-} from "@cline/shared";
+} from "@clinebot/shared";
 import type {
 	ClineAccountBalance,
 	ClineAccountOrganization,

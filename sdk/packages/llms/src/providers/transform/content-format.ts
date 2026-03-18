@@ -1,4 +1,4 @@
-import { formatFileContentBlock } from "@cline/shared";
+import { formatFileContentBlock } from "@clinebot/shared";
 import type { FileContent, ImageContent, TextContent } from "../types/messages";
 
 export function normalizeToolUseInput(

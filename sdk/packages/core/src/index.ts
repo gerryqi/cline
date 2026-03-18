@@ -1,5 +1,5 @@
 /**
- * @cline/core
+ * @clinebot/core
  *
  * Runtime-agnostic core contracts and shared state utilities.
  */

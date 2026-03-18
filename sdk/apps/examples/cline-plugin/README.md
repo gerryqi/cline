@@ -1,6 +1,6 @@
 # Cline Custom Plugin Example
 
-Shows how to extend `@cline/agents` with your own plugins. A plugin can:
+Shows how to extend `@clinebot/agents` with your own plugins. A plugin can:
 
 - **Register tools** — give the agent new capabilities it can invoke
 - **Hook into the lifecycle** — observe or influence execution at key points

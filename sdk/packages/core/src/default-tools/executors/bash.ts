@@ -5,7 +5,7 @@
  */
 
 import { spawn } from "node:child_process";
-import type { ToolContext } from "@cline/agents";
+import type { ToolContext } from "@clinebot/agents";
 import type { BashExecutor } from "../types.js";
 
 /**

@@ -1,4 +1,4 @@
-import type { providers } from "@cline/llms";
+import type { providers } from "@clinebot/llms";
 
 function createConversationId(): string {
 	return `conv_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;

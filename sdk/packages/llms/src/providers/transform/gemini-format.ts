@@ -4,7 +4,7 @@
  * Converts our unified Message format to Google Gemini's Content format.
  */
 
-import { formatFileContentBlock } from "@cline/shared";
+import { formatFileContentBlock } from "@clinebot/shared";
 import type { Content, FunctionDeclaration, Part } from "@google/genai";
 import type {
 	ContentBlock,

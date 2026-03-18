@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentTeamsRuntime } from "@cline/agents";
+import { AgentTeamsRuntime } from "@clinebot/agents";
 import { describe, expect, it } from "vitest";
 import { FileTeamPersistenceStore } from "./session-service";
 

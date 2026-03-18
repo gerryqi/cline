@@ -5,7 +5,7 @@
  * for agent configuration, tools, events, and results.
  */
 
-import type { providers as LlmsProviders } from "@cline/llms";
+import type { providers as LlmsProviders } from "@clinebot/llms";
 import {
 	type BasicLogger,
 	type Tool,
@@ -14,7 +14,7 @@ import {
 	type ToolCallRecord,
 	ToolCallRecordSchema,
 	type ToolPolicy,
-} from "@cline/shared";
+} from "@clinebot/shared";
 import { z } from "zod";
 
 export type {
@@ -25,8 +25,8 @@ export type {
 	ToolCallRecord,
 	ToolContext,
 	ToolPolicy,
-} from "@cline/shared";
-export { ToolCallRecordSchema, ToolContextSchema } from "@cline/shared";
+} from "@clinebot/shared";
+export { ToolCallRecordSchema, ToolContextSchema } from "@clinebot/shared";
 
 // =============================================================================
 // Agent Events

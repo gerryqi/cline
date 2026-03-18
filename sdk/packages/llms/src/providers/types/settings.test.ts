@@ -1,4 +1,4 @@
-import { resolveProviderModelCatalogKeys } from "@cline/shared";
+import { resolveProviderModelCatalogKeys } from "@clinebot/shared";
 import { describe, expect, it } from "vitest";
 import { getGeneratedModelsForProvider } from "../../models/generated-access";
 import type { ProviderSettings } from "./settings";

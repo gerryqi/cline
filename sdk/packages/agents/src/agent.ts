@@ -4,7 +4,7 @@
  * The main class for building and running agentic loops with LLMs.
  */
 
-import { providers } from "@cline/llms";
+import { providers } from "@clinebot/llms";
 import { buildInitialUserContent } from "./agent-input.js";
 import {
 	type ContributionRegistry,

@@ -1,5 +1,5 @@
 {
-	"name": "@cline/scheduler",
+	"name": "@clinebot/scheduler",
 	"version": "0.0.0",
 	"description": "Scheduled runtime execution primitives for Cline RPC hosts",
 	"type": "module",
@@ -25,7 +25,7 @@
 		"verify:routines": "bun run ./scripts/verify-routine-feature.ts"
 	},
 	"dependencies": {
-		"@cline/shared": "workspace:*"
+		"@clinebot/shared": "workspace:*"
 	},
 	"private": true
 }

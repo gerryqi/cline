@@ -1,8 +1,8 @@
 /**
  * Example: Building Agentic Loops with Sub-Agent Spawning
  *
- * This example demonstrates how to use the @cline/agents, @cline/llms,
- * and @cline/llms packages together to build an agentic loop where the
+ * This example demonstrates how to use the @clinebot/agents, @clinebot/llms,
+ * and @clinebot/llms packages together to build an agentic loop where the
  * main agent can spawn sub-agents to handle specialized tasks.
  *
  * Features demonstrated:
@@ -13,11 +13,11 @@
  * - Using the models package to query available models
  */
 
-import { providers } from "@cline/llms";
+import { providers } from "@clinebot/llms";
 import { Agent, type AgentEvent, createTool, type Tool } from "./index.js";
 
-// Note: When workspace is linked, you can also import from @cline/llms:
-// import { getModel, queryModels } from "@cline/llms"
+// Note: When workspace is linked, you can also import from @clinebot/llms:
+// import { getModel, queryModels } from "@clinebot/llms"
 
 // =============================================================================
 // Configuration
@@ -499,7 +499,7 @@ For the haiku, please spawn a specialized creative writing agent to handle it.`;
 // =============================================================================
 
 /**
- * Example of using @cline/llms directly for more control
+ * Example of using @clinebot/llms directly for more control
  */
 async function runLowLevelExample(): Promise<void> {
 	const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -508,7 +508,7 @@ async function runLowLevelExample(): Promise<void> {
 		process.exit(1);
 	}
 
-	// Create a handler directly using @cline/llms
+	// Create a handler directly using @clinebot/llms
 	const config: providers.ProviderConfig = {
 		providerId: "anthropic",
 		apiKey,

@@ -13,7 +13,7 @@ import {
 	resolveWorkflowsConfigSearchPaths,
 	type SkillConfig,
 	type WorkflowConfig,
-} from "@cline/core/server";
+} from "@clinebot/core/server";
 import { listSessions } from "../utils/session";
 import type { CliOutputMode } from "../utils/types";
 

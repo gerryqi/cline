@@ -1,5 +1,5 @@
 /**
- * @cline/models
+ * @clinebot/models
  *
  * Model definitions and registry for all supported AI providers.
  *
@@ -16,7 +16,7 @@
  *   createQuery,
  *   getModel,
  *   ANTHROPIC_MODELS,
- * } from "@cline/models"
+ * } from "@clinebot/models"
  *
  * // Get all models with vision support
  * const visionModels = queryModels({

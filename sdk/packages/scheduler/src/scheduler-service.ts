@@ -3,8 +3,8 @@ import type {
 	RpcChatRunTurnRequest,
 	RpcChatStartSessionRequest,
 	RpcChatTurnResult,
-} from "@cline/shared";
-import { nowIso } from "@cline/shared/db";
+} from "@clinebot/shared";
+import { nowIso } from "@clinebot/shared/db";
 import { assertValidCronPattern } from "./cron";
 import { ResourceLimiter } from "./resource-limiter";
 import { type ScheduleClaimRecord, ScheduleStore } from "./schedule-store";

@@ -4,14 +4,14 @@ import type {
 	RpcSessionStatus,
 	RpcSessionUpdateInput,
 	RpcSpawnQueueItem,
-} from "@cline/rpc";
+} from "@clinebot/rpc";
 import {
 	asBool,
 	asOptionalString,
 	asString,
 	nowIso,
 	toBoolInt,
-} from "@cline/shared/db";
+} from "@clinebot/shared/db";
 import { SqliteSessionStore } from "../storage/sqlite-session-store";
 
 export interface SqliteRpcSessionBackendOptions {

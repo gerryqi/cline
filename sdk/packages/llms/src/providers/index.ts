@@ -1,5 +1,5 @@
 /**
- * @cline/providers
+ * @clinebot/providers
  *
  * SDK-like package for creating and managing LLM provider handlers.
  *
@@ -9,7 +9,7 @@
  * ## Quick Start
  *
  * ```typescript
- * import { createHandler, type ProviderConfig } from "@cline/providers"
+ * import { createHandler, type ProviderConfig } from "@clinebot/providers"
  *
  * const config: ProviderConfig = {
  *   providerId: "anthropic",

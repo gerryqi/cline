@@ -2,7 +2,7 @@ import type {
 	TeamEvent,
 	TeamRuntimeState,
 	TeamTeammateSpec,
-} from "@cline/agents";
+} from "@clinebot/agents";
 import type { SessionStatus } from "./common";
 import type { SessionRecord } from "./sessions";
 

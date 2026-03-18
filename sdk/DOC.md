@@ -4,14 +4,14 @@ This document is the single detailed API and behavior reference for this reposit
 
 For architecture and runtime flow details, see [`ARCHITECTURE.md`](/Users/beatrix/dev/clinee/sdk-wip/ARCHITECTURE.md).
 
-## `@cline/agents`
+## `@clinebot/agents`
 
 
-API reference and package boundary notes for `@cline/agents`.
+API reference and package boundary notes for `@clinebot/agents`.
 
 ## Scope
 
-`@cline/agents` owns runtime primitives:
+`@clinebot/agents` owns runtime primitives:
 
 - Agent loop execution (`Agent`)
 - Tool primitives (definition, validation, execution helpers)
@@ -19,11 +19,11 @@ API reference and package boundary notes for `@cline/agents`.
 - Team primitives (sub-agents, mission/task coordination)
 - Streaming/event helpers
 
-`@cline/agents` does not own stateful app orchestration. Use `@cline/core` for persistent sessions, runtime assembly, and storage.
+`@clinebot/agents` does not own stateful app orchestration. Use `@clinebot/core` for persistent sessions, runtime assembly, and storage.
 
 Workspace boundary note:
-- import llms contracts from `@cline/llms/node` (or `@cline/llms/browser` for browser hosts)
-- do not use other `@cline/llms/*` deep imports
+- import llms contracts from `@clinebot/llms/node` (or `@clinebot/llms/browser` for browser hosts)
+- do not use other `@clinebot/llms/*` deep imports
 
 ## Primary Exports
 
@@ -42,8 +42,8 @@ Workspace boundary note:
 
 ### Hooks
 
-- Core lifecycle engine exports (`HookEngine`, `HookHandler`) from `@cline/agents`
-- Node-only subprocess hook helpers from `@cline/agents/node`:
+- Core lifecycle engine exports (`HookEngine`, `HookHandler`) from `@clinebot/agents`
+- Node-only subprocess hook helpers from `@clinebot/agents/node`:
   - `createSubprocessHooks`
   - `runHook`
   - `HookEventName`
@@ -128,7 +128,7 @@ Workspace boundary note:
 - `extensions` in `AgentConfig` handle policy/plugin composition
 - `setup(api)` registers runtime additions (tools, commands, shortcuts, flags, renderers, providers)
 - `hooks` in `AgentConfig` handle lifecycle callbacks
-- subprocess hook integrations are provided by `@cline/agents/node` or upstream runtime layers (for example `@cline/core`)
+- subprocess hook integrations are provided by `@clinebot/agents/node` or upstream runtime layers (for example `@clinebot/core`)
 
 Control fields returned by extension/hook handlers:
 
@@ -140,14 +140,14 @@ Control fields returned by extension/hook handlers:
 
 When splitting responsibilities:
 
-- Keep `Agent`, tools, hooks/extensions, and team runtime code in `@cline/agents`
-- Move session managers, storage-backed lifecycle handling, and runtime composition into `@cline/core`
-- Depend on `@cline/core` from app hosts (CLI/desktop), and depend on `@cline/agents` for runtime primitives
+- Keep `Agent`, tools, hooks/extensions, and team runtime code in `@clinebot/agents`
+- Move session managers, storage-backed lifecycle handling, and runtime composition into `@clinebot/core`
+- Depend on `@clinebot/core` from app hosts (CLI/desktop), and depend on `@clinebot/agents` for runtime primitives
 
 ## Minimal Runtime Example
 
 ```ts
-import { Agent, createBuiltinTools } from "@cline/agents/node"
+import { Agent, createBuiltinTools } from "@clinebot/agents/node"
 
 const agent = new Agent({
 	providerId: "anthropic",
@@ -171,10 +171,10 @@ console.log(result.text)
 ```
 
 
-## `@cline/cli`
+## `@clinebot/cli`
 
 
-> **Package:** `@cline/cli` · **Binary:** `clite` · **Version:** `0.0.0`
+> **Package:** `@clinebot/cli` · **Binary:** `clite` · **Version:** `0.0.0`
 > **Runtime:** [Bun](https://bun.sh) / Node · **Language:** TypeScript (ESM)
 > **License:** Apache-2.0
 
@@ -230,7 +230,7 @@ console.log(result.text)
 
 ## Overview
 
-`@cline/cli` is a fast, lightweight command-line interface for running **agentic loops** powered by large language models (LLMs). It is designed for minimal startup latency and real-time streaming output.
+`@clinebot/cli` is a fast, lightweight command-line interface for running **agentic loops** powered by large language models (LLMs). It is designed for minimal startup latency and real-time streaming output.
 
 Key design principles:
 - **Speed-first** — minimal dependencies, Bun-compiled output, streaming from first token
@@ -551,7 +551,7 @@ clite hook          # called internally by the CLI itself
 
 **Source:** `src/commands/hook.ts` → `runHookCommand()`
 
-When the CLI starts an agent run, it sets up `createSubprocessHooks()` from `@cline/agents`. For every lifecycle event, the SDK spawns a subprocess running `clite hook` and pipes a JSON payload to its stdin.
+When the CLI starts an agent run, it sets up `createSubprocessHooks()` from `@clinebot/agents`. For every lifecycle event, the SDK spawns a subprocess running `clite hook` and pipes a JSON payload to its stdin.
 
 The `hook` handler:
 1. Reads the full JSON payload from stdin
@@ -594,7 +594,7 @@ clite rpc register --client-type <type> --client-id <id>  # register a client
 
 **Source:** `src/commands/rpc.ts`
 
-The RPC server provides a gRPC interface (`@cline/rpc`) that desktop clients or other tooling can connect to for session management. Default address is `127.0.0.1:4317` (overridden by `CLINE_RPC_ADDRESS`).
+The RPC server provides a gRPC interface (`@clinebot/rpc`) that desktop clients or other tooling can connect to for session management. Default address is `127.0.0.1:4317` (overridden by `CLINE_RPC_ADDRESS`).
 
 When any agent command starts, the CLI automatically attempts to connect to the RPC server and spawns one in the background if not found (see [RPC Server](#rpc-server)).
 
@@ -715,7 +715,7 @@ When `--output json` (or `--json`) is used, output switches to **NDJSON**:
 
 Tools are enabled by default. Pass `--no-tools` to disable all built-in tools. Tool assembly is handled by the session service — the CLI passes flags and tool policies to `sessionManager.start()`.
 
-**Built-in tools** (provided by `@cline/core`):
+**Built-in tools** (provided by `@clinebot/core`):
 
 | Tool | Description |
 |---|---|
@@ -958,7 +958,7 @@ Each line is a newline-delimited JSON record with a `ts` timestamp prepended.
 
 ### Provider & Model Configuration
 
-**Source:** `src/main.ts` → `runCli()`, `ProviderSettingsManager` from `@cline/core/server`
+**Source:** `src/main.ts` → `runCli()`, `ProviderSettingsManager` from `@clinebot/core/server`
 
 #### Provider Selection
 
@@ -1015,7 +1015,7 @@ For OAuth providers, if no API key is present the CLI triggers an OAuth flow bef
 
 **Source:** `src/utils/session.ts` → `getCoreSessions()`, `createDefaultCliSessionManager()`
 
-The CLI uses an RPC server (`@cline/rpc`) as its preferred session backend. On each run:
+The CLI uses an RPC server (`@clinebot/rpc`) as its preferred session backend. On each run:
 
 1. `ensureRpcAddressViaCli()` runs `clite rpc ensure` synchronously to find an available address
 2. `tryConnectRpcSessions()` checks if a healthy server is already listening
@@ -1071,7 +1071,7 @@ Workflows are loaded from the `UserInstructionConfigWatcher` which watches `.cli
 
 ## Configuration Object (`Config`)
 
-The `Config` interface is the internal runtime configuration assembled from parsed args and environment variables. It extends `CoreSessionConfig` from `@cline/core/server`:
+The `Config` interface is the internal runtime configuration assembled from parsed args and environment variables. It extends `CoreSessionConfig` from `@clinebot/core/server`:
 
 ```typescript
 interface Config extends Omit<CoreSessionConfig, "apiKey" | "mode"> {

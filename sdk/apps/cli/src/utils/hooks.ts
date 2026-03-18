@@ -2,9 +2,9 @@ import type {
 	AgentHooks,
 	HookEventPayload,
 	RunHookResult,
-} from "@cline/agents";
-import { createSubprocessHooks } from "@cline/agents";
-import type { HookSessionContext } from "@cline/shared";
+} from "@clinebot/agents";
+import { createSubprocessHooks } from "@clinebot/agents";
+import type { HookSessionContext } from "@clinebot/shared";
 import { formatHookDispatchOutput } from "../commands/hook";
 import { closeInlineStreamIfNeeded } from "./events";
 import {

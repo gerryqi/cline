@@ -43,13 +43,13 @@
 						"patterns": [
 							{
 								"group": [
-									"@cline/llms/*",
-									"@cline/agents/*",
-									"@cline/core/*",
-									"!@cline/core/server",
-									"!@cline/core/server/*"
+									"@clinebot/llms/*",
+									"@clinebot/agents/*",
+									"@clinebot/core/*",
+									"!@clinebot/core/server",
+									"!@clinebot/core/server/*"
 								],
-								"message": "Cross-workspace deep imports are forbidden (except @cline/core/server). Import from package entry points instead."
+								"message": "Cross-workspace deep imports are forbidden (except @clinebot/core/server). Import from package entry points instead."
 							}
 						]
 					}

@@ -27,8 +27,8 @@ export interface SessionToolEvent {
 export interface SessionTeamProgressEvent {
 	sessionId: string;
 	teamName: string;
-	lifecycle: import("@cline/shared").TeamProgressLifecycleEvent;
-	summary: import("@cline/shared").TeamProgressSummary;
+	lifecycle: import("@clinebot/shared").TeamProgressLifecycleEvent;
+	summary: import("@clinebot/shared").TeamProgressSummary;
 }
 
 export type CoreSessionEvent =
@@ -37,7 +37,7 @@ export type CoreSessionEvent =
 			type: "agent_event";
 			payload: {
 				sessionId: string;
-				event: import("@cline/agents").AgentEvent;
+				event: import("@clinebot/agents").AgentEvent;
 			};
 	  }
 	| { type: "team_progress"; payload: SessionTeamProgressEvent }

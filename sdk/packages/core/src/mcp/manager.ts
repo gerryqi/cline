@@ -2,7 +2,7 @@ import type {
 	McpToolCallRequest,
 	McpToolCallResult,
 	McpToolDescriptor,
-} from "@cline/agents";
+} from "@clinebot/agents";
 import type {
 	McpConnectionStatus,
 	McpManager,

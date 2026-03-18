@@ -3,10 +3,10 @@
 	"compilerOptions": {
 		"paths": {
 			"@/*": ["./*"],
-			"@cline/rpc": ["../../packages/rpc/src/index.ts"],
-			"@cline/rpc/*": ["../../packages/rpc/src/*"],
-			"@cline/shared": ["../../packages/shared/src/index.ts"],
-			"@cline/shared/*": [
+			"@clinebot/rpc": ["../../packages/rpc/src/index.ts"],
+			"@clinebot/rpc/*": ["../../packages/rpc/src/*"],
+			"@clinebot/shared": ["../../packages/shared/src/index.ts"],
+			"@clinebot/shared/*": [
 				"../../packages/shared/src/*",
 				"../../packages/shared/src/*/index.ts"
 			]

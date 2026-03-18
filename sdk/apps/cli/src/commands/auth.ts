@@ -2,8 +2,8 @@ import { createInterface } from "node:readline";
 import {
 	createOAuthClientCallbacks,
 	type ProviderSettingsManager,
-} from "@cline/core/server";
-import { models, providers } from "@cline/llms";
+} from "@clinebot/core/server";
+import { models, providers } from "@clinebot/llms";
 import { Box, render, Text, useApp, useInput } from "ink";
 import open from "open";
 import React, { useEffect, useMemo, useState } from "react";
@@ -90,7 +90,7 @@ let cachedCoreOAuthApi: Promise<CoreOAuthApi> | undefined;
 
 async function getCoreOAuthApi(): Promise<CoreOAuthApi> {
 	if (!cachedCoreOAuthApi) {
-		cachedCoreOAuthApi = import("@cline/core/server").then((module) => {
+		cachedCoreOAuthApi = import("@clinebot/core/server").then((module) => {
 			const runtimeApi = module as Partial<CoreOAuthApi>;
 			if (
 				typeof runtimeApi.loginClineOAuth !== "function" ||
@@ -98,7 +98,7 @@ async function getCoreOAuthApi(): Promise<CoreOAuthApi> {
 				typeof runtimeApi.loginOpenAICodex !== "function"
 			) {
 				throw new Error(
-					"Installed @cline/core does not expose OAuth login helpers required by the CLI",
+					"Installed @clinebot/core does not expose OAuth login helpers required by the CLI",
 				);
 			}
 			return runtimeApi as CoreOAuthApi;

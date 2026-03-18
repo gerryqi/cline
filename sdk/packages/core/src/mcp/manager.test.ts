@@ -1,4 +1,4 @@
-import type { McpToolDescriptor } from "@cline/agents";
+import type { McpToolDescriptor } from "@clinebot/agents";
 import { describe, expect, it, vi } from "vitest";
 import { InMemoryMcpManager } from "./manager";
 import type { McpServerClient } from "./types";

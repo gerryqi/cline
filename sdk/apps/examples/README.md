@@ -21,7 +21,7 @@ bun run 01-minimal.ts  # Get started in 30 seconds
 
 ### [`cline-plugin/`](./cline-plugin)
 
-**Plugin development example** showing how to extend `@cline/agents` with custom capabilities:
+**Plugin development example** showing how to extend `@clinebot/agents` with custom capabilities:
 
 - Register custom tools
 - Hook into agent lifecycle events

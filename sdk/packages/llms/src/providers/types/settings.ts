@@ -5,7 +5,7 @@
  * Converts to internal ProviderConfig for handler creation.
  */
 
-import { resolveProviderModelCatalogKeys } from "@cline/shared";
+import { resolveProviderModelCatalogKeys } from "@clinebot/shared";
 import { z } from "zod";
 import { getGeneratedModelsForProvider } from "../../models/generated-access";
 import {
@@ -487,7 +487,7 @@ export function toProviderConfig(settings: ProviderSettings): ProviderConfig {
  *
  * @example
  * ```typescript
- * import { createHandler, createProviderConfig } from "@cline/providers"
+ * import { createHandler, createProviderConfig } from "@clinebot/providers"
  *
  * const config = createProviderConfig({
  *   provider: "anthropic",

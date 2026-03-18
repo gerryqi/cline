@@ -1,4 +1,4 @@
-import type { providers } from "@cline/llms";
+import type { providers } from "@clinebot/llms";
 import { executeToolsInParallel, formatToolResult } from "../tools/index.js";
 import type {
 	AgentEvent,

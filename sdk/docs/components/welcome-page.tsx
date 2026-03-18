@@ -184,8 +184,8 @@ export function WelcomePage({ onNavigateToVisualizer }: WelcomePageProps) {
 								Agents Entrypoints
 							</div>
 							<p className="text-[13px] text-zinc-500 leading-relaxed">
-								`@cline/agents` default export path is env-agnostic, while
-								subprocess hook APIs now live in `@cline/agents/node`.
+								`@clinebot/agents` default export path is env-agnostic, while
+								subprocess hook APIs now live in `@clinebot/agents/node`.
 							</p>
 						</div>
 						<div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-4">
@@ -194,7 +194,7 @@ export function WelcomePage({ onNavigateToVisualizer }: WelcomePageProps) {
 							</div>
 							<p className="text-[13px] text-zinc-500 leading-relaxed">
 								Agent runtime hooks now map to event payloads only; command
-								execution moved upstream into `@cline/core` runtime wiring.
+								execution moved upstream into `@clinebot/core` runtime wiring.
 							</p>
 						</div>
 						<div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-4">
@@ -240,7 +240,7 @@ export function WelcomePage({ onNavigateToVisualizer }: WelcomePageProps) {
 							</h2>
 							<p className="text-sm text-zinc-500 mt-1">
 								What can run in browser, what must stay in Node, and how to wire
-								`@cline/llms` for browser use.
+								`@clinebot/llms` for browser use.
 							</p>
 						</div>
 					</div>
@@ -295,7 +295,7 @@ export function WelcomePage({ onNavigateToVisualizer }: WelcomePageProps) {
 								Browser import example
 							</p>
 							<code className="text-[11px] text-zinc-300 font-mono">
-								import {"{ providers, models }"} from "@cline/llms/browser"
+								import {"{ providers, models }"} from "@clinebot/llms/browser"
 							</code>
 						</div>
 						<div className="mt-3 rounded border border-sky-500/20 bg-sky-500/5 p-3">
@@ -303,10 +303,10 @@ export function WelcomePage({ onNavigateToVisualizer }: WelcomePageProps) {
 								Agents package boundary
 							</p>
 							<code className="text-[11px] text-zinc-300 font-mono">
-								import {"{ Agent }"} from "@cline/agents"
+								import {"{ Agent }"} from "@clinebot/agents"
 							</code>
 							<p className="mt-2 text-[11px] text-zinc-500 leading-relaxed">
-								Use `@cline/agents/node` only in Node runtimes when you need
+								Use `@clinebot/agents/node` only in Node runtimes when you need
 								subprocess hook helpers.
 							</p>
 						</div>
@@ -763,7 +763,7 @@ export function WelcomePage({ onNavigateToVisualizer }: WelcomePageProps) {
 								Built-in Coverage
 							</div>
 							<p className="text-[13px] text-zinc-400 leading-relaxed">
-								37 of 42 legacy providers are now built-in in `@cline/llms`.
+								37 of 42 legacy providers are now built-in in `@clinebot/llms`.
 							</p>
 						</div>
 						<div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">

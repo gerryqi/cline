@@ -6,8 +6,8 @@ import {
 	type TeamEvent,
 	type TeamTeammateSpec,
 	type Tool,
-} from "@cline/agents";
-import { resolveSkillsConfigSearchPaths } from "@cline/shared/storage";
+} from "@clinebot/agents";
+import { resolveSkillsConfigSearchPaths } from "@clinebot/shared/storage";
 import { nanoid } from "nanoid";
 import {
 	createUserInstructionConfigWatcher,

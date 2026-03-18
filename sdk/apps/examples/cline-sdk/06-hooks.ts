@@ -26,8 +26,8 @@
  * Run: bun run 06-hooks.ts
  */
 
-import type { AgentConfig } from "@cline/agents";
-import { createSessionHost } from "@cline/core/server";
+import type { AgentConfig } from "@clinebot/agents";
+import { createSessionHost } from "@clinebot/core/server";
 
 type AgentHooksConfig = NonNullable<AgentConfig["hooks"]>;
 

@@ -1,4 +1,4 @@
-import type { HookEventPayload } from "@cline/agents";
+import type { HookEventPayload } from "@clinebot/agents";
 import { nanoid } from "nanoid";
 import type { SessionStatus } from "../types/common";
 

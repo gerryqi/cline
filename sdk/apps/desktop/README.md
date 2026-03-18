@@ -1,6 +1,6 @@
 # Cline Desktop
 
-`@cline/desktop` is a Tauri desktop app that wraps the tasks UI and uses the shared RPC runtime for chat plus CLI subprocesses for task cards.
+`@clinebot/desktop` is a Tauri desktop app that wraps the tasks UI and uses the shared RPC runtime for chat plus CLI subprocesses for task cards.
 
 ## What It Does
 
@@ -10,7 +10,7 @@
 - Boots RPC on startup via `clite rpc ensure` + `clite rpc register`.
 - Runs chat through RPC runtime methods (`startRuntimeSession`, `sendRuntimeSession`, `abortRuntimeSession`).
 - Streams chat runtime events over one persistent websocket envelope (`chat_event` / `chat_response`).
-- Reuses shared `@cline/rpc` runtime chat helpers for desktop/code bridge scripts:
+- Reuses shared `@clinebot/rpc` runtime chat helpers for desktop/code bridge scripts:
   - [`packages/rpc/src/runtime-chat-client.ts`](/Users/beatrix/dev/clinee/sdk-wip/packages/rpc/src/runtime-chat-client.ts)
   - [`packages/rpc/src/runtime-chat-command-bridge.ts`](/Users/beatrix/dev/clinee/sdk-wip/packages/rpc/src/runtime-chat-command-bridge.ts)
   - [`packages/rpc/src/runtime-chat-stream-bridge.ts`](/Users/beatrix/dev/clinee/sdk-wip/packages/rpc/src/runtime-chat-stream-bridge.ts)
@@ -27,8 +27,8 @@
 
 Desktop should use explicit runtime imports:
 
-- Frontend/browser modules: `@cline/llms/browser`
-- Node runtime modules (CLI/Tauri/scripts): `@cline/llms/node`, `@cline/agents/node`, `@cline/core/node`, `@cline/core/server/node`, `@cline/rpc/node`
+- Frontend/browser modules: `@clinebot/llms/browser`
+- Node runtime modules (CLI/Tauri/scripts): `@clinebot/llms/node`, `@clinebot/agents/node`, `@clinebot/core/node`, `@clinebot/core/server/node`, `@clinebot/rpc/node`
 
 ## Scripts
 

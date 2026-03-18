@@ -46,7 +46,7 @@ function toResolvedRange(workspaceRange: string, version: string): string {
 }
 
 function isBundledInternalDependency(name: string): boolean {
-	return name.startsWith("@cline/");
+	return name.startsWith("@clinebot/");
 }
 
 function resolveWorkspaceVersions(): Map<string, string> {

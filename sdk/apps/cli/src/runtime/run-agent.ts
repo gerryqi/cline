@@ -1,10 +1,10 @@
-import type { AgentEvent } from "@cline/agents";
+import type { AgentEvent } from "@clinebot/agents";
 import {
 	prewarmFileIndex,
 	SessionSource,
 	type UserInstructionConfigWatcher,
-} from "@cline/core/server";
-import type { providers } from "@cline/llms";
+} from "@clinebot/core/server";
+import type { providers } from "@clinebot/llms";
 import { askQuestionInTerminal, requestToolApproval } from "../utils/approval";
 import { handleEvent, handleTeamEvent } from "../utils/events";
 import { createRuntimeHooks } from "../utils/hooks";

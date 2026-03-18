@@ -4,8 +4,8 @@
 		"module": "ESNext",
 		"moduleResolution": "bundler",
 		"paths": {
-			"@cline/rpc": ["../../packages/rpc/src/index.ts"],
-			"@cline/shared": ["../../packages/shared/src/index.ts"]
+			"@clinebot/rpc": ["../../packages/rpc/src/index.ts"],
+			"@clinebot/shared": ["../../packages/shared/src/index.ts"]
 		},
 		"lib": ["ES2022"],
 		"types": ["node", "vscode"],

@@ -2,7 +2,7 @@ import type {
 	CreateScheduleInput,
 	SchedulerService,
 	UpdateScheduleInput,
-} from "@cline/scheduler";
+} from "@clinebot/scheduler";
 import { fromProtoStruct } from "../proto/serde.js";
 import {
 	parseJsonArrayString,

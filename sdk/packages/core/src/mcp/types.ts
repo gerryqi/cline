@@ -4,7 +4,7 @@ import type {
 	McpToolDescriptor,
 	McpToolProvider,
 	ToolContext,
-} from "@cline/agents";
+} from "@clinebot/agents";
 
 export type McpConnectionStatus = "disconnected" | "connecting" | "connected";
 

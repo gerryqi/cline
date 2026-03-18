@@ -4,9 +4,9 @@ import type {
 	TeamEvent,
 	TeamRuntimeState,
 	TeamTeammateSpec,
-} from "@cline/agents";
-import { loadSqliteDb, nowIso, type SqliteDb } from "@cline/shared/db";
-import { resolveTeamDataDir } from "@cline/shared/storage";
+} from "@clinebot/agents";
+import { loadSqliteDb, nowIso, type SqliteDb } from "@clinebot/shared/db";
+import { resolveTeamDataDir } from "@clinebot/shared/storage";
 import type { TeamStore } from "../types/storage";
 
 function defaultTeamDir(): string {

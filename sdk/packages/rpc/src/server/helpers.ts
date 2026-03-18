@@ -1,4 +1,7 @@
-import type { ScheduleExecutionRecord, ScheduleRecord } from "@cline/scheduler";
+import type {
+	ScheduleExecutionRecord,
+	ScheduleRecord,
+} from "@clinebot/scheduler";
 import { fromProtoStruct, toProtoStruct } from "../proto/serde.js";
 import type { RpcSessionRow, RpcSessionStatus } from "../types.js";
 import type {

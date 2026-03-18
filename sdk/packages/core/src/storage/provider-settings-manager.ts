@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { resolveProviderSettingsPath } from "@cline/shared/storage";
+import { resolveProviderSettingsPath } from "@clinebot/shared/storage";
 import {
 	emptyStoredProviderSettings,
 	type ProviderConfig,

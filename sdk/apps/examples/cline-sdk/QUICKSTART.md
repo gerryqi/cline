@@ -98,7 +98,7 @@ bun run all:advanced
 export ANTHROPIC_API_KEY=your-key-here
 ```
 
-### "Cannot find module @cline/core"
+### "Cannot find module @clinebot/core"
 ```bash
 # Make sure you're in the workspace root
 cd ../../..

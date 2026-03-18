@@ -1,9 +1,9 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createWhatsAppAdapter } from "@chat-adapter/whatsapp";
-import { RpcSessionClient, registerRpcClient } from "@cline/rpc";
-import type { RpcChatStartSessionRequest } from "@cline/shared";
-import { resolveClineDataDir } from "@cline/shared/storage";
+import { RpcSessionClient, registerRpcClient } from "@clinebot/rpc";
+import type { RpcChatStartSessionRequest } from "@clinebot/shared";
+import { resolveClineDataDir } from "@clinebot/shared/storage";
 import { Chat, ConsoleLogger, type Thread } from "chat";
 import { ensureRpcRuntimeAddress } from "../../commands/rpc";
 import type { CliLoggerAdapter } from "../../logging/adapter";

@@ -1,5 +1,5 @@
-import type { providers } from "@cline/llms";
-import { parseJsonStream } from "@cline/shared";
+import type { providers } from "@clinebot/llms";
+import { parseJsonStream } from "@clinebot/shared";
 import type { MessageBuilder } from "../message-builder.js";
 import { toToolDefinitions } from "../tools/index.js";
 import type {

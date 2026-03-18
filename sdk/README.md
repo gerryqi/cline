@@ -61,59 +61,59 @@ It is organized as a Bun workspace with six SDK packages and three app targets:
 
 SDK packages (`packages/`):
 
-- `@cline/shared`: cross-package shared primitives (paths, common contracts, db/storage helpers)
-- `@cline/llms`: model/provider selection and handler creation
-- `@cline/scheduler`: scheduled runtime execution primitives and persistence
-- `@cline/agents`: agent loop + tools + hooks + teams runtime primitives
-- `@cline/rpc`: gRPC routing server for clients, sessions, tasks, tool approvals, and schedules
-- `@cline/core`: stateful orchestration, sessions, storage, runtime assembly
+- `@clinebot/shared`: cross-package shared primitives (paths, common contracts, db/storage helpers)
+- `@clinebot/llms`: model/provider selection and handler creation
+- `@clinebot/scheduler`: scheduled runtime execution primitives and persistence
+- `@clinebot/agents`: agent loop + tools + hooks + teams runtime primitives
+- `@clinebot/rpc`: gRPC routing server for clients, sessions, tasks, tool approvals, and schedules
+- `@clinebot/core`: stateful orchestration, sessions, storage, runtime assembly
 
 Apps built with the Cline SDK (`apps/`):
 
-- `@cline/cli`: Lightweight CLI that composes the SDK packages
-- `@cline/code`: Tauri desktop app that embeds a Next.js UI and composes the SDK packages
-- `@cline/desktop`: Tauri desktop app that embeds a Next.js UI and composes the SDK packages
+- `@clinebot/cli`: Lightweight CLI that composes the SDK packages
+- `@clinebot/code`: Tauri desktop app that embeds a Next.js UI and composes the SDK packages
+- `@clinebot/desktop`: Tauri desktop app that embeds a Next.js UI and composes the SDK packages
 
-`@cline/code` OAuth provider sign-in:
+`@clinebot/code` OAuth provider sign-in:
 
 - Clicking a provider in settings opens its configuration view.
-- Provider settings now load from `@cline/llms` provider registry IDs (instead of static seed data).
+- Provider settings now load from `@clinebot/llms` provider registry IDs (instead of static seed data).
 - Provider model lists are lazy loaded per provider when the detail panel is opened/refreshed.
 - OAuth providers (`Cline`, `OCA`, `OpenAI Codex`) expose a `Login via Browser` action in the provider API key section.
 - OAuth credentials are persisted by core storage in `~/.cline/data/settings/providers.json` through `ProviderSettingsManager`.
 - Manual updates to provider fields in settings (toggle, API key, base URL) are persisted to the same provider settings file.
-- In the `@cline/code` UI, selecting `Settings` from the left sidebar switches to `SettingsView`; closing settings returns to chat.
-- Provider IDs from `@cline/llms` must be unique because they are used as React list keys and provider state identifiers.
+- In the `@clinebot/code` UI, selecting `Settings` from the left sidebar switches to `SettingsView`; closing settings returns to chat.
+- Provider IDs from `@clinebot/llms` must be unique because they are used as React list keys and provider state identifiers.
 - Chat model selection now remembers the last selected `modelId` per `providerId` in local app storage and restores it when switching providers or starting a new chat session.
 - Chat provider/model selectors now prioritize providers enabled in settings (`list_provider_catalog`) and show models for those enabled providers; if provider settings are unavailable, selectors fall back to the full local catalog.
 - Chat transcript tool entries now show expandable `Input` and `Result` payload sections in `apps/code/components/chat-messages.tsx`, including persisted `tool_result` payloads stored as JSON strings.
 - Hydrated/reopened chat sessions continue applying live websocket `chat_event` updates (assistant text + tool events) even when no pre-seeded `activeAssistantMessageId` exists.
 
-`@cline/code` MCP server settings:
+`@clinebot/code` MCP server settings:
 
 - The `Settings -> MCP Servers` screen reads and writes the same MCP settings file used by CLI.
 - Default path: `~/.cline/data/settings/cline_mcp_settings.json`
 - Override path: `CLINE_MCP_SETTINGS_PATH`
 - Supported actions in UI: list, enable/disable, add/edit, delete MCP server registrations, and open the config file from the path/button in settings.
 
-`@cline/code` Rules settings lists:
+`@clinebot/code` Rules settings lists:
 
 - The `Settings -> Rules` screen now loads real config data through the CLI list pipeline (`list rules|workflows|skills|agents|hooks --json`).
 - Tabs in this screen: `Rules`, `Workflows`, `Hooks`, `Skills`, and `Agents`.
 - CLI list discovery for this screen resolves from the app `workspace_root` (not the Tauri process cwd).
 - Data shown is read-only discovery output with file paths and summaries, plus refresh and partial-result warnings when any list source fails.
 
-`@cline/code` core logger streaming:
+`@clinebot/code` core logger streaming:
 
 - `apps/code/scripts/chat-runtime-bridge.ts` forwards runtime log/error chunks to Tauri as `chat_core_log` stream events.
 - `apps/code/hooks/use-chat-session.ts` listens for `chat_core_log` and prints them with `console.debug|info|warn|error`.
 - Keep regular `stdout` output in `chat-runtime-bridge.ts` JSON-only; emitting plain `console.log` there can corrupt stream parsing.
 
-`@cline/code` + `@cline/desktop` shared chat runtime bridge design:
+`@clinebot/code` + `@clinebot/desktop` shared chat runtime bridge design:
 
 - Both app hosts use one persistent `chat-runtime-bridge.ts` process per app (`apps/code/scripts/chat-runtime-bridge.ts`, `apps/desktop/scripts/chat-runtime-bridge.ts`).
-- Bridge command/control is shared via `@cline/rpc` `runRpcRuntimeCommandBridge(...)`.
-- Bridge stream subscription handling remains shared via `@cline/rpc` runtime chat helpers.
+- Bridge command/control is shared via `@clinebot/rpc` `runRpcRuntimeCommandBridge(...)`.
+- Bridge stream subscription handling remains shared via `@clinebot/rpc` runtime chat helpers.
 - Runtime `send` commands in the shared bridge are now bounded (default `120000ms`, configurable by `CLINE_RPC_RUNTIME_SEND_TIMEOUT_MS`) so one stalled turn cannot wedge the bridge command loop.
 - The code app host also bounds bridge command waits (`130000ms`) and returns a timeout error instead of remaining indefinitely in `running`.
 - RPC runtime request parsing now normalizes invalid optional `maxIterations` values (especially JSON `null` from host serializers) to `undefined` to avoid immediate `max_iterations` exits at iteration `0`.
@@ -143,16 +143,16 @@ Detailed testing strategy (including CLI e2e execution flow, current e2e coverag
 
 Allowed cross-workspace imports:
 
-- `@cline/llms`
-- `@cline/scheduler`
-- `@cline/agents`
-- `@cline/rpc`
-- `@cline/core`
-- `@cline/core/server` (intentional Node-runtime-only exception)
+- `@clinebot/llms`
+- `@clinebot/scheduler`
+- `@clinebot/agents`
+- `@clinebot/rpc`
+- `@clinebot/core`
+- `@clinebot/core/server` (intentional Node-runtime-only exception)
 
 Disallowed:
 
-- all other deep imports like `@cline/llms/*`, `@cline/agents/*`, `@cline/core/*` (except `@cline/core/server`)
+- all other deep imports like `@clinebot/llms/*`, `@clinebot/agents/*`, `@clinebot/core/*` (except `@clinebot/core/server`)
 
 Keep these boundaries in mind when adding imports — cross-boundary deep imports will cause build/type errors.
 
@@ -252,7 +252,7 @@ Keep these boundaries in mind when adding imports — cross-boundary deep import
 
 ## Package Guide
 
-### `packages/llms` (`@cline/llms`)
+### `packages/llms` (`@clinebot/llms`)
 
 Purpose: config-driven LLM SDK.
 
@@ -270,7 +270,13 @@ Start with:
 - `packages/llms/src/sdk.ts`
 - `packages/llms/src/providers/index.ts`
 
-### `packages/agents` (`@cline/agents`)
+Development notes:
+
+- Public consumers should stay on the top-level `providers` and `models` exports; provider implementation internals under `handlers/*`, `transform/*`, and `utils/*` are not public API
+- The package ships distinct default and browser entrypoints so hosts can consume browser-safe builds where needed
+- Provider aliasing, known-model hydration, and generated model metadata are maintained centrally in `@clinebot/llms`; rebuild model artifacts after catalog-generation changes
+
+### `packages/agents` (`@clinebot/agents`)
 
 Purpose: runtime agent loop and tool/hook/team primitives.
 
@@ -284,13 +290,22 @@ Use this package to:
 Start with:
 
 - `packages/agents/README.md`
-- `DOC.md` (`@cline/agents` section; API/export overview)
+- `DOC.md` (`@clinebot/agents` section; API/export overview)
 - `ARCHITECTURE.md` (`Agents Runtime` section)
 - `packages/agents/src/agent.ts`
 - `packages/agents/src/tools/`
 - `packages/agents/src/teams/`
 
-### `packages/scheduler` (`@cline/scheduler`)
+Development notes:
+
+- Conversation resume flows should use `initialMessages` or `agent.restore(messages)` instead of mutating agent internals
+- Runtime event consumers should use `onEvent` or `agent.subscribeEvents(...)`
+- Each `Agent` instance allows only one active run at a time
+- `maxParallelToolCalls` caps concurrent tool execution per iteration
+- `@clinebot/agents` is runtime-agnostic; host default tools are provided by `@clinebot/core`, and Node-only subprocess hook helpers are exported from `@clinebot/agents/node`
+- Team runtime in `@clinebot/agents` is in-memory; persistent team/session state belongs in `@clinebot/core`
+
+### `packages/scheduler` (`@clinebot/scheduler`)
 
 Purpose: reusable scheduled-agent execution service.
 
@@ -306,7 +321,7 @@ Start with:
 - `packages/scheduler/src/scheduler-service.ts`
 - `packages/scheduler/src/schedule-store.ts`
 
-### `packages/rpc` (`@cline/rpc`)
+### `packages/rpc` (`@clinebot/rpc`)
 
 Purpose: gRPC gateway for routing clients, sessions, tasks, tool approvals, and schedules.
 
@@ -325,7 +340,7 @@ Start with:
 - `packages/rpc/src/client.ts`
 - `packages/rpc/src/proto/rpc.proto`
 
-### `packages/core` (`@cline/core`)
+### `packages/core` (`@clinebot/core`)
 
 Purpose: stateful orchestration layer over agents.
 
@@ -346,24 +361,30 @@ Start with:
 - `packages/core/src/agents/`
 - `packages/core/src/server/`
 
-### `apps/cli` (`@cline/cli`)
+Development notes:
+
+- `@clinebot/core` owns stateful runtime assembly, storage, provider settings, and default host tools; keep the stateless agent loop in `@clinebot/agents`
+- Host-oriented Node helpers belong under `@clinebot/core/server`
+- RPC session persistence backends, team persistence, plugin loading, OAuth refresh, and hook/config discovery all belong in core rather than app packages
+
+### `apps/cli` (`@clinebot/cli`)
 
 Purpose: executable reference implementation of the SDK stack.
 
 Use this package to see how the SDK packages are composed in a real app:
 
 - argument parsing + runtime config (`apps/cli/src/index.ts`)
-- provider/model refresh (`@cline/llms`)
-- runtime assembly/session management (`@cline/core/server`)
-- agent loop execution + tools + hooks (`@cline/agents`)
-- gRPC server mode (`clite rpc start`) (`@cline/rpc`)
+- provider/model refresh (`@clinebot/llms`)
+- runtime assembly/session management (`@clinebot/core/server`)
+- agent loop execution + tools + hooks (`@clinebot/agents`)
+- gRPC server mode (`clite rpc start`) (`@clinebot/rpc`)
 
 Docs:
 
 - `apps/cli/README.md` (usage-oriented)
-- `ARCHITECTURE.md` (`@cline/cli` section)
+- `ARCHITECTURE.md` (`@clinebot/cli` section)
 
-### `apps/code` (`@cline/code`)
+### `apps/code` (`@clinebot/code`)
 
 Purpose: Tauri desktop app that wires the SDK packages into a local GUI.
 
@@ -371,7 +392,7 @@ The code app combines:
 
 - Next.js frontend (`apps/code/app`, `apps/code/components`)
 - Tauri host/runtime (`apps/code/src-tauri`)
-- shared SDK packages (`@cline/llms`, `@cline/agents`, `@cline/core`)
+- shared SDK packages (`@clinebot/llms`, `@clinebot/agents`, `@clinebot/core`)
 
 Common commands:
 
@@ -381,7 +402,7 @@ Common commands:
 - from `apps/code/`: `bun run build` (build web assets)
 - from `apps/code/`: `bun run build:binary` (build desktop binary with Tauri)
 
-### `apps/desktop` (`@cline/desktop`)
+### `apps/desktop` (`@clinebot/desktop`)
 
 Purpose: desktop reference app that wires the SDK packages into a local GUI.
 
@@ -389,7 +410,7 @@ The desktop package combines:
 
 - Next.js frontend (`apps/desktop/app`, `apps/desktop/components`)
 - Tauri host/runtime (`apps/desktop/src-tauri`)
-- shared SDK packages (`@cline/llms`, `@cline/agents`, `@cline/core`)
+- shared SDK packages (`@clinebot/llms`, `@clinebot/agents`, `@clinebot/core`)
 
 Common commands:
 
@@ -406,17 +427,17 @@ The CLI and desktop apps are the clearest end-to-end examples in this repo.
 
 Flow:
 
-1. `@cline/llms`:
+1. `@clinebot/llms`:
    - fetches provider model metadata (`providers.getLiveModelsCatalog`)
    - picks provider/model defaults for the current run
-2. `@cline/core`:
+2. `@clinebot/core`:
    - builds runtime environment (`DefaultRuntimeBuilder`)
    - composes team runtime/session-oriented behavior
-3. `@cline/agents`:
+3. `@clinebot/agents`:
    - constructs tools (`createBuiltinTools`, spawn tool helpers)
    - creates and runs the `Agent` loop (`agent.run`, `agent.continue`)
    - processes tool calls/hooks/streaming events
-4. `@cline/rpc` (optional):
+4. `@clinebot/rpc` (optional):
    - provides gRPC server for multi-client session routing
    - manages tool approval flows and event streaming
 
@@ -428,9 +449,9 @@ Desktop/code entry points to follow:
 Minimal composition sketch:
 
 ```ts
-import { Agent, createBuiltinTools } from "@cline/agents"
-import { DefaultRuntimeBuilder } from "@cline/core/server"
-import { providers } from "@cline/llms"
+import { Agent, createBuiltinTools } from "@clinebot/agents"
+import { DefaultRuntimeBuilder } from "@clinebot/core/server"
+import { providers } from "@clinebot/llms"
 
 const catalog = await providers.getLiveModelsCatalog()
 const providerId = "anthropic"

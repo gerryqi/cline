@@ -4,7 +4,7 @@
  * Converts our unified Message format to OpenAI's ChatCompletionMessageParam format.
  */
 
-import { formatFileContentBlock } from "@cline/shared";
+import { formatFileContentBlock } from "@clinebot/shared";
 import type OpenAI from "openai";
 import type {
 	ContentBlock,

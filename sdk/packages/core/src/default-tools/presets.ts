@@ -4,7 +4,7 @@
  * Pre-configured tool combinations for common use cases.
  */
 
-import type { Tool, ToolPolicy } from "@cline/shared";
+import type { Tool, ToolPolicy } from "@clinebot/shared";
 import { ALL_DEFAULT_TOOL_NAMES } from "./constants.js";
 import { createDefaultTools } from "./definitions.js";
 import type { CreateDefaultToolsOptions, DefaultToolsConfig } from "./types.js";

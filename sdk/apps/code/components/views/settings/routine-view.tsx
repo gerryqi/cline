@@ -863,10 +863,7 @@ export function RoutineSchedulesContent() {
 				<DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
 					<DialogHeader>
 						<DialogTitle>Create Routine</DialogTitle>
-						<DialogDescription>
-							Create a scheduler routine. This maps directly to `clite schedule
-							create`.
-						</DialogDescription>
+						<DialogDescription>Create a scheduler routine.</DialogDescription>
 					</DialogHeader>
 
 					<div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

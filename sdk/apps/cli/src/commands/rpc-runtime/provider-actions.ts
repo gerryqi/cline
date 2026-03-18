@@ -2,12 +2,12 @@ import {
 	ClineAccountService,
 	executeRpcClineAccountAction,
 	ProviderSettingsManager,
-} from "@cline/core/server";
+} from "@clinebot/core/server";
 import type {
 	RpcClineAccountActionRequest,
 	RpcOAuthProviderId,
 	RpcProviderActionRequest,
-} from "@cline/shared";
+} from "@clinebot/shared";
 import {
 	loginProvider,
 	normalizeOAuthProvider,

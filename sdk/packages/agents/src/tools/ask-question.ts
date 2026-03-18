@@ -3,7 +3,7 @@ import {
 	type ToolContext,
 	validateWithZod,
 	zodToJsonSchema,
-} from "@cline/shared";
+} from "@clinebot/shared";
 import { z } from "zod";
 import { createTool } from "./create.js";
 

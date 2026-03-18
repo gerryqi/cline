@@ -6,13 +6,8 @@ const result = await Bun.build({
 	outdir: "./dist",
 	target: "bun",
 	format: "esm",
-	external: [
-		"@cline/agents",
-		"@cline/core",
-		"@cline/llms",
-		"@cline/rpc",
-		"@cline/shared",
-	],
+	// Only externalize published packages; bundle private workspace packages (@clinebot/shared, @clinebot/rpc)
+	external: ["@clinebot/agents", "@clinebot/core", "@clinebot/llms"],
 });
 
 if (result.logs.length > 0) {

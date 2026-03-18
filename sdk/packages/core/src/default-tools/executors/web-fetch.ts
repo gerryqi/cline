@@ -4,7 +4,7 @@
  * Built-in implementation for fetching web content using native fetch.
  */
 
-import type { ToolContext } from "@cline/agents";
+import type { ToolContext } from "@clinebot/agents";
 import type { WebFetchExecutor } from "../types.js";
 
 /**

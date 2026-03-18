@@ -1,4 +1,4 @@
-import type { providers } from "@cline/llms";
+import type { providers } from "@clinebot/llms";
 
 export async function buildInitialUserContent(
 	userMessage: string,

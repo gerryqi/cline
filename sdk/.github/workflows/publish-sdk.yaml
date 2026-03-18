@@ -1,0 +1,181 @@
+name: Publish SDK Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Publish channel"
+        required: true
+        type: choice
+        options:
+          - nightly
+          - latest
+        default: nightly
+      force_publish:
+        description: "Force publish even if there are no commits in the last 24 hours"
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    # Run nightly at 2:00 AM UTC
+    - cron: "0 2 * * *"
+
+permissions:
+  contents: read
+  id-token: write # Required for npm trusted publishing (OIDC)
+  checks: write # Required by test workflow
+  pull-requests: write # Required by test workflow
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  publish-sdk:
+    needs: test
+    name: Publish SDK Packages
+    if: github.repository == 'cline/cline' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine publish channel
+        id: channel
+        run: |
+          # Default to nightly for scheduled runs
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "channel=nightly" >> $GITHUB_OUTPUT
+          else
+            echo "channel=${{ inputs.channel }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check for recent commits
+        id: check_commits
+        run: |
+          CHANNEL="${{ steps.channel.outputs.channel }}"
+
+          # Always publish for latest (production) releases
+          if [ "$CHANNEL" = "latest" ]; then
+            echo "Production release requested, proceeding with publish"
+            echo "skip=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          if [ "${{ inputs.force_publish }}" = "true" ]; then
+            echo "force_publish enabled, proceeding with publish"
+            echo "skip=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          if [ $(git rev-list --count HEAD --since="24 hours ago") -eq 0 ]; then
+            echo "No commits in last 24 hours, skipping publish"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "Found recent commits, proceeding with publish"
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Bun
+        if: steps.check_commits.outputs.skip != 'true'
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Node.js
+        if: steps.check_commits.outputs.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        if: steps.check_commits.outputs.skip != 'true'
+        run: bun install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build SDK
+        if: steps.check_commits.outputs.skip != 'true'
+        run: bun run build:sdk
+
+      - name: Generate shared version
+        if: steps.check_commits.outputs.skip != 'true'
+        id: version
+        run: |
+          CHANNEL="${{ steps.channel.outputs.channel }}"
+          BASE_VERSION=$(node -p "require('./packages/llms/package.json').version")
+
+          if [ "$CHANNEL" = "nightly" ]; then
+            TIMESTAMP=$(date +%s)
+            VERSION="${BASE_VERSION}-nightly.${TIMESTAMP}"
+          else
+            VERSION="$BASE_VERSION"
+          fi
+
+          echo "Base version: $BASE_VERSION"
+          echo "Channel: $CHANNEL"
+          echo "Publish version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update all package versions
+        if: steps.check_commits.outputs.skip != 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          for PKG in llms agents core; do
+            node -e "
+              const fs = require('fs');
+              const pkgPath = 'packages/${PKG}/package.json';
+              const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+              pkg.version = '${VERSION}';
+              delete pkg.private;
+              // Resolve workspace:* dependencies to the shared publish version
+              for (const [dep, ver] of Object.entries(pkg.dependencies || {})) {
+                if (dep.startsWith('@clinebot/') && ver === 'workspace:*') {
+                  pkg.dependencies[dep] = '${VERSION}';
+                }
+              }
+              fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, '\t'));
+            "
+            echo "Updated @clinebot/${PKG} to ${VERSION}"
+          done
+
+      # Publish sequentially in dependency order: llms → agents → core
+      - name: Publish @clinebot/llms
+        if: steps.check_commits.outputs.skip != 'true'
+        run: |
+          CHANNEL="${{ steps.channel.outputs.channel }}"
+          echo "Publishing @clinebot/llms@${{ steps.version.outputs.version }} with tag '${CHANNEL}'..."
+          cd packages/llms
+          npm publish --tag "$CHANNEL" --access restricted
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @clinebot/agents
+        if: steps.check_commits.outputs.skip != 'true'
+        run: |
+          CHANNEL="${{ steps.channel.outputs.channel }}"
+          echo "Publishing @clinebot/agents@${{ steps.version.outputs.version }} with tag '${CHANNEL}'..."
+          cd packages/agents
+          npm publish --tag "$CHANNEL" --access restricted
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @clinebot/core
+        if: steps.check_commits.outputs.skip != 'true'
+        run: |
+          CHANNEL="${{ steps.channel.outputs.channel }}"
+          echo "Publishing @clinebot/core@${{ steps.version.outputs.version }} with tag '${CHANNEL}'..."
+          cd packages/core
+          npm publish --tag "$CHANNEL" --access restricted
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Summary
+        if: steps.check_commits.outputs.skip != 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          CHANNEL="${{ steps.channel.outputs.channel }}"
+          echo "✅ Published SDK packages with tag '${CHANNEL}':"
+          echo "  - @clinebot/llms@${VERSION}"
+          echo "  - @clinebot/agents@${VERSION}"
+          echo "  - @clinebot/core@${VERSION}"

@@ -1,5 +1,5 @@
 {
-	"name": "@cline/rpc",
+	"name": "@clinebot/rpc",
 	"version": "0.0.0",
 	"description": "gRPC routing server for clients, sessions, tasks, and tool approvals",
 	"type": "module",
@@ -33,8 +33,8 @@
 		"typecheck": "bun tsc --noEmit"
 	},
 	"dependencies": {
-		"@cline/shared": "workspace:*",
-		"@cline/scheduler": "workspace:*",
+		"@clinebot/shared": "workspace:*",
+		"@clinebot/scheduler": "workspace:*",
 		"@grpc/grpc-js": "^1.14.0",
 		"@grpc/proto-loader": "^0.8.0"
 	}

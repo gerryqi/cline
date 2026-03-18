@@ -1,5 +1,5 @@
 /**
- * @cline/core/server
+ * @clinebot/core/server
  *
  * Node/runtime services for host applications (CLI, desktop runtime, servers).
  */

@@ -14,7 +14,7 @@
  * Run: bun run 01-minimal.ts
  */
 
-import { createSessionHost } from "@cline/core/server";
+import { createSessionHost } from "@clinebot/core/server";
 
 async function main() {
 	// Create a session manager (handles all session lifecycle)

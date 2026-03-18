@@ -2,9 +2,9 @@ import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { type HookEventPayload, parseHookEventPayload } from "@cline/agents";
-import { resolveHookLogPath } from "@cline/shared";
-import { ensureHookLogDir } from "@cline/shared/storage";
+import { type HookEventPayload, parseHookEventPayload } from "@clinebot/agents";
+import { resolveHookLogPath } from "@clinebot/shared";
+import { ensureHookLogDir } from "@clinebot/shared/storage";
 import { nanoid } from "nanoid";
 import type { ParsedArgs } from "./types";
 

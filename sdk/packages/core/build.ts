@@ -1,14 +1,17 @@
 /// <reference types="@types/bun" />
 export {};
 
+// Only externalize published packages; bundle private workspace packages (@clinebot/shared, @clinebot/rpc)
 const external = [
-	"@cline/agents",
-	"@cline/shared",
-	"@cline/llms",
-	"@cline/rpc",
+	"@clinebot/agents",
+	"@clinebot/llms",
+	"nanoid",
+	"simple-git",
+	"yaml",
+	"zod",
 ];
 
-const builds = [
+const builds: Parameters<typeof Bun.build>[0][] = [
 	{
 		entrypoints: ["./src/index.ts"],
 		outdir: "./dist",

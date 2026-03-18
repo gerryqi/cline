@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentResult } from "@cline/agents";
+import type { AgentResult } from "@clinebot/agents";
 import { describe, expect, it, vi } from "vitest";
 import { SessionSource } from "../types/common";
 import type { CoreSessionConfig } from "../types/config";

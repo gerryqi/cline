@@ -5,7 +5,7 @@
  */
 
 import type { Anthropic } from "@anthropic-ai/sdk";
-import { formatFileContentBlock } from "@cline/shared";
+import { formatFileContentBlock } from "@clinebot/shared";
 import type {
 	ContentBlock,
 	FileContent,

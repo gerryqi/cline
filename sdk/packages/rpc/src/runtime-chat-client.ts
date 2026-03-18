@@ -2,7 +2,7 @@ import type {
 	RpcChatRunTurnRequest,
 	RpcChatStartSessionRequest,
 	RpcChatTurnResult,
-} from "@cline/shared";
+} from "@clinebot/shared";
 import { RpcSessionClient } from "./client.js";
 
 export type RpcRuntimeEvent = {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { SchedulerService } from "@cline/scheduler";
+import { SchedulerService } from "@clinebot/scheduler";
 import * as grpc from "@grpc/grpc-js";
 import type { RpcServerHandle, RpcServerOptions } from "../types.js";
 import {

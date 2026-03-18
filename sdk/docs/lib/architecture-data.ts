@@ -10,7 +10,7 @@ export const keyShifts = [
 	{
 		title: 'From "God Class" to Composition',
 		description:
-			"The original Task class owns everything: API calls, streaming, tool parsing, tool execution, approval flows, context building, message persistence, checkpoint management, and UI updates. The new Agent class delegates to MessageBuilder, ToolRegistry, ContributionRegistry, HookEngine, and the @cline/llms handler.",
+			"The original Task class owns everything: API calls, streaming, tool parsing, tool execution, approval flows, context building, message persistence, checkpoint management, and UI updates. The new Agent class delegates to MessageBuilder, ToolRegistry, ContributionRegistry, HookEngine, and the @clinebot/llms handler.",
 	},
 	{
 		title: "From VS Code-Coupled to Platform-Agnostic",
@@ -31,42 +31,42 @@ export const keyShifts = [
 
 export const packages = [
 	{
-		name: "@cline/llms",
+		name: "@clinebot/llms",
 		description:
 			"Provider catalog, model metadata, handler creation. Auto-generated model catalog. Zod schemas per provider. SDK-first handler bases (Anthropic, OpenAI-compatible, Bedrock, Gemini, Vertex, R1, community SDK). Zero dependency on other internal packages.",
 	},
 	{
-		name: "@cline/agents",
+		name: "@clinebot/agents",
 		description:
 			"~1,400-line Agent loop, ToolRegistry, ContributionRegistry, HookEngine, subprocess hooks, AgentTeam + AgentTeamsRuntime, system prompt templates. Browser-safe — no Node-specific tools.",
 	},
 	{
-		name: "@cline/rpc",
+		name: "@clinebot/rpc",
 		description:
 			"gRPC routing server for clients, sessions, tasks, and tool approvals. Event streaming and runtime chat bridge helpers for app hosts.",
 	},
 	{
-		name: "@cline/core",
+		name: "@clinebot/core",
 		description:
 			"RuntimeBuilder, SessionRuntime contract, SessionService lifecycle orchestrator, SQLite SessionStore, ArtifactStore, SessionGraph, 7 builtin tools (read_files, search_codebase, run_commands, fetch_web_content, editor, skills, ask_question), plus host-facing session manager and runtime host factory APIs.",
 	},
 	{
-		name: "@cline/shared",
+		name: "@clinebot/shared",
 		description:
 			"Shared contracts, schemas, types, and utilities used across SDK packages. Includes tool contract types, JSON stream parsing, and database helpers.",
 	},
 	{
-		name: "@cline/cli",
+		name: "@clinebot/cli",
 		description:
-			"Thin wrapper: parses args → builds runtime via core → runs agent. Session management (create, resume, list). Optional gRPC gateway via @cline/rpc.",
+			"Thin wrapper: parses args → builds runtime via core → runs agent. Session management (create, resume, list). Optional gRPC gateway via @clinebot/rpc.",
 	},
 	{
-		name: "@cline/code",
+		name: "@clinebot/code",
 		description:
 			"Tauri (Rust) + Next.js desktop app. Chat UI with provider/model selection, settings, MCP server config, and rules discovery. Uses persistent runtime bridge scripts and RPC-backed chat event flow.",
 	},
 	{
-		name: "@cline/desktop",
+		name: "@clinebot/desktop",
 		description:
 			"Tauri (Rust) + Next.js desktop app. Kanban board for agent teams + chat view. Uses persistent runtime bridge scripts and RPC-backed chat event flow.",
 	},
@@ -91,7 +91,7 @@ export const comparisonTable = [
 	{
 		dimension: "Provider/Model",
 		original: "Giant switch factory, flat config 100+ fields",
-		new: "@cline/llms catalog, SDK-first handler bases (Anthropic, OpenAI-compat, Bedrock, Gemini, Vertex, R1, community)",
+		new: "@clinebot/llms catalog, SDK-first handler bases (Anthropic, OpenAI-compat, Bedrock, Gemini, Vertex, R1, community)",
 	},
 	{
 		dimension: "Multi-agent",
@@ -424,7 +424,7 @@ export const adapterCapabilities = [
 		name: "Code App",
 		subtitle: "Tauri + Next.js + chat-runtime-bridge",
 		description:
-			"Tauri ensures/registers RPC, starts local chat WebSocket endpoint, and runs a persistent scripts/chat-runtime-bridge.ts process backed by @cline/rpc runtime helpers.",
+			"Tauri ensures/registers RPC, starts local chat WebSocket endpoint, and runs a persistent scripts/chat-runtime-bridge.ts process backed by @clinebot/rpc runtime helpers.",
 	},
 	{
 		name: "Desktop App",
@@ -446,7 +446,7 @@ export const adapterEnables = [
 			"Run agent with mock hooks, assert on tool calls and results. No VS Code mocking required.",
 	},
 	{
-		title: "gRPC Gateway (via @cline/rpc)",
+		title: "gRPC Gateway (via @clinebot/rpc)",
 		description:
 			"Multi-client session routing, tool approval flows, and event streaming over gRPC. Available via clite rpc start.",
 	},
@@ -473,53 +473,53 @@ export const missingFeatures = [
 
 export const entrypointMatrix = [
 	{
-		pkg: "@cline/llms",
-		browser: "Yes (`@cline/llms/browser` or conditionally `@cline/llms`)",
-		node: "Yes (`@cline/llms/node` or `@cline/llms`)",
+		pkg: "@clinebot/llms",
+		browser: "Yes (`@clinebot/llms/browser` or conditionally `@clinebot/llms`)",
+		node: "Yes (`@clinebot/llms/node` or `@clinebot/llms`)",
 		notes:
 			"Primary package to use for browser environments. Browser export uses browser-safe provider surface.",
 	},
 	{
-		pkg: "@cline/agents",
+		pkg: "@clinebot/agents",
 		browser: "Export exists but throws at runtime",
-		node: "Yes (`@cline/agents` or `@cline/agents/node`)",
+		node: "Yes (`@clinebot/agents` or `@clinebot/agents/node`)",
 		notes:
 			"Agent loop is Node-only in current architecture. Do not run full Agent runtime in browser.",
 	},
 	{
-		pkg: "@cline/rpc",
+		pkg: "@clinebot/rpc",
 		browser: "Export exists but throws at runtime",
-		node: "Yes (`@cline/rpc` or `@cline/rpc/node`)",
+		node: "Yes (`@clinebot/rpc` or `@clinebot/rpc/node`)",
 		notes:
 			"RPC client/server runtime is Node-only. Browser export is a guard surface.",
 	},
 	{
-		pkg: "@cline/core",
+		pkg: "@clinebot/core",
 		browser: "Browser export exists",
-		node: "Yes (`@cline/core` or `@cline/core/node`)",
+		node: "Yes (`@clinebot/core` or `@clinebot/core/node`)",
 		notes:
 			"Use for shared contracts/types and selected browser-safe surfaces. Stateful runtime/session backends remain Node-hosted.",
 	},
 	{
-		pkg: "@cline/core/server",
+		pkg: "@clinebot/core/server",
 		browser: "Not for browser runtime usage",
-		node: "Yes (`@cline/core/server`)",
+		node: "Yes (`@clinebot/core/server`)",
 		notes:
 			"Server/session runtime assembly and storage backends are Node-only concerns.",
 	},
 	{
-		pkg: "@cline/shared",
+		pkg: "@clinebot/shared",
 		browser: "No dedicated browser subpath",
-		node: "Yes (`@cline/shared`)",
+		node: "Yes (`@clinebot/shared`)",
 		notes:
 			"Shared contracts/utils package. Keep browser usage to browser-safe imports only.",
 	},
 ] as const;
 
 export const browserUsageGuidelines = [
-	"For browser LLM access, import from `@cline/llms/browser` explicitly.",
-	"Do not import `@cline/agents` runtime loop in browser clients.",
-	"Do not import `@cline/rpc` runtime clients/servers in browser clients.",
+	"For browser LLM access, import from `@clinebot/llms/browser` explicitly.",
+	"Do not import `@clinebot/agents` runtime loop in browser clients.",
+	"Do not import `@clinebot/rpc` runtime clients/servers in browser clients.",
 	"Treat browser apps as UI/control planes; keep stateful runtime execution in Node hosts (CLI/Tauri/RPC server).",
 	"Use RPC/WebSocket bridges to communicate with Node-hosted runtimes when browser UI needs agent results.",
 ];

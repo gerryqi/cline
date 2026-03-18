@@ -26,11 +26,11 @@
 		"all:advanced": "bun run 10 && bun run 11 && bun run 12 && bun run 13 && bun run 14"
 	},
 	"dependencies": {
-		"@cline/agents": "workspace:*",
-		"@cline/core": "workspace:*",
-		"@cline/llms": "workspace:*",
-		"@cline/rpc": "workspace:*",
-		"@cline/shared": "workspace:*"
+		"@clinebot/agents": "workspace:*",
+		"@clinebot/core": "workspace:*",
+		"@clinebot/llms": "workspace:*",
+		"@clinebot/rpc": "workspace:*",
+		"@clinebot/shared": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/node": "^22.10.5",

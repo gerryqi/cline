@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { SchedulerService } from "@cline/scheduler";
-import type { RpcProviderActionRequest } from "@cline/shared";
+import type { SchedulerService } from "@clinebot/scheduler";
+import type { RpcProviderActionRequest } from "@clinebot/shared";
 import type * as grpc from "@grpc/grpc-js";
 import {
 	fromProtoStruct,

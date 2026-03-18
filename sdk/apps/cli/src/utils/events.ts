@@ -1,4 +1,4 @@
-import type { AgentEvent, TeamEvent } from "@cline/agents";
+import type { AgentEvent, TeamEvent } from "@clinebot/agents";
 import { formatToolInput, formatToolOutput, truncate } from "./helpers";
 import {
 	c,

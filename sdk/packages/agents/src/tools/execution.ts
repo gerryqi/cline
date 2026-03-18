@@ -4,7 +4,7 @@
  * Functions for executing tools with error handling, timeouts, and retries.
  */
 
-import type { Tool, ToolCallRecord, ToolContext } from "@cline/shared";
+import type { Tool, ToolCallRecord, ToolContext } from "@clinebot/shared";
 import type { PendingToolCall } from "../types.js";
 
 export interface ToolExecutionObserver {

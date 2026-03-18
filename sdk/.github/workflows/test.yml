@@ -1,0 +1,62 @@
+name: Tests
+
+on:
+    push:
+        branches:
+            - main
+    workflow_dispatch:
+    pull_request:
+        branches:
+            - main
+    workflow_call:
+
+permissions:
+    contents: read
+    checks: write
+    pull-requests: write
+
+jobs:
+    quality-checks:
+        runs-on: ubuntu-latest
+        name: Quality Checks
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Setup Bun
+              uses: oven-sh/setup-bun@v2
+
+            - name: Install dependencies
+              run: bun install
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Typecheck
+              run: bun run types
+
+            - name: Lint & Format
+              run: bun run lint
+
+    test:
+        needs: quality-checks
+        runs-on: ubuntu-latest
+        name: Test
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Setup Bun
+              uses: oven-sh/setup-bun@v2
+
+            - name: Install dependencies
+              run: bun install
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Build SDK
+              id: build_step
+              run: bun run build:sdk
+
+            - name: Run Tests
+              if: ${{ !cancelled() && steps.build_step.outcome == 'success' }}
+              run: bun run test

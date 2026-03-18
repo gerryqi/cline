@@ -15,7 +15,7 @@
  * Run: bun run 02-custom-model.ts
  */
 
-import { createSessionHost } from "@cline/core/server";
+import { createSessionHost } from "@clinebot/core/server";
 
 async function demoAnthropicModel() {
 	console.log("\n=== Anthropic Claude Sonnet ===");

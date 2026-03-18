@@ -1,4 +1,4 @@
-import type { RunHookResult } from "@cline/agents";
+import type { RunHookResult } from "@clinebot/agents";
 import {
 	appendHookAudit,
 	parseCliHookPayload,

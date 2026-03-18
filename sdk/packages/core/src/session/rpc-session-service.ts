@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync } from "node:fs";
-import { RpcSessionClient, type RpcSessionRow } from "@cline/rpc";
+import { RpcSessionClient, type RpcSessionRow } from "@clinebot/rpc";
 import { nowIso } from "./session-artifacts";
 import type { SessionRowShape } from "./session-service";
 import type {

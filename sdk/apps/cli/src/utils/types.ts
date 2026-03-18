@@ -1,11 +1,11 @@
-import type { CoreSessionConfig, SessionManifest } from "@cline/core/server";
-import type { providers as LlmsProviders } from "@cline/llms";
+import type { CoreSessionConfig, SessionManifest } from "@clinebot/core/server";
+import type { providers as LlmsProviders } from "@clinebot/llms";
 import type {
 	AgentMode,
 	RpcChatRuntimeLoggerConfig,
 	SessionLineage,
 	ToolPolicy,
-} from "@cline/shared";
+} from "@clinebot/shared";
 
 export type CliOutputMode = "text" | "json";
 export type CliAgentMode = AgentMode;

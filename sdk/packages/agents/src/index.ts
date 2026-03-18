@@ -1,5 +1,5 @@
 /**
- * @cline/agents
+ * @clinebot/agents
  *
  * Public API for building agentic loops.
  */
@@ -57,7 +57,7 @@ export {
 // Prompts and formatting
 // =============================================================================
 
-export { formatFileContentBlock } from "@cline/shared";
+export { formatFileContentBlock } from "@clinebot/shared";
 export { getClineDefaultSystemPrompt } from "./prompts/index.js";
 
 // =============================================================================

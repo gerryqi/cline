@@ -9,7 +9,7 @@ import {
 	type RpcProviderActionRequest,
 	type TeamProgressLifecycleEvent,
 	type TeamProgressProjectionEvent,
-} from "@cline/shared";
+} from "@clinebot/shared";
 import type * as grpc from "@grpc/grpc-js";
 import { createGatewayGenericClient } from "./gateway-client.js";
 import type { AbortRuntimeSessionResponse__Output } from "./proto/generated/cline/rpc/v1/AbortRuntimeSessionResponse.js";

@@ -13,12 +13,12 @@ Detailed CLI command/feature reference is centralized in [`DOC.md`](/Users/beatr
 
 ## Installation
 
-> NOTE: The package is not published yet, so the CLI is not available on npm. To use the CLI, you can clone the repository and link the package locally with `bun link` from the `@cline/cli` workspace. Global installation from npm will be available after the initial release.
+> NOTE: The package is not published yet, so the CLI is not available on npm. To use the CLI, you can clone the repository and link the package locally with `bun link` from the `@clinebot/cli` workspace. Global installation from npm will be available after the initial release.
 
 ```bash
-npm i -g @cline/cli
+npm i -g @clinebot/cli
 # or
-bun i -g @cline/cli
+bun i -g @clinebot/cli
 ```
 
 ## Development
@@ -32,7 +32,7 @@ bun run build
 
 bun run dev:cli # Run Dev script for the CLI package 
 # or
-bun run -F @cline/cli dev "your prompt" # Run the CLI from the package workspace
+bun run -F @clinebot/cli dev "your prompt" # Run the CLI from the package workspace
 # or
 bun link # Link the package globally for easy access from anywhere
 # Run from the linked binary
@@ -44,12 +44,12 @@ bun cli/dist/index.js "your prompt"
 
 Dev runtime note:
 
-- Distinct host ID resolution is handled by `@cline/core/server` `createSessionHost(...)`.
+- Distinct host ID resolution is handled by `@clinebot/core/server` `createSessionHost(...)`.
 - When no explicit `distinctId` is provided, core persists a fallback ID at `<session-data-dir>/machine-id` (for example `~/.cline/data/sessions/machine-id`).
 
 ## Publishing
 
-From the @cline/cli package workspace:
+From the @clinebot/cli package workspace:
 
 ```bash
 # Package the latest model list from models.dev
@@ -68,10 +68,10 @@ bun run release
 ```bash
 
 # Run CLI unit tests
-bun -F @cline/cli test:unit
+bun -F @clinebot/cli test:unit
 
 # Run CLI e2e tests
-bun -F @cline/cli test:e2e
+bun -F @clinebot/cli test:e2e
 ```
 
 ## Usage
@@ -384,7 +384,7 @@ In desktop mode, CLI writes a request JSON file and waits for a matching decisio
 
 ## RPC Server
 
-`clite rpc start` starts the `@cline/rpc` gRPC gateway.
+`clite rpc start` starts the `@clinebot/rpc` gRPC gateway.
 
 - Default address: `127.0.0.1:4317`
 - Override with `--address <host:port>` or `CLINE_RPC_ADDRESS`
@@ -394,7 +394,7 @@ In desktop mode, CLI writes a request JSON file and waits for a matching decisio
 - Ensure: `clite rpc ensure` reuses a compatible server when possible; if the listener is stale/incompatible it can launch a fresh server on a new available port and report that effective address
 - Compatibility check: `rpc ensure` requires runtime chat methods including `StartRuntimeSession`, `SendRuntimeSession`, `AbortRuntimeSession`, and `StopRuntimeSession`.
 - Client registration: `clite rpc register --client-type <type> [--client-id <id>] [--meta key=value]...` registers host identity for RPC clients
-- Runtime APIs: `clite rpc start` wires server-side runtime handlers for `StartRuntimeSession`, `SendRuntimeSession`, and `AbortRuntimeSession` (used by `@cline/code` and CLI runtime actions)
+- Runtime APIs: `clite rpc start` wires server-side runtime handlers for `StartRuntimeSession`, `SendRuntimeSession`, and `AbortRuntimeSession` (used by `@clinebot/code` and CLI runtime actions)
 - Runtime event bridge: runtime handlers publish live `runtime.chat.*` events via RPC `PublishEvent`, so subscribed clients can consume real-time text/tool updates through `StreamEvents`
 - Team event bridge: runtime handlers also publish typed team progress/lifecycle events (`runtime.team.progress.v1`, `runtime.team.lifecycle.v1`) with status-board projections
 - Tool approval bridge: runtime handlers publish `approval.requested` and wait for RPC responses; CLI prompt runs consume these requests and return approval decisions through RPC.
@@ -428,13 +428,13 @@ For OAuth providers (`cline`, `openai-codex`, `oca`), you can either use `clite 
 
 `clite` uses a `pino`-backed adapter that targets the core `BasicLogger` contract:
 
-- CLI runtime passes `logger` directly into local `@cline/core` sessions.
+- CLI runtime passes `logger` directly into local `@clinebot/core` sessions.
 - RPC-backed sessions include a serialized logger payload in `RpcChatStartSessionRequest.logger`; the RPC runtime reconstructs the same `pino` settings and injects them into core.
 - Hosts can attach stable runtime logger bindings (for example `clientId`, `clientType`, `clientApp`) through `RpcChatRuntimeLoggerConfig.bindings`.
 - `clite rpc register` and `clite rpc start` emit activation/registration log records so startup ownership is visible in logs.
 - Logger behavior is consistent between local and RPC runtime execution paths while preserving a transport-safe config boundary.
 
-After login, OAuth credentials are persisted with `auth.expiresAt`, and `@cline/core` refreshes these tokens automatically during session turns (including long-lived RPC runtime sessions).
+After login, OAuth credentials are persisted with `auth.expiresAt`, and `@clinebot/core` refreshes these tokens automatically during session turns (including long-lived RPC runtime sessions).
 
 On startup, `clite` also attempts a legacy settings import:
 

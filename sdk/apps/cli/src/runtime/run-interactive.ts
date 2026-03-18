@@ -1,11 +1,11 @@
 import { EventEmitter } from "node:events";
-import type { AgentEvent, TeamEvent } from "@cline/agents";
+import type { AgentEvent, TeamEvent } from "@clinebot/agents";
 import {
 	prewarmFileIndex,
 	SessionSource,
 	type UserInstructionConfigWatcher,
-} from "@cline/core/server";
-import type { providers } from "@cline/llms";
+} from "@clinebot/core/server";
+import type { providers } from "@clinebot/llms";
 import { render } from "ink";
 import React from "react";
 import { InteractiveTui } from "../tui/interactive-tui";

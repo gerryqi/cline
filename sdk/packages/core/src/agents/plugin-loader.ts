@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AgentConfig } from "@cline/agents";
+import type { AgentConfig } from "@clinebot/agents";
 
 type AgentPlugin = NonNullable<AgentConfig["extensions"]>[number];
 type PluginLike = {

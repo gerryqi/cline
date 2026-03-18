@@ -4,20 +4,24 @@
 		"module": "ESNext",
 		"moduleResolution": "bundler",
 		"paths": {
-			"@cline/agents": ["../../packages/agents/src/index.ts"],
-			"@cline/agents/node": ["../../packages/agents/src/index.node.ts"],
-			"@cline/agents/browser": ["../../packages/agents/src/index.browser.ts"],
-			"@cline/core": ["../../packages/core/src/index.ts"],
-			"@cline/core/server": ["../../packages/core/src/server/index.ts"],
-			"@cline/llms": ["../../packages/llms/src/index.ts"],
-			"@cline/llms/node": ["../../packages/llms/src/index.ts"],
-			"@cline/llms/browser": ["../../packages/llms/src/index.browser.ts"],
-			"@cline/rpc": ["../../packages/rpc/src/index.ts"],
-			"@cline/rpc/node": ["../../packages/rpc/src/index.ts"],
-			"@cline/rpc/browser": ["../../packages/rpc/src/index.browser.ts"],
-			"@cline/shared": ["../../packages/shared/src/index.ts"],
-			"@cline/shared/storage": ["../../packages/shared/src/storage/index.ts"],
-			"@cline/shared/db": ["../../packages/shared/src/db/index.ts"]
+			"@clinebot/agents": ["../../packages/agents/src/index.ts"],
+			"@clinebot/agents/node": ["../../packages/agents/src/index.node.ts"],
+			"@clinebot/agents/browser": [
+				"../../packages/agents/src/index.browser.ts"
+			],
+			"@clinebot/core": ["../../packages/core/src/index.ts"],
+			"@clinebot/core/server": ["../../packages/core/src/server/index.ts"],
+			"@clinebot/llms": ["../../packages/llms/src/index.ts"],
+			"@clinebot/llms/node": ["../../packages/llms/src/index.ts"],
+			"@clinebot/llms/browser": ["../../packages/llms/src/index.browser.ts"],
+			"@clinebot/rpc": ["../../packages/rpc/src/index.ts"],
+			"@clinebot/rpc/node": ["../../packages/rpc/src/index.ts"],
+			"@clinebot/rpc/browser": ["../../packages/rpc/src/index.browser.ts"],
+			"@clinebot/shared": ["../../packages/shared/src/index.ts"],
+			"@clinebot/shared/storage": [
+				"../../packages/shared/src/storage/index.ts"
+			],
+			"@clinebot/shared/db": ["../../packages/shared/src/db/index.ts"]
 		},
 		"lib": ["ES2022"],
 		"strict": true,

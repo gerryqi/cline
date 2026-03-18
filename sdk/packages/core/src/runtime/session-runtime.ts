@@ -4,8 +4,8 @@ import type {
 	AgentResult,
 	AgentTeamsRuntime,
 	Tool,
-} from "@cline/agents";
-import type { BasicLogger } from "@cline/shared";
+} from "@clinebot/agents";
+import type { BasicLogger } from "@clinebot/shared";
 import type { UserInstructionConfigWatcher } from "../agents";
 import type { ToolExecutors } from "../default-tools";
 import type { CoreSessionConfig } from "../types/config";
@@ -23,7 +23,7 @@ export interface RuntimeBuilderInput {
 	config: CoreSessionConfig;
 	hooks?: AgentHooks;
 	extensions?: AgentConfig["extensions"];
-	onTeamEvent?: (event: import("@cline/agents").TeamEvent) => void;
+	onTeamEvent?: (event: import("@clinebot/agents").TeamEvent) => void;
 	createSpawnTool?: () => Tool;
 	onTeamRestored?: () => void;
 	userInstructionWatcher?: UserInstructionConfigWatcher;

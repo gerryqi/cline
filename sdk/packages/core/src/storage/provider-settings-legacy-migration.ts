@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { models, providers } from "@cline/llms";
-import { resolveClineDataDir } from "@cline/shared/storage";
+import { models, providers } from "@clinebot/llms";
+import { resolveClineDataDir } from "@clinebot/shared/storage";
 import type { ProviderSettings } from "../types/provider-settings";
 import { emptyStoredProviderSettings } from "../types/provider-settings";
 import type { ProviderSettingsManager } from "./provider-settings-manager";

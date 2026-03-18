@@ -1,12 +1,12 @@
 export const packages = [
-	"@cline/shared",
-	"@cline/llms",
-	"@cline/agents",
-	"@cline/rpc",
-	"@cline/core",
-	"@cline/cli",
-	"@cline/code",
-	"@cline/desktop",
+	"@clinebot/shared",
+	"@clinebot/llms",
+	"@clinebot/agents",
+	"@clinebot/rpc",
+	"@clinebot/core",
+	"@clinebot/cli",
+	"@clinebot/code",
+	"@clinebot/desktop",
 	"RPC Server",
 ] as const;
 
@@ -34,7 +34,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"User submits prompt to clite; CLI builds session/runtime config and initializes session manager.",
 				transport: "local",
-				packages: ["@cline/cli", "@cline/core"],
+				packages: ["@clinebot/cli", "@clinebot/core"],
 				methods: [
 					"createDefaultCliSessionManager()",
 					"start()",
@@ -46,7 +46,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"CLI tries RPC first: resolves/ensures RPC address, checks health via gRPC health probe.",
 				transport: "rpc",
-				packages: ["@cline/cli", "@cline/rpc", "RPC Server"],
+				packages: ["@clinebot/cli", "@clinebot/rpc", "RPC Server"],
 				methods: [
 					"getRpcServerHealth()",
 					"ensureRpcAddressViaCli()",
@@ -58,7 +58,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"If RPC unavailable, CLI starts RPC server in background, retries health checks until ready.",
 				transport: "rpc",
-				packages: ["@cline/cli", "@cline/rpc", "RPC Server"],
+				packages: ["@clinebot/cli", "@clinebot/rpc", "RPC Server"],
 				methods: [
 					"startRpcServerInBackground()",
 					"retry health checks",
@@ -70,7 +70,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"CLI creates RpcSessionClient connected to the available RPC server address.",
 				transport: "rpc",
-				packages: ["@cline/cli", "@cline/rpc"],
+				packages: ["@clinebot/cli", "@clinebot/rpc"],
 				methods: ["new RpcSessionClient(address)", "registerRpcClient()"],
 			},
 			{
@@ -78,7 +78,12 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"CLI sends StartRuntimeSession request with typed RuntimeSessionConfig; server creates session with metadata.",
 				transport: "rpc",
-				packages: ["@cline/cli", "@cline/rpc", "@cline/core", "RPC Server"],
+				packages: [
+					"@clinebot/cli",
+					"@clinebot/rpc",
+					"@clinebot/core",
+					"RPC Server",
+				],
 				methods: [
 					"StartRuntimeSession(request)",
 					"RpcSessionClient.startRuntimeSession()",
@@ -90,7 +95,12 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"RPC Server allocates sessionId, initializes runtime handlers, returns StartRuntimeSessionResponse.",
 				transport: "rpc",
-				packages: ["@cline/rpc", "@cline/core", "@cline/agents", "RPC Server"],
+				packages: [
+					"@clinebot/rpc",
+					"@clinebot/core",
+					"@clinebot/agents",
+					"RPC Server",
+				],
 				methods: [
 					"createRpcRuntimeHandlers()",
 					"StartRuntimeSessionResponse",
@@ -102,7 +112,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Before sending turn, CLI opens StreamEvents subscription for live text/tool event streaming.",
 				transport: "rpc",
-				packages: ["@cline/cli", "@cline/rpc", "RPC Server"],
+				packages: ["@clinebot/cli", "@clinebot/rpc", "RPC Server"],
 				methods: [
 					"StreamEvents({sessionIds:[sessionId]})",
 					"gRPC StreamEvents subscribe",
@@ -114,7 +124,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"CLI sends actual prompt turn via SendRuntimeSession with typed RuntimeTurnRequest payload.",
 				transport: "rpc",
-				packages: ["@cline/cli", "@cline/rpc", "RPC Server"],
+				packages: ["@clinebot/cli", "@clinebot/rpc", "RPC Server"],
 				methods: [
 					"SendRuntimeSession(sessionId, request)",
 					"gRPC SendRuntimeSession",
@@ -125,7 +135,12 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Server-side runtime executes agent loop: model calls, tool executions, and reasoning.",
 				transport: "rpc",
-				packages: ["@cline/agents", "@cline/llms", "@cline/core", "RPC Server"],
+				packages: [
+					"@clinebot/agents",
+					"@clinebot/llms",
+					"@clinebot/core",
+					"RPC Server",
+				],
 				methods: ["execute agent turn", "model calls", "tool executions"],
 			},
 			{
@@ -133,7 +148,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"During execution, runtime publishes events (text_delta, tool_call_*) that stream to CLI.",
 				transport: "rpc",
-				packages: ["@cline/rpc", "@cline/core", "RPC Server"],
+				packages: ["@clinebot/rpc", "@clinebot/core", "RPC Server"],
 				methods: [
 					"PublishEvent()",
 					"runtime.chat.text_delta",
@@ -145,7 +160,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"CLI receives streamed RoutedEvents, processes onEvent callbacks, emits agent events to UI.",
 				transport: "rpc",
-				packages: ["@cline/cli", "@cline/rpc"],
+				packages: ["@clinebot/cli", "@clinebot/rpc"],
 				methods: ["onEvent(...)", "emitAgentEvent()", "content/tool updates"],
 			},
 			{
@@ -153,7 +168,12 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Runtime completes turn, RPC returns typed RuntimeTurnResult in SendRuntimeSessionResponse.",
 				transport: "rpc",
-				packages: ["@cline/rpc", "@cline/core", "@cline/agents", "RPC Server"],
+				packages: [
+					"@clinebot/rpc",
+					"@clinebot/core",
+					"@clinebot/agents",
+					"RPC Server",
+				],
 				methods: ["final turn result", "SendRuntimeSessionResponse(result)"],
 			},
 			{
@@ -161,7 +181,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"CLI stops StreamEvents subscription, merges any remaining streamed text with final result.",
 				transport: "local",
-				packages: ["@cline/cli", "@cline/rpc"],
+				packages: ["@clinebot/cli", "@clinebot/rpc"],
 				methods: [
 					"stop StreamEvents subscription",
 					"merge streamed text + final result",
@@ -172,7 +192,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"CLI converts to final AgentResult, emits done event, and prints completed response to user.",
 				transport: "local",
-				packages: ["@cline/cli", "@cline/core"],
+				packages: ["@clinebot/cli", "@clinebot/core"],
 				methods: ["toAgentResult()", "emit done", "print completion output"],
 			},
 		],
@@ -184,7 +204,7 @@ export const scenarios: Record<string, Scenario> = {
 				title: "Session Intent Received",
 				summary: "Host receives user prompt and selects runtime path.",
 				transport: "local",
-				packages: ["@cline/cli", "@cline/code", "@cline/core"],
+				packages: ["@clinebot/cli", "@clinebot/code", "@clinebot/core"],
 				methods: [
 					"createDefaultCliSessionManager",
 					"chat_session_command(start/send)",
@@ -195,7 +215,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Ensure path verifies a compatible RPC server address and bootstraps if needed.",
 				transport: "rpc",
-				packages: ["@cline/cli", "@cline/rpc", "RPC Server"],
+				packages: ["@clinebot/cli", "@clinebot/rpc", "RPC Server"],
 				methods: [
 					"getRpcServerHealth",
 					"clite rpc ensure/start",
@@ -208,10 +228,10 @@ export const scenarios: Record<string, Scenario> = {
 					"Runtime allocates session id + metadata in memory; root artifacts are not persisted yet.",
 				transport: "rpc",
 				packages: [
-					"@cline/code",
-					"@cline/cli",
-					"@cline/rpc",
-					"@cline/core",
+					"@clinebot/code",
+					"@clinebot/cli",
+					"@clinebot/rpc",
+					"@clinebot/core",
 					"RPC Server",
 				],
 				methods: [
@@ -225,10 +245,10 @@ export const scenarios: Record<string, Scenario> = {
 					"On first user prompt submission, core persists session row/manifest/messages paths and begins the turn.",
 				transport: "rpc",
 				packages: [
-					"@cline/agents",
-					"@cline/llms",
-					"@cline/rpc",
-					"@cline/core",
+					"@clinebot/agents",
+					"@clinebot/llms",
+					"@clinebot/rpc",
+					"@clinebot/core",
 					"RPC Server",
 				],
 				methods: [
@@ -242,7 +262,12 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Clients consume StreamEvents while core persists transcript/messages.",
 				transport: "rpc",
-				packages: ["@cline/rpc", "@cline/core", "@cline/cli", "@cline/code"],
+				packages: [
+					"@clinebot/rpc",
+					"@clinebot/core",
+					"@clinebot/cli",
+					"@clinebot/code",
+				],
 				methods: [
 					"StreamEvents",
 					"PublishEvent",
@@ -254,7 +279,12 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Result is returned; status moves to completed/failed/cancelled.",
 				transport: "local",
-				packages: ["@cline/core", "@cline/rpc", "@cline/cli", "@cline/code"],
+				packages: [
+					"@clinebot/core",
+					"@clinebot/rpc",
+					"@clinebot/cli",
+					"@clinebot/code",
+				],
 				methods: [
 					"UpdateSession",
 					"AbortRuntimeSession",
@@ -272,11 +302,11 @@ export const scenarios: Record<string, Scenario> = {
 					"packages/core/src/index.ts exports public contracts, tools, schemas, and storage helpers.",
 				transport: "local",
 				packages: [
-					"@cline/core",
-					"@cline/shared",
-					"@cline/agents",
-					"@cline/llms",
-					"@cline/rpc",
+					"@clinebot/core",
+					"@clinebot/shared",
+					"@clinebot/agents",
+					"@clinebot/llms",
+					"@clinebot/rpc",
 				],
 				methods: [
 					"index.ts re-exports",
@@ -289,7 +319,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"packages/rpc/src/index.ts exposes RpcSessionClient, RpcRuntimeChatClient, and lifecycle helpers.",
 				transport: "local",
-				packages: ["@cline/rpc", "RPC Server"],
+				packages: ["@clinebot/rpc", "RPC Server"],
 				methods: [
 					"RpcSessionClient",
 					"RpcRuntimeChatClient",
@@ -303,7 +333,12 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Host injects session backend (createSqliteRpcSessionBackend from core/server).",
 				transport: "rpc",
-				packages: ["@cline/core", "@cline/rpc", "@cline/cli", "RPC Server"],
+				packages: [
+					"@clinebot/core",
+					"@clinebot/rpc",
+					"@clinebot/cli",
+					"RPC Server",
+				],
 				methods: [
 					"createSqliteRpcSessionBackend",
 					"startRpcServer({ sessionBackend })",
@@ -315,10 +350,10 @@ export const scenarios: Record<string, Scenario> = {
 					"CLI rpc-runtime attaches Start/Send/Abort handler implementations into server.",
 				transport: "rpc",
 				packages: [
-					"@cline/cli",
-					"@cline/rpc",
-					"@cline/core",
-					"@cline/agents",
+					"@clinebot/cli",
+					"@clinebot/rpc",
+					"@clinebot/core",
+					"@clinebot/agents",
 					"RPC Server",
 				],
 				methods: [
@@ -332,7 +367,12 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"CLI/Code use RpcSessionClient unary + stream calls against gateway.",
 				transport: "rpc",
-				packages: ["@cline/cli", "@cline/code", "@cline/rpc", "RPC Server"],
+				packages: [
+					"@clinebot/cli",
+					"@clinebot/code",
+					"@clinebot/rpc",
+					"RPC Server",
+				],
 				methods: ["PublishEvent", "StreamEvents", "RunProviderAction"],
 			},
 		],
@@ -344,7 +384,7 @@ export const scenarios: Record<string, Scenario> = {
 				title: "User Runs clite Prompt",
 				summary: "CLI builds session config and calls session manager.",
 				transport: "local",
-				packages: ["@cline/cli", "@cline/core"],
+				packages: ["@clinebot/cli", "@clinebot/core"],
 				methods: ["createDefaultCliSessionManager"],
 			},
 			{
@@ -352,7 +392,12 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"CLI checks RPC health, may spawn detached rpc start, else falls back to local CoreSessionService.",
 				transport: "local",
-				packages: ["@cline/cli", "@cline/rpc", "@cline/core", "RPC Server"],
+				packages: [
+					"@clinebot/cli",
+					"@clinebot/rpc",
+					"@clinebot/core",
+					"RPC Server",
+				],
 				methods: [
 					"ensureRpcAddressViaCli",
 					"getRpcServerHealth",
@@ -363,7 +408,7 @@ export const scenarios: Record<string, Scenario> = {
 				title: "StartRuntimeSession",
 				summary: "CLI sends RpcChatStartSessionRequest over RpcSessionClient.",
 				transport: "rpc",
-				packages: ["@cline/cli", "@cline/rpc", "RPC Server"],
+				packages: ["@clinebot/cli", "@clinebot/rpc", "RPC Server"],
 				methods: [
 					"RpcSessionClient.startRuntimeSession",
 					"StartRuntimeSession",
@@ -374,7 +419,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"CLI subscribes to runtime.chat.text_delta/tool events before send.",
 				transport: "rpc",
-				packages: ["@cline/cli", "@cline/rpc", "RPC Server"],
+				packages: ["@clinebot/cli", "@clinebot/rpc", "RPC Server"],
 				methods: ["RpcSessionClient.streamEvents", "runtime.chat.tool_call_*"],
 			},
 			{
@@ -382,10 +427,10 @@ export const scenarios: Record<string, Scenario> = {
 				summary: "CLI sends turn request and receives final result_json.",
 				transport: "rpc",
 				packages: [
-					"@cline/cli",
-					"@cline/rpc",
-					"@cline/agents",
-					"@cline/llms",
+					"@clinebot/cli",
+					"@clinebot/rpc",
+					"@clinebot/agents",
+					"@clinebot/llms",
 					"RPC Server",
 				],
 				methods: ["RpcSessionClient.sendRuntimeSession", "SendRuntimeSession"],
@@ -394,7 +439,7 @@ export const scenarios: Record<string, Scenario> = {
 				title: "Render + Stop Stream",
 				summary: "CLI merges streamed chunks with final result and ends turn.",
 				transport: "local",
-				packages: ["@cline/cli", "@cline/core"],
+				packages: ["@clinebot/cli", "@clinebot/core"],
 				methods: ["emitAgentEvent", "toAgentResult"],
 			},
 		],
@@ -407,7 +452,12 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Tauri runs clite rpc ensure --json, sets CLINE_RPC_ADDRESS, then rpc register.",
 				transport: "rpc",
-				packages: ["@cline/code", "@cline/cli", "@cline/rpc", "RPC Server"],
+				packages: [
+					"@clinebot/code",
+					"@clinebot/cli",
+					"@clinebot/rpc",
+					"RPC Server",
+				],
 				methods: ["rpc ensure", "rpc register", "getRpcServerHealth"],
 			},
 			{
@@ -415,7 +465,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"UI opens one socket from get_chat_ws_endpoint and sends chat command envelopes.",
 				transport: "ws",
-				packages: ["@cline/code"],
+				packages: ["@clinebot/code"],
 				methods: ["get_chat_ws_endpoint", "{requestId, request}"],
 			},
 			{
@@ -423,7 +473,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Tauri script chat-create-session.ts calls StartRuntimeSession.",
 				transport: "rpc",
-				packages: ["@cline/code", "@cline/rpc", "RPC Server"],
+				packages: ["@clinebot/code", "@clinebot/rpc", "RPC Server"],
 				methods: ["chat-create-session.ts", "StartRuntimeSession"],
 			},
 			{
@@ -431,7 +481,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"chat-stream-events.ts uses shared runRpcRuntimeEventBridge(...) to keep StreamEvents active for selected session ids.",
 				transport: "rpc",
-				packages: ["@cline/code", "@cline/rpc", "RPC Server"],
+				packages: ["@clinebot/code", "@clinebot/rpc", "RPC Server"],
 				methods: [
 					"chat-stream-events.ts",
 					"runRpcRuntimeEventBridge",
@@ -445,10 +495,10 @@ export const scenarios: Record<string, Scenario> = {
 					"chat-agent-turn.ts uses shared RpcRuntimeChatClient.sendSession and emits final result line.",
 				transport: "rpc",
 				packages: [
-					"@cline/code",
-					"@cline/rpc",
-					"@cline/core",
-					"@cline/agents",
+					"@clinebot/code",
+					"@clinebot/rpc",
+					"@clinebot/core",
+					"@clinebot/agents",
 					"RPC Server",
 				],
 				methods: [
@@ -462,7 +512,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Tauri maps stream lines into chat_event and compatibility agent://chunk.",
 				transport: "ws",
-				packages: ["@cline/code"],
+				packages: ["@clinebot/code"],
 				methods: ["{type:'chat_event',event}", "agent://chunk"],
 			},
 		],
@@ -475,7 +525,12 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Tauri runs clite rpc ensure --json, sets CLINE_RPC_ADDRESS, then rpc register.",
 				transport: "rpc",
-				packages: ["@cline/desktop", "@cline/cli", "@cline/rpc", "RPC Server"],
+				packages: [
+					"@clinebot/desktop",
+					"@clinebot/cli",
+					"@clinebot/rpc",
+					"RPC Server",
+				],
 				methods: ["rpc ensure", "rpc register", "bootstrap_rpc_gateway"],
 			},
 			{
@@ -483,7 +538,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"UI opens one socket from get_chat_ws_endpoint and sends chat command envelopes.",
 				transport: "ws",
-				packages: ["@cline/desktop"],
+				packages: ["@clinebot/desktop"],
 				methods: ["get_chat_ws_endpoint", "{requestId, request}"],
 			},
 			{
@@ -491,7 +546,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Desktop chat scripts call RpcRuntimeChatClient and shared runRpcRuntimeEventBridge helper.",
 				transport: "rpc",
-				packages: ["@cline/desktop", "@cline/rpc", "RPC Server"],
+				packages: ["@clinebot/desktop", "@clinebot/rpc", "RPC Server"],
 				methods: [
 					"chat-create-session.ts",
 					"chat-agent-turn.ts",
@@ -503,7 +558,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Desktop polls list_cli_sessions/read_session_hooks; bun binary fallback keeps discovery working when PATH differs in Tauri runtime.",
 				transport: "local",
-				packages: ["@cline/desktop", "@cline/cli"],
+				packages: ["@clinebot/desktop", "@clinebot/cli"],
 				methods: [
 					"list_cli_sessions",
 					"read_session_hooks",
@@ -520,7 +575,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Agent constructor wires ConversationStore, LifecycleOrchestrator, TurnProcessor, ToolOrchestrator, and AgentRuntimeBus.",
 				transport: "local",
-				packages: ["@cline/agents"],
+				packages: ["@clinebot/agents"],
 				methods: [
 					"new ConversationStore(...)",
 					"new LifecycleOrchestrator(...)",
@@ -534,7 +589,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"run()/continue() enforce single active-run semantics, initialize extensions once, then dispatch input hook stage.",
 				transport: "local",
-				packages: ["@cline/agents"],
+				packages: ["@clinebot/agents"],
 				methods: [
 					"assertCanStartRun()",
 					"ensureExtensionsInitialized()",
@@ -546,7 +601,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"LifecycleOrchestrator emits lifecycle events and dispatches HookEngine stages with merged control (cancel/context/systemPrompt/appendMessages).",
 				transport: "local",
-				packages: ["@cline/agents"],
+				packages: ["@clinebot/agents"],
 				methods: [
 					"LifecycleOrchestrator.dispatch(...)",
 					"HookEngine.dispatch(...)",
@@ -558,7 +613,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"TurnProcessor builds API-safe messages, streams model chunks, emits runtime events, and finalizes assistant/tool_use content.",
 				transport: "local",
-				packages: ["@cline/agents", "@cline/llms"],
+				packages: ["@clinebot/agents", "@clinebot/llms"],
 				methods: [
 					"MessageBuilder.buildForApi(...)",
 					"handler.createMessage(...)",
@@ -570,7 +625,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"ToolOrchestrator executes tool calls with lifecycle before/after hooks and bounded parallelism using maxParallelToolCalls.",
 				transport: "local",
-				packages: ["@cline/agents"],
+				packages: ["@clinebot/agents"],
 				methods: [
 					"ToolOrchestrator.execute(...)",
 					"executeToolsInParallel(..., { maxConcurrency })",
@@ -582,7 +637,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Agent emits done event, dispatches run_end, drains hook queues, and returns final AgentResult.",
 				transport: "local",
-				packages: ["@cline/agents"],
+				packages: ["@clinebot/agents"],
 				methods: [
 					"emit({type:'done'})",
 					"hook.run_end",
@@ -599,7 +654,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Core runtime builder normalizes config, creates FileTeamPersistenceStore, and eagerly ensures AgentTeamsRuntime when enableAgentTeams is true.",
 				transport: "local",
-				packages: ["@cline/core", "@cline/agents", "@cline/shared"],
+				packages: ["@clinebot/core", "@clinebot/agents", "@clinebot/shared"],
 				methods: [
 					"DefaultRuntimeBuilder.build(...)",
 					"new FileTeamPersistenceStore(...)",
@@ -611,7 +666,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Persisted team state and teammate specs are loaded from team data dir and hydrated into the in-memory runtime before turn execution.",
 				transport: "local",
-				packages: ["@cline/core", "@cline/agents", "@cline/shared"],
+				packages: ["@clinebot/core", "@clinebot/agents", "@clinebot/shared"],
 				methods: [
 					"FileTeamPersistenceStore.loadState()",
 					"getTeammateSpecs()",
@@ -623,7 +678,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"bootstrapAgentTeams registers lead team tools (team_member/team_task/team_message/team_status) and optionally respawns restored teammates.",
 				transport: "local",
-				packages: ["@cline/agents", "@cline/core"],
+				packages: ["@clinebot/agents", "@clinebot/core"],
 				methods: [
 					"bootstrapAgentTeams(...)",
 					"createAgentTeamsTools(...)",
@@ -635,7 +690,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"As lead/teammates run, runtime emits teammate/task/message/mission-log events through onTeamEvent callback while standard agent loop continues.",
 				transport: "local",
-				packages: ["@cline/agents", "@cline/core"],
+				packages: ["@clinebot/agents", "@clinebot/core"],
 				methods: [
 					"AgentTeamsRuntime.emitEvent(...)",
 					"onTeamEvent(event)",
@@ -647,7 +702,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Core appends team event JSONL history and persists current team envelope (or clears empty state) after each team event.",
 				transport: "local",
-				packages: ["@cline/core", "@cline/shared"],
+				packages: ["@clinebot/core", "@clinebot/shared"],
 				methods: [
 					"appendTaskHistory(event)",
 					"persist(teamRuntime)",
@@ -659,7 +714,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Session service maps team task start/end into child sub-sessions so transcript, status, and messages remain aligned with team task execution.",
 				transport: "local",
-				packages: ["@cline/core", "@cline/agents"],
+				packages: ["@clinebot/core", "@clinebot/agents"],
 				methods: [
 					"onTeamTaskStart(...)",
 					"createTeamTaskSubSession(...)",
@@ -671,7 +726,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"On run completion or shutdown, core updates root/sub-session status and runtime shutdown path tears down active teammates safely.",
 				transport: "local",
-				packages: ["@cline/core", "@cline/agents"],
+				packages: ["@clinebot/core", "@clinebot/agents"],
 				methods: [
 					"updateSessionStatus(...)",
 					"shutdownTeamRuntime(...)",
@@ -688,7 +743,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"ContributionRegistry validates extension capabilities + declared hookStages before setup/activation.",
 				transport: "local",
-				packages: ["@cline/agents"],
+				packages: ["@clinebot/agents"],
 				methods: [
 					"ContributionRegistry.resolve()",
 					"ContributionRegistry.validate()",
@@ -699,7 +754,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Extensions register tools/commands/shortcuts/flags/renderers/providers during setup phase.",
 				transport: "local",
-				packages: ["@cline/agents"],
+				packages: ["@clinebot/agents"],
 				methods: [
 					"ContributionRegistry.setup()",
 					"registerTool()",
@@ -711,7 +766,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"registerLifecycleHandlers binds app hooks and extension handlers to HookEngine by stage with deterministic naming/order.",
 				transport: "local",
-				packages: ["@cline/agents"],
+				packages: ["@clinebot/agents"],
 				methods: ["registerLifecycleHandlers(...)", "HookEngine.register(...)"],
 			},
 			{
@@ -719,7 +774,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"AgentRuntimeBus broadcasts runtime events to onEvent subscribers and to runtime_event hook dispatch.",
 				transport: "local",
-				packages: ["@cline/agents"],
+				packages: ["@clinebot/agents"],
 				methods: [
 					"subscribeEvents(...)",
 					"emitRuntimeEvent(...)",
@@ -731,7 +786,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"Extensions can intercept run_start/run_end, iteration_start/iteration_end, turn_start, before_agent_start, tool_call_* and error/session stages.",
 				transport: "local",
-				packages: ["@cline/agents"],
+				packages: ["@clinebot/agents"],
 				methods: [
 					"manifest.hookStages",
 					"onRunStart/onRunEnd",
@@ -744,7 +799,7 @@ export const scenarios: Record<string, Scenario> = {
 				summary:
 					"HookEngine applies per-stage/per-handler timeout, retry, failure mode, and queue/concurrency policy; handlers are sorted at registration time.",
 				transport: "local",
-				packages: ["@cline/agents"],
+				packages: ["@clinebot/agents"],
 				methods: [
 					"HookEngine.resolveStagePolicy(...)",
 					"HookEngine.executeHandlers(...)",

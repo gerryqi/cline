@@ -12,10 +12,10 @@ import {
 	type Tool,
 	type ToolApprovalRequest,
 	type ToolApprovalResult,
-} from "@cline/agents";
-import type { providers as LlmsProviders } from "@cline/llms";
-import { formatUserInputBlock, normalizeUserInput } from "@cline/shared";
-import { setHomeDirIfUnset } from "@cline/shared/storage";
+} from "@clinebot/agents";
+import type { providers as LlmsProviders } from "@clinebot/llms";
+import { formatUserInputBlock, normalizeUserInput } from "@clinebot/shared";
+import { setHomeDirIfUnset } from "@clinebot/shared/storage";
 import { nanoid } from "nanoid";
 import { resolveAndLoadAgentPlugins } from "../agents/plugin-config-loader";
 import {

@@ -12,8 +12,8 @@ import type {
 	AgentTeamsRuntime,
 	TeamEvent,
 	TeamTeammateSpec,
-} from "@cline/agents";
-import { resolveTeamDataDir } from "@cline/shared/storage";
+} from "@clinebot/agents";
+import { resolveTeamDataDir } from "@clinebot/shared/storage";
 import type { SqliteSessionStore } from "../storage/sqlite-session-store";
 import type { SessionSource, SessionStatus } from "../types/common";
 import { nowIso } from "./session-artifacts";

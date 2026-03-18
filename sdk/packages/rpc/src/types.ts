@@ -32,7 +32,7 @@ export interface RpcClientRegistrationResult {
 export interface RpcRuntimeHandlers {
 	startSession?: (request: RpcChatStartSessionRequest) => Promise<{
 		sessionId: string;
-		startResult?: import("@cline/shared").RpcChatStartSessionArtifacts;
+		startResult?: import("@clinebot/shared").RpcChatStartSessionArtifacts;
 	}>;
 	sendSession?: (
 		sessionId: string,
@@ -210,4 +210,4 @@ import type {
 	RpcChatStartSessionRequest,
 	RpcChatTurnResult,
 	RpcProviderActionRequest,
-} from "@cline/shared";
+} from "@clinebot/shared";

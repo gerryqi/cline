@@ -4,9 +4,9 @@ import type {
 	AgentHooks,
 	HookEventName,
 	HookEventPayload,
-} from "@cline/agents";
-import type { BasicLogger, HookSessionContext } from "@cline/shared";
-import { ensureParentDir } from "@cline/shared/storage";
+} from "@clinebot/agents";
+import type { BasicLogger, HookSessionContext } from "@clinebot/shared";
+import { ensureParentDir } from "@clinebot/shared/storage";
 import { listHookConfigFiles } from "../agents/hooks-config-loader";
 
 type HookContextBase = {

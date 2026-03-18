@@ -19,7 +19,7 @@ export type McpToolCallResult = unknown;
  * Minimal MCP capability contract required by the agent package.
  *
  * Implementations can be local, remote, cached, persistent, or fully managed by
- * another package (for example, @cline/core).
+ * another package (for example, @clinebot/core).
  */
 export interface McpToolProvider {
 	listTools(serverName: string): Promise<readonly McpToolDescriptor[]>;

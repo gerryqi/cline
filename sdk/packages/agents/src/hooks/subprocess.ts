@@ -1,8 +1,8 @@
 import type {
 	HookSessionContext,
 	HookSessionContextProvider,
-} from "@cline/shared";
-import { resolveHookSessionContext } from "@cline/shared";
+} from "@clinebot/shared";
+import { resolveHookSessionContext } from "@clinebot/shared";
 import { z } from "zod";
 import type {
 	AgentHookControl,

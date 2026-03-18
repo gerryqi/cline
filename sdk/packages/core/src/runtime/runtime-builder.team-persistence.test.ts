@@ -35,7 +35,7 @@ class MockAgentTeamsRuntime {
 	shutdownTeammate = vi.fn();
 }
 
-vi.mock("@cline/agents", () => ({
+vi.mock("@clinebot/agents", () => ({
 	AgentTeamsRuntime: MockAgentTeamsRuntime,
 	bootstrapAgentTeams: bootstrapAgentTeamsMock,
 }));

@@ -2,12 +2,12 @@ import {
 	CoreSessionService,
 	ProviderSettingsManager,
 	SqliteSessionStore,
-} from "@cline/core/server";
-import { RpcSessionClient } from "@cline/rpc";
+} from "@clinebot/core/server";
+import { RpcSessionClient } from "@clinebot/rpc";
 import type {
 	RpcChatRuntimeLoggerConfig,
 	RpcChatStartSessionRequest,
-} from "@cline/shared";
+} from "@clinebot/shared";
 import type { Thread } from "chat";
 import {
 	ensureOAuthProviderApiKey,

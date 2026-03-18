@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Tool } from "@cline/agents";
+import type { Tool } from "@clinebot/agents";
 import { describe, expect, it } from "vitest";
 import { DefaultRuntimeBuilder } from "./runtime-builder";
 
