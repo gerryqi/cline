@@ -169,4 +169,96 @@ describe("createSpawnAgentTool", () => {
 			}),
 		);
 	});
+
+	it("appends workspace metadata for cline sub-agents when missing", async () => {
+		const { createSpawnAgentTool } = await import("./spawn-agent-tool.js");
+		runMock.mockResolvedValue({
+			text: "ok",
+			iterations: 1,
+			finishReason: "completed",
+			usage: { inputTokens: 1, outputTokens: 1 },
+		});
+
+		const workspaceMetadata = `# Workspace Configuration
+{
+  "workspaces": {
+    "/repo/demo": {
+      "hint": "demo"
+    }
+  }
+}`;
+
+		const tool = createSpawnAgentTool({
+			providerId: "cline",
+			modelId: "anthropic/claude-sonnet-4.6",
+			cwd: "/repo/demo",
+			clineWorkspaceMetadata: workspaceMetadata,
+			subAgentTools: [],
+		});
+
+		await tool.execute(
+			{
+				systemPrompt: "You are a specialist teammate.",
+				task: "Investigate module boundaries",
+			},
+			{
+				agentId: "parent-4",
+				conversationId: "conv-parent",
+				iteration: 1,
+			},
+		);
+
+		expect(agentConstructorSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				systemPrompt: expect.stringContaining(workspaceMetadata),
+			}),
+		);
+	});
+
+	it("does not duplicate workspace metadata for cline sub-agents", async () => {
+		const { createSpawnAgentTool } = await import("./spawn-agent-tool.js");
+		runMock.mockResolvedValue({
+			text: "ok",
+			iterations: 1,
+			finishReason: "completed",
+			usage: { inputTokens: 1, outputTokens: 1 },
+		});
+
+		const inputSystemPrompt = `You are a specialist teammate.
+
+# Workspace Configuration
+{
+  "workspaces": {
+    "/repo/demo": {
+      "hint": "demo"
+    }
+  }
+}`;
+
+		const tool = createSpawnAgentTool({
+			providerId: "cline",
+			modelId: "anthropic/claude-sonnet-4.6",
+			cwd: "/repo/demo",
+			clineWorkspaceMetadata: "# Workspace Configuration\n{}",
+			subAgentTools: [],
+		});
+
+		await tool.execute(
+			{
+				systemPrompt: inputSystemPrompt,
+				task: "Investigate module boundaries",
+			},
+			{
+				agentId: "parent-5",
+				conversationId: "conv-parent",
+				iteration: 1,
+			},
+		);
+
+		expect(agentConstructorSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				systemPrompt: inputSystemPrompt,
+			}),
+		);
+	});
 });

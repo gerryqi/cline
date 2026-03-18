@@ -1,5 +1,5 @@
+import type { RpcSaveProviderSettingsActionRequest } from "@clinebot/core";
 import type { ProviderSettingsManager } from "@clinebot/core/server";
-import type { RpcSaveProviderSettingsActionRequest } from "@clinebot/shared";
 import { describe, expect, it, vi } from "vitest";
 import { saveProviderSettings } from "./provider-registry";
 

@@ -614,7 +614,6 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 			switch (event.type) {
 				case "iteration_start":
 					closeInlineStream();
-					appendLine(`${c.yellow}── iteration ${event.iteration} ──${c.reset}`);
 					break;
 				case "iteration_end":
 					closeInlineStream();

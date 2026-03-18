@@ -4,7 +4,7 @@
 		"module": "ESNext",
 		"moduleResolution": "bundler",
 		"paths": {
-			"@clinebot/rpc": ["../../packages/rpc/src/index.ts"],
+			"@clinebot/core": ["../../packages/core/src/index.node.ts"],
 			"@clinebot/shared": ["../../packages/shared/src/index.ts"]
 		},
 		"lib": ["ES2022"],

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { RpcSessionClient } from "@clinebot/rpc";
-import type { RpcProviderOAuthLoginResponse } from "@clinebot/shared";
+import type { RpcProviderOAuthLoginResponse } from "@clinebot/core";
+import { RpcSessionClient } from "@clinebot/core";
 
 type RequestBody = {
 	provider: string;

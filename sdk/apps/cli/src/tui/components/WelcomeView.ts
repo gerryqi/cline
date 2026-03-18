@@ -1,4 +1,4 @@
-import type { AgentMode } from "@clinebot/shared";
+import type { AgentMode } from "@clinebot/core";
 import { Box, Text } from "ink";
 import React, { memo } from "react";
 

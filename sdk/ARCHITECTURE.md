@@ -13,7 +13,7 @@ Packages:
 - `packages/scheduler` (`@clinebot/scheduler`): cron-based scheduled execution service and persistence.
 - `packages/agents` (`@clinebot/agents`): stateless runtime loop, tools, hooks, teams.
 - `packages/rpc` (`@clinebot/rpc`): transport/control-plane APIs (session CRUD, tasks, events, approvals) plus shared runtime chat client helpers.
-- `packages/core` (`@clinebot/core`): stateful orchestration (runtime composition, sessions, storage, RPC-backed session adapter).
+- `packages/core` (`@clinebot/core`): stateful orchestration (runtime composition, sessions, storage, RPC-backed session adapter) plus app-facing re-exports for shared contracts/path helpers.
 
 Apps:
 
@@ -49,8 +49,7 @@ flowchart LR
   cli --> core
   code --> core
   desktop --> core
-  vscode --> rpc
-  vscode --> shared
+  vscode --> core
 ```
 
 ## Runtime Flows

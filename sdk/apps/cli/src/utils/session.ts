@@ -8,6 +8,20 @@ import type {
 	ToolApprovalRequest,
 	ToolApprovalResult,
 } from "@clinebot/agents";
+import type {
+	RpcChatMessage,
+	RpcChatRunTurnRequest,
+	RpcChatRuntimeLoggerConfig,
+	RpcChatStartSessionArtifacts,
+	RpcChatStartSessionRequest,
+	RpcChatTurnResult,
+} from "@clinebot/core";
+import {
+	getRpcServerDefaultAddress,
+	getRpcServerHealth,
+	RpcSessionClient,
+	resolveSessionDataDir,
+} from "@clinebot/core";
 import {
 	CoreSessionService,
 	createSessionHost,
@@ -16,20 +30,6 @@ import {
 	SessionSource,
 	SqliteSessionStore,
 } from "@clinebot/core/server";
-import {
-	getRpcServerDefaultAddress,
-	getRpcServerHealth,
-	RpcSessionClient,
-} from "@clinebot/rpc";
-import type {
-	RpcChatMessage,
-	RpcChatRunTurnRequest,
-	RpcChatRuntimeLoggerConfig,
-	RpcChatStartSessionArtifacts,
-	RpcChatStartSessionRequest,
-	RpcChatTurnResult,
-} from "@clinebot/shared";
-import { resolveSessionDataDir } from "@clinebot/shared/storage";
 
 const activeRpcAddress =
 	process.env.CLINE_RPC_ADDRESS?.trim() || getRpcServerDefaultAddress();

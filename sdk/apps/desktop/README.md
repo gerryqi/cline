@@ -10,7 +10,7 @@
 - Boots RPC on startup via `clite rpc ensure` + `clite rpc register`.
 - Runs chat through RPC runtime methods (`startRuntimeSession`, `sendRuntimeSession`, `abortRuntimeSession`).
 - Streams chat runtime events over one persistent websocket envelope (`chat_event` / `chat_response`).
-- Reuses shared `@clinebot/rpc` runtime chat helpers for desktop/code bridge scripts:
+- Reuses runtime chat helpers via `@clinebot/core` re-exports for desktop/code bridge scripts:
   - [`packages/rpc/src/runtime-chat-client.ts`](/Users/beatrix/dev/clinee/sdk-wip/packages/rpc/src/runtime-chat-client.ts)
   - [`packages/rpc/src/runtime-chat-command-bridge.ts`](/Users/beatrix/dev/clinee/sdk-wip/packages/rpc/src/runtime-chat-command-bridge.ts)
   - [`packages/rpc/src/runtime-chat-stream-bridge.ts`](/Users/beatrix/dev/clinee/sdk-wip/packages/rpc/src/runtime-chat-stream-bridge.ts)
@@ -28,7 +28,7 @@
 Desktop should use explicit runtime imports:
 
 - Frontend/browser modules: `@clinebot/llms/browser`
-- Node runtime modules (CLI/Tauri/scripts): `@clinebot/llms/node`, `@clinebot/agents/node`, `@clinebot/core/node`, `@clinebot/core/server/node`, `@clinebot/rpc/node`
+- Node runtime modules (CLI/Tauri/scripts): `@clinebot/llms/node`, `@clinebot/agents/node`, `@clinebot/core/node`, `@clinebot/core/server/node`
 
 ## Scripts
 

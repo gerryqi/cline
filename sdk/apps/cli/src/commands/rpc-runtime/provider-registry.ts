@@ -1,14 +1,14 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { ProviderSettingsManager } from "@clinebot/core/server";
-import { models } from "@clinebot/llms";
 import type {
 	RpcAddProviderActionRequest,
 	RpcProviderCapability,
 	RpcProviderListItem,
 	RpcProviderModel,
 	RpcSaveProviderSettingsActionRequest,
-} from "@clinebot/shared";
+} from "@clinebot/core";
+import type { ProviderSettingsManager } from "@clinebot/core/server";
+import { models } from "@clinebot/llms";
 import type { StoredModelsFile } from "./types";
 
 function resolveVisibleApiKey(settings: {

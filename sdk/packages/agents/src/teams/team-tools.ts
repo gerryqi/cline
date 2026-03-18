@@ -40,7 +40,10 @@ const TeamStatusInputSchema = z.object({});
 const TeamCreateTaskInputSchema = z.object({
 	title: z.string().min(1).describe("Task title"),
 	description: z.string().min(1).describe("Task details"),
-	dependsOn: z.array(z.string()).optional().describe("Dependency task IDs"),
+	dependsOn: z
+		.array(z.string().describe("Dependency task ID"))
+		.optional()
+		.describe("Array of the dependency task IDs"),
 	assignee: z.string().min(1).optional().describe("Optional assignee"),
 });
 

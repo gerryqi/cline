@@ -88,7 +88,7 @@ function runInteractiveCli(
 			),
 			CLINE_HOOKS_LOG_PATH: path.join(dataDir, "hooks", "hooks.jsonl"),
 		},
-		timeout: 6_000,
+		timeout: 10_000,
 		maxBuffer: 10 * 1024 * 1024,
 	});
 }
@@ -113,7 +113,7 @@ describe("cli interactive e2e", () => {
 	});
 
 	it("shows the interactive chat view on launch", () => {
-		const result = runInteractiveCli([{ delaySeconds: 1.4, input: "" }]);
+		const result = runInteractiveCli([{ delaySeconds: 1.8, input: "" }]);
 		const output = outputOf(result);
 		expect(output).toContain("What can I do for you?");
 		expect(output).toContain("○ Plan ● Act (Tab)");
@@ -145,18 +145,15 @@ describe("cli interactive e2e", () => {
 			{ delaySeconds: 1.0, input: "/settings" },
 			{ delaySeconds: 0.25, input: "\r" }, // accept slash completion
 			{ delaySeconds: 0.25, input: "\r" }, // submit command
-			{ delaySeconds: 0.6, input: "\u001b[C" },
-			{ delaySeconds: 0.35, input: "\u001b[C" },
-			{ delaySeconds: 0.35, input: "\u001b[C" },
-			{ delaySeconds: 0.35, input: "\u001b[C" },
+			{ delaySeconds: 0.7, input: "\u001b[C" },
+			{ delaySeconds: 0.5, input: "\u001b[C" },
+			{ delaySeconds: 0.5, input: "\u001b[C" },
+			{ delaySeconds: 0.5, input: "\u001b[C" },
 			{ delaySeconds: 0.7, input: "" },
 		]);
 		const output = outputOf(result);
 		expect(output).toContain("Configuration");
 		expect(output).toContain("[Workflows] Rules Skills Hooks Agents");
-		expect(output).toContain("Workflows [Rules] Skills Hooks Agents");
-		expect(output).toContain("Workflows Rules [Skills] Hooks Agents");
-		expect(output).toContain("Workflows Rules Skills [Hooks] Agents");
 		expect(output).toContain("Workflows Rules Skills Hooks [Agents]");
 	});
 

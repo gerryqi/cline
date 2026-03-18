@@ -20,8 +20,7 @@
 		],
 		"paths": {
 			"@/*": ["./*"],
-			"@clinebot/rpc": ["../../packages/rpc/src/index.ts"],
-			"@clinebot/rpc/*": ["../../packages/rpc/src/*"]
+			"@clinebot/core": ["../../packages/core/src/index.node.ts"]
 		}
 	},
 	"include": [

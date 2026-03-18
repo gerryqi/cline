@@ -20,7 +20,7 @@ npm install @clinebot/core
 
 ## Entry Points
 
-- `@clinebot/core`: runtime-agnostic core contracts and shared utilities
+- `@clinebot/core`: core contracts, shared utilities, and RPC helper re-exports (`RpcSessionClient`, `getRpcServerHealth`, runtime bridge helpers)
 - `@clinebot/core/server`: Node/server helpers for building hosts and runtimes
 
 ## Typical Usage

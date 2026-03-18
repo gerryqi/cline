@@ -1,13 +1,13 @@
+import type {
+	RpcClineAccountActionRequest,
+	RpcOAuthProviderId,
+	RpcProviderActionRequest,
+} from "@clinebot/core";
 import {
 	ClineAccountService,
 	executeRpcClineAccountAction,
 	ProviderSettingsManager,
 } from "@clinebot/core/server";
-import type {
-	RpcClineAccountActionRequest,
-	RpcOAuthProviderId,
-	RpcProviderActionRequest,
-} from "@clinebot/shared";
 import {
 	loginProvider,
 	normalizeOAuthProvider,

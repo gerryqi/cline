@@ -38,6 +38,7 @@ describe("parseArgs", () => {
 	it("returns defaults when no arguments are supplied", () => {
 		const parsed = parseArgs([]);
 		expect(parsed).toEqual({
+			verbose: false,
 			interactive: false,
 			showHelp: false,
 			showVersion: false,
@@ -59,6 +60,7 @@ describe("parseArgs", () => {
 
 	it("parses prompt, runtime flags, and per-tool approval settings", () => {
 		const parsed = parseArgs([
+			"--verbose",
 			"--no-tools",
 			"--no-spawn",
 			"--no-teams",
@@ -97,6 +99,7 @@ describe("parseArgs", () => {
 		]);
 
 		expect(parsed.prompt).toBe("Audit the repo");
+		expect(parsed.verbose).toBe(true);
 		expect(parsed.enableTools).toBe(false);
 		expect(parsed.enableSpawnAgent).toBe(false);
 		expect(parsed.enableAgentTeams).toBe(false);

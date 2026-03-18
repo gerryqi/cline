@@ -1,5 +1,5 @@
 import { runSubprocessEvent } from "@clinebot/agents";
-import type { ConnectorHookEvent } from "@clinebot/shared";
+import type { ConnectorHookEvent } from "@clinebot/core";
 import type { CliLoggerAdapter } from "../logging/adapter";
 
 export async function dispatchConnectorHook(

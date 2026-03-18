@@ -1,13 +1,13 @@
+import type {
+	RpcChatRuntimeLoggerConfig,
+	RpcChatStartSessionRequest,
+} from "@clinebot/core";
+import { RpcSessionClient } from "@clinebot/core";
 import {
 	CoreSessionService,
 	ProviderSettingsManager,
 	SqliteSessionStore,
 } from "@clinebot/core/server";
-import { RpcSessionClient } from "@clinebot/rpc";
-import type {
-	RpcChatRuntimeLoggerConfig,
-	RpcChatStartSessionRequest,
-} from "@clinebot/shared";
 import type { Thread } from "chat";
 import {
 	ensureOAuthProviderApiKey,

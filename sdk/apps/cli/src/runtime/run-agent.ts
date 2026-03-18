@@ -128,7 +128,7 @@ export async function runAgent(
 	}
 	const startTime = performance.now();
 	void prewarmFileIndex(config.cwd);
-	const hooks = createRuntimeHooks();
+	const hooks = createRuntimeHooks({ verbose: config.verbose });
 	const sessionManager = await createDefaultCliSessionManager({
 		defaultToolExecutors: {
 			askQuestion: askQuestionInTerminal,

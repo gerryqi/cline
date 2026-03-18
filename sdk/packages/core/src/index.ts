@@ -4,6 +4,47 @@
  * Runtime-agnostic core contracts and shared state utilities.
  */
 
+// Shared contracts and path helpers re-exported for app consumers.
+export type {
+	AgentMode,
+	BasicLogger,
+	ConnectorHookEvent,
+	HookSessionContext,
+	RpcAddProviderActionRequest,
+	RpcChatMessage,
+	RpcChatRunTurnRequest,
+	RpcChatRuntimeConfigBase,
+	RpcChatRuntimeLoggerConfig,
+	RpcChatStartSessionArtifacts,
+	RpcChatStartSessionRequest,
+	RpcChatTurnResult,
+	RpcClineAccountActionRequest,
+	RpcOAuthProviderId,
+	RpcProviderActionRequest,
+	RpcProviderCapability,
+	RpcProviderCatalogResponse,
+	RpcProviderListItem,
+	RpcProviderModel,
+	RpcProviderOAuthLoginResponse,
+	RpcSaveProviderSettingsActionRequest,
+	SessionLineage,
+	TeamProgressProjectionEvent,
+	ToolPolicy,
+} from "@clinebot/shared";
+export {
+	normalizeUserInput,
+	RPC_TEAM_LIFECYCLE_EVENT_TYPE,
+	RPC_TEAM_PROGRESS_EVENT_TYPE,
+	resolveHookLogPath,
+} from "@clinebot/shared";
+export {
+	ensureHookLogDir,
+	ensureParentDir,
+	resolveClineDataDir,
+	resolveSessionDataDir,
+	setHomeDir,
+	setHomeDirIfUnset,
+} from "@clinebot/shared/storage";
 export {
 	type ClineAccountBalance,
 	type ClineAccountOperations,
@@ -76,7 +117,6 @@ export {
 	resolveDefaultMcpSettingsPath,
 	resolveMcpServerRegistrations,
 } from "./mcp";
-
 export { ProviderSettingsManager } from "./storage/provider-settings-manager";
 export {
 	SqliteTeamStore,
@@ -86,7 +126,6 @@ export {
 	buildTeamProgressSummary,
 	toTeamProgressLifecycleEvent,
 } from "./team";
-
 // Compatibility barrel (legacy imports).
 export type { RuntimeEnvironment, SessionEvent, StoredMessages } from "./types";
 export type { SessionStatus } from "./types/common";

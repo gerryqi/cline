@@ -104,6 +104,19 @@ type PreparedTurnInput = {
 	userFiles?: string[];
 };
 
+const WORKSPACE_CONFIGURATION_MARKER = "# Workspace Configuration";
+
+function extractWorkspaceMetadataFromSystemPrompt(
+	systemPrompt: string,
+): string | undefined {
+	const markerIndex = systemPrompt.lastIndexOf(WORKSPACE_CONFIGURATION_MARKER);
+	if (markerIndex < 0) {
+		return undefined;
+	}
+	const metadata = systemPrompt.slice(markerIndex).trim();
+	return metadata.length > 0 ? metadata : undefined;
+}
+
 export interface DefaultSessionManagerOptions {
 	distinctId: string;
 	sessionService: SessionBackend;
@@ -974,10 +987,15 @@ export class DefaultSessionManager implements SessionManager {
 		return createSpawnAgentTool({
 			providerId: config.providerId,
 			modelId: config.modelId,
+			cwd: config.cwd,
 			apiKey: config.apiKey,
 			baseUrl: config.baseUrl,
 			providerConfig: config.providerConfig,
 			knownModels: config.knownModels,
+			clineWorkspaceMetadata:
+				config.providerId === "cline"
+					? extractWorkspaceMetadataFromSystemPrompt(config.systemPrompt)
+					: undefined,
 			createSubAgentTools,
 			hooks: config.hooks,
 			extensions: config.extensions,

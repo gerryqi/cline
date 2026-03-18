@@ -47,6 +47,14 @@ export async function getRpcServerHealth(): Promise<never> {
 	throw browserOnlyError();
 }
 
+export async function registerRpcClient(): Promise<never> {
+	throw browserOnlyError();
+}
+
+export async function requestRpcServerShutdown(): Promise<never> {
+	throw browserOnlyError();
+}
+
 export async function startRpcServer(_options: unknown): Promise<never> {
 	throw browserOnlyError();
 }
@@ -62,6 +70,13 @@ export function getRpcServerDefaultAddress(): never {
 export type {
 	PendingApproval,
 	RoutedEvent,
+	RpcClientRegistrationInput,
+	RpcClientRegistrationResult,
+	RpcRuntimeHandlers,
+	RpcScheduleExecution,
+	RpcScheduleExecutionStatus,
+	RpcScheduleMode,
+	RpcScheduleRecord,
 	RpcServerHandle,
 	RpcServerOptions,
 	RpcSessionBackend,

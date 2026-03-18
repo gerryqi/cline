@@ -29,7 +29,7 @@ export function closeInlineStreamIfNeeded(): void {
 // Agent event handler
 // =============================================================================
 
-const isDev = process.env.NODE_ENV === "development";
+const _isDev = process.env.NODE_ENV === "development";
 
 export function handleEvent(event: AgentEvent, _config: Config): void {
 	if (getCurrentOutputMode() === "json") {
@@ -40,9 +40,6 @@ export function handleEvent(event: AgentEvent, _config: Config): void {
 	switch (event.type) {
 		case "iteration_start":
 			closeInlineStreamIfNeeded();
-			if (isDev) {
-				write(`\n${c.yellow}── iteration ${event.iteration} ──${c.reset}\n`);
-			}
 			break;
 
 		case "iteration_end":

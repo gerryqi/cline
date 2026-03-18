@@ -2,6 +2,7 @@
  * Reusable spawn_agent tool for delegating tasks to sub-agents.
  */
 
+import { basename, resolve } from "node:path";
 import type { providers as LlmsProviders } from "@clinebot/llms";
 import type {
 	Tool,
@@ -56,11 +57,13 @@ export interface SubAgentEndContext {
 export interface SpawnAgentToolConfig {
 	providerId: string;
 	modelId: string;
+	cwd?: string;
 	apiKey?: string;
 	baseUrl?: string;
 	providerConfig?: LlmsProviders.ProviderConfig;
 	knownModels?: Record<string, LlmsProviders.ModelInfo>;
 	thinking?: boolean;
+	clineWorkspaceMetadata?: string;
 	defaultMaxIterations?: number;
 	subAgentTools?: Tool[];
 	createSubAgentTools?: (
@@ -106,6 +109,44 @@ export interface SpawnAgentToolConfig {
 	logger?: BasicLogger;
 }
 
+const WORKSPACE_CONFIGURATION_MARKER = "# Workspace Configuration";
+
+function buildFallbackWorkspaceMetadata(cwd: string): string {
+	const rootPath = resolve(cwd);
+	return `# Workspace Configuration\n${JSON.stringify(
+		{
+			workspaces: {
+				[rootPath]: {
+					hint: basename(rootPath),
+				},
+			},
+		},
+		null,
+		2,
+	)}`;
+}
+
+function normalizeSubAgentSystemPrompt(
+	inputSystemPrompt: string,
+	config: SpawnAgentToolConfig,
+): string {
+	if (config.providerId !== "cline") {
+		return inputSystemPrompt;
+	}
+	const trimmedPrompt = inputSystemPrompt.trim();
+	if (trimmedPrompt.includes(WORKSPACE_CONFIGURATION_MARKER)) {
+		return trimmedPrompt;
+	}
+	const cwd = config.cwd?.trim() || process.cwd();
+	const workspaceMetadata =
+		config.clineWorkspaceMetadata?.trim() ||
+		buildFallbackWorkspaceMetadata(cwd);
+	if (!workspaceMetadata) {
+		return trimmedPrompt;
+	}
+	return `${trimmedPrompt}\n\n${workspaceMetadata}`;
+}
+
 /**
  * Create a spawn_agent tool that can run a delegated task with a focused sub-agent.
  */
@@ -147,7 +188,7 @@ export function createSpawnAgentTool(
 				providerConfig: config.providerConfig,
 				knownModels: config.knownModels,
 				thinking: config.thinking,
-				systemPrompt: input.systemPrompt,
+				systemPrompt: normalizeSubAgentSystemPrompt(input.systemPrompt, config),
 				tools,
 				maxIterations: input.maxIterations ?? config.defaultMaxIterations,
 				parentAgentId: context.agentId,

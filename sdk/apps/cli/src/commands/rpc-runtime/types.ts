@@ -1,4 +1,4 @@
-import type { RpcProviderCapability } from "@clinebot/shared";
+import type { RpcProviderCapability } from "@clinebot/core";
 
 export type StoredModelsFile = {
 	version: 1;

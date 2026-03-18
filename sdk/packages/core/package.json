@@ -1,7 +1,7 @@
 {
 	"name": "@clinebot/core",
 	"version": "0.0.0",
-	"main": "dist/index.js",
+	"main": "dist/index.node.js",
 	"dependencies": {
 		"@clinebot/agents": "workspace:*",
 		"@clinebot/llms": "workspace:*",
@@ -14,17 +14,18 @@
 	},
 	"exports": {
 		".": {
-			"development": "./src/index.ts",
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js"
+			"browser": "./dist/index.browser.js",
+			"development": "./src/index.node.ts",
+			"types": "./dist/index.node.d.ts",
+			"import": "./dist/index.node.js"
 		},
 		"./node": {
-			"development": "./src/index.ts",
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js"
+			"development": "./src/index.node.ts",
+			"types": "./dist/index.node.d.ts",
+			"import": "./dist/index.node.js"
 		},
 		"./browser": {
-			"development": "./src/index.ts",
+			"development": "./src/index.browser.ts",
 			"types": "./dist/index.browser.d.ts",
 			"import": "./dist/index.browser.js"
 		},
@@ -59,5 +60,5 @@
 		"test:watch": "vitest --config vitest.config.ts"
 	},
 	"type": "module",
-	"types": "dist/index.d.ts"
+	"types": "dist/index.node.d.ts"
 }

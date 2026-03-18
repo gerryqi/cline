@@ -21,7 +21,7 @@ Startup flow:
 3. It starts a local WebSocket chat bridge (`/chat`) and exposes the endpoint to the UI.
 4. The UI keeps one persistent socket and sends chat commands (`start`, `send`, `abort`, `reset`) over that connection.
 5. If websocket command/response transport is unavailable during a turn, the UI falls back to the direct Tauri command path (`chat_session_command`) so requests are still delivered.
-6. Host/runtime communication is handled by `scripts/chat-runtime-bridge.ts` using shared `@clinebot/rpc` bridge helpers.
+6. Host/runtime communication is handled by `scripts/chat-runtime-bridge.ts` using `@clinebot/core` RPC bridge helper re-exports.
 
 Chat transport envelope:
 

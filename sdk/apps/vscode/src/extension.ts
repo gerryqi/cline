@@ -1,18 +1,18 @@
 import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import {
-	getRpcServerDefaultAddress,
-	getRpcServerHealth,
-	RpcSessionClient,
-} from "@clinebot/rpc";
 import type {
 	RpcChatRunTurnRequest,
 	RpcChatStartSessionRequest,
 	RpcChatTurnResult,
 	RpcProviderCatalogResponse,
 	RpcProviderModel,
-} from "@clinebot/shared";
+} from "@clinebot/core";
+import {
+	getRpcServerDefaultAddress,
+	getRpcServerHealth,
+	RpcSessionClient,
+} from "@clinebot/core";
 import * as vscode from "vscode";
 import type {
 	WebviewInboundMessage,

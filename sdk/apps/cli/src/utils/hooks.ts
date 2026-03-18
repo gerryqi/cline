@@ -4,7 +4,7 @@ import type {
 	RunHookResult,
 } from "@clinebot/agents";
 import { createSubprocessHooks } from "@clinebot/agents";
-import type { HookSessionContext } from "@clinebot/shared";
+import type { HookSessionContext } from "@clinebot/core";
 import { formatHookDispatchOutput } from "../commands/hook";
 import { closeInlineStreamIfNeeded } from "./events";
 import {
@@ -17,6 +17,23 @@ import {
 } from "./output";
 
 const isDev = process.env.NODE_ENV === "development";
+
+function hasHookControlOutput(value: unknown): boolean {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return false;
+	}
+	const record = value as Record<string, unknown>;
+	return (
+		record.cancel === true ||
+		record.review === true ||
+		(typeof record.context === "string" && record.context.trim().length > 0) ||
+		(typeof record.contextModification === "string" &&
+			record.contextModification.trim().length > 0) ||
+		(typeof record.errorMessage === "string" &&
+			record.errorMessage.trim().length > 0) ||
+		Object.hasOwn(record, "overrideInput")
+	);
+}
 
 function getHookCommand(): string[] | undefined {
 	if (!process.argv[1]) {
@@ -38,6 +55,7 @@ export function currentHookSessionContext(): HookSessionContext | undefined {
 
 function writeHookInvocation(
 	payload: HookEventPayload,
+	options: { verbose: boolean },
 	result?: RunHookResult,
 ): void {
 	if (getCurrentOutputMode() === "json") {
@@ -50,6 +68,17 @@ function writeHookInvocation(
 			parentAgentId: payload.parent_agent_id,
 		});
 		return;
+	}
+	if (!options.verbose) {
+		if (payload.hookName === "tool_result") {
+			return;
+		}
+		if (
+			payload.hookName === "tool_call" &&
+			!hasHookControlOutput(result?.parsedJson)
+		) {
+			return;
+		}
 	}
 	closeInlineStreamIfNeeded();
 	const hookName = payload.hookName;
@@ -72,11 +101,14 @@ function writeHookInvocation(
 	}
 }
 
-export function createRuntimeHooks(): AgentHooks | undefined {
+export function createRuntimeHooks(options?: {
+	verbose?: boolean;
+}): AgentHooks | undefined {
 	const command = getHookCommand();
 	if (!command) {
 		return undefined;
 	}
+	const verbose = options?.verbose === true;
 	return createSubprocessHooks({
 		command,
 		env: process.env,
@@ -88,7 +120,7 @@ export function createRuntimeHooks(): AgentHooks | undefined {
 			}
 		},
 		onDispatch: ({ payload, result }) => {
-			writeHookInvocation(payload, result);
+			writeHookInvocation(payload, { verbose }, result);
 		},
 	}).hooks;
 }

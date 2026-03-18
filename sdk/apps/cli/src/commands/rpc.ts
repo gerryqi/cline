@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:net";
-import { createSqliteRpcSessionBackend } from "@clinebot/core/server";
+import type { RpcChatStartSessionRequest } from "@clinebot/core";
 import {
 	getRpcServerHealth,
 	RpcSessionClient,
@@ -8,8 +8,8 @@ import {
 	requestRpcServerShutdown,
 	startRpcServer,
 	stopRpcServer,
-} from "@clinebot/rpc";
-import type { RpcChatStartSessionRequest } from "@clinebot/shared";
+} from "@clinebot/core";
+import { createSqliteRpcSessionBackend } from "@clinebot/core/server";
 import { createCliLoggerAdapter } from "../logging/adapter";
 import { createRpcRuntimeHandlers } from "./rpc-runtime";
 

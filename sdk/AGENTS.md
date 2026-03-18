@@ -20,8 +20,8 @@ Packages:
 - `packages/llms` (`@clinebot/llms`): provider settings schema, model catalog, handler creation.
 - `packages/scheduler` (`@clinebot/scheduler`): cron-based scheduled agent orchestration, execution limits, schedule/execution persistence, and transactional due-run claims with renewable leases for multi-ticker safety.
 - `packages/agents` (`@clinebot/agents`): stateless runtime loop, tools, hooks, teams.
-- `packages/rpc` (`@clinebot/rpc`): transport/control-plane APIs (session CRUD, tasks, events, approvals) plus shared runtime chat client helpers (`RpcRuntimeChatClient`, `runRpcRuntimeEventBridge`, `runRpcRuntimeCommandBridge`).
-- `packages/core` (`@clinebot/core`) stateful orchestration (runtime composition, sessions, storage, RPC-backed session adapter).
+- `packages/rpc` (`@clinebot/rpc`): transport/control-plane APIs (session CRUD, tasks, events, approvals) plus runtime chat bridge implementation.
+- `packages/core` (`@clinebot/core`) stateful orchestration (runtime composition, sessions, storage, RPC-backed session adapter) and app-facing re-exports for RPC helpers/shared contracts/path helpers (`RpcSessionClient`, `getRpcServerHealth`, runtime bridge helpers, `setHomeDir`, `normalizeUserInput`, etc.).
 
 Apps:
 
@@ -59,8 +59,7 @@ flowchart LR
   cli --> core
   code --> core
   desktop --> core
-  vscode --> rpc
-  vscode --> shared
+  vscode --> core
 ```
 
 ## Runtime Flows
@@ -120,9 +119,9 @@ flowchart LR
 4. Tauri starts a local persistent chat WebSocket bridge (`ws://127.0.0.1:<port>/chat`) and exposes the endpoint via `get_chat_ws_endpoint`.
 5. `apps/code` UI opens one persistent socket and sends chat control commands (`start/send/abort/reset`) as request envelopes over that connection.
 6. Host broadcasts chat stream events over the same socket using one canonical schema (`chat_event`) while still emitting `agent://chunk` for compatibility.
-7. Host-to-runtime remains RPC/gRPC-backed via one persistent bridge script using shared `@clinebot/rpc` runtime helpers:
+7. Host-to-runtime remains RPC/gRPC-backed via one persistent bridge script using `@clinebot/core` runtime helper re-exports:
    - `apps/code/scripts/chat-runtime-bridge.ts` (`start/send/abort/set_sessions/reset`)
-   - shared helper: `runRpcRuntimeCommandBridge(...)` in `packages/rpc/src/runtime-chat-command-bridge.ts`
+   - re-exported helper: `runRpcRuntimeCommandBridge(...)` from `@clinebot/core` (implemented in `packages/rpc/src/runtime-chat-command-bridge.ts`)
 
 ### `apps/desktop` startup flow (latest)
 
@@ -132,9 +131,9 @@ flowchart LR
 4. Tauri starts a local persistent chat WebSocket bridge (`ws://127.0.0.1:<port>/chat`) and exposes the endpoint via `get_chat_ws_endpoint`.
 5. `apps/desktop` UI opens one persistent socket and sends chat control commands (`start/send/abort/reset`) as request envelopes over that connection.
 6. Host broadcasts chat stream events over the same socket using canonical `chat_event` while still emitting `agent://chunk`.
-7. Host-to-runtime uses one persistent desktop bridge script backed by shared `@clinebot/rpc` helpers:
+7. Host-to-runtime uses one persistent desktop bridge script backed by `@clinebot/core` runtime helper re-exports:
    - `apps/desktop/scripts/chat-runtime-bridge.ts` (`start/send/abort/set_sessions/reset`)
-   - shared helper: `runRpcRuntimeCommandBridge(...)` in `packages/rpc/src/runtime-chat-command-bridge.ts`
+   - re-exported helper: `runRpcRuntimeCommandBridge(...)` from `@clinebot/core` (implemented in `packages/rpc/src/runtime-chat-command-bridge.ts`)
 
 ### `apps/vscode` startup flow (latest)
 
@@ -151,6 +150,12 @@ flowchart LR
 - `tool_call_before` hooks can now return `review: true` in `AgentHookControl`.
 - When `review: true` is returned, the runtime routes the tool call through the normal host approval callback / RPC approval flow before execution.
 - This enables selective approval flows such as requiring approval for `run_commands` calls whose input starts with `git`, without changing default tool policy behavior for other calls.
+
+### Cline sub-agent prompt metadata
+
+- For `providerId=cline`, spawned sub-agents (`spawn_agent`) now guarantee `# Workspace Configuration ...` metadata is present at the end of their system prompt.
+- If the delegated system prompt already includes workspace metadata, runtime keeps it as-is.
+- Otherwise, runtime appends metadata derived from the root session prompt when available, and falls back to a minimal metadata block based on the current `cwd`.
 
 ### `apps/code` canonical chat transport schema
 

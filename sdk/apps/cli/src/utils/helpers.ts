@@ -3,8 +3,7 @@ import { appendFileSync, existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { type HookEventPayload, parseHookEventPayload } from "@clinebot/agents";
-import { resolveHookLogPath } from "@clinebot/shared";
-import { ensureHookLogDir } from "@clinebot/shared/storage";
+import { ensureHookLogDir, resolveHookLogPath } from "@clinebot/core";
 import { nanoid } from "nanoid";
 import type { ParsedArgs } from "./types";
 
@@ -380,6 +379,7 @@ export function parseCliHookPayload(
 
 export function parseArgs(args: string[]): ParsedArgs {
 	const result: ParsedArgs = {
+		verbose: false,
 		interactive: false,
 		showHelp: false,
 		showVersion: false,
@@ -406,6 +406,8 @@ export function parseArgs(args: string[]): ParsedArgs {
 
 		if (arg === "-h" || arg === "--help") {
 			result.showHelp = true;
+		} else if (arg === "--verbose") {
+			result.verbose = true;
 		} else if (arg === "-v" || arg === "--version") {
 			result.showVersion = true;
 		} else if (arg === "-i" || arg === "--interactive") {

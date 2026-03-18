@@ -68,6 +68,7 @@ export function showHelp(): void {
 			["--output <text|json>", "Output format (default: text)"],
 			["--json", "Shorthand for --output json"],
 			["--refresh-models", "Refresh the provider model catalog for this run"],
+			["--verbose", "Show verbose runtime diagnostics (including hook traces)"],
 		]),
 		renderSection("TOOLS AND SANDBOX", [
 			["--sandbox", "Use isolated local state instead of ~/.cline"],

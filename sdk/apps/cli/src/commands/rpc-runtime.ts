@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
+import type { RpcRuntimeHandlers } from "@clinebot/core";
+import { RpcSessionClient } from "@clinebot/core";
 import {
 	CoreSessionService,
 	DefaultSessionManager,
 	SqliteSessionStore,
 } from "@clinebot/core/server";
 import type { providers as LlmsProviders } from "@clinebot/llms";
-import type { RpcRuntimeHandlers } from "@clinebot/rpc";
-import { RpcSessionClient } from "@clinebot/rpc";
 import {
 	createCliLoggerAdapter,
 	flushCliLoggerAdapters,

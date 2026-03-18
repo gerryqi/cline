@@ -403,7 +403,7 @@ export class RpcSessionClient {
 				Object.entries(request.toolPolicies ?? {}).map(([name, policy]) => [
 					name,
 					{
-						enabled: policy.enabled ?? false,
+						enabled: policy.enabled !== false,
 						autoApprove: policy.autoApprove ?? false,
 					},
 				]),
@@ -474,7 +474,7 @@ export class RpcSessionClient {
 						([name, policy]) => [
 							name,
 							{
-								enabled: policy.enabled ?? false,
+								enabled: policy.enabled !== false,
 								autoApprove: policy.autoApprove ?? false,
 							},
 						],

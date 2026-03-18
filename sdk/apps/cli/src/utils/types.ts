@@ -1,11 +1,11 @@
-import type { CoreSessionConfig, SessionManifest } from "@clinebot/core/server";
-import type { providers as LlmsProviders } from "@clinebot/llms";
 import type {
 	AgentMode,
 	RpcChatRuntimeLoggerConfig,
 	SessionLineage,
 	ToolPolicy,
-} from "@clinebot/shared";
+} from "@clinebot/core";
+import type { CoreSessionConfig, SessionManifest } from "@clinebot/core/server";
+import type { providers as LlmsProviders } from "@clinebot/llms";
 
 export type CliOutputMode = "text" | "json";
 export type CliAgentMode = AgentMode;
@@ -17,6 +17,7 @@ export interface Config extends Omit<CoreSessionConfig, "apiKey" | "mode"> {
 	apiKey: string;
 	knownModels?: Record<string, LlmsProviders.ModelInfo>;
 	loggerConfig?: RpcChatRuntimeLoggerConfig;
+	verbose: boolean;
 	sandbox: boolean;
 	sandboxDataDir?: string;
 	thinking: boolean;
@@ -69,6 +70,7 @@ export interface ParsedArgs {
 	prompt?: string;
 	systemPrompt?: string;
 	key?: string;
+	verbose: boolean;
 	interactive: boolean;
 	showHelp: boolean;
 	showVersion: boolean;

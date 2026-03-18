@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import type { RpcOAuthProviderId } from "@clinebot/core";
 import {
 	createOAuthClientCallbacks,
 	loginClineOAuth,
@@ -7,7 +8,6 @@ import {
 	type ProviderSettingsManager,
 } from "@clinebot/core/server";
 import type { providers as LlmsProviders } from "@clinebot/llms";
-import type { RpcOAuthProviderId } from "@clinebot/shared";
 
 export function normalizeOAuthProvider(provider: string): RpcOAuthProviderId {
 	const normalized = provider.trim().toLowerCase();

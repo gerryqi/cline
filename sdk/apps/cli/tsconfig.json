@@ -9,14 +9,11 @@
 			"@clinebot/agents/browser": [
 				"../../packages/agents/src/index.browser.ts"
 			],
-			"@clinebot/core": ["../../packages/core/src/index.ts"],
+			"@clinebot/core": ["../../packages/core/src/index.node.ts"],
 			"@clinebot/core/server": ["../../packages/core/src/server/index.ts"],
 			"@clinebot/llms": ["../../packages/llms/src/index.ts"],
 			"@clinebot/llms/node": ["../../packages/llms/src/index.ts"],
 			"@clinebot/llms/browser": ["../../packages/llms/src/index.browser.ts"],
-			"@clinebot/rpc": ["../../packages/rpc/src/index.ts"],
-			"@clinebot/rpc/node": ["../../packages/rpc/src/index.ts"],
-			"@clinebot/rpc/browser": ["../../packages/rpc/src/index.browser.ts"],
 			"@clinebot/shared": ["../../packages/shared/src/index.ts"],
 			"@clinebot/shared/storage": [
 				"../../packages/shared/src/storage/index.ts"

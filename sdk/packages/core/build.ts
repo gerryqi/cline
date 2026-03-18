@@ -13,7 +13,16 @@ const external = [
 
 const builds: Parameters<typeof Bun.build>[0][] = [
 	{
-		entrypoints: ["./src/index.ts"],
+		entrypoints: ["./src/index.node.ts"],
+		outdir: "./dist",
+		target: "node",
+		format: "esm",
+		minify: true,
+		sourcemap: "none",
+		external,
+	},
+	{
+		entrypoints: ["./src/index.browser.ts"],
 		outdir: "./dist",
 		format: "esm",
 		minify: true,

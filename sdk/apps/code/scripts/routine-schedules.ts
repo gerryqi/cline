@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { RpcSessionClient } from "@clinebot/rpc";
+import { RpcSessionClient } from "@clinebot/core";
 
 type RoutineAction =
 	| "listOverview"

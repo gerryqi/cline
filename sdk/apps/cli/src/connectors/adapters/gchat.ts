@@ -1,9 +1,12 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createGoogleChatAdapter } from "@chat-adapter/gchat";
-import { RpcSessionClient, registerRpcClient } from "@clinebot/rpc";
-import type { RpcChatStartSessionRequest } from "@clinebot/shared";
-import { resolveClineDataDir } from "@clinebot/shared/storage";
+import type { RpcChatStartSessionRequest } from "@clinebot/core";
+import {
+	RpcSessionClient,
+	registerRpcClient,
+	resolveClineDataDir,
+} from "@clinebot/core";
 import { Chat, ConsoleLogger, type Thread } from "chat";
 import { ensureRpcRuntimeAddress } from "../../commands/rpc";
 import type { CliLoggerAdapter } from "../../logging/adapter";

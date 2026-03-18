@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
-import type { ToolPolicy } from "@clinebot/shared";
-import { setHomeDir } from "@clinebot/shared/storage";
+import type { ToolPolicy } from "@clinebot/core";
+import { setHomeDir } from "@clinebot/core";
 import {
 	ensureOAuthProviderApiKey,
 	getPersistedProviderApiKey,
@@ -454,6 +454,7 @@ export async function runCli(): Promise<void> {
 			sandboxDataDir,
 			showUsage: args.showUsage,
 			showTimings: args.showTimings,
+			verbose: args.verbose,
 			thinking: effectiveReasoningEffort === "none" ? false : args.thinking,
 			reasoningEffort:
 				effectiveReasoningEffort === "none"
