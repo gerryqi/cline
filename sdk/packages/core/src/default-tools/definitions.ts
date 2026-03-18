@@ -426,7 +426,7 @@ export function createEditorTool(
 		name: "editor",
 		description:
 			"Edit file using absolute path with create, string replacement, and line insert operations. " +
-			"Supported commands: create, str_replace, insert, undo_edit.",
+			"Supported commands: create, str_replace, insert.",
 		inputSchema: zodToJsonSchema(EditFileInputSchema),
 		timeoutMs,
 		retryable: false, // Editing operations are stateful and should not auto-retry

@@ -61,7 +61,7 @@ function runInteractiveCli(
 	const launchArgs = [
 		cliEntry,
 		...(options?.launchConfigView ? ["config"] : []),
-		"-p",
+		"--provider",
 		"anthropic",
 		"-m",
 		"claude-sonnet-4-6",

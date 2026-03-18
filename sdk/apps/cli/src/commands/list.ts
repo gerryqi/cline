@@ -14,24 +14,11 @@ import {
 	type SkillConfig,
 	type WorkflowConfig,
 } from "@clinebot/core/server";
-import { listSessions } from "../utils/session";
 import type { CliOutputMode } from "../utils/types";
 
 type ListIo = {
 	writeln: (text?: string) => void;
 	writeErr: (text: string) => void;
-};
-
-type HistoryListRow = {
-	session_id?: string;
-	provider?: string;
-	model?: string;
-	started_at?: string;
-};
-
-export type HistorySessionRow = {
-	session_id?: string;
-	messages_path?: string | null;
 };
 
 function resolveCliAgentConfigSearchPaths(): string[] {
@@ -41,14 +28,6 @@ function resolveCliAgentConfigSearchPaths(): string[] {
 		join(homedir(), "Documents", "Cline", "Agents"),
 		join(clineDataDir, "settings", "agents"),
 	];
-}
-
-export function formatHistoryListLine(row: HistoryListRow): string {
-	const sessionId = row.session_id?.trim() || "(unknown-session)";
-	const provider = row.provider?.trim() || "(unknown-provider)";
-	const model = row.model?.trim() || "(unknown-model)";
-	const date = row.started_at?.trim() || "(unknown-date)";
-	return `${sessionId} - ${provider} - ${model} - ${date}`;
 }
 
 async function runWorkflowsListCommand(
@@ -381,15 +360,7 @@ export async function runListCommand(input: {
 		return runMcpListCommand(input.outputMode, input.io);
 	}
 	input.io.writeErr(
-		`list requires one of: workflows, rules, skills, agents, history, hooks, mcp (got "${input.rawArgs[1] ?? ""}")`,
+		`list requires one of: workflows, rules, skills, agents, hooks, mcp (got "${input.rawArgs[1] ?? ""}")`,
 	);
 	return 1;
-}
-
-export async function runHistoryListCommand(limit: number): Promise<void> {
-	const rows = (await listSessions(limit)) as HistoryListRow[] | undefined;
-	const lines = (rows ?? []).map((row) => formatHistoryListLine(row));
-	if (lines.length > 0) {
-		process.stdout.write(`${lines.join("\n")}\n`);
-	}
 }

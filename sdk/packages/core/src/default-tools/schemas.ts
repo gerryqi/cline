@@ -18,8 +18,16 @@ const AbsolutePath = z
  * Schema for read_files tool input
  */
 export const ReadFilesInputSchema = z.object({
-	file_paths: z.array(AbsolutePath).describe("Array of absolute file paths"),
+	file_paths: z
+		.array(AbsolutePath)
+		.describe(
+			"Array of absolute file paths to get full content from. Prefer this tool over running terminal command to get file content for better performance and reliability.",
+		),
 });
+
+/**
+ * Union schema for read_files tool input, allowing either a single string, an array of strings, or the full object schema
+ */
 export const ReadFilesInputUnionSchema = z.union([
 	ReadFilesInputSchema,
 	z.array(z.string()),
@@ -42,8 +50,12 @@ const CommandInputSchema = z.string();
 export const RunCommandsInputSchema = z.object({
 	commands: z
 		.array(CommandInputSchema)
-		.describe("Array of shell commands to execute"),
+		.describe("Array of shell commands to execute."),
 });
+
+/**
+ * Union schema for run_commands tool input. More flexible.
+ */
 export const RunCommandsInputUnionSchema = z.union([
 	RunCommandsInputSchema,
 	z.array(CommandInputSchema),
@@ -74,27 +86,27 @@ export const EditFileInputSchema = z
 	.object({
 		command: z
 			.enum(["create", "str_replace", "insert"])
-			.describe(
-				"Editor command to execute: create, str_replace, insert, or undo_edit",
-			),
+			.describe("Editor command to execute: create, str_replace, insert"),
 		path: z.string().min(1).describe("Absolute file path"),
 		file_text: z
 			.string()
 			.optional()
-			.describe("Full file content used with create"),
+			.describe("Full file content required for 'create' command"),
 		old_str: z
 			.string()
 			.optional()
-			.describe("Exact text to replace (must match exactly once)"),
+			.describe(
+				"Exact text to replace (must match exactly once) for 'str_replace' command",
+			),
 		new_str: z
 			.string()
 			.optional()
-			.describe("Replacement text for str_replace or insert commands"),
+			.describe("Replacement text for 'str_replace' or 'insert' commands"),
 		insert_line: z
 			.number()
 			.int()
 			.optional()
-			.describe("Zero-based line index for insert"),
+			.describe("Optional one-based line index for 'insert' command"),
 	})
 	.refine((v) => v.command !== "create" || v.file_text !== undefined, {
 		path: ["file_text"],

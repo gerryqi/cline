@@ -12,13 +12,22 @@
  */
 
 import OpenAI from "openai";
+import {
+	normalizeToolUseInput,
+	serializeToolResultContent,
+} from "../transform/content-format";
 import type {
 	ApiStream,
 	HandlerModelInfo,
 	ModelInfo,
 	ProviderConfig,
 } from "../types";
-import type { Message, ToolDefinition } from "../types/messages";
+import type {
+	ContentBlock,
+	Message,
+	ToolDefinition,
+	ToolUseContent,
+} from "../types/messages";
 import { retryStream } from "../utils/retry";
 import { getMissingApiKeyError, resolveApiKeyForProvider } from "./auth";
 import { BaseHandler } from "./base";
@@ -46,41 +55,103 @@ function convertToolsToResponsesFormat(
  * Convert messages to Responses API input format
  */
 function convertToResponsesInput(messages: Message[]) {
-	// Responses API uses a flat input array with specific item types
-	const input: Array<{
-		type: "message";
-		role: "user" | "assistant";
-		content:
-			| string
-			| Array<{ type: "input_text" | "output_text"; text: string }>;
-	}> = [];
+	type ResponsesInputItem =
+		| {
+				type: "message";
+				role: "user" | "assistant";
+				content: Array<{ type: "input_text" | "output_text"; text: string }>;
+		  }
+		| {
+				type: "function_call";
+				call_id: string;
+				name: string;
+				arguments: string;
+		  }
+		| {
+				type: "function_call_output";
+				call_id: string;
+				output: string;
+		  };
+
+	const input: ResponsesInputItem[] = [];
+
+	const toText = (
+		role: "user" | "assistant",
+		contentBlocks: Array<{ type: "text"; text: string }>,
+	) => {
+		const textContent = contentBlocks.map((block) => block.text).join("\n");
+		if (!textContent) {
+			return;
+		}
+		input.push({
+			type: "message",
+			role,
+			content: [
+				{
+					type: role === "user" ? "input_text" : "output_text",
+					text: textContent,
+				},
+			],
+		});
+	};
+
+	const isTextBlock = (
+		block: ContentBlock,
+	): block is { type: "text"; text: string } => block.type === "text";
+
+	const assistantToolUseCallId = (block: ToolUseContent): string =>
+		block.call_id?.trim() || block.id;
 
 	for (const msg of messages) {
-		if (msg.role === "user" || msg.role === "assistant") {
-			// Handle content blocks
-			const contentBlocks = Array.isArray(msg.content)
-				? msg.content
-				: [{ type: "text" as const, text: msg.content }];
+		if (msg.role !== "user" && msg.role !== "assistant") {
+			continue;
+		}
 
-			const textContent = contentBlocks
-				.filter(
-					(block): block is { type: "text"; text: string } =>
-						block.type === "text",
-				)
-				.map((block) => block.text)
-				.join("\n");
+		if (!Array.isArray(msg.content)) {
+			if (msg.content) {
+				toText(msg.role, [{ type: "text", text: msg.content }]);
+			}
+			continue;
+		}
 
-			if (textContent) {
+		let bufferedText: Array<{ type: "text"; text: string }> = [];
+		const flushText = () => {
+			if (bufferedText.length === 0) {
+				return;
+			}
+			toText(msg.role, bufferedText);
+			bufferedText = [];
+		};
+
+		for (const block of msg.content) {
+			if (isTextBlock(block)) {
+				bufferedText.push(block);
+				continue;
+			}
+
+			if (msg.role === "assistant" && block.type === "tool_use") {
+				flushText();
+				const toolUseBlock = block as ToolUseContent;
 				input.push({
-					type: "message",
-					role: msg.role,
-					content:
-						msg.role === "user"
-							? [{ type: "input_text", text: textContent }]
-							: [{ type: "output_text", text: textContent }],
+					type: "function_call",
+					call_id: assistantToolUseCallId(toolUseBlock),
+					name: toolUseBlock.name,
+					arguments: JSON.stringify(normalizeToolUseInput(toolUseBlock.input)),
+				});
+				continue;
+			}
+
+			if (msg.role === "user" && block.type === "tool_result") {
+				flushText();
+				input.push({
+					type: "function_call_output",
+					call_id: block.tool_use_id,
+					output: serializeToolResultContent(block.content),
 				});
 			}
 		}
+
+		flushText();
 	}
 
 	return input;

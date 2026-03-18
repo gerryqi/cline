@@ -388,6 +388,7 @@ export function parseArgs(args: string[]): ParsedArgs {
 		outputMode: "text",
 		mode: "act",
 		sandbox: false,
+		acpMode: false,
 		thinking: false,
 		reasoningEffort: undefined,
 		liveModelCatalog: false,
@@ -406,16 +407,28 @@ export function parseArgs(args: string[]): ParsedArgs {
 
 		if (arg === "-h" || arg === "--help") {
 			result.showHelp = true;
-		} else if (arg === "--verbose") {
+		} else if (arg === "-v" || arg === "--verbose") {
 			result.verbose = true;
-		} else if (arg === "-v" || arg === "--version") {
+		} else if (arg === "-V" || arg === "--version") {
 			result.showVersion = true;
+		} else if (arg === "-a" || arg === "--act") {
+			result.mode = "act";
+		} else if (arg === "-p" || arg === "--plan") {
+			result.mode = "plan";
 		} else if (arg === "-i" || arg === "--interactive") {
 			result.interactive = true;
 		} else if (arg === "-u" || arg === "--usage") {
 			result.showUsage = true;
-		} else if (arg === "-t" || arg === "--timings") {
+		} else if (arg === "--timings") {
 			result.showTimings = true;
+		} else if (arg === "-t" || arg === "--timeout") {
+			const raw = (args[++i] ?? "").trim();
+			const parsed = Number.parseInt(raw, 10);
+			if (raw && Number.isInteger(parsed) && parsed >= 1) {
+				result.timeoutSeconds = parsed;
+			} else if (raw) {
+				result.invalidTimeoutSeconds = raw;
+			}
 		} else if (arg === "--thinking") {
 			result.thinking = true;
 		} else if (arg === "--reasoning-effort" || arg === "--reasoning-effor") {
@@ -435,24 +448,16 @@ export function parseArgs(args: string[]): ParsedArgs {
 			result.liveModelCatalog = true;
 		} else if (arg === "--json") {
 			result.outputMode = "json";
+		} else if (arg === "--acp") {
+			result.acpMode = true;
 		} else if (arg === "--sandbox") {
 			result.sandbox = true;
 		} else if (arg === "--sandbox-dir") {
 			result.sandboxDir = args[++i];
-		} else if (arg === "--output") {
-			const mode = (args[++i] ?? "").trim().toLowerCase();
-			if (mode === "text" || mode === "json") {
-				result.outputMode = mode;
-			} else if (mode) {
-				result.invalidOutputMode = mode;
-			}
-		} else if (arg === "--mode") {
-			const mode = (args[++i] ?? "").trim().toLowerCase();
-			if (mode === "act" || mode === "plan") {
-				result.mode = mode;
-			} else if (mode) {
-				result.invalidMode = mode;
-			}
+		} else if (arg === "--config") {
+			result.configDir = args[++i];
+		} else if (arg === "--hooks-dir") {
+			result.hooksDir = args[++i];
 		} else if (arg === "--spawn" || arg === "--enable-spawn") {
 			result.enableSpawnAgent = true;
 		} else if (arg === "--no-spawn") {
@@ -465,13 +470,11 @@ export function parseArgs(args: string[]): ParsedArgs {
 			result.enableTools = true;
 		} else if (arg === "--no-tools") {
 			result.enableTools = false;
-		} else if (arg === "--auto-approve-tools") {
+		} else if (arg === "--auto-approve-all") {
 			result.defaultToolAutoApprove = true;
 		} else if (arg === "--yolo") {
 			result.defaultToolAutoApprove = true;
 		} else if (arg === "--require-tool-approval") {
-			result.defaultToolAutoApprove = false;
-		} else if (arg === "--no-yolo") {
 			result.defaultToolAutoApprove = false;
 		} else if (arg === "--tool-enable") {
 			const name = (args[++i] ?? "").trim();
@@ -505,7 +508,7 @@ export function parseArgs(args: string[]): ParsedArgs {
 					autoApprove: false,
 				};
 			}
-		} else if (arg === "--cwd") {
+		} else if (arg === "-c" || arg === "--cwd") {
 			result.cwd = args[++i];
 		} else if (arg === "--team-name") {
 			result.teamName = args[++i];
@@ -517,12 +520,12 @@ export function parseArgs(args: string[]): ParsedArgs {
 			result.systemPrompt = args[++i];
 		} else if (arg === "-m" || arg === "--model") {
 			result.model = args[++i];
-		} else if (arg === "-p" || arg === "--provider") {
+		} else if (arg === "-P" || arg === "--provider") {
 			result.provider = args[++i];
 		} else if (arg === "-k" || arg === "--key") {
 			result.key = args[++i];
-		} else if (arg === "--session") {
-			result.sessionId = args[++i] ?? "";
+		} else if (arg === "-T" || arg === "--taskId") {
+			result.taskId = args[++i] ?? "";
 		} else if (arg === "-n" || arg === "--max-iterations") {
 			result.maxIterations = Number.parseInt(args[++i], 10);
 		} else if (arg === "--max-consecutive-mistakes") {

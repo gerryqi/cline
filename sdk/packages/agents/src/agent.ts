@@ -39,6 +39,36 @@ import type {
 const DEFAULT_REMINDER_TEXT =
 	"REMINDER: If you have gathered enough information to answer the user's question, please provide your final answer now without using any more tools.";
 
+function isNonRecoverableApiError(error: Error): boolean {
+	const message = error.message.toLowerCase();
+
+	const nonRecoverableStatusCodes = [
+		400, 401, 403, 404, 405, 406, 409, 410, 429,
+	];
+	if (
+		nonRecoverableStatusCodes.some((code) =>
+			new RegExp(`(?:\\b|\\"code\\"\\s*:\\s*)${code}(?:\\b|\\s)`).test(message),
+		)
+	) {
+		return true;
+	}
+
+	if (
+		[
+			"not found",
+			"unsupported for",
+			"invalid api key",
+			"authentication",
+			"unauthorized",
+			"forbidden",
+		].some((s) => message.includes(s))
+	) {
+		return true;
+	}
+
+	return false;
+}
+
 function resolveKnownModelsFromConfig(
 	config: AgentConfig,
 ): Record<string, providers.ModelInfo> | undefined {
@@ -555,8 +585,12 @@ export class Agent {
 						abortSignal,
 					));
 				} catch (error) {
-					const message =
-						error instanceof Error ? error.message : String(error);
+					const errorObj =
+						error instanceof Error ? error : new Error(String(error));
+					const message = errorObj.message;
+					if (isNonRecoverableApiError(errorObj)) {
+						throw errorObj;
+					}
 					this.conversationStore.appendMessage({
 						role: "user",
 						content: [
@@ -578,7 +612,7 @@ export class Agent {
 					if (shouldContinue) {
 						continue;
 					}
-					throw error;
+					throw errorObj;
 				}
 				if (assistantMessage) {
 					this.conversationStore.appendMessage(assistantMessage);

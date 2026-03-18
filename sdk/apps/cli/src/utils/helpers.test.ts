@@ -47,6 +47,7 @@ describe("parseArgs", () => {
 			outputMode: "text",
 			mode: "act",
 			sandbox: false,
+			acpMode: false,
 			thinking: false,
 			reasoningEffort: undefined,
 			liveModelCatalog: false,
@@ -91,8 +92,7 @@ describe("parseArgs", () => {
 			"--reasoning-effort",
 			"high",
 			"--refresh-models",
-			"--mode",
-			"plan",
+			"--plan",
 			"Audit",
 			"the",
 			"repo",
@@ -125,6 +125,11 @@ describe("parseArgs", () => {
 		});
 	});
 
+	it("parses provider via -P shorthand", () => {
+		const parsed = parseArgs(["-P", "cline"]);
+		expect(parsed.provider).toBe("cline");
+	});
+
 	it("parses sandbox flags", () => {
 		const parsed = parseArgs(["--sandbox", "--sandbox-dir", "./.tmp-cline"]);
 		expect(parsed.sandbox).toBe(true);
@@ -149,22 +154,14 @@ describe("parseArgs", () => {
 		const parsedJsonAlias = parseArgs(["--json", "hello"]);
 		expect(parsedJsonAlias.outputMode).toBe("json");
 		expect(parsedJsonAlias.prompt).toBe("hello");
-
-		const parsedJsonValue = parseArgs(["--output", "json"]);
-		expect(parsedJsonValue.outputMode).toBe("json");
-
-		const parsedInvalid = parseArgs(["--output", "xml"]);
-		expect(parsedInvalid.outputMode).toBe("text");
-		expect(parsedInvalid.invalidOutputMode).toBe("xml");
 	});
 
-	it("parses and validates agent mode", () => {
-		const parsedPlan = parseArgs(["--mode", "plan"]);
+	it("parses act/plan mode flags", () => {
+		const parsedPlan = parseArgs(["--plan"]);
 		expect(parsedPlan.mode).toBe("plan");
 
-		const parsedInvalid = parseArgs(["--mode", "build"]);
-		expect(parsedInvalid.mode).toBe("act");
-		expect(parsedInvalid.invalidMode).toBe("build");
+		const parsedAct = parseArgs(["-a"]);
+		expect(parsedAct.mode).toBe("act");
 	});
 
 	it("parses and validates reasoning effort", () => {
@@ -176,9 +173,9 @@ describe("parseArgs", () => {
 		expect(parsedInvalid.invalidReasoningEffort).toBe("ultra");
 	});
 
-	it("parses session resume flag", () => {
-		const parsed = parseArgs(["--session", "session_123"]);
-		expect(parsed.sessionId).toBe("session_123");
+	it("parses task resume flag", () => {
+		const parsed = parseArgs(["-T", "session_123"]);
+		expect(parsed.taskId).toBe("session_123");
 	});
 
 	it("parses max consecutive mistakes when valid", () => {
@@ -187,12 +184,20 @@ describe("parseArgs", () => {
 		expect(parsed.invalidMaxConsecutiveMistakes).toBeUndefined();
 	});
 
-	it("supports yolo aliases for tool auto-approval", () => {
+	it("supports yolo and auto-approve-all aliases for tool auto-approval", () => {
 		const parsedYolo = parseArgs(["--yolo"]);
 		expect(parsedYolo.defaultToolAutoApprove).toBe(true);
 
-		const parsedNoYolo = parseArgs(["--no-yolo"]);
-		expect(parsedNoYolo.defaultToolAutoApprove).toBe(false);
+		const parsedAutoApproveAll = parseArgs(["--auto-approve-all"]);
+		expect(parsedAutoApproveAll.defaultToolAutoApprove).toBe(true);
+	});
+
+	it("parses timeout and validates invalid values", () => {
+		const parsed = parseArgs(["-t", "30"]);
+		expect(parsed.timeoutSeconds).toBe(30);
+
+		const invalid = parseArgs(["--timeout", "abc"]);
+		expect(invalid.invalidTimeoutSeconds).toBe("abc");
 	});
 
 	it("records invalid max consecutive mistakes values", () => {

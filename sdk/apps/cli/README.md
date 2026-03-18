@@ -107,27 +107,25 @@ clite --team-name my-team "Plan, implement, and verify release checklist"
 clite --team-name my-team "Continue yesterday's team workflow"
 
 # Show usage stats (tokens + estimated cost when available)
-clite -u -t "Explain quantum computing"
+clite -u --timings "Explain quantum computing"
 
 # Override consecutive internal mistake limit for this run (default: 3)
 clite --max-consecutive-mistakes 5 "Fix failing tests"
 # Common with auto-approve/yolo-style runs
-clite --auto-approve-tools --max-consecutive-mistakes 5 "Refactor this package"
+clite --auto-approve-all --max-consecutive-mistakes 5 "Refactor this package"
 # Alias
 clite --yolo --max-consecutive-mistakes 5 "Refactor this package"
 
 # Stream structured NDJSON output
-clite --output json "Summarize this repository"
-# equivalent
 clite --json "Summarize this repository"
 
 # Use a specific provider, model, and access token for a single prompt/task
-clite -p openrouter -m google/gemini-3-pro -k sk-your-google-gemini-api-key "Set up a storybook for the frontend react ui components"
+clite -P openrouter -m google/gemini-3-pro -k sk-your-google-gemini-api-key "Set up a storybook for the frontend react ui components"
 # Use a different model with the last used provider
 clite -m anthropic/claude-opus-4-6 "Explain string theory"
 # Refresh model catalog from provider endpoints for this run 
 # to use a new model not available in the built-in model catalog yet 
-clite --refresh-models -p cline -m "openai/gpt-10"
+clite --refresh-models -P cline -m "openai/gpt-10"
 
 # Quick setup with API key/model
 clite auth --provider anthropic --apikey sk-... --modelid claude-sonnet-4-6
@@ -274,27 +272,31 @@ RPC runtime note:
 | Flag | Description |
 |------|-------------|
 | `-s, --system <prompt>` | Override the system prompt |
-| `-p, --provider <id>` | Provider id (default: `cline`) |
+| `-P, --provider <id>` | Provider id (default: `cline`) |
 | `-m, --model <id>` | Model id (default: `anthropic/claude-sonnet-4.6`) |
 | `-k, --key <api-key>` | API key override for this run |
+| `-a, --act` | Run in act mode |
+| `-p, --plan` | Run in plan mode |
 | `-i, --interactive` | Interactive multi-turn mode |
-| `--session <id>` | Resume an interactive session |
-| `--mode <act\|plan>` | Tool preset mode (default: `act`) |
+| `-T, --taskId <id>` | Resume an interactive task/session |
 | `-n, --max-iterations <n>` | Cap agent loop iterations |
-| `--cwd <path>` | Working directory for tools |
+| `-t, --timeout <seconds>` | Optional run timeout in seconds |
+| `-c, --cwd <path>` | Working directory for tools |
+| `--config <path>` | Configuration directory (used for CLI home resolution) |
+| `--hooks-dir <path>` | Additional hooks directory hint for runtime hook injection |
+| `--acp` | ACP (Agent Client Protocol) mode |
 | `--thinking` | Enable model reasoning when supported |
 | `--reasoning-effort <none\|low\|medium\|high\|xhigh>` | Set explicit model reasoning effort (default: `none`, or `medium` when `--thinking` is set) |
 | `-u, --usage` | Show token usage and estimated cost |
-| `-t, --timings` | Show timing details |
-| `--output <text\|json>` | Output format (default: `text`) |
-| `--json` | Shorthand for `--output json` |
+| `--timings` | Show timing details |
+| `--json` | Output NDJSON instead of styled text |
 | `--refresh-models` | Refresh the provider model catalog for this run |
 | `--sandbox` | Use isolated local state instead of `~/.cline` |
 | `--sandbox-dir <path>` | Sandbox state dir (default: `$CLINE_SANDBOX_DATA_DIR` or `/tmp/cline-sandbox`) |
 | `--no-tools` | Disable default tools |
 | `--no-spawn` | Disable `spawn_agent` |
 | `--no-teams` | Disable team tools/runtime |
-| `--auto-approve-tools` | Skip tool approval prompts |
+| `--auto-approve-all` | Skip tool approval prompts |
 | `--require-tool-approval` | Require approval for every tool call |
 | `--tool-enable <name>` | Explicitly enable one tool |
 | `--tool-disable <name>` | Explicitly disable one tool |
@@ -304,14 +306,18 @@ RPC runtime note:
 | `--mission-step-interval <n>` | Mission log update cadence in meaningful steps |
 | `--mission-time-interval-ms <ms>` | Mission log update cadence in milliseconds |
 | `-h, --help` | Show help (exits immediately) |
-| `-v, --version` | Show version (exits immediately) |
+| `-v, --verbose` | Show verbose runtime diagnostics |
+| `-V, --version` | Show version (exits immediately) |
 
-`--output json` is non-interactive and requires either a prompt argument or piped stdin.
+`--json` is non-interactive and requires either a prompt argument or piped stdin.
 
 Top-level commands:
 
 - `clite config` - Open the interactive config view
+- `clite task|t [options] <prompt>` - Legacy command alias for running a task
+- `clite history|h [options]` - Legacy command alias for listing history
 - `clite version` - Show CLI version
+- `clite update [options]` - Reserved command; currently prints a not-implemented message
 - `clite auth <provider>` - Authenticate or seed provider credentials
 - `clite connect <adapter>` - Run a chat connector bridge (`telegram`, `gchat`, `whatsapp`)
 - `clite connect --stop [adapter]` - Stop connector bridge processes and their sessions
@@ -346,7 +352,7 @@ Behavior notes:
 
 Auth quick-setup flags:
 
-- `-p, --provider <id>`
+- `-P, --provider <id>`
 - `-k, --apikey <key>`
 - `-m, --modelid <id>`
 - `-b, --baseurl <url>` (OpenAI/OpenAI-compatible quick setup)
@@ -413,7 +419,7 @@ In desktop mode, CLI writes a request JSON file and waits for a matching decisio
 ## Environment Variables
 
 - `ANTHROPIC_API_KEY` - API key for Anthropic
-- `CLINE_API_KEY` - API key for Cline (when using `-p cline`)
+- `CLINE_API_KEY` - API key for Cline (when using `-P cline`)
 - `CLINE_DATA_DIR` - Base data directory for sessions/settings/teams/hooks
 - `CLINE_SANDBOX` - Set to `1` to force sandbox mode
 - `CLINE_SANDBOX_DATA_DIR` - Override sandbox state directory
@@ -426,7 +432,7 @@ In desktop mode, CLI writes a request JSON file and waits for a matching decisio
 - `CLINE_LOG_PATH` - Runtime log file path (default `<CLINE_DATA_DIR>/logs/clite.log`)
 - `CLINE_LOG_NAME` - Logger name embedded in runtime log records
 - `OPENAI_API_KEY` - API key for OpenAI (when using `-p openai`)
-- `OPENROUTER_API_KEY` - API key for OpenRouter (when using `-p openrouter`)
+- `OPENROUTER_API_KEY` - API key for OpenRouter (when using `-P openrouter`)
 - `AI_GATEWAY_API_KEY` - API key for Vercel AI Gateway (when using `-p vercel-ai-gateway`)
 
 `--key` takes precedence over environment variables.
@@ -469,7 +475,7 @@ Custom provider registry notes:
 - Team tools use strict single-action schemas (for example `team_create_task`, `team_send_message`, `team_create_outcome`) instead of `action` unions
 - **Pipe support** - Accepts piped input for processing files
 - **Interactive mode** - Multi-turn conversations
-- **JSON output mode** - NDJSON records for run lifecycle, agent/team events, and final result (`--output json` / `--json`)
+- **JSON output mode** - NDJSON records for run lifecycle, agent/team events, and final result (`--json`)
 - **Minimal dependencies** - Fast startup time
 - **Multiple providers** - Works with Anthropic, OpenAI, and more
 

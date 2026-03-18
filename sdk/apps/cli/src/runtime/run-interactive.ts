@@ -15,9 +15,13 @@ import {
 	maybeHandleChatCommand,
 } from "../utils/chat-commands";
 import { createRuntimeHooks } from "../utils/hooks";
-import { setActiveCliSession, writeErr } from "../utils/output";
+import { c, setActiveCliSession, writeErr, writeln } from "../utils/output";
 import { loadInteractiveResumeMessages } from "../utils/resume";
 import { createDefaultCliSessionManager } from "../utils/session";
+import {
+	formatPreviewMessageText,
+	getLastSessionPreviewMessages,
+} from "../utils/session-message-summary";
 import type { Config } from "../utils/types";
 import { setActiveRuntimeAbort } from "./active-runtime";
 import { loadInteractiveConfigData } from "./interactive-config";
@@ -48,7 +52,7 @@ export async function runInteractive(
 	},
 ): Promise<void> {
 	if (config.outputMode === "json") {
-		writeErr("interactive mode is not supported with --output json");
+		writeErr("interactive mode is not supported with --json");
 		process.exit(1);
 	}
 	if (!process.stdin.isTTY || !process.stdout.isTTY) {
@@ -97,6 +101,23 @@ export async function runInteractive(
 		sessionManager,
 		resumeSessionId,
 	);
+	if (resumeSessionId?.trim()) {
+		const previewMessages = getLastSessionPreviewMessages(
+			initialMessages ?? [],
+			2,
+		);
+		if (previewMessages.length > 0) {
+			writeln(
+				`${c.dim}Resuming ${resumeSessionId.trim()} with recent context:${c.reset}`,
+			);
+			for (const previewMessage of previewMessages) {
+				writeln(
+					`${c.dim}${formatPreviewMessageText(previewMessage)}${c.reset}`,
+				);
+			}
+			writeln();
+		}
+	}
 	const chatCommandState: ChatCommandState = {
 		enableTools: config.enableTools,
 		autoApproveTools: autoApproveAllRef.current,

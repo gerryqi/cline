@@ -50,6 +50,8 @@ export interface ToolUseContent {
 	type: "tool_use";
 	/** Unique ID for this tool call */
 	id: string;
+	/** Provider-native call ID for this tool call (if available) */
+	call_id?: string;
 	/** Name of the tool being called */
 	name: string;
 	/** Arguments for the tool call */

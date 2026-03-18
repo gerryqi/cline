@@ -193,6 +193,7 @@ export async function runAgent(
 	process.on("SIGTERM", handleSigterm);
 
 	let runFailed = false;
+	let timedOut = false;
 	try {
 		printModelProviderInfo(config);
 		const userInput = await buildUserInputMessage(
@@ -232,10 +233,27 @@ export async function runAgent(
 			messagesPath: started.messagesPath,
 			manifest: started.manifest,
 		});
-		const result = await sessionManager.send({
-			sessionId: started.sessionId,
-			prompt: userInput,
-		});
+		let timeoutId: NodeJS.Timeout | undefined;
+		if (
+			typeof config.timeoutSeconds === "number" &&
+			Number.isFinite(config.timeoutSeconds) &&
+			config.timeoutSeconds > 0
+		) {
+			timeoutId = setTimeout(() => {
+				timedOut = true;
+				abortAll();
+			}, config.timeoutSeconds * 1000);
+		}
+		const result = await sessionManager
+			.send({
+				sessionId: started.sessionId,
+				prompt: userInput,
+			})
+			.finally(() => {
+				if (timeoutId) {
+					clearTimeout(timeoutId);
+				}
+			});
 		if (!result) {
 			throw new Error("session manager did not return a result");
 		}
@@ -254,6 +272,10 @@ export async function runAgent(
 			});
 		}
 		if (abortRequested || result.finishReason === "aborted") {
+			if (timedOut) {
+				writeErr(`run timed out after ${config.timeoutSeconds}s`);
+				process.exitCode = 1;
+			}
 			writeln();
 			return;
 		}

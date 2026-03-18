@@ -231,6 +231,40 @@ describe("Agent", () => {
 		expect(handler.createMessage).toHaveBeenCalledTimes(2);
 	});
 
+	it("fails immediately on non-recoverable API errors", async () => {
+		const { Agent } = await import("./agent.js");
+		const handler = makeHandler([
+			[
+				{
+					type: "done",
+					id: "r1",
+					success: false,
+					error:
+						'{"error":{"code":404,"message":"models/gemini-flash-latest-1 is not found"}}',
+				},
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const agent = new Agent({
+			providerId: "gemini",
+			modelId: "gemini-flash-latest-1",
+			systemPrompt: "Handle retries",
+			tools: [],
+			maxConsecutiveMistakes: 3,
+		});
+
+		await expect(agent.run("retry")).rejects.toThrow("404");
+		expect(handler.createMessage).toHaveBeenCalledTimes(1);
+		expect(
+			agent
+				.getMessages()
+				.some((message) =>
+					JSON.stringify(message).includes("previous turn failed"),
+				),
+		).toBe(false);
+	});
+
 	it("continues after mistake limit when callback returns continue", async () => {
 		const { Agent } = await import("./agent.js");
 		const handler = makeHandler([

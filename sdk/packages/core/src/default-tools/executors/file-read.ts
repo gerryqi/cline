@@ -82,7 +82,7 @@ export function createFileReadExecutor(
 		// Read file content
 		const content = await fs.readFile(resolvedPath, encoding);
 
-		// Optionally add line numbers
+		// Optionally add line numbers - one-based indexing for better readability
 		if (includeLineNumbers) {
 			const lines = content.split("\n");
 			const maxLineNumWidth = String(lines.length).length;

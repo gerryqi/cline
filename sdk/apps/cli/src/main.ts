@@ -27,7 +27,6 @@ import {
 	writeErr,
 	writeln,
 } from "./utils/output";
-import { deleteSession, listSessions, updateSession } from "./utils/session";
 import type { Config } from "./utils/types";
 
 function mergeToolPolicies(
@@ -69,11 +68,32 @@ async function loadInteractiveRuntimeModule() {
 	return runInteractive;
 }
 
+function resolveConfigDirArg(rawArgs: string[]): string | undefined {
+	const index = rawArgs.indexOf("--config");
+	if (index < 0 || index + 1 >= rawArgs.length) {
+		return undefined;
+	}
+	const value = rawArgs[index + 1]?.trim();
+	return value ? value : undefined;
+}
+
+function normalizeTopLevelArgs(rawArgs: string[]): string[] {
+	const command = rawArgs[0]?.trim().toLowerCase();
+	if (command === "task" || command === "t") {
+		return rawArgs.slice(1);
+	}
+	if (command === "h") {
+		return ["history", ...rawArgs.slice(1)];
+	}
+	return rawArgs;
+}
+
 export async function runCli(): Promise<void> {
-	setHomeDir(homedir());
 	installStreamErrorGuards();
 
-	const rawArgs = process.argv.slice(2);
+	const rawArgsInput = process.argv.slice(2);
+	const rawArgs = normalizeTopLevelArgs(rawArgsInput);
+	setHomeDir(resolveConfigDirArg(rawArgsInput) ?? homedir());
 	if (rawArgs[0] === "connect") {
 		const code = await runConnectCommand(rawArgs, {
 			writeln,
@@ -104,6 +124,14 @@ export async function runCli(): Promise<void> {
 	if (rawArgs[0] === "version") {
 		showVersion();
 		process.exit(0);
+	}
+	if (rawArgs[0] === "update") {
+		const { runRpcStopCommand } = await import("./commands/rpc");
+		runRpcStopCommand(rawArgs, writeln, writeErr).catch(() => {});
+		writeErr(
+			"update command is not implemented yet (use your package manager to update manually)",
+		);
+		process.exit(1);
 	}
 	if (rawArgs[0] === "rpc") {
 		const {
@@ -154,36 +182,32 @@ export async function runCli(): Promise<void> {
 		});
 		process.exit(code);
 	}
+	let resumeSessionId: string | undefined;
 	if (rawArgs[0] === "schedule") {
 		const code = await runScheduleCommand(rawArgs, { writeln, writeErr });
 		process.exit(code);
 	}
+	if (rawArgs[0] === "history") {
+		const { runHistoryCommand } = await import("./commands/history");
+		const result = await runHistoryCommand({
+			rawArgs,
+			outputMode: args.outputMode,
+		});
+		if (typeof result === "string") {
+			resumeSessionId = result;
+			args = {
+				...args,
+				interactive: true,
+				prompt: undefined,
+			};
+		} else {
+			process.exit(result);
+		}
+	}
 	if (rawArgs[0] === "list") {
-		const { runHistoryListCommand, runListCommand } = await import(
-			"./commands/list"
-		);
-		if (args.invalidOutputMode) {
-			writeErr(
-				`invalid output mode "${args.invalidOutputMode}" (expected "text" or "json")`,
-			);
-			process.exit(1);
-		}
-		if (args.invalidMode) {
-			writeErr(`invalid mode "${args.invalidMode}" (expected "act" or "plan")`);
-			process.exit(1);
-		}
+		const { runListCommand } = await import("./commands/list");
 		setCurrentOutputMode(args.outputMode);
 		const listCwd = resolveWorkspaceRoot(cwd);
-		const listTarget = rawArgs[1]?.trim().toLowerCase();
-		if (listTarget === "history") {
-			const limitIndex = rawArgs.indexOf("--limit");
-			const limit =
-				limitIndex >= 0 && limitIndex + 1 < rawArgs.length
-					? Number.parseInt(rawArgs[limitIndex + 1] ?? "200", 10)
-					: 200;
-			await runHistoryListCommand(Number.isFinite(limit) ? limit : 200);
-			process.exit(0);
-		}
 		const code = await runListCommand({
 			rawArgs,
 			cwd: listCwd,
@@ -192,90 +216,11 @@ export async function runCli(): Promise<void> {
 		});
 		process.exit(code);
 	}
-	if (rawArgs[0] === "sessions" && rawArgs[1] === "list") {
-		const limitIndex = rawArgs.indexOf("--limit");
-		let limit: number;
-		if (limitIndex >= 0 && limitIndex + 1 < rawArgs.length) {
-			limit = Number.parseInt(rawArgs[limitIndex + 1] ?? "200", 10);
-		} else {
-			// Support positional numeric argument: `sessions list <n>`
-			const positional = rawArgs[2];
-			const positionalNum =
-				positional !== undefined ? Number.parseInt(positional, 10) : Number.NaN;
-			limit = Number.isFinite(positionalNum) ? positionalNum : 200;
-		}
-		process.stdout.write(
-			JSON.stringify(await listSessions(Number.isFinite(limit) ? limit : 200)),
-		);
-		process.exit(0);
-	}
-	if (rawArgs[0] === "sessions" && rawArgs[1] === "delete") {
-		const idIndex = rawArgs.indexOf("--session-id");
-		const sessionId =
-			idIndex >= 0 && idIndex + 1 < rawArgs.length ? rawArgs[idIndex + 1] : "";
+
+	if (args.taskId !== undefined) {
+		const sessionId = args.taskId.trim();
 		if (!sessionId) {
-			writeErr("sessions delete requires --session-id <id>");
-			process.exit(1);
-		}
-		process.stdout.write(JSON.stringify(await deleteSession(sessionId)));
-		process.exit(0);
-	}
-	if (rawArgs[0] === "sessions" && rawArgs[1] === "update") {
-		const idIndex = rawArgs.indexOf("--session-id");
-		const sessionId =
-			idIndex >= 0 && idIndex + 1 < rawArgs.length ? rawArgs[idIndex + 1] : "";
-		if (!sessionId) {
-			writeErr("sessions update requires --session-id <id>");
-			process.exit(1);
-		}
-		const titleIndex = rawArgs.indexOf("--title");
-		const title =
-			titleIndex >= 0 && titleIndex + 1 < rawArgs.length
-				? rawArgs[titleIndex + 1]
-				: undefined;
-		const metadataJsonIndex = rawArgs.indexOf("--metadata-json");
-		const metadataJson =
-			metadataJsonIndex >= 0 && metadataJsonIndex + 1 < rawArgs.length
-				? rawArgs[metadataJsonIndex + 1]
-				: undefined;
-		let metadata: Record<string, unknown> | null | undefined;
-		if (metadataJson !== undefined) {
-			try {
-				const parsed = JSON.parse(metadataJson) as unknown;
-				if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-					writeErr("--metadata-json must be a JSON object");
-					process.exit(1);
-				}
-				metadata = parsed as Record<string, unknown>;
-			} catch {
-				writeErr("--metadata-json must be valid JSON");
-				process.exit(1);
-			}
-		}
-		if (title !== undefined) {
-			const trimmedTitle = title.trim();
-			const base = { ...(metadata ?? {}) };
-			if (trimmedTitle.length > 0) {
-				base.title = trimmedTitle;
-			} else {
-				delete base.title;
-			}
-			metadata = base;
-		}
-		process.stdout.write(
-			JSON.stringify(
-				await updateSession(sessionId, {
-					metadata,
-				}),
-			),
-		);
-		process.exit(0);
-	}
-	let resumeSessionId: string | undefined;
-	if (args.sessionId !== undefined) {
-		const sessionId = args.sessionId.trim();
-		if (!sessionId) {
-			writeErr("--session requires <id>");
+			writeErr("--taskId requires <id>");
 			process.exit(1);
 		}
 		resumeSessionId = sessionId;
@@ -296,19 +241,15 @@ export async function runCli(): Promise<void> {
 		};
 	}
 
-	if (args.invalidOutputMode) {
-		writeErr(
-			`invalid output mode "${args.invalidOutputMode}" (expected "text" or "json")`,
-		);
-		process.exit(1);
-	}
-	if (args.invalidMode) {
-		writeErr(`invalid mode "${args.invalidMode}" (expected "act" or "plan")`);
-		process.exit(1);
-	}
 	if (args.invalidReasoningEffort) {
 		writeErr(
 			`invalid reasoning effort "${args.invalidReasoningEffort}" (expected "none", "low", "medium", "high", or "xhigh")`,
+		);
+		process.exit(1);
+	}
+	if (args.invalidTimeoutSeconds) {
+		writeErr(
+			`invalid timeout "${args.invalidTimeoutSeconds}" (expected integer >= 1)`,
 		);
 		process.exit(1);
 	}
@@ -316,6 +257,9 @@ export async function runCli(): Promise<void> {
 		writeln(
 			`${c.dim}[warn] ignoring invalid --max-consecutive-mistakes value "${args.invalidMaxConsecutiveMistakes}" (expected integer >= 1)${c.reset}`,
 		);
+	}
+	if (args.hooksDir?.trim()) {
+		process.env.CLINE_HOOKS_DIR = args.hooksDir.trim();
 	}
 	setCurrentOutputMode(args.outputMode);
 	const defaultToolAutoApprove = args.defaultToolAutoApprove;
@@ -450,6 +394,7 @@ export async function runCli(): Promise<void> {
 			}),
 			maxIterations: args.maxIterations,
 			maxConsecutiveMistakes: args.maxConsecutiveMistakes ?? 3,
+			timeoutSeconds: args.timeoutSeconds,
 			sandbox: sandboxEnabled,
 			sandboxDataDir,
 			showUsage: args.showUsage,

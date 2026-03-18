@@ -142,23 +142,24 @@ async function replaceInFile(
 
 async function insertInFile(
 	filePath: string,
-	insertLine: number,
+	insertLineOneBased: number,
 	newStr: string,
 	encoding: BufferEncoding,
 ): Promise<string> {
 	const content = await fs.readFile(filePath, encoding);
 	const lines = content.split("\n");
+	const insertLine = insertLineOneBased - 1; // Convert to zero-based index
 
 	if (insertLine < 0 || insertLine > lines.length) {
 		throw new Error(
-			`Invalid line number: ${insertLine}. Valid range: 0-${lines.length}`,
+			`Invalid line number: ${insertLineOneBased}. Valid range: 1-${lines.length}`,
 		);
 	}
 
 	lines.splice(insertLine, 0, ...newStr.split("\n"));
 	await fs.writeFile(filePath, lines.join("\n"), { encoding });
 
-	return `Inserted content at line ${insertLine} in ${filePath}.`;
+	return `Inserted content at line ${insertLineOneBased} in ${filePath}.`;
 }
 
 /**
@@ -216,7 +217,7 @@ export function createEditorExecutor(
 				}
 				return insertInFile(
 					filePath,
-					input.insert_line,
+					input.insert_line, // One-based index
 					input.new_str,
 					encoding,
 				);

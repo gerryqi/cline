@@ -118,15 +118,16 @@ describe("cli e2e", () => {
 		const result = runCli(["--help"], { env: createIsolatedEnv() });
 		expect(result.status).toBe(0);
 		expect(asText(result.stderr)).toBe("");
-		expect(asText(result.stdout)).toContain("USAGE");
+		expect(asText(result.stdout)).toContain("Usage:");
 		expect(asText(result.stdout)).toContain("--tool-require-approval");
-		expect(asText(result.stdout)).toContain("--output <text|json>");
+		expect(asText(result.stdout)).toContain("--auto-approve-all");
+		expect(asText(result.stdout)).toContain("-T, --taskId <id>");
 		expect(asText(result.stdout)).toContain("--sandbox");
 		expect(asText(result.stdout)).toContain("--thinking");
 		expect(asText(result.stdout)).toContain("--reasoning-effort");
 		expect(asText(result.stdout)).toContain("--refresh-models");
 		expect(asText(result.stdout)).toContain(
-			"clite list <workflows|rules|skills|agents|history|hooks|mcp>",
+			"list <workflows|rules|skills|agents|history|hooks|mcp>",
 		);
 	});
 
@@ -142,12 +143,12 @@ describe("cli e2e", () => {
 		expect(asText(result.stdout).trim()).toBe(cliPackage.version);
 	});
 
-	it("rejects unsupported output modes", () => {
-		const result = runCli(["--output", "xml", "hello"], {
+	it("rejects invalid timeout values", () => {
+		const result = runCli(["--timeout", "xml", "hello"], {
 			env: createIsolatedEnv(),
 		});
 		expect(result.status).toBe(1);
-		expect(asText(result.stderr)).toContain("invalid output mode");
+		expect(asText(result.stderr)).toContain("invalid timeout");
 	});
 
 	it("rejects json mode without prompt or piped input", () => {
@@ -215,14 +216,6 @@ describe("cli e2e", () => {
 		);
 	});
 
-	it("rejects unsupported mode values", () => {
-		const result = runCli(["--mode", "build", "hello"], {
-			env: createIsolatedEnv(),
-		});
-		expect(result.status).toBe(1);
-		expect(asText(result.stderr)).toContain("invalid mode");
-	});
-
 	it("lists sessions from isolated storage", () => {
 		const homeDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-home-"));
 		const sessionDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-sessions-"));
@@ -270,10 +263,10 @@ describe("cli e2e", () => {
 		);
 	});
 
-	it("returns an error when session flag is provided without an id", () => {
-		const result = runCli(["--session"], { env: createIsolatedEnv() });
+	it("returns an error when taskId flag is provided without an id", () => {
+		const result = runCli(["--taskId"], { env: createIsolatedEnv() });
 		expect(result.status).toBe(1);
-		expect(asText(result.stderr)).toContain("--session requires <id>");
+		expect(asText(result.stderr)).toContain("--taskId requires <id>");
 	});
 
 	it("lists enabled workflows in text mode", () => {
