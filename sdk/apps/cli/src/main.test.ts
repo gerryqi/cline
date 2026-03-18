@@ -132,4 +132,34 @@ describe("runCli lightweight command dispatch", () => {
 		expect(mockState.runAgentImports).toBe(1);
 		expect(mockState.runInteractiveImports).toBe(0);
 	});
+
+	it("enables thinking when reasoning effort is provided", async () => {
+		mockState.runAgentCalls = 0;
+		runtimeMocks.runAgent.mockClear();
+
+		Object.defineProperty(process.stdin, "isTTY", {
+			value: true,
+			configurable: true,
+		});
+		process.argv = [
+			"bun",
+			"src/index.ts",
+			"--reasoning-effort",
+			"high",
+			"hello",
+		];
+
+		const { runCli } = await import("./main");
+
+		await expect(runCli()).resolves.toBeUndefined();
+		expect(mockState.runAgentCalls).toBe(1);
+		expect(runtimeMocks.runAgent).toHaveBeenCalledWith(
+			"hello",
+			expect.objectContaining({
+				thinking: true,
+				reasoningEffort: "high",
+			}),
+			expect.anything(),
+		);
+	});
 });

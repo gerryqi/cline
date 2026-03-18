@@ -411,7 +411,7 @@ export async function runCli(): Promise<void> {
 			showUsage: args.showUsage,
 			showTimings: args.showTimings,
 			verbose: args.verbose,
-			thinking: effectiveReasoningEffort === "none" ? false : args.thinking,
+			thinking: effectiveReasoningEffort !== "none",
 			reasoningEffort:
 				effectiveReasoningEffort === "none"
 					? undefined
