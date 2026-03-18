@@ -204,7 +204,9 @@
       "name": "@clinebot/vscode",
       "version": "0.0.0",
       "dependencies": {
+        "@clinebot/agents": "workspace:*",
         "@clinebot/core": "workspace:*",
+        "@clinebot/llms": "workspace:*",
       },
       "devDependencies": {
         "@types/node": "^25.3.5",

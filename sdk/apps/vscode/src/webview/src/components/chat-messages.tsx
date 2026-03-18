@@ -1,3 +1,4 @@
+import { PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -36,18 +37,19 @@ export function ChatMessages({
 	const isNewSession = useMemo(() => !_messages?.length, [_messages]);
 
 	return (
-		<Card className="chat-stage min-h-0 overflow-hidden rounded-2xl">
-			<CardHeader className="chat-stage__header">
-				{isNewSession && <CardTitle className="text-3xl">Cline</CardTitle>}
-				<div className="chat-stage__status">
+		<Card className="chat-stage min-h-0 overflow-hidden w-full">
+			<CardHeader className="w-full flex items-center justify-between">
+				<div className="flex items-center gap-4">
 					<span>{status.includes("Failed") ? status : null}</span>
-					{sessionId ? <code>{sessionId}</code> : null}
-					{!isNewSession && (
-						<Button variant="secondary" onClick={onReset}>
-							New Session
-						</Button>
-					)}
+					<CardTitle className="text-xs">{sessionId}</CardTitle>
 				</div>
+				{isNewSession ? (
+					<CardTitle className="text-3xl">Cline</CardTitle>
+				) : (
+					<Button variant="ghost" onClick={onReset}>
+						<PlusIcon className="size-4" />
+					</Button>
+				)}
 			</CardHeader>
 			<Separator />
 			<CardContent

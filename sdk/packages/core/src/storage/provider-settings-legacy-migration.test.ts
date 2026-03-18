@@ -19,7 +19,7 @@ describe("migrateLegacyProviderSettings", () => {
 			path.join(os.tmpdir(), "core-legacy-provider-"),
 		);
 		tempDirs.push(tempDir);
-		const providersPath = path.join(tempDir, "settings", "providers.json");
+		const providersPath = path.join(tempDir, "provider-settings.json");
 		const manager = new ProviderSettingsManager({ filePath: providersPath });
 
 		writeFileSync(
@@ -72,7 +72,7 @@ describe("migrateLegacyProviderSettings", () => {
 			path.join(os.tmpdir(), "core-legacy-provider-"),
 		);
 		tempDirs.push(tempDir);
-		const providersPath = path.join(tempDir, "settings", "providers.json");
+		const providersPath = path.join(tempDir, "provider-settings.json");
 		const manager = new ProviderSettingsManager({ filePath: providersPath });
 
 		manager.saveProviderSettings({
@@ -119,7 +119,7 @@ describe("migrateLegacyProviderSettings", () => {
 			path.join(os.tmpdir(), "core-legacy-provider-"),
 		);
 		tempDirs.push(tempDir);
-		const providersPath = path.join(tempDir, "settings", "providers.json");
+		const providersPath = path.join(tempDir, "provider-settings.json");
 		const manager = new ProviderSettingsManager({ filePath: providersPath });
 
 		writeFileSync(

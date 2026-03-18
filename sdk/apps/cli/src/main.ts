@@ -41,11 +41,8 @@ function mergeToolPolicies(
 }
 
 async function createProviderSettingsManager() {
-	const { migrateLegacyProviderSettings, ProviderSettingsManager } =
-		await import("@clinebot/core/server");
-	const providerSettingsManager = new ProviderSettingsManager();
-	migrateLegacyProviderSettings({ providerSettingsManager });
-	return providerSettingsManager;
+	const { ProviderSettingsManager } = await import("@clinebot/core/server");
+	return new ProviderSettingsManager();
 }
 
 async function loadCliRuntimeModules() {

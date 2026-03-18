@@ -20,6 +20,17 @@ type BunSqliteDb = {
 	exec: (sql: string) => void;
 };
 
+type NodeSqliteStatement = {
+	run: (...params: unknown[]) => { changes?: number };
+	get: (...params: unknown[]) => Record<string, unknown> | undefined;
+	all: (...params: unknown[]) => Record<string, unknown>[];
+};
+
+type NodeSqliteDb = {
+	prepare: (sql: string) => NodeSqliteStatement;
+	exec: (sql: string) => void;
+};
+
 export function nowIso(): string {
 	return new Date().toISOString();
 }
@@ -69,6 +80,27 @@ export function loadSqliteDb(filePath: string): SqliteDb {
 			},
 			exec: (sql: string) => db.exec(sql),
 		};
+	}
+
+	try {
+		const nodeSqliteModuleName = ["node", ":sqlite"].join("");
+		const { DatabaseSync } = require(nodeSqliteModuleName) as {
+			DatabaseSync: new (path: string) => NodeSqliteDb;
+		};
+		const db = new DatabaseSync(filePath);
+		return {
+			prepare: (sql: string): SqliteStatement => {
+				const statement = db.prepare(sql);
+				return {
+					run: (...params: unknown[]) => statement.run(...params),
+					get: (...params: unknown[]) => statement.get(...params) ?? null,
+					all: (...params: unknown[]) => statement.all(...params),
+				};
+			},
+			exec: (sql: string) => db.exec(sql),
+		};
+	} catch {
+		// Fall through to better-sqlite3 for older Node runtimes without node:sqlite.
 	}
 
 	// Keep the module name non-literal so browser/SSR bundlers don't try to resolve

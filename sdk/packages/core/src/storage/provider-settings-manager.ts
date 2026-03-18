@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { basename, dirname } from "node:path";
 import { resolveProviderSettingsPath } from "@clinebot/shared/storage";
 import {
 	emptyStoredProviderSettings,
@@ -11,6 +11,7 @@ import {
 	StoredProviderSettingsSchema,
 	toProviderConfig,
 } from "../types/provider-settings";
+import { migrateLegacyProviderSettings } from "./provider-settings-legacy-migration";
 
 function nowIso(): string {
 	return new Date().toISOString();
@@ -18,6 +19,7 @@ function nowIso(): string {
 
 export interface ProviderSettingsManagerOptions {
 	filePath?: string;
+	dataDir?: string;
 }
 
 export interface SaveProviderSettingsOptions {
@@ -25,11 +27,30 @@ export interface SaveProviderSettingsOptions {
 	tokenSource?: ProviderTokenSource;
 }
 
+function inferLegacyDataDir(filePath: string): string | undefined {
+	if (basename(filePath) !== "providers.json") {
+		return undefined;
+	}
+	const settingsDir = dirname(filePath);
+	if (basename(settingsDir) !== "settings") {
+		return undefined;
+	}
+	return dirname(settingsDir);
+}
+
 export class ProviderSettingsManager {
 	private readonly filePath: string;
+	private readonly dataDir?: string;
 
 	constructor(options: ProviderSettingsManagerOptions = {}) {
 		this.filePath = options.filePath ?? resolveProviderSettingsPath();
+		this.dataDir = options.dataDir ?? inferLegacyDataDir(this.filePath);
+		if (this.dataDir || !options.filePath) {
+			migrateLegacyProviderSettings({
+				providerSettingsManager: this,
+				dataDir: this.dataDir,
+			});
+		}
 	}
 
 	getFilePath(): string {

@@ -49,7 +49,9 @@
 		"dev": "bun run watch"
 	},
 	"dependencies": {
-		"@clinebot/core": "workspace:*"
+		"@clinebot/agents": "workspace:*",
+		"@clinebot/core": "workspace:*",
+		"@clinebot/llms": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/node": "^25.3.5",

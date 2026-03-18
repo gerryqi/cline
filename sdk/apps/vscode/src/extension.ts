@@ -1,29 +1,23 @@
-import { execFile } from "node:child_process";
 import { join } from "node:path";
-import { promisify } from "node:util";
-import type {
-	RpcChatRunTurnRequest,
-	RpcChatStartSessionRequest,
-	RpcChatTurnResult,
-	RpcProviderCatalogResponse,
-	RpcProviderModel,
+import { getClineDefaultSystemPrompt } from "@clinebot/agents";
+import {
+	ProviderSettingsManager,
+	type RpcProviderModel,
+	type ToolPolicy,
 } from "@clinebot/core";
 import {
-	getRpcServerDefaultAddress,
-	getRpcServerHealth,
-	RpcSessionClient,
-} from "@clinebot/core";
+	buildWorkspaceMetadata,
+	createSessionHost,
+	type SessionHost,
+} from "@clinebot/core/server";
+import { models as llmModels, providers as llmProviders } from "@clinebot/llms";
 import * as vscode from "vscode";
 import type {
 	WebviewInboundMessage,
 	WebviewOutboundMessage,
 } from "./webview-protocol";
 
-const execFileAsync = promisify(execFile);
-const DEFAULT_RPC_ADDRESS = getRpcServerDefaultAddress();
-
 export function activate(context: vscode.ExtensionContext): void {
-	// Sidebar webview (default)
 	const sidebarProvider = new ClineChatViewProvider(context.extensionUri);
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(
@@ -33,7 +27,6 @@ export function activate(context: vscode.ExtensionContext): void {
 		),
 	);
 
-	// Editor panel command (alternative)
 	const openChat = vscode.commands.registerCommand(
 		"clineVscode.openChat",
 		() => {
@@ -50,7 +43,7 @@ export function activate(context: vscode.ExtensionContext): void {
 					localResourceRoots,
 				},
 			);
-			const controller = new RpcChatWebviewController(
+			const controller = new CoreChatWebviewController(
 				panel.webview,
 				context.extensionUri,
 				panel.onDidDispose,
@@ -83,7 +76,7 @@ class ClineChatViewProvider implements vscode.WebviewViewProvider {
 				vscode.Uri.joinPath(this.extensionUri, "dist", "webview"),
 			],
 		};
-		const controller = new RpcChatWebviewController(
+		const controller = new CoreChatWebviewController(
 			webviewView.webview,
 			this.extensionUri,
 			webviewView.onDidDispose,
@@ -92,17 +85,44 @@ class ClineChatViewProvider implements vscode.WebviewViewProvider {
 	}
 }
 
-class RpcChatWebviewController implements vscode.Disposable {
+type StartConfig = {
+	providerId: string;
+	modelId: string;
+	cwd: string;
+	workspaceRoot: string;
+	systemPrompt: string;
+	maxIterations?: number;
+	enableTools: boolean;
+	enableSpawnAgent: boolean;
+	enableAgentTeams: boolean;
+	teamName: string;
+	missionLogIntervalSteps: number;
+	missionLogIntervalMs: number;
+	mode: "act";
+	apiKey: string;
+};
+
+type ProviderListItem = {
+	id: string;
+	name: string;
+	enabled: boolean;
+	defaultModelId?: string;
+};
+
+type LlmModelInfo = {
+	name?: string;
+	capabilities?: string[];
+};
+
+class CoreChatWebviewController implements vscode.Disposable {
 	private readonly webview: vscode.Webview;
 	private readonly extensionUri: vscode.Uri;
 	private readonly disposables: vscode.Disposable[] = [];
-	private client: RpcSessionClient | undefined;
-	private rpcAddress = "";
+	private readonly providerSettingsManager = new ProviderSettingsManager();
+	private host: SessionHost | undefined;
+	private stopSessionSubscription: (() => void) | undefined;
 	private sessionId: string | undefined;
-	private startConfig: RpcChatStartSessionRequest | undefined;
-	private stopStreaming: (() => void) | undefined;
-	private readonly streamClientId =
-		`vscode-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+	private startConfig: StartConfig | undefined;
 	private sending = false;
 	private streamedAssistantText = "";
 
@@ -130,13 +150,15 @@ class RpcChatWebviewController implements vscode.Disposable {
 
 	public dispose(): void {
 		this.stopEventStream();
-		if (this.sessionId && this.client) {
-			void this.client.stopRuntimeSession(this.sessionId).catch(() => {
+		if (this.sessionId && this.host) {
+			void this.host.stop(this.sessionId).catch(() => {
 				// best-effort cleanup
 			});
 		}
-		this.client?.close();
-		this.client = undefined;
+		void this.host?.dispose("vscode_webview_dispose").catch(() => {
+			// best-effort cleanup
+		});
+		this.host = undefined;
 		this.sessionId = undefined;
 		this.startConfig = undefined;
 		while (this.disposables.length > 0) {
@@ -169,10 +191,10 @@ class RpcChatWebviewController implements vscode.Disposable {
 
 	private async initialize(): Promise<void> {
 		try {
-			const ensuredAddress = await this.ensureRpcAddress();
+			await this.getSessionHost();
 			await this.post({
 				type: "status",
-				text: ensuredAddress ? "Cline is Ready" : "Failed to connect to Cline",
+				text: "Cline is Ready",
 			});
 			const defaults = this.resolveWorkspaceDefaults();
 			await this.post({ type: "defaults", defaults });
@@ -289,72 +311,30 @@ class RpcChatWebviewController implements vscode.Disposable {
 		};
 	}
 
-	private async ensureRpcAddress(): Promise<string> {
-		if (this.client && this.rpcAddress) {
-			return this.rpcAddress;
-		}
-		const requested =
-			process.env.CLINE_RPC_ADDRESS?.trim() || DEFAULT_RPC_ADDRESS;
-		let resolved = requested;
-		const health = await getRpcServerHealth(requested).catch(() => undefined);
-		if (!health?.running) {
-			const ensured = await this.runRpcEnsure(requested);
-			resolved = ensured.address;
-		}
-		process.env.CLINE_RPC_ADDRESS = resolved;
-		this.rpcAddress = resolved;
-		this.client = new RpcSessionClient({ address: resolved });
-		return resolved;
-	}
-
-	private async runRpcEnsure(
-		requestedAddress: string,
-	): Promise<{ address: string }> {
-		const result = await execFileAsync(
-			"clite",
-			["rpc", "ensure", "--address", requestedAddress, "--json"],
-			{ timeout: 30_000 },
-		);
-		const combined = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
-		const lines = combined
-			.split(/\r?\n/)
-			.map((line) => line.trim())
-			.filter((line) => line.length > 0);
-		for (let index = lines.length - 1; index >= 0; index -= 1) {
-			const line = lines[index];
-			try {
-				const parsed = JSON.parse(line) as {
-					address?: string;
-					running?: boolean;
-				};
-				if (parsed.running === true && parsed.address?.trim()) {
-					return { address: parsed.address.trim() };
-				}
-			} catch {
-				// continue scanning
-			}
-		}
-		throw new Error("failed to parse `clite rpc ensure --json` output");
-	}
-
 	private async loadProviders(preferredProvider?: string): Promise<void> {
-		const client = await this.getClient();
-		const response = await client.runProviderAction({
-			action: "listProviders",
-		});
-		const parsed = response.result as RpcProviderCatalogResponse;
-		const providers = (parsed.providers ?? []).map((provider) => ({
-			id: provider.id,
-			name: provider.name,
-			enabled: provider.enabled === true,
-			defaultModelId: provider.defaultModelId,
-		}));
+		const state = this.providerSettingsManager.read();
+		const ids = llmModels
+			.getProviderIds()
+			.sort((a: string, b: string) => a.localeCompare(b));
+		const providers: ProviderListItem[] = await Promise.all(
+			ids.map(async (id: string) => {
+				const info = await llmModels.getProvider(id);
+				return {
+					id,
+					name: info?.name ?? id,
+					enabled: Boolean(state.providers[id]?.settings),
+					defaultModelId: info?.defaultModelId,
+				};
+			}),
+		);
 		await this.post({ type: "providers", providers });
 
 		const selected =
 			(preferredProvider &&
-				providers.find((item) => item.id === preferredProvider)) ||
-			providers.find((item) => item.enabled) ||
+				providers.find(
+					(item: ProviderListItem) => item.id === preferredProvider,
+				)) ||
+			providers.find((item: ProviderListItem) => item.enabled) ||
 			providers[0];
 		if (selected) {
 			await this.loadModels(selected.id);
@@ -366,18 +346,22 @@ class RpcChatWebviewController implements vscode.Disposable {
 		if (!provider) {
 			return;
 		}
-		const client = await this.getClient();
-		const response = await client.runProviderAction({
-			action: "getProviderModels",
-			providerId: provider,
-		});
-		const parsed = response.result as {
-			models?: RpcProviderModel[];
-		};
+		const modelMap = (await llmModels.getModelsForProvider(provider)) as Record<
+			string,
+			LlmModelInfo
+		>;
+		const models: RpcProviderModel[] = Object.entries(modelMap)
+			.sort(([a], [b]) => a.localeCompare(b))
+			.map(([modelId, info]: [string, LlmModelInfo]) => ({
+				id: modelId,
+				name: info.name ?? modelId,
+				supportsAttachments: info.capabilities?.includes("files"),
+				supportsVision: info.capabilities?.includes("images"),
+			}));
 		await this.post({
 			type: "models",
 			providerId: provider,
-			models: parsed.models ?? [],
+			models,
 		});
 	}
 
@@ -409,23 +393,18 @@ class RpcChatWebviewController implements vscode.Disposable {
 		this.sending = true;
 		this.streamedAssistantText = "";
 		try {
-			const startConfig = await this.ensureSession(config);
-			const client = await this.getClient();
-			const request: RpcChatRunTurnRequest = {
-				config: startConfig,
+			await this.ensureSession(config);
+			const host = await this.getSessionHost();
+			const result = await host.send({
+				sessionId: this.sessionId as string,
 				prompt: trimmedPrompt,
-			};
-			const response = await client.sendRuntimeSession(
-				this.sessionId as string,
-				request,
-			);
-			const parsed = response.result as RpcChatTurnResult;
-			this.emitRemainder(parsed.text);
+			});
+			this.emitRemainder(result?.text ?? "");
 			await this.post({
 				type: "turn_done",
-				finishReason: parsed.finishReason,
-				iterations: parsed.iterations,
-				usage: parsed.usage,
+				finishReason: result?.finishReason ?? "unknown",
+				iterations: result?.iterations ?? 0,
+				usage: result?.usage,
 			});
 		} catch (error) {
 			await this.postError(error);
@@ -461,111 +440,139 @@ class RpcChatWebviewController implements vscode.Disposable {
 		enableSpawn?: boolean;
 		enableTeams?: boolean;
 		autoApproveTools?: boolean;
-	}): Promise<RpcChatStartSessionRequest> {
+	}): Promise<StartConfig> {
 		if (this.sessionId && this.startConfig) {
 			return this.startConfig;
 		}
 
 		const defaults = this.resolveWorkspaceDefaults();
-		const provider = config?.provider?.trim() || "cline";
-		const model = config?.model?.trim() || "openai/gpt-5.3-codex";
+		const providerId = llmProviders.normalizeProviderId(
+			config?.provider?.trim() || "cline",
+		);
+		const modelId = config?.model?.trim() || "openai/gpt-5.3-codex";
 		const normalizedMaxIterations =
 			typeof config?.maxIterations === "number" && config.maxIterations > 0
 				? Math.floor(config.maxIterations)
 				: undefined;
-		const request: RpcChatStartSessionRequest = {
+		const resolvedSystemPrompt = await this.resolveSystemPrompt(
+			defaults.cwd,
+			providerId,
+			config?.systemPrompt,
+		);
+		const startConfig: StartConfig = {
 			workspaceRoot: defaults.workspaceRoot,
 			cwd: defaults.cwd,
-			provider,
-			model,
+			providerId,
+			modelId,
 			mode: "act",
 			apiKey: "",
-			systemPrompt: config?.systemPrompt?.trim() || undefined,
+			systemPrompt: resolvedSystemPrompt,
 			maxIterations: normalizedMaxIterations,
 			enableTools: config?.enableTools !== false,
-			enableSpawn: config?.enableSpawn !== false,
-			enableTeams: config?.enableTeams === true,
-			autoApproveTools: config?.autoApproveTools !== false,
+			enableSpawnAgent: config?.enableSpawn !== false,
+			enableAgentTeams: config?.enableTeams === true,
 			teamName: "vscode-chat",
-			missionStepInterval: 3,
-			missionTimeIntervalMs: 120000,
+			missionLogIntervalSteps: 3,
+			missionLogIntervalMs: 120000,
 		};
-		const client = await this.getClient();
-		const response = await client.startRuntimeSession(request);
+		const toolPolicies: Record<string, ToolPolicy> = {
+			"*": {
+				autoApprove: config?.autoApproveTools !== false,
+			},
+		};
+
+		const host = await this.getSessionHost();
+		const response = await host.start({
+			interactive: true,
+			config: startConfig,
+			toolPolicies,
+		});
 		const sessionId = response.sessionId.trim();
 		if (!sessionId) {
-			throw new Error("RPC runtime returned an empty session id");
+			throw new Error("core runtime returned an empty session id");
 		}
+
 		this.sessionId = sessionId;
-		this.startConfig = request;
+		this.startConfig = startConfig;
 		this.startEventStream(sessionId);
 		await this.post({ type: "session_started", sessionId });
-		return request;
+		return startConfig;
 	}
 
 	private startEventStream(sessionId: string): void {
 		this.stopEventStream();
-		const client = this.client;
-		if (!client) {
+		const host = this.host;
+		if (!host) {
 			return;
 		}
-		this.stopStreaming = client.streamEvents(
-			{
-				clientId: this.streamClientId,
-				sessionIds: [sessionId],
-			},
-			{
-				onEvent: (event) => {
-					if (event.eventType === "runtime.chat.text_delta") {
-						const payload = event.payload;
-						const accumulated =
-							typeof payload.accumulated === "string"
-								? payload.accumulated
-								: undefined;
-						const delta =
-							typeof payload.text === "string"
-								? payload.text
-								: accumulated?.startsWith(this.streamedAssistantText)
-									? accumulated.slice(this.streamedAssistantText.length)
-									: "";
-						if (!delta) {
-							if (accumulated) {
-								this.streamedAssistantText = accumulated;
-							}
-							return;
-						}
-						this.streamedAssistantText += delta;
-						void this.post({ type: "assistant_delta", text: delta });
-						return;
-					}
-					if (event.eventType === "runtime.chat.tool_call_start") {
-						const payload = event.payload;
-						const toolName =
-							typeof payload.toolName === "string" ? payload.toolName : "tool";
-						void this.post({
-							type: "tool_event",
-							text: `Running ${toolName}...`,
-						});
-						return;
-					}
-					if (event.eventType === "runtime.chat.tool_call_end") {
-						const payload = event.payload;
-						const toolName =
-							typeof payload.toolName === "string" ? payload.toolName : "tool";
-						const error =
-							typeof payload.error === "string" ? payload.error : undefined;
-						void this.post({
-							type: "tool_event",
-							text: error
-								? `${toolName} failed: ${error}`
-								: `${toolName} completed`,
-						});
-					}
-				},
-				onError: (error) => {
-					void this.postError(error);
-				},
-			},
+		this.stopSessionSubscription = host.subscribe((event) => {
+			if (
+				event.type !== "agent_event" ||
+				event.payload.sessionId !== sessionId
+			) {
+				return;
+			}
+
+			const agentEvent = event.payload.event;
+			if (
+				agentEvent.type === "content_start" &&
+				agentEvent.contentType === "text" &&
+				typeof agentEvent.text === "string" &&
+				agentEvent.text.length > 0
+			) {
+				this.streamedAssistantText += agentEvent.text;
+				void this.post({ type: "assistant_delta", text: agentEvent.text });
+				return;
+			}
+
+			if (
+				agentEvent.type === "content_start" &&
+				agentEvent.contentType === "tool"
+			) {
+				void this.post({
+					type: "tool_event",
+					text: `Running ${agentEvent.toolName ?? "tool"}...`,
+				});
+				return;
+			}
+
+			if (
+				agentEvent.type === "content_end" &&
+				agentEvent.contentType === "tool"
+			) {
+				void this.post({
+					type: "tool_event",
+					text: agentEvent.error
+						? `${agentEvent.toolName ?? "tool"} failed: ${agentEvent.error}`
+						: `${agentEvent.toolName ?? "tool"} completed`,
+				});
+			}
+		});
+	}
+
+	private async resolveSystemPrompt(
+		cwd: string,
+		providerId: string,
+		explicitSystemPrompt?: string,
+	): Promise<string> {
+		const shouldAppendWorkspaceMetadata = providerId === "cline";
+		const workspaceMetadata = shouldAppendWorkspaceMetadata
+			? await buildWorkspaceMetadata(cwd)
+			: "";
+		const explicit = explicitSystemPrompt?.trim();
+		if (explicit) {
+			if (
+				shouldAppendWorkspaceMetadata &&
+				!explicit.includes("# Workspace Configuration")
+			) {
+				return `${explicit}\n\n${workspaceMetadata}`;
+			}
+			return explicit;
+		}
+		return getClineDefaultSystemPrompt(
+			"VS Code",
+			cwd,
+			shouldAppendWorkspaceMetadata ? workspaceMetadata : "",
 		);
 	}
 
@@ -574,8 +581,8 @@ class RpcChatWebviewController implements vscode.Disposable {
 			return;
 		}
 		try {
-			const client = await this.getClient();
-			await client.abortRuntimeSession(this.sessionId);
+			const host = await this.getSessionHost();
+			await host.abort(this.sessionId);
 			await this.post({ type: "status", text: "Abort requested." });
 		} catch (error) {
 			await this.postError(error);
@@ -583,9 +590,9 @@ class RpcChatWebviewController implements vscode.Disposable {
 	}
 
 	private async resetSession(): Promise<void> {
-		if (this.sessionId && this.client) {
+		if (this.sessionId && this.host) {
 			try {
-				await this.client.stopRuntimeSession(this.sessionId);
+				await this.host.stop(this.sessionId);
 			} catch {
 				// ignore stop errors on reset
 			}
@@ -599,18 +606,17 @@ class RpcChatWebviewController implements vscode.Disposable {
 	}
 
 	private stopEventStream(): void {
-		if (this.stopStreaming) {
-			this.stopStreaming();
-			this.stopStreaming = undefined;
-		}
+		this.stopSessionSubscription?.();
+		this.stopSessionSubscription = undefined;
 	}
 
-	private async getClient(): Promise<RpcSessionClient> {
-		await this.ensureRpcAddress();
-		if (!this.client) {
-			throw new Error("RPC client is not initialized");
+	private async getSessionHost(): Promise<SessionHost> {
+		if (!this.host) {
+			this.host = await createSessionHost({
+				backendMode: "local",
+			});
 		}
-		return this.client;
+		return this.host;
 	}
 
 	private async post(message: WebviewOutboundMessage): Promise<void> {

@@ -3,13 +3,10 @@
 	display: grid;
 	grid-template-rows: minmax(0, 1fr) auto;
 	gap: 12px;
-	padding: 12px;
 }
 
 .chat-stage,
 .composer {
-	border: 1px solid var(--border);
-	border-radius: 18px;
 	background: var(--bg-panel);
 	backdrop-filter: blur(18px);
 	box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
@@ -74,19 +71,15 @@
 .message {
 	max-width: min(860px, 100%);
 	padding: 14px 16px;
-	border-radius: 16px;
-	border: 1px solid transparent;
 }
 
 .message--user {
 	align-self: flex-end;
 	background: var(--user);
-	border-color: rgba(79, 179, 255, 0.3);
 }
 
 .message--assistant {
 	background: var(--assistant);
-	border-color: rgba(255, 255, 255, 0.08);
 }
 
 .message--meta {

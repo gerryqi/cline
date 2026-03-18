@@ -45,6 +45,40 @@ describe("ProviderSettingsManager", () => {
 		expect(reloaded.read().providers.anthropic?.tokenSource).toBe("manual");
 	});
 
+	it("migrates legacy provider settings during manager construction", () => {
+		const tempDir = mkdtempSync(
+			path.join(os.tmpdir(), "core-provider-settings-"),
+		);
+		tempDirs.push(tempDir);
+		const filePath = path.join(tempDir, "settings", "providers.json");
+
+		writeFileSync(
+			path.join(tempDir, "globalState.json"),
+			JSON.stringify(
+				{
+					mode: "act",
+					actModeApiProvider: "anthropic",
+					actModeApiModelId: "claude-sonnet-4-6",
+				},
+				null,
+				2,
+			),
+		);
+		writeFileSync(
+			path.join(tempDir, "secrets.json"),
+			JSON.stringify({ apiKey: "legacy-key" }, null, 2),
+		);
+
+		const manager = new ProviderSettingsManager({ filePath, dataDir: tempDir });
+
+		expect(manager.getLastUsedProviderSettings()).toEqual({
+			provider: "anthropic",
+			model: "claude-sonnet-4-6",
+			apiKey: "legacy-key",
+		});
+		expect(manager.read().providers.anthropic?.tokenSource).toBe("migration");
+	});
+
 	it("tracks provider-specific settings while preserving last-used provider", () => {
 		const tempDir = mkdtempSync(
 			path.join(os.tmpdir(), "core-provider-settings-"),

@@ -60,7 +60,6 @@ vi.mock("@clinebot/core/server", () => ({
 		stop: vi.fn(() => {}),
 	})),
 	loadRulesForSystemPromptFromWatcher: vi.fn(() => []),
-	migrateLegacyProviderSettings: vi.fn(() => {}),
 	ProviderSettingsManager: class {
 		getLastUsedProviderSettings() {
 			return undefined;

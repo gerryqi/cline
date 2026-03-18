@@ -104,7 +104,7 @@ export function ChatInputBar({
 							) : (
 								providers.map((item) => (
 									<NativeSelectOption key={item.id} value={item.id}>
-										{item.name} ({item.id})
+										{item.name}
 									</NativeSelectOption>
 								))
 							)}
@@ -157,7 +157,7 @@ export function ChatInputBar({
 						onChange={(event) => onSystemPromptChange(event.target.value)}
 						placeholder="Optional"
 					/>
-					<div className="flex flex-col justify-between sm:flex-row sm:items-center gap-2">
+					<div className="flex flex-col justify-evenly sm:flex-row sm:items-center gap-2">
 						<Toggle
 							label="Tools"
 							checked={enableTools}
