@@ -162,7 +162,7 @@ export class ToolOrchestrator {
 			});
 		}
 
-		if (reminder.afterIterations > 0 && iteration >= reminder.afterIterations) {
+		if (shouldInjectReminder(iteration, reminder.afterIterations)) {
 			content.push({
 				type: "text" as const,
 				text: reminder.text,
@@ -174,4 +174,15 @@ export class ToolOrchestrator {
 			content,
 		};
 	}
+}
+
+function shouldInjectReminder(
+	iteration: number,
+	afterIterations: number,
+): boolean {
+	return (
+		afterIterations > 0 &&
+		iteration > afterIterations &&
+		(iteration - 1) % afterIterations === 0
+	);
 }

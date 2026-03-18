@@ -17,7 +17,6 @@
 		"ai-sdk-provider-codex-cli": "^1.1.0",
 		"ai-sdk-provider-opencode-sdk": "^2.1.2",
 		"dify-ai-provider": "^1.1.0",
-		"nanoid": "^5.1.6",
 		"openai": "^6.25.0",
 		"zod": "^4.3.6"
 	},

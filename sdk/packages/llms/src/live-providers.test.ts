@@ -25,8 +25,6 @@ const PROVIDER_TIMEOUT_MS = Number(
 	process.env.LLMS_LIVE_PROVIDER_TIMEOUT_MS ?? "90000",
 );
 
-const liveDescribe = LIVE_TEST_ENABLED ? describe : describe.skip;
-
 function requireProvidersFilePath(): string {
 	const filePath = process.env[PROVIDERS_FILE_ENV];
 	if (!filePath) {
@@ -108,8 +106,11 @@ async function runPrompt(target: ProviderTarget): Promise<void> {
 	}
 }
 
-liveDescribe("live provider smoke test", () => {
+describe("live provider smoke test", () => {
 	it("reads configured providers from json and reports providers with failed responses", async () => {
+		if (!LIVE_TEST_ENABLED) {
+			return null;
+		}
 		const filePath = requireProvidersFilePath();
 		const targets = loadProviderTargets(filePath);
 

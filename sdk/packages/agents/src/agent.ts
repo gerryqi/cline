@@ -5,6 +5,7 @@
  */
 
 import { providers } from "@clinebot/llms";
+import { nanoid } from "nanoid";
 import { buildInitialUserContent } from "./agent-input.js";
 import {
 	type ContributionRegistry,
@@ -104,16 +105,16 @@ export class Agent {
 			maxIterations: config.maxIterations,
 			maxParallelToolCalls: config.maxParallelToolCalls ?? 8,
 			apiTimeoutMs: config.apiTimeoutMs ?? 120000,
-			maxConsecutiveMistakes: config.maxConsecutiveMistakes ?? 3,
+			maxConsecutiveMistakes: config.maxConsecutiveMistakes ?? 0,
 			maxTokensPerTurn: config.maxTokensPerTurn ?? 8192,
-			reminderAfterIterations: config.reminderAfterIterations ?? 50,
+			reminderAfterIterations: config.reminderAfterIterations ?? 0,
 			reminderText: config.reminderText ?? DEFAULT_REMINDER_TEXT,
 			hookErrorMode: config.hookErrorMode ?? "ignore",
 			extensions: config.extensions ?? [],
 			toolPolicies: config.toolPolicies ?? {},
 		};
 
-		this.agentId = `agent_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+		this.agentId = `agent_${Date.now()}_${nanoid(6)}`;
 		this.parentAgentId = config.parentAgentId ?? null;
 		this.conversationStore = new ConversationStore(
 			config.initialMessages ?? [],
@@ -929,14 +930,15 @@ export class Agent {
 			consecutiveMistakes: next,
 			maxConsecutiveMistakes: this.config.maxConsecutiveMistakes,
 		});
-		if (next < this.config.maxConsecutiveMistakes) {
+		const maxConsecutiveMistakes = this.config.maxConsecutiveMistakes;
+		if (!maxConsecutiveMistakes || next < maxConsecutiveMistakes) {
 			return true;
 		}
 
 		const decision = await this.resolveConsecutiveMistakeDecision({
 			iteration: input.iteration,
 			consecutiveMistakes: next,
-			maxConsecutiveMistakes: this.config.maxConsecutiveMistakes,
+			maxConsecutiveMistakes,
 			reason: input.reason,
 			details: input.details,
 		});
