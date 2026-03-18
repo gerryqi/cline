@@ -1,10 +1,11 @@
 /// <reference types="@types/bun" />
 export {};
 
-// Only externalize published packages; bundle private workspace packages (@clinebot/shared, @clinebot/rpc)
+// Externalize rpc to avoid bundling grpc/protobuf internals into core runtime bundles.
 const external = [
 	"@clinebot/agents",
 	"@clinebot/llms",
+	"@clinebot/rpc",
 	"nanoid",
 	"simple-git",
 	"yaml",

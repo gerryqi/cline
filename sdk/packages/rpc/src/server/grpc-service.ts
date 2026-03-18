@@ -1,8 +1,6 @@
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
+import { resolveRpcProtoPath } from "../proto/resolve-proto-path.js";
 import type { ProtoGrpcType } from "./proto-types.js";
 
 export const DEFAULT_RPC_ADDRESS = "127.0.0.1:4317";
@@ -24,18 +22,7 @@ export function parseAddress(address: string): { host: string; port: number } {
 }
 
 function resolveProtoPath(): string {
-	const runtimeDir = dirname(fileURLToPath(import.meta.url));
-	const candidates = [
-		join(runtimeDir, "..", "proto", "rpc.proto"),
-		join(runtimeDir, "..", "..", "src", "proto", "rpc.proto"),
-		join(process.cwd(), "packages", "rpc", "src", "proto", "rpc.proto"),
-	];
-	for (const candidate of candidates) {
-		if (existsSync(candidate)) {
-			return candidate;
-		}
-	}
-	throw new Error("Unable to resolve rpc.proto path");
+	return resolveRpcProtoPath(import.meta.url);
 }
 
 export function loadGatewayService(): grpc.ServiceDefinition {

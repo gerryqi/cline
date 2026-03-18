@@ -15,7 +15,7 @@
 	"exports": {
 		".": {
 			"browser": "./dist/index.browser.js",
-			"development": "./src/index.node.ts",
+			"development": "./dist/index.node.js",
 			"types": "./dist/index.node.d.ts",
 			"import": "./dist/index.node.js"
 		},
@@ -25,22 +25,22 @@
 			"import": "./dist/index.node.js"
 		},
 		"./browser": {
-			"development": "./src/index.browser.ts",
+			"development": "./dist/index.browser.js",
 			"types": "./dist/index.browser.d.ts",
 			"import": "./dist/index.browser.js"
 		},
 		"./server": {
-			"development": "./src/server/index.ts",
+			"development": "./dist/server/index.js",
 			"types": "./dist/server/index.d.ts",
 			"import": "./dist/server/index.js"
 		},
 		"./server/node": {
-			"development": "./src/server/index.ts",
+			"development": "./dist/server/index.js",
 			"types": "./dist/server/index.d.ts",
 			"import": "./dist/server/index.js"
 		},
 		"./server/browser": {
-			"development": "./src/server/index.ts",
+			"development": "./dist/server/index.js",
 			"types": "./dist/server.browser.d.ts",
 			"import": "./dist/server.browser.js"
 		}
@@ -51,7 +51,7 @@
 		"src"
 	],
 	"scripts": {
-		"build": "bun run ./build.ts && bun tsc -p tsconfig.build.json",
+		"build": "bun run ./bun.mts && bun tsc -p tsconfig.build.json",
 		"clean": "rm -rf dist node_modules",
 		"typecheck": "bun tsc -p tsconfig.dev.json --noEmit",
 		"test": "bun run test:unit && bun run test:e2e",

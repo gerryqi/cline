@@ -1,27 +1,14 @@
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import type { ClineGatewayClient } from "./proto/generated/cline/rpc/v1/ClineGateway.js";
 import type { ProtoGrpcType } from "./proto/generated/rpc.js";
+import { resolveRpcProtoPath } from "./proto/resolve-proto-path.js";
 
 const PACKAGE_NAME = "cline.rpc.v1";
 const SERVICE_NAME = "ClineGateway";
 
 function resolveProtoPath(): string {
-	const runtimeDir = dirname(fileURLToPath(import.meta.url));
-	const candidates = [
-		join(runtimeDir, "proto", "rpc.proto"),
-		join(runtimeDir, "..", "src", "proto", "rpc.proto"),
-		join(process.cwd(), "packages", "rpc", "src", "proto", "rpc.proto"),
-	];
-	for (const candidate of candidates) {
-		if (existsSync(candidate)) {
-			return candidate;
-		}
-	}
-	throw new Error("Unable to resolve rpc.proto path");
+	return resolveRpcProtoPath(import.meta.url);
 }
 
 function loadGatewayService(): grpc.ServiceDefinition {

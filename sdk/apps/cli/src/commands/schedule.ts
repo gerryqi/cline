@@ -226,6 +226,14 @@ export async function runScheduleCommand(
 				enabled,
 				tags: parseList(getFlagValue(rawArgs, "--tags")),
 			});
+			if (
+				!hasFlag(rawArgs, "--json") &&
+				Array.isArray(schedules) &&
+				schedules.length === 0
+			) {
+				io.writeln("No schedules found.");
+				return 0;
+			}
 			emitJsonOrText(rawArgs, io, schedules);
 			return 0;
 		}
