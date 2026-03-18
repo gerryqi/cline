@@ -499,15 +499,21 @@ export class UnifiedSessionPersistenceService {
 	async persistSessionMessages(
 		sessionId: string,
 		messages: LlmsProviders.Message[],
+		systemPrompt?: string,
 	): Promise<void> {
 		const path =
 			(await this.sessionPathFromStore(sessionId, "messages_path")) ??
 			this.sessionMessagesPath(sessionId);
-		writeFileSync(
-			path,
-			`${JSON.stringify({ version: 1, updated_at: nowIso(), messages }, null, 2)}\n`,
-			"utf8",
-		);
+		const payload: {
+			version: number;
+			updated_at: string;
+			systemPrompt?: string;
+			messages: LlmsProviders.Message[];
+		} = { version: 1, updated_at: nowIso(), messages };
+		if (systemPrompt !== undefined && systemPrompt !== "") {
+			payload.systemPrompt = systemPrompt;
+		}
+		writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
 	}
 
 	async applySubagentStatus(

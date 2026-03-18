@@ -59,6 +59,7 @@ export class TurnProcessor {
 			string,
 			{ name?: string; arguments: string; signature?: string }
 		>();
+		const toolCallIdAliases = new Map<string, string>();
 
 		for await (const chunk of stream) {
 			if (abortSignal.aborted) {
@@ -96,7 +97,11 @@ export class TurnProcessor {
 					});
 					break;
 				case "tool_calls":
-					this.processToolCallChunk(chunk, pendingToolCallsMap);
+					this.processToolCallChunk(
+						chunk,
+						pendingToolCallsMap,
+						toolCallIdAliases,
+					);
 					break;
 				case "usage":
 					usage.inputTokens = chunk.inputTokens;
@@ -184,15 +189,28 @@ export class TurnProcessor {
 			string,
 			{ name?: string; arguments: string; signature?: string }
 		>,
+		aliasMap: Map<string, string>,
 	): void {
 		const { tool_call } = chunk;
-		const callId =
-			tool_call.call_id ?? tool_call.function.id ?? `call_${Date.now()}`;
+		const functionId = tool_call.function.id;
+		const callId = tool_call.call_id;
+		const canonicalId =
+			(functionId ? aliasMap.get(functionId) : undefined) ??
+			(callId ? aliasMap.get(callId) : undefined) ??
+			functionId ??
+			callId ??
+			`call_${Date.now()}`;
+		if (functionId) {
+			aliasMap.set(functionId, canonicalId);
+		}
+		if (callId) {
+			aliasMap.set(callId, canonicalId);
+		}
 
-		let pending = pendingMap.get(callId);
+		let pending = pendingMap.get(canonicalId);
 		if (!pending) {
 			pending = { name: undefined, arguments: "" };
-			pendingMap.set(callId, pending);
+			pendingMap.set(canonicalId, pending);
 		}
 
 		if (tool_call.function.name) {

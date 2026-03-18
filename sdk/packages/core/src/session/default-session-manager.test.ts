@@ -297,6 +297,7 @@ describe("DefaultSessionManager", () => {
 		expect(persistSessionMessages).toHaveBeenCalledWith(
 			sessionId,
 			renderedMessages,
+			"You are a test agent",
 		);
 		expect(sessionService.updateSessionStatus).toHaveBeenCalledWith(
 			sessionId,

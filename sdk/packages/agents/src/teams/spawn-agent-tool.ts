@@ -4,13 +4,15 @@
 
 import { basename, resolve } from "node:path";
 import type { providers as LlmsProviders } from "@clinebot/llms";
-import type {
-	Tool,
-	ToolApprovalRequest,
-	ToolApprovalResult,
-	ToolContext,
-	ToolPolicy,
+import {
+	type Tool,
+	type ToolApprovalRequest,
+	type ToolApprovalResult,
+	type ToolContext,
+	type ToolPolicy,
+	zodToJsonSchema,
 } from "@clinebot/shared";
+import { z } from "zod";
 import { Agent } from "../agent.js";
 import { createTool } from "../tools/create.js";
 import type {
@@ -22,11 +24,20 @@ import type {
 	HookErrorMode,
 } from "../types.js";
 
-export interface SpawnAgentInput {
-	systemPrompt: string;
-	task: string;
-	maxIterations?: number;
-}
+export const SpawnAgentInputSchema = z.object({
+	systemPrompt: z
+		.string()
+		.describe("System prompt defining the sub-agent's behavior"),
+	task: z.string().describe("Task for the sub-agent to complete"),
+	maxIterations: z
+		.number()
+		.int()
+		.min(1)
+		.optional()
+		.describe("Max iterations for the sub-agent"),
+});
+
+export type SpawnAgentInput = z.infer<typeof SpawnAgentInputSchema>;
 
 export interface SpawnAgentOutput {
 	text: string;
@@ -156,25 +167,7 @@ export function createSpawnAgentTool(
 	return createTool<SpawnAgentInput, SpawnAgentOutput>({
 		name: "spawn_agent",
 		description: `Spawn a sub-agent with a custom system prompt for specialized tasks. Use when delegating work that benefits from focused expertise.`,
-		inputSchema: {
-			type: "object",
-			properties: {
-				systemPrompt: {
-					type: "string",
-					description: "System prompt defining the sub-agent's behavior",
-				},
-				task: {
-					type: "string",
-					description: "Task for the sub-agent to complete",
-				},
-				maxIterations: {
-					type: "integer",
-					description: "Max iterations for the sub-agent",
-					minimum: 1,
-				},
-			},
-			required: ["systemPrompt", "task"],
-		},
+		inputSchema: zodToJsonSchema(SpawnAgentInputSchema),
 		execute: async (input, context) => {
 			const tools = config.createSubAgentTools
 				? await config.createSubAgentTools(input, context)

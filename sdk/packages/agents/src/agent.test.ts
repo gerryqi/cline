@@ -531,6 +531,78 @@ describe("Agent", () => {
 		});
 	});
 
+	it("deduplicates streamed tool calls when function.id and call_id both appear", async () => {
+		const { Agent } = await import("./agent.js");
+		const executeRunCommands = vi.fn(
+			async ({ commands }: { commands: string[] }) => commands,
+		);
+		const runCommandsTool = createTool({
+			name: "run_commands",
+			description: "Run commands",
+			inputSchema: {
+				type: "object",
+				properties: {
+					commands: {
+						type: "array",
+						items: { type: "string" },
+					},
+				},
+				required: ["commands"],
+			},
+			execute: executeRunCommands,
+		}) as Tool;
+
+		const handler = makeHandler([
+			[
+				{
+					type: "tool_calls",
+					id: "r1",
+					tool_call: {
+						function: {
+							id: "fc_1",
+							name: "run_commands",
+							arguments: '{"commands":["pwd"]}',
+						},
+					},
+				},
+				{
+					type: "tool_calls",
+					id: "r1",
+					tool_call: {
+						call_id: "call_1",
+						function: {
+							id: "fc_1",
+							name: "run_commands",
+							arguments: '{"commands":["pwd"]}',
+						},
+					},
+				},
+				{ type: "usage", id: "r1", inputTokens: 4, outputTokens: 2 },
+				{ type: "done", id: "r1", success: true },
+			],
+			[
+				{ type: "text", id: "r2", text: "Done" },
+				{ type: "usage", id: "r2", inputTokens: 2, outputTokens: 1 },
+				{ type: "done", id: "r2", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "Use tools",
+			tools: [runCommandsTool],
+		});
+
+		const result = await agent.run("run a command");
+		expect(result.finishReason).toBe("completed");
+		expect(result.toolCalls).toHaveLength(1);
+		expect(result.toolCalls[0]?.error).toBeUndefined();
+		expect(result.toolCalls[0]?.output).toEqual(["pwd"]);
+		expect(executeRunCommands).toHaveBeenCalledTimes(1);
+	});
+
 	it("passes through array-shaped read_files tool args", async () => {
 		const { Agent } = await import("./agent.js");
 		const readFilesTool = createTool({

@@ -54,7 +54,7 @@ export const RunCommandsInputUnionSchema = z.union([
  * Schema for a single web fetch request
  */
 export const WebFetchRequestSchema = z.object({
-	url: z.url().describe("The URL to fetch"),
+	url: z.string().describe("The URL to fetch"),
 	prompt: z.string().min(2).describe("Analysis prompt for the fetched content"),
 });
 
@@ -64,7 +64,7 @@ export const WebFetchRequestSchema = z.object({
 export const FetchWebContentInputSchema = z.object({
 	requests: z
 		.array(WebFetchRequestSchema)
-		.describe("Array of web fetch requests"),
+		.describe("Array of the URLs for the web fetch requests"),
 });
 
 /**
@@ -86,50 +86,31 @@ export const EditFileInputSchema = z
 			.string()
 			.optional()
 			.describe("Exact text to replace (must match exactly once)"),
-		new_str: z.string().optional().describe("Replacement or inserted text"),
+		new_str: z
+			.string()
+			.optional()
+			.describe("Replacement text for str_replace or insert commands"),
 		insert_line: z
 			.number()
 			.int()
 			.optional()
 			.describe("Zero-based line index for insert"),
 	})
-	.superRefine((value, ctx) => {
-		switch (value.command) {
-			case "create":
-				if (value.file_text === undefined) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						path: ["file_text"],
-						message: "file_text is required for command=create",
-					});
-				}
-				break;
-			case "str_replace":
-				if (value.old_str === undefined) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						path: ["old_str"],
-						message: "old_str is required for command=str_replace",
-					});
-				}
-				break;
-			case "insert":
-				if (value.insert_line === undefined) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						path: ["insert_line"],
-						message: "insert_line is required for command=insert",
-					});
-				}
-				if (value.new_str === undefined) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						path: ["new_str"],
-						message: "new_str is required for command=insert",
-					});
-				}
-				break;
-		}
+	.refine((v) => v.command !== "create" || v.file_text !== undefined, {
+		path: ["file_text"],
+		message: "file_text is required for command=create",
+	})
+	.refine((v) => v.command !== "str_replace" || v.old_str !== undefined, {
+		path: ["old_str"],
+		message: "old_str is required for command=str_replace",
+	})
+	.refine((v) => v.command !== "insert" || v.insert_line !== undefined, {
+		path: ["insert_line"],
+		message: "insert_line is required for command=insert",
+	})
+	.refine((v) => v.command !== "insert" || v.new_str !== undefined, {
+		path: ["new_str"],
+		message: "new_str is required for command=insert",
 	});
 
 /**
@@ -156,7 +137,11 @@ export const SkillsInputSchema = z.object({
 		.describe(
 			'The skill name. E.g., "commit", "review-pr", "pdf", or "ms-office-suite:pdf"',
 		),
-	args: z.string().optional().describe("Optional arguments for the skill"),
+	args: z
+		.string()
+		.nullable()
+		.optional()
+		.describe("Arguments for the skill; use null when omitted"),
 });
 
 /**

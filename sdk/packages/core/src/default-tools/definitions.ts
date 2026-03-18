@@ -487,7 +487,11 @@ export function createSkillsTool(
 		execute: async (input, context) => {
 			const validatedInput = validateWithZod(SkillsInputSchema, input);
 			return withTimeout(
-				executor(validatedInput.skill, validatedInput.args, context),
+				executor(
+					validatedInput.skill,
+					validatedInput.args || undefined,
+					context,
+				),
 				timeoutMs,
 				`Skills operation timed out after ${timeoutMs}ms`,
 			);

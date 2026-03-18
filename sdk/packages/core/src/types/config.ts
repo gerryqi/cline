@@ -15,6 +15,7 @@ import type {
 	SessionPromptConfig,
 	SessionWorkspaceConfig,
 } from "@clinebot/shared";
+import type { ToolRoutingRule } from "../default-tools/model-tool-routing.js";
 
 export type CoreAgentMode = AgentMode;
 
@@ -72,4 +73,5 @@ export interface CoreSessionConfig
 	) =>
 		| Promise<ConsecutiveMistakeLimitDecision>
 		| ConsecutiveMistakeLimitDecision;
+	toolRoutingRules?: ToolRoutingRule[];
 }

@@ -155,14 +155,24 @@ class LocalFileSessionService {
 	persistSessionMessages(
 		sessionId: string,
 		messages: LlmsProviders.Message[],
+		systemPrompt?: string,
 	): void {
 		const row = this.rows.get(sessionId);
 		if (!row?.messages_path) {
 			throw new Error(`session not found: ${sessionId}`);
 		}
+		const payload: {
+			version: number;
+			updated_at: string;
+			systemPrompt?: string;
+			messages: LlmsProviders.Message[];
+		} = { version: 1, updated_at: nowIso(), messages };
+		if (systemPrompt !== undefined && systemPrompt !== "") {
+			payload.systemPrompt = systemPrompt;
+		}
 		writeFileSync(
 			row.messages_path,
-			`${JSON.stringify({ version: 1, updated_at: nowIso(), messages }, null, 2)}\n`,
+			`${JSON.stringify(payload, null, 2)}\n`,
 			"utf8",
 		);
 	}

@@ -25,77 +25,12 @@ import { BaseHandler } from "./base";
 
 const DEFAULT_REASONING_EFFORT = "medium" as const;
 
-function normalizeStrictToolSchema(
-	schema: unknown,
-	options?: { stripFormat?: boolean },
-): unknown {
-	if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
-		return schema;
-	}
-
-	const normalized = { ...(schema as Record<string, unknown>) };
-	if (options?.stripFormat && "format" in normalized) {
-		delete normalized.format;
-	}
-	const type = normalized.type;
-
-	if (type === "object") {
-		if (!Object.hasOwn(normalized, "additionalProperties")) {
-			normalized.additionalProperties = false;
-		}
-		const properties = normalized.properties;
-		if (
-			properties &&
-			typeof properties === "object" &&
-			!Array.isArray(properties)
-		) {
-			const nextProperties: Record<string, unknown> = {};
-			for (const [key, value] of Object.entries(
-				properties as Record<string, unknown>,
-			)) {
-				nextProperties[key] = normalizeStrictToolSchema(value, options);
-			}
-			normalized.properties = nextProperties;
-		}
-	}
-
-	if (Array.isArray(normalized.anyOf)) {
-		normalized.anyOf = normalized.anyOf.map((item) =>
-			normalizeStrictToolSchema(item, options),
-		);
-	}
-	if (Array.isArray(normalized.oneOf)) {
-		normalized.oneOf = normalized.oneOf.map((item) =>
-			normalizeStrictToolSchema(item, options),
-		);
-	}
-	if (Array.isArray(normalized.allOf)) {
-		normalized.allOf = normalized.allOf.map((item) =>
-			normalizeStrictToolSchema(item, options),
-		);
-	}
-	if (normalized.not && typeof normalized.not === "object") {
-		normalized.not = normalizeStrictToolSchema(normalized.not, options);
-	}
-	if (normalized.items) {
-		if (Array.isArray(normalized.items)) {
-			normalized.items = normalized.items.map((item) =>
-				normalizeStrictToolSchema(item, options),
-			);
-		} else {
-			normalized.items = normalizeStrictToolSchema(normalized.items, options);
-		}
-	}
-
-	return normalized;
-}
-
 /**
  * Convert tool definitions to Responses API format
  */
 function convertToolsToResponsesFormat(
 	tools?: ToolDefinition[],
-	options?: { stripFormat?: boolean },
+	_options?: { stripFormat?: boolean },
 ) {
 	if (!tools?.length) return undefined;
 
@@ -103,8 +38,7 @@ function convertToolsToResponsesFormat(
 		type: "function" as const,
 		name: tool.name,
 		description: tool.description,
-		parameters: normalizeStrictToolSchema(tool.inputSchema, options),
-		strict: true, // Responses API defaults to strict mode
+		parameters: tool.inputSchema,
 	}));
 }
 
@@ -253,6 +187,10 @@ export class OpenAIResponsesHandler extends BaseHandler {
 		const abortSignal = this.getAbortSignal();
 		const fallbackResponseId = this.createResponseId();
 		let resolvedResponseId: string | undefined;
+		const functionCallMetadataByItemId = new Map<
+			string,
+			{ callId?: string; name?: string }
+		>();
 
 		// Convert messages to Responses API input format
 		const input = this.getMessages(systemPrompt, messages);
@@ -362,6 +300,7 @@ export class OpenAIResponsesHandler extends BaseHandler {
 				chunk,
 				modelInfo,
 				resolvedResponseId ?? fallbackResponseId,
+				functionCallMetadataByItemId,
 			);
 		}
 	}
@@ -373,12 +312,20 @@ export class OpenAIResponsesHandler extends BaseHandler {
 		chunk: any,
 		_modelInfo: ModelInfo,
 		responseId: string,
+		functionCallMetadataByItemId: Map<
+			string,
+			{ callId?: string; name?: string }
+		>,
 	): Generator<import("../types").ApiStreamChunk> {
 		// Handle different event types from Responses API
 		switch (chunk.type) {
 			case "response.output_item.added": {
 				const item = chunk.item;
 				if (item.type === "function_call" && item.id) {
+					functionCallMetadataByItemId.set(item.id, {
+						callId: item.call_id,
+						name: item.name,
+					});
 					yield {
 						type: "tool_calls",
 						id: item.id || responseId,
@@ -406,6 +353,12 @@ export class OpenAIResponsesHandler extends BaseHandler {
 			case "response.output_item.done": {
 				const item = chunk.item;
 				if (item.type === "function_call") {
+					if (item.id) {
+						functionCallMetadataByItemId.set(item.id, {
+							callId: item.call_id,
+							name: item.name,
+						});
+					}
 					yield {
 						type: "tool_calls",
 						id: item.id || responseId,
@@ -476,28 +429,36 @@ export class OpenAIResponsesHandler extends BaseHandler {
 				break;
 
 			case "response.function_call_arguments.delta":
-				yield {
-					type: "tool_calls",
-					id: chunk.item_id || responseId,
-					tool_call: {
-						function: {
-							id: chunk.item_id,
-							name: chunk.item_id,
-							arguments: chunk.delta,
-						},
-					},
-				};
-				break;
-
-			case "response.function_call_arguments.done":
-				if (chunk.item_id && chunk.name && chunk.arguments) {
+				{
+					const meta = chunk.item_id
+						? functionCallMetadataByItemId.get(chunk.item_id)
+						: undefined;
 					yield {
 						type: "tool_calls",
 						id: chunk.item_id || responseId,
 						tool_call: {
+							call_id: meta?.callId,
 							function: {
 								id: chunk.item_id,
-								name: chunk.name,
+								name: meta?.name,
+								arguments: chunk.delta,
+							},
+						},
+					};
+				}
+				break;
+
+			case "response.function_call_arguments.done":
+				if (chunk.item_id && chunk.arguments) {
+					const meta = functionCallMetadataByItemId.get(chunk.item_id);
+					yield {
+						type: "tool_calls",
+						id: chunk.item_id || responseId,
+						tool_call: {
+							call_id: chunk.call_id ?? meta?.callId,
+							function: {
+								id: chunk.item_id,
+								name: chunk.name ?? meta?.name,
 								arguments: chunk.arguments,
 							},
 						},

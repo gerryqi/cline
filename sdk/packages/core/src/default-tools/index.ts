@@ -37,6 +37,11 @@ export {
 	type SearchExecutorOptions,
 	type WebFetchExecutorOptions,
 } from "./executors/index.js";
+export {
+	DEFAULT_MODEL_TOOL_ROUTING_RULES,
+	resolveToolRoutingConfig,
+	type ToolRoutingRule,
+} from "./model-tool-routing.js";
 // Presets
 export {
 	createDefaultToolsWithPreset,

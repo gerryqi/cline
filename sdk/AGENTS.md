@@ -153,10 +153,11 @@ flowchart LR
 
 ### Model-aware default editor tool routing
 
-- Default tool selection in `@clinebot/core` runtime builder now considers `modelId` during builtin tool assembly.
-- In `act` mode, model IDs containing `codex` or `gpt` (case-insensitive) enable `apply_patch` and disable `editor`.
-- For other model IDs, runtime keeps the previous default (`editor` enabled, `apply_patch` disabled unless explicitly configured elsewhere).
-- `plan` mode remains read-only and does not switch to `apply_patch`.
+- Default tool selection in `@clinebot/core` runtime builder now goes through an ordered model-tool routing rule engine (`packages/core/src/default-tools/model-tool-routing.ts`).
+- Each rule can match by mode (`act` / `plan` / `any`) plus case-insensitive `modelIdIncludes` and optional `providerIdIncludes`, then enable/disable any default tools.
+- Runtime applies rules in order and merges the resulting tool toggles onto the active preset before creating builtin tools.
+- Built-in defaults include `act`-mode rules that enable `apply_patch` and disable `editor` for `providerId` containing `openai-native`, and for model IDs containing `codex` or `gpt`.
+- Sessions can override/extend routing with `CoreSessionConfig.toolRoutingRules` for per-runtime customization without modifying runtime-builder code.
 
 ### Cline sub-agent prompt metadata
 

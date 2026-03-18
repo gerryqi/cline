@@ -754,6 +754,7 @@ export class DefaultSessionManager implements SessionManager {
 				"persistSessionMessages",
 				session.sessionId,
 				persistedMessages,
+				session.config.systemPrompt,
 			);
 			return result;
 		} catch (error) {
@@ -762,6 +763,7 @@ export class DefaultSessionManager implements SessionManager {
 				"persistSessionMessages",
 				session.sessionId,
 				session.agent.getMessages(),
+				session.config.systemPrompt,
 			);
 			throw error;
 		}

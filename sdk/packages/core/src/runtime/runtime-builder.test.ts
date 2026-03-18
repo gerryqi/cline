@@ -74,6 +74,75 @@ describe("DefaultRuntimeBuilder", () => {
 		expect(names).not.toContain("editor");
 	});
 
+	it("uses apply_patch instead of editor for codex/gpt model IDs in act mode", () => {
+		const runtime = new DefaultRuntimeBuilder().build({
+			config: {
+				providerId: "openai",
+				modelId: "openai/gpt-5.4",
+				apiKey: "key",
+				systemPrompt: "test",
+				cwd: process.cwd(),
+				mode: "act",
+				enableTools: true,
+				enableSpawnAgent: false,
+				enableAgentTeams: false,
+			},
+		});
+
+		const names = runtime.tools.map((tool) => tool.name);
+		expect(names).toContain("apply_patch");
+		expect(names).not.toContain("editor");
+	});
+
+	it("keeps editor for non-codex/non-gpt model IDs in act mode", () => {
+		const runtime = new DefaultRuntimeBuilder().build({
+			config: {
+				providerId: "anthropic",
+				modelId: "claude-sonnet-4-6",
+				apiKey: "key",
+				systemPrompt: "test",
+				cwd: process.cwd(),
+				mode: "act",
+				enableTools: true,
+				enableSpawnAgent: false,
+				enableAgentTeams: false,
+			},
+		});
+
+		const names = runtime.tools.map((tool) => tool.name);
+		expect(names).toContain("editor");
+		expect(names).not.toContain("apply_patch");
+	});
+
+	it("applies custom tool routing rules from session config", () => {
+		const runtime = new DefaultRuntimeBuilder().build({
+			config: {
+				providerId: "anthropic",
+				modelId: "claude-sonnet-4-6",
+				apiKey: "key",
+				systemPrompt: "test",
+				cwd: process.cwd(),
+				mode: "act",
+				enableTools: true,
+				enableSpawnAgent: false,
+				enableAgentTeams: false,
+				toolRoutingRules: [
+					{
+						mode: "act",
+						providerIdIncludes: ["anthropic"],
+						modelIdIncludes: ["claude"],
+						enableTools: ["apply_patch"],
+						disableTools: ["editor"],
+					},
+				],
+			},
+		});
+
+		const names = runtime.tools.map((tool) => tool.name);
+		expect(names).toContain("apply_patch");
+		expect(names).not.toContain("editor");
+	});
+
 	it("omits builtin tools when disabled", () => {
 		const runtime = new DefaultRuntimeBuilder().build({
 			config: {

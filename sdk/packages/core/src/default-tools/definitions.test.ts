@@ -230,4 +230,31 @@ describe("zod schema conversion", () => {
 		});
 		expect(inputSchema.required).toEqual(["file_paths"]);
 	});
+
+	it("exposes skills args as optional nullable in tool schemas", () => {
+		const tools = createDefaultTools({
+			executors: {
+				skills: async () => "ok",
+			},
+			enableReadFiles: false,
+			enableSearch: false,
+			enableBash: false,
+			enableWebFetch: false,
+			enableEditor: false,
+			enableApplyPatch: false,
+			enableAskQuestion: false,
+			enableSkills: true,
+		});
+		const skills = tools.find((tool) => tool.name === "skills");
+		expect(skills).toBeDefined();
+		if (!skills) {
+			throw new Error("Expected skills tool.");
+		}
+		const schema = skills.inputSchema as {
+			required?: string[];
+			properties?: Record<string, unknown>;
+		};
+		expect(schema.required).toEqual(["skill"]);
+		expect(schema.properties).toHaveProperty("args");
+	});
 });

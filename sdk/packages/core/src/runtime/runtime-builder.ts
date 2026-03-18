@@ -16,9 +16,12 @@ import {
 } from "../agents";
 import {
 	createBuiltinTools,
+	DEFAULT_MODEL_TOOL_ROUTING_RULES,
+	resolveToolRoutingConfig,
 	type SkillsExecutor,
 	type ToolExecutors,
 	ToolPresets,
+	type ToolRoutingRule,
 } from "../default-tools";
 import { SqliteTeamStore } from "../storage/sqlite-team-store";
 import type { CoreAgentMode, CoreSessionConfig } from "../types/config";
@@ -47,15 +50,26 @@ export function createTeamName(): string {
 
 function createBuiltinToolsList(
 	cwd: string,
+	providerId: string,
 	mode: CoreAgentMode,
+	modelId: string,
+	toolRoutingRules: ToolRoutingRule[] | undefined,
 	skillsExecutor?: SkillsExecutorWithMetadata,
 	executorOverrides?: Partial<ToolExecutors>,
 ): Tool[] {
 	const preset =
 		mode === "plan" ? ToolPresets.readonly : ToolPresets.development;
+	const toolRoutingConfig = resolveToolRoutingConfig(
+		providerId,
+		modelId,
+		mode,
+		toolRoutingRules ?? DEFAULT_MODEL_TOOL_ROUTING_RULES,
+	);
+
 	return createBuiltinTools({
 		cwd,
 		...preset,
+		...toolRoutingConfig,
 		enableSkills: !!skillsExecutor,
 		executors: {
 			...(skillsExecutor
@@ -338,7 +352,10 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 			tools.push(
 				...createBuiltinToolsList(
 					config.cwd,
+					config.providerId,
 					normalized.mode,
+					config.modelId,
+					config.toolRoutingRules,
 					skillsExecutor,
 					defaultToolExecutors,
 				),
@@ -416,7 +433,10 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 						? () =>
 								createBuiltinToolsList(
 									config.cwd,
+									config.providerId,
 									normalized.mode,
+									config.modelId,
+									config.toolRoutingRules,
 									skillsExecutor,
 									defaultToolExecutors,
 								)
