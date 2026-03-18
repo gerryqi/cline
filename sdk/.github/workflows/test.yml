@@ -32,7 +32,9 @@ jobs:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
             - name: Typecheck
-              run: bun run types
+              run: |
+                  bun run build:sdk
+                  bun run types
 
             - name: Lint & Format
               run: bun run lint

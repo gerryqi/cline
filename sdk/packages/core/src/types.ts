@@ -84,6 +84,7 @@ export type {
 } from "./session/session-host";
 export type {
 	SendSessionInput,
+	SessionAccumulatedUsage,
 	SessionManager,
 	StartSessionInput,
 	StartSessionResult,

@@ -10,6 +10,7 @@ export type { CreateSessionHostOptions, SessionHost } from "./session-host";
 export { createSessionHost } from "./session-host";
 export type {
 	SendSessionInput,
+	SessionAccumulatedUsage,
 	SessionManager,
 	StartSessionInput,
 	StartSessionResult,

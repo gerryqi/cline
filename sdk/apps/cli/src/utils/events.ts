@@ -3,6 +3,7 @@ import { formatToolInput, formatToolOutput, truncate } from "./helpers";
 import {
 	c,
 	emitJsonLine,
+	formatUsd,
 	getCurrentOutputMode,
 	write,
 	writeErr,
@@ -15,6 +16,7 @@ import type { Config } from "./types";
 
 let activeInlineStream: "text" | "reasoning" | undefined;
 let inlineStreamHasOutput = false;
+let shouldPrefixNextTextWithBlankLine = false;
 
 export function closeInlineStreamIfNeeded(): void {
 	if (!inlineStreamHasOutput) {
@@ -54,6 +56,10 @@ export function handleEvent(event: AgentEvent, _config: Config): void {
 				case "text":
 					if (activeInlineStream !== "text") {
 						closeInlineStreamIfNeeded();
+						if (shouldPrefixNextTextWithBlankLine) {
+							write("\n");
+							shouldPrefixNextTextWithBlankLine = false;
+						}
 						activeInlineStream = "text";
 					}
 					write(event.text ?? "");
@@ -79,7 +85,7 @@ export function handleEvent(event: AgentEvent, _config: Config): void {
 					const toolName = event.toolName ?? "unknown_tool";
 					const inputStr = formatToolInput(toolName, event.input);
 					write(
-						`\n${c.dim}[${toolName}]${c.reset} ${c.cyan}${inputStr}${c.reset}`,
+						`${c.dim}[${toolName}]${c.reset} ${c.cyan}${inputStr}${c.reset}`,
 					);
 					break;
 				}
@@ -104,19 +110,30 @@ export function handleEvent(event: AgentEvent, _config: Config): void {
 							write(` ${c.green}ok${c.reset}\n`);
 						}
 					}
+					shouldPrefixNextTextWithBlankLine = true;
 					break;
 			}
 			break;
 
-		case "done":
+		case "done": {
 			closeInlineStreamIfNeeded();
-			write(
-				`\n${c.dim}── finished: ${event.reason} (${event.iterations} iterations) ──${c.reset}\n`,
-			);
+			const iterations = event.iterations;
+			const usage = (event as any).usage;
+			if (usage) {
+				const costStr = formatUsd(usage.totalCost ?? 0);
+				write(
+					`\n${c.dim}── finished in ${iterations} turns | ${costStr} | token used: ${usage.inputTokens} input | ${usage.outputTokens} output ──${c.reset}\n`,
+				);
+			} else {
+				write(
+					`\n${c.dim}── finished: ${event.reason} (${iterations} iterations) ──${c.reset}\n`,
+				);
+			}
 			activeInlineStream = undefined;
 			inlineStreamHasOutput = false;
+			shouldPrefixNextTextWithBlankLine = false;
 			break;
-
+		}
 		case "error":
 			closeInlineStreamIfNeeded();
 			writeErr(event.error.message);

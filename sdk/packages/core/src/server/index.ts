@@ -234,6 +234,7 @@ export type {
 export { createSessionHost } from "../session/session-host";
 export type {
 	SendSessionInput,
+	SessionAccumulatedUsage,
 	SessionManager,
 	StartSessionInput,
 	StartSessionResult,

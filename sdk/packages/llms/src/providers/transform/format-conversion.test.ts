@@ -156,12 +156,12 @@ describe("format conversion", () => {
 		expect(gemini[2]?.parts?.[0]?.functionResponse).toMatchObject({
 			id: "call_2",
 			name: "search_files",
-			response: { result: '{"matches":1}' },
+			response: { result: { matches: 1 } },
 		});
 		expect(gemini[2]?.parts?.[1]?.functionResponse).toMatchObject({
 			id: "call_1",
 			name: "read_file",
-			response: { result: '{"text":"ok"}' },
+			response: { result: { text: "ok" } },
 		});
 	});
 

@@ -239,12 +239,15 @@ export async function runAgent(
 		if (!result) {
 			throw new Error("session manager did not return a result");
 		}
+		const usage =
+			(await sessionManager.getAccumulatedUsage(started.sessionId)) ??
+			result.usage;
 		if (config.outputMode === "json") {
 			emitJsonLine("stdout", {
 				type: "run_result",
 				finishReason: result.finishReason,
 				iterations: result.iterations,
-				usage: result.usage,
+				usage,
 				durationMs: result.durationMs,
 				text: result.text,
 				model: result.model,
@@ -271,10 +274,10 @@ export async function runAgent(
 			}
 
 			if (config.showUsage) {
-				const tokens = result.usage.inputTokens + result.usage.outputTokens;
+				const tokens = usage.inputTokens + usage.outputTokens;
 				parts.push(`${tokens} tokens`);
-				if (typeof result.usage.totalCost === "number") {
-					parts.push(`${formatUsd(result.usage.totalCost)} est. cost`);
+				if (typeof usage.totalCost === "number") {
+					parts.push(`${formatUsd(usage.totalCost)} est. cost`);
 				}
 				if (result.iterations > 1) {
 					parts.push(`${result.iterations} iterations`);

@@ -26,6 +26,7 @@ import {
 	CoreSessionService,
 	createSessionHost,
 	RpcCoreSessionService,
+	type SessionAccumulatedUsage,
 	type SessionManifest,
 	SessionSource,
 	SqliteSessionStore,
@@ -75,6 +76,9 @@ export interface CliSessionManager {
 		userImages?: string[];
 		userFiles?: string[];
 	}): Promise<AgentResult | undefined>;
+	getAccumulatedUsage(
+		sessionId: string,
+	): Promise<SessionAccumulatedUsage | undefined>;
 	readMessages(
 		sessionId: string,
 	): Promise<import("@clinebot/llms").providers.Message[]>;
@@ -82,6 +86,37 @@ export interface CliSessionManager {
 	stop(sessionId: string): Promise<void>;
 	dispose(reason?: string): Promise<void>;
 	subscribe(listener: (event: unknown) => void): () => void;
+}
+
+function createInitialAccumulatedUsage(): SessionAccumulatedUsage {
+	return {
+		inputTokens: 0,
+		outputTokens: 0,
+		cacheReadTokens: 0,
+		cacheWriteTokens: 0,
+		totalCost: 0,
+	};
+}
+
+function accumulateUsageTotals(
+	baseline: SessionAccumulatedUsage,
+	usage: {
+		inputTokens?: number;
+		outputTokens?: number;
+		cacheReadTokens?: number;
+		cacheWriteTokens?: number;
+		totalCost?: number;
+	},
+): SessionAccumulatedUsage {
+	return {
+		inputTokens: baseline.inputTokens + Math.max(0, usage.inputTokens ?? 0),
+		outputTokens: baseline.outputTokens + Math.max(0, usage.outputTokens ?? 0),
+		cacheReadTokens:
+			baseline.cacheReadTokens + Math.max(0, usage.cacheReadTokens ?? 0),
+		cacheWriteTokens:
+			baseline.cacheWriteTokens + Math.max(0, usage.cacheWriteTokens ?? 0),
+		totalCost: baseline.totalCost + Math.max(0, usage.totalCost ?? 0),
+	};
 }
 
 function isLikelyScriptEntryPath(pathValue: string | undefined): boolean {
@@ -534,6 +569,7 @@ function createRpcRuntimeCliSessionManager(
 	const listeners = new Set<(event: unknown) => void>();
 	const client = new RpcSessionClient({ address: activeRpcAddress });
 	const sessionConfigs = new Map<string, RpcChatStartSessionRequest>();
+	const accumulatedUsageBySession = new Map<string, SessionAccumulatedUsage>();
 
 	return {
 		start: async (input) => {
@@ -544,6 +580,7 @@ function createRpcRuntimeCliSessionManager(
 				throw new Error("rpc runtime start returned empty session id");
 			}
 			sessionConfigs.set(sessionId, request);
+			accumulatedUsageBySession.set(sessionId, createInitialAccumulatedUsage());
 			let sessionRow:
 				| Awaited<ReturnType<RpcSessionClient["getSession"]>>
 				| undefined;
@@ -725,8 +762,21 @@ function createRpcRuntimeCliSessionManager(
 				type: "done",
 				reason: result.finishReason,
 				iterations: result.iterations,
+				usage: result.usage,
 			} as unknown as AgentEvent);
-			return toAgentResult(result, config);
+			const agentResult = toAgentResult(result, config);
+			const baseline =
+				accumulatedUsageBySession.get(input.sessionId) ??
+				createInitialAccumulatedUsage();
+			accumulatedUsageBySession.set(
+				input.sessionId,
+				accumulateUsageTotals(baseline, agentResult.usage),
+			);
+			return agentResult;
+		},
+		getAccumulatedUsage: async (sessionId) => {
+			const usage = accumulatedUsageBySession.get(sessionId);
+			return usage ? { ...usage } : undefined;
 		},
 		readMessages: async (sessionId) => {
 			const row = await client.getSession(sessionId);
@@ -765,6 +815,7 @@ function createRpcRuntimeCliSessionManager(
 				}
 			}
 			sessionConfigs.delete(sessionId);
+			accumulatedUsageBySession.delete(sessionId);
 		},
 		dispose: async () => {
 			const sessionIds = [...sessionConfigs.keys()];
@@ -781,8 +832,10 @@ function createRpcRuntimeCliSessionManager(
 						// Best-effort cleanup.
 					}
 					sessionConfigs.delete(sessionId);
+					accumulatedUsageBySession.delete(sessionId);
 				}),
 			);
+			accumulatedUsageBySession.clear();
 			client.close();
 		},
 		subscribe: (listener) => {

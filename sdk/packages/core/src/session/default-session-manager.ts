@@ -30,7 +30,7 @@ import {
 	mergeAgentHooks,
 } from "../runtime/hook-file-hooks";
 import { DefaultRuntimeBuilder } from "../runtime/runtime-builder";
-import type { BuiltRuntime, RuntimeBuilder } from "../runtime/session-runtime";
+import type { RuntimeBuilder } from "../runtime/session-runtime";
 import { ProviderSettingsManager } from "../storage/provider-settings-manager";
 import {
 	buildTeamProgressSummary,
@@ -53,6 +53,7 @@ import {
 import { nowIso } from "./session-artifacts";
 import type {
 	SendSessionInput,
+	SessionAccumulatedUsage,
 	SessionManager,
 	StartSessionInput,
 	StartSessionResult,
@@ -63,59 +64,25 @@ import type {
 	RootSessionArtifacts,
 	SessionRowShape,
 } from "./session-service";
+import {
+	extractWorkspaceMetadataFromSystemPrompt,
+	hasRuntimeHooks,
+	mergeAgentExtensions,
+	serializeAgentEvent,
+	toSessionRecord,
+	withLatestAssistantTurnMetadata,
+} from "./utils/helpers";
+import type {
+	ActiveSession,
+	PreparedTurnInput,
+	TeamRunUpdate,
+} from "./utils/types";
+import {
+	accumulateUsageTotals,
+	createInitialAccumulatedUsage,
+} from "./utils/usage";
 
 type SessionBackend = CoreSessionService | RpcCoreSessionService;
-
-type ActiveSession = {
-	sessionId: string;
-	config: CoreSessionConfig;
-	artifacts?: RootSessionArtifacts;
-	source: SessionSource;
-	startedAt: string;
-	pendingPrompt?: string;
-	runtime: BuiltRuntime;
-	agent: Agent;
-	started: boolean;
-	aborting: boolean;
-	interactive: boolean;
-	activeTeamRunIds: Set<string>;
-	pendingTeamRunUpdates: TeamRunUpdate[];
-	teamRunWaiters: Array<() => void>;
-	pluginSandboxShutdown?: () => Promise<void>;
-};
-
-type TeamRunUpdate = {
-	runId: string;
-	agentId: string;
-	taskId?: string;
-	status: "completed" | "failed" | "cancelled" | "interrupted";
-	error?: string;
-	iterations?: number;
-};
-
-type StoredMessageWithMetadata = LlmsProviders.MessageWithMetadata & {
-	providerId?: string;
-	modelId?: string;
-};
-
-type PreparedTurnInput = {
-	prompt: string;
-	userImages?: string[];
-	userFiles?: string[];
-};
-
-const WORKSPACE_CONFIGURATION_MARKER = "# Workspace Configuration";
-
-function extractWorkspaceMetadataFromSystemPrompt(
-	systemPrompt: string,
-): string | undefined {
-	const markerIndex = systemPrompt.lastIndexOf(WORKSPACE_CONFIGURATION_MARKER);
-	if (markerIndex < 0) {
-		return undefined;
-	}
-	const metadata = systemPrompt.slice(markerIndex).trim();
-	return metadata.length > 0 ? metadata : undefined;
-}
 
 export interface DefaultSessionManagerOptions {
 	distinctId: string;
@@ -149,134 +116,6 @@ async function loadUserFileContent(path: string): Promise<string> {
 	return content;
 }
 
-function hasRuntimeHooks(hooks: AgentConfig["hooks"]): boolean {
-	if (!hooks) {
-		return false;
-	}
-	return Object.values(hooks).some((value) => typeof value === "function");
-}
-
-function mergeAgentExtensions(
-	explicitExtensions: AgentConfig["extensions"] | undefined,
-	loadedExtensions: AgentConfig["extensions"] | undefined,
-): AgentConfig["extensions"] {
-	const merged = [...(explicitExtensions ?? []), ...(loadedExtensions ?? [])];
-	if (merged.length === 0) {
-		return undefined;
-	}
-	const deduped: NonNullable<AgentConfig["extensions"]> = [];
-	const seenNames = new Set<string>();
-	for (const extension of merged) {
-		if (seenNames.has(extension.name)) {
-			continue;
-		}
-		seenNames.add(extension.name);
-		deduped.push(extension);
-	}
-	return deduped;
-}
-
-function serializeAgentEvent(event: AgentEvent): string {
-	return JSON.stringify(event, (_key, value) => {
-		if (value instanceof Error) {
-			return {
-				name: value.name,
-				message: value.message,
-				stack: value.stack,
-			};
-		}
-		return value;
-	});
-}
-
-function withLatestAssistantTurnMetadata(
-	messages: LlmsProviders.Message[],
-	result: AgentResult,
-): StoredMessageWithMetadata[] {
-	const next = messages.map((message) => ({
-		...message,
-	})) as StoredMessageWithMetadata[];
-	const assistantIndex = [...next]
-		.reverse()
-		.findIndex((message) => message.role === "assistant");
-	if (assistantIndex === -1) {
-		return next;
-	}
-
-	const targetIndex = next.length - 1 - assistantIndex;
-	const target = next[targetIndex];
-	const usage = result.usage;
-	next[targetIndex] = {
-		...target,
-		providerId: target.providerId ?? result.model.provider,
-		modelId: target.modelId ?? result.model.id,
-		modelInfo: target.modelInfo ?? {
-			id: result.model.id,
-			provider: result.model.provider,
-		},
-		metrics: {
-			...(target.metrics ?? {}),
-			inputTokens: usage.inputTokens,
-			outputTokens: usage.outputTokens,
-			cacheReadTokens: usage.cacheReadTokens,
-			cacheWriteTokens: usage.cacheWriteTokens,
-			cost: usage.totalCost,
-		},
-		ts: target.ts ?? result.endedAt.getTime(),
-	};
-	return next;
-}
-
-function toSessionRecord(row: SessionRowShape): SessionRecord {
-	const metadata =
-		typeof row.metadata_json === "string" && row.metadata_json.trim().length > 0
-			? (() => {
-					try {
-						const parsed = JSON.parse(row.metadata_json) as unknown;
-						if (
-							parsed &&
-							typeof parsed === "object" &&
-							!Array.isArray(parsed)
-						) {
-							return parsed as Record<string, unknown>;
-						}
-					} catch {
-						// Ignore malformed metadata payloads.
-					}
-					return undefined;
-				})()
-			: undefined;
-	return {
-		sessionId: row.session_id,
-		source: row.source as SessionSource,
-		pid: row.pid,
-		startedAt: row.started_at,
-		endedAt: row.ended_at ?? null,
-		exitCode: row.exit_code ?? null,
-		status: row.status,
-		interactive: row.interactive === 1,
-		provider: row.provider,
-		model: row.model,
-		cwd: row.cwd,
-		workspaceRoot: row.workspace_root,
-		teamName: row.team_name ?? undefined,
-		enableTools: row.enable_tools === 1,
-		enableSpawn: row.enable_spawn === 1,
-		enableTeams: row.enable_teams === 1,
-		parentSessionId: row.parent_session_id ?? undefined,
-		parentAgentId: row.parent_agent_id ?? undefined,
-		agentId: row.agent_id ?? undefined,
-		conversationId: row.conversation_id ?? undefined,
-		isSubagent: row.is_subagent === 1,
-		prompt: row.prompt ?? undefined,
-		metadata,
-		transcriptPath: row.transcript_path,
-		hookPath: row.hook_path,
-		messagesPath: row.messages_path ?? undefined,
-		updatedAt: row.updated_at ?? nowIso(),
-	};
-}
-
 export class DefaultSessionManager implements SessionManager {
 	private readonly sessionService: SessionBackend;
 	private readonly runtimeBuilder: RuntimeBuilder;
@@ -290,6 +129,7 @@ export class DefaultSessionManager implements SessionManager {
 	) => Promise<ToolApprovalResult>;
 	private readonly listeners = new Set<(event: CoreSessionEvent) => void>();
 	private readonly sessions = new Map<string, ActiveSession>();
+	private readonly usageBySession = new Map<string, SessionAccumulatedUsage>();
 
 	constructor(options: DefaultSessionManagerOptions) {
 		const homeDir = homedir();
@@ -360,6 +200,7 @@ export class DefaultSessionManager implements SessionManager {
 			requestedSessionId.length > 0
 				? requestedSessionId
 				: `${Date.now()}_${nanoid(5)}`;
+		this.usageBySession.set(sessionId, createInitialAccumulatedUsage());
 		const sessionsDir =
 			((await this.invokeOptionalValue("ensureSessionsDir")) as
 				| string
@@ -478,6 +319,17 @@ export class DefaultSessionManager implements SessionManager {
 			completionGuard: runtime.completionGuard,
 			logger: runtime.logger ?? effectiveConfig.logger,
 			onEvent: (event: AgentEvent) => {
+				const liveSession = this.sessions.get(sessionId);
+				if (event.type === "usage" && liveSession?.turnUsageBaseline) {
+					this.usageBySession.set(
+						sessionId,
+						accumulateUsageTotals(liveSession.turnUsageBaseline, {
+							inputTokens: event.totalInputTokens,
+							outputTokens: event.totalOutputTokens,
+							totalCost: event.totalCost,
+						}),
+					);
+				}
 				this.emit({
 					type: "agent_event",
 					payload: {
@@ -565,6 +417,16 @@ export class DefaultSessionManager implements SessionManager {
 		}
 	}
 
+	async getAccumulatedUsage(
+		sessionId: string,
+	): Promise<SessionAccumulatedUsage | undefined> {
+		const usage = this.usageBySession.get(sessionId);
+		if (!usage) {
+			return undefined;
+		}
+		return { ...usage };
+	}
+
 	async abort(sessionId: string): Promise<void> {
 		const session = this.sessions.get(sessionId);
 		if (!session) {
@@ -602,6 +464,7 @@ export class DefaultSessionManager implements SessionManager {
 				});
 			}),
 		);
+		this.usageBySession.clear();
 	}
 
 	async get(sessionId: string): Promise<SessionRecord | undefined> {
@@ -622,6 +485,9 @@ export class DefaultSessionManager implements SessionManager {
 			"deleteSession",
 			sessionId,
 		);
+		if (result.deleted) {
+			this.usageBySession.delete(sessionId);
+		}
 		return result.deleted;
 	}
 
@@ -733,6 +599,10 @@ export class DefaultSessionManager implements SessionManager {
 		const shouldContinue =
 			session.started || session.agent.getMessages().length > 0;
 		const baselineMessages = session.agent.getMessages();
+		const usageBaseline =
+			this.usageBySession.get(session.sessionId) ??
+			createInitialAccumulatedUsage();
+		session.turnUsageBaseline = usageBaseline;
 		try {
 			const result = shouldContinue
 				? await this.runWithAuthRetry(
@@ -750,6 +620,10 @@ export class DefaultSessionManager implements SessionManager {
 				result.messages,
 				result,
 			);
+			this.usageBySession.set(
+				session.sessionId,
+				accumulateUsageTotals(usageBaseline, result.usage),
+			);
 			await this.invoke<void>(
 				"persistSessionMessages",
 				session.sessionId,
@@ -766,6 +640,8 @@ export class DefaultSessionManager implements SessionManager {
 				session.config.systemPrompt,
 			);
 			throw error;
+		} finally {
+			session.turnUsageBaseline = undefined;
 		}
 	}
 

@@ -40,9 +40,20 @@ export interface SendSessionInput {
 	userFiles?: string[];
 }
 
+export interface SessionAccumulatedUsage {
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	cacheWriteTokens: number;
+	totalCost: number;
+}
+
 export interface SessionManager {
 	start(input: StartSessionInput): Promise<StartSessionResult>;
 	send(input: SendSessionInput): Promise<AgentResult | undefined>;
+	getAccumulatedUsage(
+		sessionId: string,
+	): Promise<SessionAccumulatedUsage | undefined>;
 	abort(sessionId: string): Promise<void>;
 	stop(sessionId: string): Promise<void>;
 	dispose(reason?: string): Promise<void>;

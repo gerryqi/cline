@@ -1,0 +1,46 @@
+import type { Agent } from "@clinebot/agents";
+import type { providers as LlmsProviders } from "@clinebot/llms";
+import type { BuiltRuntime } from "../../runtime/session-runtime";
+import type { SessionSource } from "../../types/common";
+import type { CoreSessionConfig } from "../../types/config";
+import type { SessionAccumulatedUsage } from "../session-manager";
+import type { RootSessionArtifacts } from "../session-service";
+
+export type ActiveSession = {
+	sessionId: string;
+	config: CoreSessionConfig;
+	artifacts?: RootSessionArtifacts;
+	source: SessionSource;
+	startedAt: string;
+	pendingPrompt?: string;
+	runtime: BuiltRuntime;
+	agent: Agent;
+	started: boolean;
+	aborting: boolean;
+	interactive: boolean;
+	activeTeamRunIds: Set<string>;
+	pendingTeamRunUpdates: TeamRunUpdate[];
+	teamRunWaiters: Array<() => void>;
+	pluginSandboxShutdown?: () => Promise<void>;
+	turnUsageBaseline?: SessionAccumulatedUsage;
+};
+
+export type TeamRunUpdate = {
+	runId: string;
+	agentId: string;
+	taskId?: string;
+	status: "completed" | "failed" | "cancelled" | "interrupted";
+	error?: string;
+	iterations?: number;
+};
+
+export type StoredMessageWithMetadata = LlmsProviders.MessageWithMetadata & {
+	providerId?: string;
+	modelId?: string;
+};
+
+export type PreparedTurnInput = {
+	prompt: string;
+	userImages?: string[];
+	userFiles?: string[];
+};

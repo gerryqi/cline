@@ -363,6 +363,123 @@ describe("DefaultSessionManager", () => {
 		expect(sessionService.persistSessionMessages).toHaveBeenCalledTimes(2);
 	});
 
+	it("tracks accumulated usage per session across turns", async () => {
+		const sessionId = "sess-usage";
+		const manifest = createManifest(sessionId);
+		const sessionService = {
+			ensureSessionsDir: vi.fn().mockReturnValue("/tmp/sessions"),
+			createRootSessionWithArtifacts: vi.fn().mockResolvedValue({
+				manifestPath: "/tmp/manifest-usage.json",
+				transcriptPath: "/tmp/transcript-usage.log",
+				hookPath: "/tmp/hook-usage.log",
+				messagesPath: "/tmp/messages-usage.json",
+				manifest,
+			}),
+			persistSessionMessages: vi.fn(),
+			updateSessionStatus: vi.fn().mockResolvedValue({ updated: true }),
+			writeSessionManifest: vi.fn(),
+			listSessions: vi.fn().mockResolvedValue([]),
+			deleteSession: vi.fn().mockResolvedValue({ deleted: true }),
+		};
+		const runtimeBuilder = {
+			build: vi.fn().mockReturnValue({
+				tools: [],
+				shutdown: vi.fn(),
+			}),
+		};
+		const run = vi.fn().mockResolvedValue(
+			createResult({
+				text: "first",
+				usage: {
+					inputTokens: 10,
+					outputTokens: 3,
+					cacheReadTokens: 1,
+					cacheWriteTokens: 2,
+					totalCost: 0.11,
+				},
+			}),
+		);
+		const continueFn = vi.fn().mockResolvedValue(
+			createResult({
+				text: "second",
+				usage: {
+					inputTokens: 8,
+					outputTokens: 4,
+					cacheReadTokens: 2,
+					cacheWriteTokens: 0,
+					totalCost: 0.09,
+				},
+			}),
+		);
+		const manager = new DefaultSessionManager({
+			distinctId,
+			sessionService: sessionService as never,
+			runtimeBuilder,
+			createAgent: () =>
+				({
+					run,
+					continue: continueFn,
+					abort: vi.fn(),
+					shutdown: vi.fn().mockResolvedValue(undefined),
+					getMessages: vi.fn().mockReturnValue([]),
+					messages: [],
+				}) as never,
+		});
+
+		await manager.start({
+			config: createConfig({ sessionId }),
+			interactive: true,
+		});
+
+		await manager.send({ sessionId, prompt: "first" });
+		expect(await manager.getAccumulatedUsage(sessionId)).toEqual({
+			inputTokens: 10,
+			outputTokens: 3,
+			cacheReadTokens: 1,
+			cacheWriteTokens: 2,
+			totalCost: 0.11,
+		});
+
+		await manager.send({ sessionId, prompt: "second" });
+		expect(await manager.getAccumulatedUsage(sessionId)).toEqual({
+			inputTokens: 18,
+			outputTokens: 7,
+			cacheReadTokens: 3,
+			cacheWriteTokens: 2,
+			totalCost: 0.2,
+		});
+	});
+
+	it("returns undefined accumulated usage for unknown sessions", async () => {
+		const manager = new DefaultSessionManager({
+			distinctId,
+			sessionService: {
+				ensureSessionsDir: vi.fn().mockReturnValue("/tmp/sessions"),
+				listSessions: vi.fn().mockResolvedValue([]),
+				deleteSession: vi.fn().mockResolvedValue({ deleted: false }),
+			} as never,
+			runtimeBuilder: {
+				build: vi.fn().mockReturnValue({
+					tools: [],
+					shutdown: vi.fn(),
+				}),
+			},
+			createAgent: () =>
+				({
+					run: vi.fn(),
+					continue: vi.fn(),
+					abort: vi.fn(),
+					shutdown: vi.fn().mockResolvedValue(undefined),
+					getMessages: vi.fn().mockReturnValue([]),
+					messages: [],
+				}) as never,
+		});
+
+		expect(
+			await manager.getAccumulatedUsage("missing-session"),
+		).toBeUndefined();
+	});
+
 	it("marks a failed single-run session as failed when run throws", async () => {
 		const sessionId = "sess-fail";
 		const manifest = createManifest(sessionId);
