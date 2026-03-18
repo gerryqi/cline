@@ -9,13 +9,25 @@ export type WebviewUsage = {
 export type WebviewProviderModel = {
 	id: string;
 	name?: string;
+	supportsThinking?: boolean;
+};
+
+export type WebviewToolEvent = {
+	toolCallId?: string;
+	toolName?: string;
+	status: "running" | "completed" | "failed";
+	input?: unknown;
+	output?: unknown;
+	error?: string;
 };
 
 export type WebviewConfig = {
 	provider?: string;
 	model?: string;
+	mode?: "act" | "plan";
 	systemPrompt?: string;
 	maxIterations?: number;
+	thinking?: boolean;
 	enableTools?: boolean;
 	enableSpawn?: boolean;
 	enableTeams?: boolean;
@@ -41,7 +53,7 @@ export type WebviewOutboundMessage =
 	| { type: "error"; text: string }
 	| { type: "session_started"; sessionId: string }
 	| { type: "assistant_delta"; text: string }
-	| { type: "tool_event"; text: string }
+	| { type: "tool_event"; text: string; event?: WebviewToolEvent }
 	| {
 			type: "turn_done";
 			finishReason: string;

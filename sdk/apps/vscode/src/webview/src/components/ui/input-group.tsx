@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
 	return (
-		// biome-ignore lint/a11y/useSemanticElements: component root
+		// biome-ignore lint/a11y/useSemanticElements: fieldset would break layout styling
 		<div
 			data-slot="input-group"
 			role="group"
@@ -45,17 +45,12 @@ function InputGroupAddon({
 	className,
 	align = "inline-start",
 	...props
-}: React.ComponentProps<"fieldset"> &
-	VariantProps<typeof inputGroupAddonVariants>) {
-	const handleFocus = () => {
-		const input = (
-			event?.currentTarget as HTMLElement
-		)?.parentElement?.querySelector("input");
-		input?.focus();
-	};
-
+}: React.ComponentProps<"div"> & VariantProps<typeof inputGroupAddonVariants>) {
 	return (
-		<fieldset
+		// biome-ignore lint/a11y/useSemanticElements: fieldset would break layout styling
+		// biome-ignore lint/a11y/useKeyWithClickEvents: click handler focuses input, not interactive
+		<div
+			role="group"
 			data-slot="input-group-addon"
 			data-align={align}
 			className={cn(inputGroupAddonVariants({ align }), className)}
@@ -63,12 +58,7 @@ function InputGroupAddon({
 				if ((e.target as HTMLElement).closest("button")) {
 					return;
 				}
-				handleFocus();
-			}}
-			onKeyDown={(e) => {
-				if (e.key === "Enter" || e.key === " ") {
-					handleFocus();
-				}
+				e.currentTarget.parentElement?.querySelector("input")?.focus();
 			}}
 			{...props}
 		/>
