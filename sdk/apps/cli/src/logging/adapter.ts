@@ -14,6 +14,7 @@ import pino, {
 	type LevelWithSilent,
 	type Logger as PinoLogger,
 } from "pino";
+import { getCliBuildInfo } from "../utils/common";
 
 const loggerCache = new Map<
 	string,
@@ -58,7 +59,11 @@ function normalizeRuntimeConfig(input: {
 	runtimeConfig?: RpcChatRuntimeLoggerConfig;
 }): Required<RpcChatRuntimeLoggerConfig> {
 	const base = input.runtimeConfig;
-	const defaultDestination = join(resolveClineDataDir(), "logs", "clite.log");
+	const defaultDestination = join(
+		resolveClineDataDir(),
+		"logs",
+		`${getCliBuildInfo().name}.log`,
+	);
 	const enabledEnv = process.env.CLINE_LOG_ENABLED?.trim();
 	const enabled =
 		base?.enabled ??
@@ -71,7 +76,7 @@ function normalizeRuntimeConfig(input: {
 	const name =
 		base?.name?.trim() ||
 		process.env.CLINE_LOG_NAME?.trim() ||
-		`clite.${input.runtime}`;
+		`${getCliBuildInfo().name}.${input.runtime}`;
 	const bindings = base?.bindings ?? {};
 
 	return {

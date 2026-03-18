@@ -6,8 +6,8 @@ const result = await Bun.build({
 	outdir: "./dist",
 	target: "bun",
 	format: "esm",
-	// Only externalize published packages; bundle private workspace packages (@clinebot/shared, @clinebot/rpc)
-	external: ["@clinebot/agents", "@clinebot/core", "@clinebot/llms"],
+	packages: "bundle",
+	// Keep private workspace packages bundled so npm consumers do not need @clinebot/* at runtime.
 });
 
 if (result.logs.length > 0) {

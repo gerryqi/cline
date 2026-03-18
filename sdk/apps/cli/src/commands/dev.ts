@@ -2,6 +2,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { resolveClineDataDir } from "@clinebot/core";
 import open from "open";
+import { getCliBuildInfo } from "../utils/common";
 
 type DevCommandIo = {
 	writeln: (text?: string) => void;
@@ -13,7 +14,8 @@ type RunDevCommandDeps = {
 };
 
 function resolveCliLogPath(): string {
-	return join(resolveClineDataDir(), "logs", "clite.log");
+	const { name } = getCliBuildInfo();
+	return join(resolveClineDataDir(), "logs", `${name}.log`);
 }
 
 function ensureFileExists(filePath: string): void {

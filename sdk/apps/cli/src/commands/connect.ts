@@ -1,5 +1,6 @@
 import { getConnector, listConnectors } from "../connectors/registry";
 import type { ConnectIo, ConnectStopResult } from "../connectors/types";
+import { getCliBuildInfo } from "../utils/common";
 
 function isHelpFlag(value: string | undefined): boolean {
 	return value === "-h" || value === "--help";
@@ -52,6 +53,7 @@ export async function runConnectCommand(
 	rawArgs: string[],
 	io: ConnectIo,
 ): Promise<number> {
+	const { name } = getCliBuildInfo();
 	if (rawArgs[1] === "--stop") {
 		const target = rawArgs[2]?.trim().toLowerCase();
 		if (!target) {
@@ -59,8 +61,8 @@ export async function runConnectCommand(
 		}
 		if (isHelpFlag(target)) {
 			io.writeln("Usage:");
-			io.writeln("  clite connect --stop");
-			io.writeln("  clite connect --stop <adapter>");
+			io.writeln(`  ${name} connect --stop`);
+			io.writeln(`  ${name} connect --stop <adapter>`);
 			return 0;
 		}
 		return await runStopConnector(target, io);
@@ -69,8 +71,8 @@ export async function runConnectCommand(
 	const adapterName = rawArgs[1]?.trim().toLowerCase();
 	if (!adapterName || isHelpFlag(adapterName)) {
 		io.writeln("Usage:");
-		io.writeln("  clite connect <adapter> [options]");
-		io.writeln("  clite connect --stop [adapter]");
+		io.writeln(`  ${name} connect <adapter> [options]`);
+		io.writeln(`  ${name} connect --stop [adapter]`);
 		io.writeln("");
 		io.writeln("Adapters:");
 		for (const connector of listConnectors()) {

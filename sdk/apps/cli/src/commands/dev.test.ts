@@ -2,10 +2,12 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { getCliBuildInfo } from "../utils/common";
 import { runDevCommand } from "./dev";
 
 describe("runDevCommand", () => {
 	const tempDirs: string[] = [];
+	const commandName = getCliBuildInfo().name;
 
 	afterEach(() => {
 		delete process.env.CLINE_DATA_DIR;
@@ -14,8 +16,10 @@ describe("runDevCommand", () => {
 		}
 	});
 
-	it("opens the clite log file for dev log", async () => {
-		const dataDir = mkdtempSync(path.join(os.tmpdir(), "clite-dev-log-test-"));
+	it("opens the log file for dev log", async () => {
+		const dataDir = mkdtempSync(
+			path.join(os.tmpdir(), `${commandName}-dev-log-test-`),
+		);
 		tempDirs.push(dataDir);
 		process.env.CLINE_DATA_DIR = dataDir;
 
@@ -40,7 +44,7 @@ describe("runDevCommand", () => {
 			},
 		);
 
-		const expectedPath = path.join(dataDir, "logs", "clite.log");
+		const expectedPath = path.join(dataDir, "logs", `${commandName}.log`);
 		expect(code).toBe(0);
 		expect(errors).toHaveLength(0);
 		expect(opened).toEqual([expectedPath]);
@@ -61,7 +65,9 @@ describe("runDevCommand", () => {
 	});
 
 	it("returns an error if opening log file fails", async () => {
-		const dataDir = mkdtempSync(path.join(os.tmpdir(), "clite-dev-log-test-"));
+		const dataDir = mkdtempSync(
+			path.join(os.tmpdir(), `${commandName}-dev-log-test-`),
+		);
 		tempDirs.push(dataDir);
 		process.env.CLINE_DATA_DIR = dataDir;
 

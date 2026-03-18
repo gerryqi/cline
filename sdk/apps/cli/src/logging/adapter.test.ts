@@ -8,6 +8,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { getCliBuildInfo } from "../utils/common";
 import { createCliLoggerAdapter } from "./adapter";
 
 const envKeys = [
@@ -44,10 +45,12 @@ function restoreEnv(
 	}
 }
 
+const commandName = getCliBuildInfo().name;
+
 describe("createCliLoggerAdapter", () => {
 	it("resolves default runtime config from data dir", () => {
 		const snapshot = withEnvSnapshot();
-		const dataDir = mkdtempSync(join(tmpdir(), "clite-log-test-"));
+		const dataDir = mkdtempSync(join(tmpdir(), `${commandName}-log-test-`));
 		process.env.CLINE_DATA_DIR = dataDir;
 		delete process.env.CLINE_LOG_PATH;
 		delete process.env.CLINE_LOG_LEVEL;
@@ -57,10 +60,10 @@ describe("createCliLoggerAdapter", () => {
 		try {
 			const adapter = createCliLoggerAdapter({ runtime: "cli" });
 			expect(adapter.runtimeConfig.destination).toBe(
-				join(dataDir, "logs", "clite.log"),
+				join(dataDir, "logs", `${commandName}.log`),
 			);
 			expect(adapter.runtimeConfig.level).toBe("info");
-			expect(adapter.runtimeConfig.name).toBe("clite.cli");
+			expect(adapter.runtimeConfig.name).toBe(`${commandName}.cli`);
 			expect(adapter.runtimeConfig.enabled).toBe(true);
 		} finally {
 			restoreEnv(snapshot);
@@ -85,7 +88,7 @@ describe("createCliLoggerAdapter", () => {
 	});
 
 	it("maps core logger metadata with error payload", () => {
-		const dataDir = mkdtempSync(join(tmpdir(), "clite-log-test-"));
+		const dataDir = mkdtempSync(join(tmpdir(), `${commandName}-log-test-`));
 		const snapshot = withEnvSnapshot();
 		process.env.CLINE_DATA_DIR = dataDir;
 		process.env.CLINE_LOG_ENABLED = "0";
@@ -104,8 +107,8 @@ describe("createCliLoggerAdapter", () => {
 
 	it("truncates stale log files older than two days on startup", () => {
 		const snapshot = withEnvSnapshot();
-		const dataDir = mkdtempSync(join(tmpdir(), "clite-log-test-"));
-		const logPath = join(dataDir, "logs", "clite.log");
+		const dataDir = mkdtempSync(join(tmpdir(), `${commandName}-log-test-`));
+		const logPath = join(dataDir, "logs", `${commandName}.log`);
 		process.env.CLINE_DATA_DIR = dataDir;
 		delete process.env.CLINE_LOG_PATH;
 		delete process.env.CLINE_LOG_LEVEL;
@@ -128,7 +131,7 @@ describe("createCliLoggerAdapter", () => {
 	it("falls back when log destination path is not writable", () => {
 		const snapshot = withEnvSnapshot();
 		delete process.env.CLINE_DATA_DIR;
-		process.env.CLINE_LOG_PATH = "/dev/null/clite.log";
+		process.env.CLINE_LOG_PATH = `/dev/null/${commandName}.log`;
 		delete process.env.CLINE_LOG_LEVEL;
 		delete process.env.CLINE_LOG_NAME;
 		delete process.env.CLINE_LOG_ENABLED;

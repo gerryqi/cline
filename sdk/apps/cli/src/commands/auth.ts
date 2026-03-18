@@ -895,7 +895,7 @@ export async function runAuthCommand(input: AuthCommandInput): Promise<number> {
 			);
 		}
 		input.io.writeErr(
-			`provider "${providerId}" requires API key setup (use: clite auth --provider ${providerId} --apikey <key> --modelid <id>)`,
+			`provider "${providerId}" requires API key setup (use subcommand: auth --provider ${providerId} --apikey <key> --modelid <id>)`,
 		);
 		return 1;
 	}

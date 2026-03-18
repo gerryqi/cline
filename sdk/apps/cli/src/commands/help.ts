@@ -15,34 +15,38 @@ function renderSection(title: string, items: readonly HelpItem[]): string {
 }
 
 export function showHelp(): void {
+	const { name } = getCliBuildInfo();
 	const sections = [
-		`${c.bold}clite${c.reset} - CLI for Cline runtimes, sessions, and connector bridges`,
+		`${c.bold}${name}${c.reset} - a lightweight coding assistant built for your terminal`,
 		renderSection("USAGE", [
-			["clite [options] [prompt]", "Run one prompt"],
-			["clite -i", "Start an interactive chat session"],
-			['echo "prompt" | clite', "Read the prompt from stdin"],
+			[`${name} [options] [prompt]`, "Run one prompt"],
+			[`${name} -i`, "Start an interactive chat session"],
+			[`echo "prompt" | ${name}`, "Read the prompt from stdin"],
 		]),
 		renderSection("COMMANDS", [
-			["clite version", "Show version"],
-			["clite config", "Open the interactive config view"],
-			["clite auth <provider>", "Authenticate or seed provider credentials"],
+			[`${name} version`, "Show version"],
+			[`${name} config`, "Open the interactive config view"],
+			[`${name} auth <provider>`, "Authenticate or seed provider credentials"],
 			[
-				"clite connect <adapter>",
+				`${name} connect <adapter>`,
 				"Run a chat connector bridge (telegram, gchat, whatsapp)",
 			],
 			[
-				"clite connect --stop [adapter]",
+				`${name} connect --stop [adapter]`,
 				"Stop connector bridge processes and their sessions",
 			],
 			[
-				"clite list <workflows|rules|skills|agents|history|hooks|mcp>",
+				`${name} list <workflows|rules|skills|agents|history|hooks|mcp>`,
 				"List configs, history, or hook paths",
 			],
-			["clite schedule <command>", "Create and manage scheduled runs"],
-			["clite sessions <list|update|delete>", "Inspect or edit saved sessions"],
-			["clite dev log", "Open the CLI runtime log file"],
-			["clite hook", "Handle a hook payload from stdin"],
-			["clite rpc <command>", "Manage the local RPC runtime server"],
+			[`${name} schedule <command>`, "Create and manage scheduled runs"],
+			[
+				`${name} sessions <list|update|delete>`,
+				"Inspect or edit saved sessions",
+			],
+			[`${name} dev log`, "Open the CLI runtime log file"],
+			[`${name} hook`, "Handle a hook payload from stdin"],
+			[`${name} rpc <command>`, "Manage the local RPC runtime server"],
 		]),
 		renderSection("RUN OPTIONS", [
 			["-s, --system <prompt>", "Override the system prompt"],
@@ -108,44 +112,44 @@ export function showHelp(): void {
 		]),
 		renderSection("CONNECT", [
 			[
-				"clite connect telegram -m <bot> -k <token>",
+				`${name} connect telegram -m <bot> -k <token>`,
 				"Start the Telegram bridge",
 			],
 			[
-				"clite connect gchat --base-url <url>",
+				`${name} connect gchat --base-url <url>`,
 				"Start the Google Chat webhook bridge",
 			],
 			[
-				"clite connect whatsapp --base-url <url>",
+				`${name} connect whatsapp --base-url <url>`,
 				"Start the WhatsApp webhook bridge",
 			],
 			[
-				"clite connect <adapter> --help",
+				`${name} connect <adapter> --help`,
 				"Show adapter-specific options and examples",
 			],
 			["--hook-command <command>", "Run a shell command for connector events"],
 		]),
 		renderSection("SCHEDULE SETUP", [
 			[
-				'clite schedule create <name> --cron "<expr>" --prompt "<text>" --workspace <path>',
+				`${name} schedule create <name> --cron "<expr>" --prompt "<text>" --workspace <path>`,
 				"Create a scheduled run",
 			],
 			[
-				"clite schedule <create|list|get|update|pause|resume|delete|trigger|history|stats|active|upcoming|import|export>",
+				`${name} schedule <create|list|get|update|pause|resume|delete|trigger|history|stats|active|upcoming|import|export>`,
 				"Manage schedules and execution history",
 			],
 		]),
 		renderSection("RPC SHORTCUTS", [
 			[
-				"clite rpc <start|status|stop|ensure> [--address <host:port>]",
+				`${name} rpc <start|status|stop|ensure> [--address <host:port>]`,
 				"Manage the RPC server",
 			],
 			[
-				"clite rpc register --client-type <type> --client-id <id>",
+				`${name} rpc register --client-type <type> --client-id <id>`,
 				"Register a client with the RPC server",
 			],
 			[
-				"clite rpc ensure --json",
+				`${name} rpc ensure --json`,
 				"Ensure a compatible RPC server and print JSON",
 			],
 		]),
