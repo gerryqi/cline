@@ -128,7 +128,11 @@ export function useChatSession() {
 				setFileDiffs(diffState.fileDiffs);
 				setDiffSummary(diffState.summary);
 				setToolCalls(
-					events.filter((event) => event.hookEventName === "tool_call").length,
+					events.filter(
+						(event) =>
+							event.hookEventName === "tool_call" ||
+							event.hookName === "tool_call",
+					).length,
 				);
 				setTokensIn(
 					events.reduce((sum, event) => sum + (event.inputTokens ?? 0), 0),

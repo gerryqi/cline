@@ -14,7 +14,7 @@ export const GENERATED_PROVIDER_MODELS: {
 	version: number;
 	providers: Record<string, Record<string, ModelInfo>>;
 } = {
-	version: 1773806103225,
+	version: 1773842565195,
 	providers: {
 		aihubmix: {
 			"claude-sonnet-4-6": {
@@ -3434,6 +3434,34 @@ export const GENERATED_PROVIDER_MODELS: {
 			},
 		},
 		minimax: {
+			"MiniMax-M2.7": {
+				id: "MiniMax-M2.7",
+				name: "MiniMax-M2.7",
+				contextWindow: 204800,
+				maxTokens: 131072,
+				capabilities: ["tools", "reasoning", "temperature"],
+				pricing: {
+					input: 0.3,
+					output: 1.2,
+					cacheRead: 0.06,
+					cacheWrite: 0.375,
+				},
+				releaseDate: "2026-03-18",
+			},
+			"MiniMax-M2.7-highspeed": {
+				id: "MiniMax-M2.7-highspeed",
+				name: "MiniMax-M2.7-highspeed",
+				contextWindow: 204800,
+				maxTokens: 131072,
+				capabilities: ["tools", "reasoning", "temperature"],
+				pricing: {
+					input: 0.6,
+					output: 2.4,
+					cacheRead: 0.06,
+					cacheWrite: 0.375,
+				},
+				releaseDate: "2026-03-18",
+			},
 			"MiniMax-M2.5-highspeed": {
 				id: "MiniMax-M2.5-highspeed",
 				name: "MiniMax-M2.5-highspeed",

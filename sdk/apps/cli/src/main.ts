@@ -204,6 +204,15 @@ export async function runCli(): Promise<void> {
 			process.exit(result);
 		}
 	}
+	if (rawArgs[0] === "sessions") {
+		const { runSessionsCommand } = await import("./commands/sessions");
+		const code = await runSessionsCommand({
+			rawArgs,
+			io: { writeln, writeErr },
+		});
+		process.exit(code);
+	}
+
 	if (rawArgs[0] === "list") {
 		const { runListCommand } = await import("./commands/list");
 		setCurrentOutputMode(args.outputMode);

@@ -6,8 +6,9 @@ const result = await Bun.build({
 	outdir: "./dist",
 	target: "bun",
 	format: "esm",
-	packages: "bundle",
-	// Keep private workspace packages bundled so npm consumers do not need @clinebot/* at runtime.
+	packages: "bundle", // Keep private workspace packages bundled so npm consumers do not need @clinebot/* at runtime.
+	banner:
+		'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);',
 });
 
 if (result.logs.length > 0) {

@@ -25,7 +25,8 @@
 		"test:e2e": "vitest run --config vitest.e2e.config.ts",
 		"test:watch": "vitest --config vitest.config.ts",
 		"pack": "bun ./scripts/deps.mts",
-		"release": "bun run build && bun run pack prepare && npm publish --access public && bun run pack restore"
+		"release": "bun run build && bun run pack prepare && npm publish --access public && bun run pack restore",
+		"link": "bun unlink && bun link"
 	},
 	"dependencies": {
 		"@chat-adapter/gchat": "^4.20.2",
