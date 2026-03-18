@@ -226,7 +226,8 @@ describe("zod schema conversion", () => {
 				description:
 					"The absolute file path of a text file to read content from",
 			},
-			description: "Array of absolute file paths",
+			description:
+				"Array of absolute file paths to get full content from. Prefer this tool over running terminal command to get file content for better performance and reliability.",
 		});
 		expect(inputSchema.required).toEqual(["file_paths"]);
 	});
