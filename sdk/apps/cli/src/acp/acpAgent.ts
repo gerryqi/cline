@@ -67,6 +67,8 @@ interface SessionState {
 	abortController?: AbortController;
 	/** Unsubscribe function for the agent event listener. */
 	unsubscribe?: () => void;
+	/** Messages to inject into the next session manager for conversation continuity. */
+	pendingInitialMessages?: import("@clinebot/llms").providers.Message[];
 }
 
 export class AcpAgent implements Agent {
@@ -311,17 +313,15 @@ export class AcpAgent implements Agent {
 
 				session.currentProviderId = value;
 
+				// Tear down the old session manager so ensureSessionManager()
+				// creates a fresh one with the new provider on the next prompt().
+				await this.teardownSessionManager(session);
+
 				// If current model doesn't exist in new provider, reset to first available
 				const providerModels = await models.getModelsForProvider(value);
 				const modelIds = Object.keys(providerModels);
 				if (!modelIds.includes(session.currentModelId) && modelIds.length > 0) {
 					session.currentModelId = modelIds[0]!;
-					if (session.sessionManager && session.activeSessionId) {
-						await session.sessionManager.updateSessionModel?.(
-							session.activeSessionId,
-							session.currentModelId,
-						);
-					}
 				}
 				break;
 			}
@@ -419,6 +419,38 @@ export class AcpAgent implements Agent {
 	}
 
 	/**
+	 * Tear down the current session manager, preserving conversation messages
+	 * so they can be replayed into a new session manager.
+	 */
+	private async teardownSessionManager(session: SessionState): Promise<void> {
+		if (!session.sessionManager) {
+			return;
+		}
+
+		// Save conversation history before teardown.
+		if (session.activeSessionId) {
+			session.pendingInitialMessages =
+				await session.sessionManager.readMessages(session.activeSessionId);
+		}
+
+		if (session.abortController) {
+			session.abortController.abort();
+		}
+		if (session.unsubscribe) {
+			session.unsubscribe();
+			session.unsubscribe = undefined;
+		}
+		if (session.activeSessionId) {
+			await session.sessionManager
+				.abort(session.activeSessionId)
+				.catch(() => {});
+		}
+		await session.sessionManager.dispose("provider_change").catch(() => {});
+		session.sessionManager = undefined;
+		session.activeSessionId = undefined;
+	}
+
+	/**
 	 * Lazily create and start the session manager for this ACP session.
 	 * After the first call the manager persists across prompt() calls so that
 	 * conversation history is maintained.
@@ -446,10 +478,14 @@ export class AcpAgent implements Agent {
 			},
 		);
 
+		const initialMessages = session.pendingInitialMessages;
+		session.pendingInitialMessages = undefined;
+
 		const started = await sessionManager.start({
 			source: SessionSource.CLI,
 			config,
 			interactive: true,
+			initialMessages,
 		});
 
 		session.sessionManager = sessionManager;
