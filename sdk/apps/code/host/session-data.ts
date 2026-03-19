@@ -747,7 +747,7 @@ export function discoverCliSessions(ctx: HostContext, limit = 300): unknown[] {
 	}
 	const result = spawnSync(
 		"bun",
-		["run", cliEntrypoint, "sessions", "list", "--limit", String(limit)],
+		["run", cliEntrypoint, "history", "--json", "--limit", String(limit)],
 		{
 			cwd: dirname(dirname(cliEntrypoint)),
 			encoding: "utf8",

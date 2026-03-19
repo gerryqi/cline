@@ -220,7 +220,7 @@ describe("cli e2e", () => {
 		const homeDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-home-"));
 		const sessionDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-sessions-"));
 		tempDirs.push(homeDir, sessionDir);
-		const result = runCli(["sessions", "list", "--limit", "1"], {
+		const result = runCli(["history", "--json", "--limit", "1"], {
 			env: {
 				...createIsolatedEnv(),
 				HOME: homeDir,
@@ -250,10 +250,12 @@ describe("cli e2e", () => {
 	});
 
 	it("returns an error when deleting a session without --session-id", () => {
-		const result = runCli(["sessions", "delete"], { env: createIsolatedEnv() });
+		const result = runCli(["history", "delete"], {
+			env: createIsolatedEnv(),
+		});
 		expect(result.status).toBe(1);
 		expect(asText(result.stderr)).toContain(
-			"sessions delete requires --session-id <id>",
+			"history delete requires --session-id <id>",
 		);
 	});
 

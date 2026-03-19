@@ -208,15 +208,6 @@ export async function handleCommand(
 			throw new Error("session id is required");
 		}
 		const title = normalizeSessionTitle(String(args?.title ?? ""));
-		const store = new SqliteSessionStore();
-		const existing = store.get(sessionId);
-		store.update({
-			sessionId,
-			metadata: {
-				...(existing?.metadata ?? {}),
-				title,
-			},
-		});
 		updateSessionTitle(sessionId, title);
 		const liveSession = ctx.liveSessions.get(sessionId);
 		if (liveSession) {
@@ -262,9 +253,7 @@ export async function handleCommand(
 		return await listLocalProviders(manager);
 	}
 	if (command === "list_provider_models") {
-		return {
-			models: await getLocalProviderModels(String(args?.provider ?? "")),
-		};
+		return await getLocalProviderModels(String(args?.provider ?? ""));
 	}
 	if (command === "save_provider_settings") {
 		const manager = new ProviderSettingsManager();

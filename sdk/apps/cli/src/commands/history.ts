@@ -1,25 +1,13 @@
 import { Box, render, Text, useInput } from "ink";
 import React, { useMemo, useState } from "react";
 import { formatUsd, writeln } from "../utils/output";
-import { createDefaultCliSessionManager, listSessions } from "../utils/session";
+import { deleteSession, updateSession } from "../utils/session";
 import {
-	inferProviderAndModelFromMessages,
-	inferTitleFromMessages,
-	summarizeCostFromMessages,
-} from "../utils/session-message-summary";
+	type HistoryListRow,
+	listHistoryRows,
+} from "../utils/session-history-rows";
+import { updateSessionManifestTitle } from "../utils/session-manifest-title";
 import type { CliOutputMode } from "../utils/types";
-
-export type HistoryListRow = {
-	session_id?: string;
-	provider?: string;
-	model?: string;
-	started_at?: string;
-	prompt?: string;
-	metadata?: {
-		title?: string;
-		totalCost?: number;
-	};
-};
 
 function formatDate(dateStr?: string): string {
 	if (!dateStr) return "(unknown-date)";
@@ -47,61 +35,129 @@ export function formatHistoryListLine(row: HistoryListRow): string {
 	return `${date} - ${sessionId} - ${title} - ${cost} - ${provider} - ${model}`;
 }
 
-async function hydrateHistoryRows(
-	rows: HistoryListRow[],
-): Promise<HistoryListRow[]> {
-	if (rows.length === 0) {
-		return rows;
+type HistoryIo = {
+	writeln: (text?: string) => void;
+	writeErr: (text: string) => void;
+};
+
+async function runHistoryDelete(
+	rawArgs: string[],
+	outputMode: CliOutputMode,
+	io: HistoryIo,
+): Promise<number> {
+	const idIndex = rawArgs.indexOf("--session-id");
+	const sessionId =
+		idIndex >= 0 && idIndex + 1 < rawArgs.length
+			? rawArgs[idIndex + 1]?.trim()
+			: undefined;
+
+	if (!sessionId) {
+		io.writeErr("history delete requires --session-id <id>");
+		return 1;
 	}
-	const sessionManager = await createDefaultCliSessionManager();
+
 	try {
-		return await Promise.all(
-			rows.map(async (row) => {
-				const sessionId = row.session_id?.trim();
-				if (!sessionId) {
-					return row;
-				}
-				const hasTitle = Boolean(
-					row.metadata?.title?.trim() || row.prompt?.trim(),
-				);
-				const hasProvider = Boolean(row.provider?.trim());
-				const hasModel = Boolean(row.model?.trim());
-				const knownCost = row.metadata?.totalCost;
-				const hasCost =
-					typeof knownCost === "number" &&
-					Number.isFinite(knownCost) &&
-					knownCost > 0;
-				if (hasTitle && hasProvider && hasModel && hasCost) {
-					return row;
-				}
-				const messages = await sessionManager.readMessages(sessionId);
-				if (messages.length === 0) {
-					return row;
-				}
-				const inferredTitle = hasTitle
-					? undefined
-					: inferTitleFromMessages(messages);
-				const inferredUsageCost = summarizeCostFromMessages(messages);
-				const inferredProviderModel =
-					inferProviderAndModelFromMessages(messages);
-				return {
-					...row,
-					prompt: row.prompt?.trim() || inferredTitle || row.prompt,
-					provider: row.provider?.trim() || inferredProviderModel.provider,
-					model: row.model?.trim() || inferredProviderModel.model,
-					metadata: {
-						...(row.metadata ?? {}),
-						title: row.metadata?.title?.trim() || inferredTitle,
-						totalCost:
-							hasCost || inferredUsageCost <= 0
-								? row.metadata?.totalCost
-								: inferredUsageCost,
-					},
-				};
-			}),
+		const result = await deleteSession(sessionId);
+		if (outputMode === "json") {
+			process.stdout.write(JSON.stringify(result));
+			return result.deleted ? 0 : 1;
+		}
+		if (result.deleted) {
+			io.writeln(`Deleted session ${sessionId}`);
+			return 0;
+		}
+		io.writeErr(`Session ${sessionId} not found`);
+		return 1;
+	} catch (error) {
+		io.writeErr(error instanceof Error ? error.message : String(error));
+		return 1;
+	}
+}
+
+async function runHistoryUpdate(
+	rawArgs: string[],
+	outputMode: CliOutputMode,
+	io: HistoryIo,
+): Promise<number> {
+	const idIndex = rawArgs.indexOf("--session-id");
+	const sessionId =
+		idIndex >= 0 && idIndex + 1 < rawArgs.length
+			? rawArgs[idIndex + 1]?.trim()
+			: undefined;
+
+	if (!sessionId) {
+		io.writeErr("history update requires --session-id <id>");
+		return 1;
+	}
+
+	const promptIndex = rawArgs.indexOf("--prompt");
+	const prompt =
+		promptIndex >= 0 && promptIndex + 1 < rawArgs.length
+			? rawArgs[promptIndex + 1]?.trim()
+			: undefined;
+
+	const metadataIndex = rawArgs.indexOf("--metadata");
+	const metadataStr =
+		metadataIndex >= 0 && metadataIndex + 1 < rawArgs.length
+			? rawArgs[metadataIndex + 1]?.trim()
+			: undefined;
+
+	const titleIndex = rawArgs.indexOf("--title");
+	const title =
+		titleIndex >= 0 && titleIndex + 1 < rawArgs.length
+			? rawArgs[titleIndex + 1]?.trim()
+			: undefined;
+
+	let metadata: Record<string, unknown> | undefined;
+	if (metadataStr) {
+		try {
+			metadata = JSON.parse(metadataStr);
+		} catch (error) {
+			io.writeErr(
+				`Invalid metadata JSON: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			return 1;
+		}
+	}
+	if (title !== undefined) {
+		if (metadata) {
+			delete metadata.title;
+		}
+	}
+	if (metadata && Object.keys(metadata).length === 0) {
+		metadata = undefined;
+	}
+
+	if (prompt === undefined && metadata === undefined && title === undefined) {
+		io.writeErr(
+			"history update requires --prompt <text>, --title <text>, or --metadata <json>",
 		);
-	} finally {
-		await sessionManager.dispose().catch(() => {});
+		return 1;
+	}
+
+	try {
+		const titleResult =
+			title !== undefined
+				? updateSessionManifestTitle(sessionId, title)
+				: { updated: false };
+		const result =
+			prompt !== undefined || metadata !== undefined
+				? await updateSession(sessionId, { prompt, metadata })
+				: { updated: titleResult.updated };
+		const updated = Boolean(result.updated || titleResult.updated);
+		if (outputMode === "json") {
+			process.stdout.write(JSON.stringify({ updated }));
+			return updated ? 0 : 1;
+		}
+		if (updated) {
+			io.writeln(`Updated session ${sessionId}`);
+			return 0;
+		}
+		io.writeErr(`Session ${sessionId} not found`);
+		return 1;
+	} catch (error) {
+		io.writeErr(error instanceof Error ? error.message : String(error));
+		return 1;
 	}
 }
 
@@ -177,18 +233,30 @@ function HistoryListView({ rows, onSelect, onExit }: HistoryListViewProps) {
 export async function runHistoryCommand(input: {
 	rawArgs: string[];
 	outputMode: CliOutputMode;
+	io?: HistoryIo;
 }): Promise<number | string> {
+	const io = input.io ?? {
+		writeln,
+		writeErr: (text: string) => process.stderr.write(`${text}\n`),
+	};
+	const subcommand = input.rawArgs[1]?.trim().toLowerCase();
+	if (subcommand === "delete") {
+		return await runHistoryDelete(input.rawArgs, input.outputMode, io);
+	}
+	if (subcommand === "update") {
+		return await runHistoryUpdate(input.rawArgs, input.outputMode, io);
+	}
+
 	const limitIndex = input.rawArgs.indexOf("--limit");
 	const limit =
 		limitIndex >= 0 && limitIndex + 1 < input.rawArgs.length
 			? Number.parseInt(input.rawArgs[limitIndex + 1] ?? "200", 10)
 			: 200;
 
-	const rows = (await listSessions(Number.isFinite(limit) ? limit : 200)) as
-		| HistoryListRow[]
-		| undefined;
-
-	if (!rows || rows.length === 0) {
+	const hydratedRows = await listHistoryRows(
+		Number.isFinite(limit) ? limit : 200,
+	);
+	if (hydratedRows.length === 0) {
 		if (input.outputMode === "json") {
 			process.stdout.write(JSON.stringify([]));
 		} else {
@@ -196,8 +264,6 @@ export async function runHistoryCommand(input: {
 		}
 		return 0;
 	}
-
-	const hydratedRows = await hydrateHistoryRows(rows);
 
 	if (input.outputMode === "json") {
 		process.stdout.write(JSON.stringify(hydratedRows));

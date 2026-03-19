@@ -189,6 +189,7 @@ export async function runCli(): Promise<void> {
 		const result = await runHistoryCommand({
 			rawArgs,
 			outputMode: args.outputMode,
+			io: { writeln, writeErr },
 		});
 		if (typeof result === "string") {
 			resumeSessionId = result;
@@ -200,14 +201,6 @@ export async function runCli(): Promise<void> {
 		} else {
 			process.exit(result);
 		}
-	}
-	if (rawArgs[0] === "sessions") {
-		const { runSessionsCommand } = await import("./commands/sessions");
-		const code = await runSessionsCommand({
-			rawArgs,
-			io: { writeln, writeErr },
-		});
-		process.exit(code);
 	}
 
 	if (rawArgs[0] === "list") {

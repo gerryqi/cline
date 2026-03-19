@@ -3,6 +3,7 @@ export interface ProviderModel {
 	name: string;
 	supportsAttachments?: boolean;
 	supportsVision?: boolean;
+	supportsReasoning?: boolean;
 }
 
 export interface Provider {

@@ -14,7 +14,7 @@
 		"build:models": "bun -F @clinebot/llms generate:models && bun format --write",
 		"dev": "bun run cli rpc stop && bun run cli",
 		"cli": "bun --conditions=development --cwd apps/cli ./src/index.ts",
-		"code": "bun -F @clinebot/cli unlink && bun -F @clinebot/cli link && bun --conditions=development -F @clinebot/code dev",
+		"code": "bun --conditions=development -F @clinebot/code dev",
 		"clean": "bun --parallel -F '*' clean",
 		"types": "bun --parallel -F '*' typecheck",
 		"test": "bash -lc 'set -euo pipefail; bun run test:unit & p1=$!; bun run test:e2e & p2=$!; wait $p1; wait $p2'",

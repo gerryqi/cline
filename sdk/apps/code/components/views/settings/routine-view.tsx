@@ -43,6 +43,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { desktopClient } from "@/lib/desktop-client";
 import { readModelSelectionStorageFromWindow } from "@/lib/model-selection";
+import { loadProviderModelCatalog } from "@/lib/provider-model-catalog";
 import { cn } from "@/lib/utils";
 
 interface RoutineSchedule {
@@ -304,64 +305,22 @@ export function RoutineSchedulesContent() {
 	);
 
 	useEffect(() => {
-		const abortController = new AbortController();
-
-		async function loadModelCatalog() {
-			try {
-				const providersParam =
-					enabledProviderIds.length > 0
-						? `?providers=${encodeURIComponent(enabledProviderIds.join(","))}`
-						: "";
-				const response = await fetch(`/api/models-catalog${providersParam}`, {
-					signal: abortController.signal,
-					cache: "no-store",
-				});
-				if (!response.ok) {
-					return;
-				}
-				const payload = (await response.json()) as {
-					providerModels?: Record<string, string[]>;
-				};
-				const nextProviderModels = payload.providerModels;
-				if (
-					!nextProviderModels ||
-					Object.keys(nextProviderModels).length === 0
-				) {
-					return;
-				}
-				setProviderModels(nextProviderModels);
-			} catch {
-				// Keep fallback values if model catalog is unavailable.
-			}
-		}
-
-		void loadModelCatalog();
-		return () => abortController.abort();
-	}, [enabledProviderIds]);
-
-	useEffect(() => {
 		let cancelled = false;
 
-		async function loadEnabledProviders() {
+		async function loadCatalog() {
 			try {
-				const payload = await desktopClient.invoke<{
-					providers?: Array<{ id?: string; enabled?: boolean }>;
-				}>("list_provider_catalog");
+				const payload = await loadProviderModelCatalog();
 				if (cancelled) {
 					return;
 				}
-				const enabled = (payload.providers ?? [])
-					.filter((item) => item?.enabled && typeof item.id === "string")
-					.map((item) => item.id as string);
-				if (enabled.length > 0) {
-					setEnabledProviderIds(enabled);
-				}
+				setProviderModels(payload.providerModels);
+				setEnabledProviderIds(payload.enabledProviderIds);
 			} catch {
-				// Keep fallback provider list if provider catalog is unavailable.
+				// Keep fallback values if provider catalog is unavailable.
 			}
 		}
 
-		void loadEnabledProviders();
+		void loadCatalog();
 		return () => {
 			cancelled = true;
 		};

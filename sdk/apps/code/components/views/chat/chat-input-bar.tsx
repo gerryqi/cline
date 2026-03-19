@@ -27,6 +27,7 @@ import {
 	readModelSelectionStorageFromWindow,
 	writeModelSelectionStorageToWindow,
 } from "@/lib/model-selection";
+import { loadProviderModelCatalog } from "@/lib/provider-model-catalog";
 import { cn } from "@/lib/utils";
 import { WorkspaceSelector } from "./workspace-selector";
 
@@ -542,70 +543,23 @@ function ModelSelector({
 	const modelsForProvider = visibleProviderModels[provider] ?? [];
 
 	useEffect(() => {
-		const abortController = new AbortController();
-
-		async function loadModelCatalog() {
-			try {
-				const providersParam =
-					enabledProviderIds.length > 0
-						? `?providers=${encodeURIComponent(enabledProviderIds.join(","))}`
-						: "";
-				const response = await fetch(`/api/models-catalog${providersParam}`, {
-					signal: abortController.signal,
-					cache: "no-store",
-				});
-				if (!response.ok) {
-					return;
-				}
-				const payload = (await response.json()) as {
-					providerModels?: Record<string, string[]>;
-					providerReasoningModels?: Record<string, string[]>;
-				};
-				const nextProviderModels = payload.providerModels;
-				const nextProviderReasoningModels = payload.providerReasoningModels;
-				if (
-					!nextProviderModels ||
-					Object.keys(nextProviderModels).length === 0
-				) {
-					return;
-				}
-				setProviderModels(nextProviderModels);
-				if (
-					nextProviderReasoningModels &&
-					Object.keys(nextProviderReasoningModels).length > 0
-				) {
-					setProviderReasoningModels(nextProviderReasoningModels);
-				}
-			} catch {
-				// Keep local fallback values when API is unavailable.
-			}
-		}
-
-		void loadModelCatalog();
-		return () => abortController.abort();
-	}, [enabledProviderIds]);
-
-	useEffect(() => {
 		let cancelled = false;
 
-		async function loadEnabledProviders() {
+		async function loadCatalog() {
 			try {
-				const payload = await desktopClient.invoke<{
-					providers?: Array<{ id?: string; enabled?: boolean }>;
-				}>("list_provider_catalog");
+				const payload = await loadProviderModelCatalog();
 				if (cancelled) {
 					return;
 				}
-				const enabled = (payload.providers ?? [])
-					.filter((item) => item?.enabled && typeof item.id === "string")
-					.map((item) => item.id as string);
-				setEnabledProviderIds(enabled);
+				setProviderModels(payload.providerModels);
+				setProviderReasoningModels(payload.providerReasoningModels);
+				setEnabledProviderIds(payload.enabledProviderIds);
 			} catch {
-				// Keep model catalog-only fallback when provider catalog is unavailable.
+				// Keep local fallback values when provider catalog is unavailable.
 			}
 		}
 
-		void loadEnabledProviders();
+		void loadCatalog();
 		return () => {
 			cancelled = true;
 		};

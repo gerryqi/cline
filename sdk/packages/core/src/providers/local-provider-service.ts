@@ -35,6 +35,7 @@ type StoredModelsFile = {
 					name: string;
 					supportsVision?: boolean;
 					supportsAttachments?: boolean;
+					supportsReasoning?: boolean;
 				}
 			>;
 		}
@@ -130,6 +131,24 @@ async function writeModelsFile(
 ): Promise<void> {
 	await mkdir(dirname(filePath), { recursive: true });
 	await writeFile(filePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+}
+
+function toRpcProviderModel(
+	modelId: string,
+	info: {
+		name?: string;
+		capabilities?: string[];
+		thinkingConfig?: unknown;
+	},
+): RpcProviderModel {
+	return {
+		id: modelId,
+		name: info.name ?? modelId,
+		supportsAttachments: info.capabilities?.includes("files"),
+		supportsVision: info.capabilities?.includes("images"),
+		supportsReasoning:
+			info.capabilities?.includes("reasoning") || info.thinkingConfig != null,
+	};
 }
 
 function toProviderCapabilities(
@@ -352,6 +371,7 @@ export async function addLocalProvider(
 	const modelsState = await readModelsFile(modelsPath);
 	const supportsVision = capabilities?.includes("vision") ?? false;
 	const supportsAttachments = supportsVision;
+	const supportsReasoning = capabilities?.includes("reasoning") ?? false;
 	modelsState.providers[providerId] = {
 		provider: {
 			name: providerName,
@@ -368,6 +388,7 @@ export async function addLocalProvider(
 					name: modelId,
 					supportsVision,
 					supportsAttachments,
+					supportsReasoning,
 				},
 			]),
 		),
@@ -394,12 +415,13 @@ export async function listLocalProviders(
 	const providerItems = await Promise.all(
 		ids.map(async (id): Promise<RpcProviderListItem> => {
 			const info = await models.getProvider(id);
+			const providerModels = await getLocalProviderModels(id);
 			const persistedSettings = state.providers[id]?.settings;
 			const providerName = info?.name ?? titleCaseFromId(id);
 			return {
 				id,
 				name: providerName,
-				models: null,
+				models: providerModels.models.length,
 				color: stableColor(id),
 				letter: createLetter(providerName),
 				enabled: Boolean(persistedSettings),
@@ -413,6 +435,7 @@ export async function listLocalProviders(
 				defaultModelId: info?.defaultModelId,
 				authDescription: "This provider uses API keys for authentication.",
 				baseUrlDescription: "The base endpoint to use for provider requests.",
+				modelList: providerModels.models,
 			};
 		}),
 	);
@@ -430,12 +453,7 @@ export async function getLocalProviderModels(
 	const modelMap = await models.getModelsForProvider(id);
 	const items = Object.entries(modelMap)
 		.sort(([a], [b]) => a.localeCompare(b))
-		.map(([modelId, info]) => ({
-			id: modelId,
-			name: info.name ?? modelId,
-			supportsAttachments: info.capabilities?.includes("files"),
-			supportsVision: info.capabilities?.includes("images"),
-		}));
+		.map(([modelId, info]) => toRpcProviderModel(modelId, info));
 	return {
 		providerId: id,
 		models: items,

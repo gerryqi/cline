@@ -92,7 +92,7 @@ describe("runCli lightweight command dispatch", () => {
 		vi.resetModules();
 	});
 
-	it("does not load runtime modules for sessions list", async () => {
+	it("does not load runtime modules for history json listing", async () => {
 		mockState.runAgentImports = 0;
 		mockState.runInteractiveImports = 0;
 
@@ -102,7 +102,7 @@ describe("runCli lightweight command dispatch", () => {
 			throw exitSignal;
 		}) as never);
 
-		process.argv = ["bun", "src/index.ts", "sessions", "list"];
+		process.argv = ["bun", "src/index.ts", "history", "--json"];
 
 		const { runCli } = await import("./main");
 

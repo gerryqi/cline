@@ -101,7 +101,7 @@ export function showHelp(): void {
 		"",
 		renderSection("Commands:", [
 			["task|t [options] <prompt>", "Run a new task in a new session"],
-			["history|h [options]", "List session history"],
+			["history|h [options]", "List session history or manage saved sessions"],
 			["config [options]", "Show current configuration"],
 			[
 				"auth [options]",
@@ -122,7 +122,10 @@ export function showHelp(): void {
 				"schedule <create|get|list|update|stats>",
 				"Create and manage scheduled runs",
 			],
-			["sessions <list|update|delete>", "Inspect or edit saved sessions"],
+			[
+				"history <update|delete> [options]",
+				"Programmatic CRUD surface for saved sessions (use with --json)",
+			],
 			["hook", "Handle a hook payload from stdin"],
 			["rpc <command>", "Manage the local RPC runtime server"],
 		]),

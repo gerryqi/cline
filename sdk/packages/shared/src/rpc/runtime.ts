@@ -107,6 +107,7 @@ export interface RpcProviderModel {
 	name: string;
 	supportsAttachments?: boolean;
 	supportsVision?: boolean;
+	supportsReasoning?: boolean;
 }
 
 export interface RpcProviderListItem {
@@ -122,6 +123,7 @@ export interface RpcProviderListItem {
 	defaultModelId?: string;
 	authDescription: string;
 	baseUrlDescription: string;
+	modelList?: RpcProviderModel[];
 }
 
 export interface RpcProviderCatalogResponse {
