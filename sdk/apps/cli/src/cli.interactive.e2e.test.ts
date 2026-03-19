@@ -15,6 +15,10 @@ interface KeyStep {
 	input: string;
 }
 
+const INITIAL_RENDER_DELAY_SECONDS = 2.5;
+const POST_ACTION_SETTLE_SECONDS = 1.0;
+const INTERACTIVE_TEST_TIMEOUT_MS = 40_000;
+
 function normalizeTerminalOutput(output: string): string {
 	// biome-ignore lint/suspicious/noControlCharactersInRegex: this regex intentionally strips ANSI escape sequences
 	const ansiCsiRegex = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
@@ -36,6 +40,15 @@ function normalizeTerminalOutput(output: string): string {
 
 function toShellSingleQuotedLiteral(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+function buildScriptCommand(scriptedInput: string, launchArgs: string): string {
+	const quietFlag = "-q";
+	if (process.platform === "linux") {
+		return `(${scriptedInput}) | script ${quietFlag} /dev/null -- ${toShellSingleQuotedLiteral(bunExec)} ${launchArgs}`;
+	}
+
+	return `(${scriptedInput}) | script ${quietFlag} /dev/null ${toShellSingleQuotedLiteral(bunExec)} ${launchArgs}`;
 }
 
 function runInteractiveCli(
@@ -70,7 +83,7 @@ function runInteractiveCli(
 	]
 		.map((arg) => toShellSingleQuotedLiteral(arg))
 		.join(" ");
-	const command = `(${scriptedInput}) | script -q /dev/null ${toShellSingleQuotedLiteral(bunExec)} ${launchArgs}`;
+	const command = buildScriptCommand(scriptedInput, launchArgs);
 
 	return spawnSync("bash", ["-lc", command], {
 		cwd: cliRoot,
@@ -88,7 +101,7 @@ function runInteractiveCli(
 			),
 			CLINE_HOOKS_LOG_PATH: path.join(dataDir, "hooks", "hooks.jsonl"),
 		},
-		timeout: 10_000,
+		timeout: INTERACTIVE_TEST_TIMEOUT_MS,
 		maxBuffer: 10 * 1024 * 1024,
 	});
 }
@@ -113,7 +126,9 @@ describe("cli interactive e2e", () => {
 	});
 
 	it("shows the interactive chat view on launch", () => {
-		const result = runInteractiveCli([{ delaySeconds: 1.8, input: "" }]);
+		const result = runInteractiveCli([
+			{ delaySeconds: INITIAL_RENDER_DELAY_SECONDS, input: "" },
+		]);
 		const output = outputOf(result);
 		expect(output).toContain("What can I do for you?");
 		expect(output).toContain("○ Plan ● Act (Tab)");
@@ -122,8 +137,8 @@ describe("cli interactive e2e", () => {
 
 	it("toggles plan/act mode with Tab", () => {
 		const result = runInteractiveCli([
-			{ delaySeconds: 1.4, input: "\t" },
-			{ delaySeconds: 0.8, input: "" },
+			{ delaySeconds: INITIAL_RENDER_DELAY_SECONDS, input: "\t" },
+			{ delaySeconds: POST_ACTION_SETTLE_SECONDS, input: "" },
 		]);
 		const output = outputOf(result);
 		expect(output).toContain("○ Plan ● Act (Tab)");
@@ -132,8 +147,8 @@ describe("cli interactive e2e", () => {
 
 	it("toggles auto-approve-all with Shift+Tab", () => {
 		const result = runInteractiveCli([
-			{ delaySeconds: 1.4, input: "\u001b[Z" },
-			{ delaySeconds: 0.8, input: "" },
+			{ delaySeconds: INITIAL_RENDER_DELAY_SECONDS, input: "\u001b[Z" },
+			{ delaySeconds: POST_ACTION_SETTLE_SECONDS, input: "" },
 		]);
 		const output = outputOf(result);
 		expect(output).toContain("Auto-approve all enabled (Shift+Tab)");
@@ -142,14 +157,14 @@ describe("cli interactive e2e", () => {
 
 	it("opens /settings and navigates tabs with arrow keys", () => {
 		const result = runInteractiveCli([
-			{ delaySeconds: 1.0, input: "/settings" },
+			{ delaySeconds: INITIAL_RENDER_DELAY_SECONDS, input: "/settings" },
 			{ delaySeconds: 0.25, input: "\r" }, // accept slash completion
 			{ delaySeconds: 0.25, input: "\r" }, // submit command
 			{ delaySeconds: 0.7, input: "\u001b[C" },
 			{ delaySeconds: 0.5, input: "\u001b[C" },
 			{ delaySeconds: 0.5, input: "\u001b[C" },
 			{ delaySeconds: 0.5, input: "\u001b[C" },
-			{ delaySeconds: 0.7, input: "" },
+			{ delaySeconds: POST_ACTION_SETTLE_SECONDS, input: "" },
 		]);
 		const output = outputOf(result);
 		expect(output).toContain("Configuration");
@@ -159,11 +174,11 @@ describe("cli interactive e2e", () => {
 
 	it("closes /settings with Escape", () => {
 		const result = runInteractiveCli([
-			{ delaySeconds: 1.0, input: "/settings" },
+			{ delaySeconds: INITIAL_RENDER_DELAY_SECONDS, input: "/settings" },
 			{ delaySeconds: 0.25, input: "\r" },
 			{ delaySeconds: 0.25, input: "\r" },
-			{ delaySeconds: 0.8, input: "\u001b" },
-			{ delaySeconds: 0.8, input: "" },
+			{ delaySeconds: POST_ACTION_SETTLE_SECONDS, input: "\u001b" },
+			{ delaySeconds: POST_ACTION_SETTLE_SECONDS, input: "" },
 		]);
 		const output = outputOf(result);
 		expect(output).toContain(
@@ -173,9 +188,12 @@ describe("cli interactive e2e", () => {
 	});
 
 	it("launches config view directly with `clite config`", () => {
-		const result = runInteractiveCli([{ delaySeconds: 1.5, input: "" }], {
-			launchConfigView: true,
-		});
+		const result = runInteractiveCli(
+			[{ delaySeconds: INITIAL_RENDER_DELAY_SECONDS, input: "" }],
+			{
+				launchConfigView: true,
+			},
+		);
 		const output = outputOf(result);
 		expect(output).toContain("Configuration");
 		expect(output).toContain("[Workflows] Rules Skills Hooks Agents");
