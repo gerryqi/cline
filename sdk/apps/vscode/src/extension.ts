@@ -127,6 +127,7 @@ class CoreChatWebviewController implements vscode.Disposable {
 	private startConfig: StartConfig | undefined;
 	private sending = false;
 	private streamedAssistantText = "";
+	private streamedReasoningText = "";
 
 	constructor(
 		webview: vscode.Webview,
@@ -286,7 +287,8 @@ class CoreChatWebviewController implements vscode.Disposable {
 			`img-src ${webview.cspSource} data:`,
 			`style-src ${webview.cspSource} 'unsafe-inline'`,
 			`font-src ${webview.cspSource}`,
-			`script-src 'nonce-${nonce}'`,
+			// Allow the nonce-gated entry module and subsequent same-webview chunk loads.
+			`script-src ${webview.cspSource} 'nonce-${nonce}'`,
 		].join("; ");
 
 		if (html.includes("<head>")) {
@@ -400,6 +402,7 @@ class CoreChatWebviewController implements vscode.Disposable {
 
 		this.sending = true;
 		this.streamedAssistantText = "";
+		this.streamedReasoningText = "";
 		try {
 			await this.ensureSession(config);
 			const host = await this.getSessionHost();
@@ -526,6 +529,7 @@ class CoreChatWebviewController implements vscode.Disposable {
 		this.sessionId = undefined;
 		this.startConfig = undefined;
 		this.streamedAssistantText = "";
+		this.streamedReasoningText = "";
 	}
 
 	private startEventStream(sessionId: string): void {
@@ -551,6 +555,42 @@ class CoreChatWebviewController implements vscode.Disposable {
 			) {
 				this.streamedAssistantText += agentEvent.text;
 				void this.post({ type: "assistant_delta", text: agentEvent.text });
+				return;
+			}
+
+			if (
+				agentEvent.type === "content_start" &&
+				agentEvent.contentType === "reasoning"
+			) {
+				if (agentEvent.redacted && !agentEvent.reasoning) {
+					void this.post({ type: "reasoning_delta", text: "", redacted: true });
+					return;
+				}
+				if (
+					typeof agentEvent.reasoning === "string" &&
+					agentEvent.reasoning.length > 0
+				) {
+					this.streamedReasoningText += agentEvent.reasoning;
+					void this.post({
+						type: "reasoning_delta",
+						text: agentEvent.reasoning,
+						redacted: agentEvent.redacted,
+					});
+					return;
+				}
+			}
+
+			if (
+				agentEvent.type === "content_end" &&
+				agentEvent.contentType === "reasoning" &&
+				typeof agentEvent.reasoning === "string" &&
+				agentEvent.reasoning !== this.streamedReasoningText
+			) {
+				const text = agentEvent.reasoning.startsWith(this.streamedReasoningText)
+					? agentEvent.reasoning.slice(this.streamedReasoningText.length)
+					: agentEvent.reasoning;
+				this.streamedReasoningText = agentEvent.reasoning;
+				void this.post({ type: "reasoning_delta", text });
 				return;
 			}
 

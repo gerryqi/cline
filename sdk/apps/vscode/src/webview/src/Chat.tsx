@@ -21,6 +21,11 @@ import {
 } from "@/components/ai-elements/message";
 import { PromptInputProvider } from "@/components/ai-elements/prompt-input";
 import {
+	Reasoning,
+	ReasoningContent,
+	ReasoningTrigger,
+} from "@/components/ai-elements/reasoning";
+import {
 	Tool,
 	ToolContent,
 	ToolHeader,
@@ -127,6 +132,56 @@ function appendAssistantDelta(
 	}
 
 	const assistantMessage = createMessage("assistant", text);
+	activeAssistantIdRef.current = assistantMessage.id;
+	return [...current, assistantMessage];
+}
+
+function appendReasoningDelta(
+	current: ChatMessage[],
+	text: string,
+	redacted: boolean | undefined,
+	activeAssistantIdRef: MutableRefObject<string | undefined>,
+): ChatMessage[] {
+	const reasoningChunk = text || (redacted ? "[redacted]" : "");
+	if (!reasoningChunk) {
+		return current;
+	}
+
+	const activeAssistantId = activeAssistantIdRef.current;
+	if (activeAssistantId) {
+		const targetIndex = current.findIndex(
+			(message) => message.id === activeAssistantId,
+		);
+		if (targetIndex >= 0) {
+			return current.map((message, index) =>
+				index === targetIndex
+					? {
+							...message,
+							reasoning: `${message.reasoning ?? ""}${reasoningChunk}`,
+							reasoningRedacted: message.reasoningRedacted || redacted,
+						}
+					: message,
+			);
+		}
+	}
+
+	const lastMessage = current.at(-1);
+	if (lastMessage?.role === "assistant") {
+		activeAssistantIdRef.current = lastMessage.id;
+		return [
+			...current.slice(0, -1),
+			{
+				...lastMessage,
+				reasoning: `${lastMessage.reasoning ?? ""}${reasoningChunk}`,
+				reasoningRedacted: lastMessage.reasoningRedacted || redacted,
+			},
+		];
+	}
+
+	const assistantMessage = createMessage("assistant", "", {
+		reasoning: reasoningChunk,
+		reasoningRedacted: redacted,
+	});
 	activeAssistantIdRef.current = assistantMessage.id;
 	return [...current, assistantMessage];
 }
@@ -435,6 +490,16 @@ export default function Chat() {
 						appendAssistantDelta(current, message.text, activeAssistantIdRef),
 					);
 					return;
+				case "reasoning_delta":
+					setMessages((current) =>
+						appendReasoningDelta(
+							current,
+							message.text,
+							message.redacted,
+							activeAssistantIdRef,
+						),
+					);
+					return;
 				case "tool_event":
 					setMessages((current) =>
 						appendToolEvent(
@@ -628,6 +693,12 @@ export default function Chat() {
 												</Tool>
 											)),
 										)}
+										{message.reasoning ? (
+											<Reasoning className="mb-3" defaultOpen={false}>
+												<ReasoningTrigger />
+												<ReasoningContent>{message.reasoning}</ReasoningContent>
+											</Reasoning>
+										) : null}
 										<MessageContent>
 											<MessageResponse>{message.text}</MessageResponse>
 										</MessageContent>

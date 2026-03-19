@@ -1,10 +1,10 @@
 "use client";
 
-import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { desktopClient } from "@/lib/desktop-client";
 import type {
 	Provider,
 	ProviderCatalogResponse,
@@ -108,7 +108,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 		setProvidersLoading(true);
 		setProviderCatalogError(null);
 		try {
-			const payload = await invoke<ProviderCatalogResponse>(
+			const payload = await desktopClient.invoke<ProviderCatalogResponse>(
 				"list_provider_catalog",
 			);
 			setProvidersWithCache(payload.providers);
@@ -141,7 +141,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 			},
 		) => {
 			try {
-				await invoke("save_provider_settings", {
+				await desktopClient.invoke("save_provider_settings", {
 					provider: id,
 					enabled: updates.enabled,
 					api_key: updates.apiKey,
@@ -189,7 +189,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 			setModelsLoadingByProvider((prev) => ({ ...prev, [id]: true }));
 			setModelsErrorByProvider((prev) => ({ ...prev, [id]: null }));
 			try {
-				const payload = await invoke<ProviderModelsResponse>(
+				const payload = await desktopClient.invoke<ProviderModelsResponse>(
 					"list_provider_models",
 					{
 						provider: id,
@@ -227,12 +227,12 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 	const runOAuthProviderLogin = async (id: string) => {
 		setOauthSigningProviderId(id);
 		try {
-			const result = await invoke<{ provider: string; accessToken: string }>(
-				"run_provider_oauth_login",
-				{
-					provider: id,
-				},
-			);
+			const result = await desktopClient.invoke<{
+				provider: string;
+				accessToken: string;
+			}>("run_provider_oauth_login", {
+				provider: id,
+			});
 			setProvidersWithCache((prev) =>
 				prev.map((provider) =>
 					provider.id === id
@@ -278,7 +278,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 
 	const saveNewProvider = useCallback(
 		async (payload: AddProviderPayload) => {
-			await invoke("add_provider", {
+			await desktopClient.invoke("add_provider", {
 				provider_id: payload.providerId,
 				name: payload.name,
 				base_url: payload.baseUrl,

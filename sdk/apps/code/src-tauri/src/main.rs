@@ -39,6 +39,35 @@ struct AppContext {
     workspace_root: String,
 }
 
+#[derive(Default)]
+struct DesktopBackendState {
+    ws_endpoint: Mutex<Option<String>>,
+    process: Mutex<Option<Child>>,
+}
+
+impl Drop for DesktopBackendState {
+    fn drop(&mut self) {
+        if let Ok(mut process_guard) = self.process.lock() {
+            if let Some(child) = process_guard.as_mut() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            *process_guard = None;
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopBackendReadyLine {
+    #[serde(rename = "type")]
+    line_type: String,
+    endpoint: Option<String>,
+    ws_endpoint: Option<String>,
+    pid: Option<u64>,
+    mode: Option<String>,
+}
+
 const DEFAULT_RPC_ADDRESS: &str = "127.0.0.1:4317";
 const DEFAULT_RPC_CLIENT_ID: &str = "code-desktop";
 const DEFAULT_RPC_CLIENT_TYPE: &str = "desktop";
@@ -1745,6 +1774,175 @@ fn resolve_workspace_file_search_script_path(context: &AppContext) -> Option<Pat
     candidates.into_iter().find(|path| path.exists())
 }
 
+fn resolve_desktop_backend_script_path(context: &AppContext) -> Option<PathBuf> {
+    let candidates = [
+        PathBuf::from(&context.workspace_root)
+            .join("apps")
+            .join("code")
+            .join("host")
+            .join("index.ts"),
+        PathBuf::from(&context.launch_cwd)
+            .join("host")
+            .join("index.ts"),
+        PathBuf::from(&context.launch_cwd)
+            .join("apps")
+            .join("code")
+            .join("host")
+            .join("index.ts"),
+    ];
+    candidates.into_iter().find(|path| path.exists())
+}
+
+fn resolve_desktop_backend_binary_path(context: &AppContext) -> Option<PathBuf> {
+    let explicit = std::env::var("CLINE_CODE_HOST_BIN")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from);
+    let current_exe = std::env::current_exe().ok();
+    let candidates = [
+        explicit,
+        Some(
+            PathBuf::from(&context.workspace_root)
+                .join("apps")
+                .join("code")
+                .join("src-tauri")
+                .join("bin")
+                .join("code-host"),
+        ),
+        current_exe
+            .as_ref()
+            .and_then(|path| path.parent().map(|parent| parent.join("code-host"))),
+        current_exe.as_ref().and_then(|path| {
+            path.parent()
+                .and_then(|parent| parent.parent())
+                .map(|parent| parent.join("Resources").join("code-host"))
+        }),
+    ];
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|path| path.exists())
+}
+
+fn ensure_desktop_backend_started(
+    state: &Arc<DesktopBackendState>,
+    context: &AppContext,
+) -> Result<(), String> {
+    {
+        let mut process_guard = state
+            .process
+            .lock()
+            .map_err(|_| "failed to lock desktop backend process state")?;
+        if let Some(existing) = process_guard.as_mut() {
+            match existing.try_wait() {
+                Ok(None) => {
+                    if state
+                        .ws_endpoint
+                        .lock()
+                        .ok()
+                        .and_then(|value| value.as_ref().cloned())
+                        .map(|value| !value.trim().is_empty())
+                        .unwrap_or(false)
+                    {
+                        return Ok(());
+                    }
+                }
+                Ok(Some(_)) | Err(_) => {
+                    *process_guard = None;
+                    if let Ok(mut endpoint_guard) = state.ws_endpoint.lock() {
+                        *endpoint_guard = None;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut command = if let Some(binary_path) = resolve_desktop_backend_binary_path(context) {
+        let mut command = Command::new(binary_path);
+        command.current_dir(&context.workspace_root);
+        command
+    } else if let Some(script_path) = resolve_desktop_backend_script_path(context) {
+        let mut command = Command::new("bun");
+        command
+            .arg("run")
+            .arg(script_path.to_string_lossy().to_string())
+            .current_dir(&context.workspace_root);
+        command
+    } else {
+        return Err(format!(
+            "desktop backend host not found. checked binary/script under workspace_root={} and launch_cwd={}",
+            context.workspace_root, context.launch_cwd
+        ));
+    };
+
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to start desktop backend host: {e}"))?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "failed to capture desktop backend stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "failed to capture desktop backend stderr".to_string())?;
+
+    let state_for_stdout = state.clone();
+    thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            let Ok(bytes) = reader.read_line(&mut line) else {
+                break;
+            };
+            if bytes == 0 {
+                break;
+            }
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if let Ok(parsed) = serde_json::from_str::<DesktopBackendReadyLine>(trimmed) {
+                if parsed.line_type == "ready" {
+                    if let Some(endpoint) = parsed.ws_endpoint.or(parsed.endpoint) {
+                        if let Ok(mut endpoint_guard) = state_for_stdout.ws_endpoint.lock() {
+                            *endpoint_guard = Some(endpoint);
+                        }
+                    }
+                    continue;
+                }
+            }
+            eprintln!("[desktop-backend] {trimmed}");
+        }
+        if let Ok(mut endpoint_guard) = state_for_stdout.ws_endpoint.lock() {
+            *endpoint_guard = None;
+        }
+    });
+
+    thread::spawn(move || {
+        let mut reader = BufReader::new(stderr);
+        let mut buf = String::new();
+        let _ = reader.read_to_string(&mut buf);
+        let trimmed = buf.trim();
+        if !trimmed.is_empty() {
+            eprintln!("[desktop-backend] {trimmed}");
+        }
+    });
+
+    let mut process_guard = state
+        .process
+        .lock()
+        .map_err(|_| "failed to lock desktop backend process state")?;
+    *process_guard = Some(child);
+    Ok(())
+}
+
 fn run_bun_script_json(
     script_path: &Path,
     script_workdir: &Path,
@@ -2941,6 +3139,27 @@ fn get_chat_ws_endpoint(state: State<'_, Arc<ChatWsBridgeState>>) -> Result<Stri
     state
         .endpoint()
         .ok_or_else(|| "chat websocket endpoint not ready".to_string())
+}
+
+#[tauri::command]
+fn get_desktop_backend_endpoint(
+    backend_state: State<'_, Arc<DesktopBackendState>>,
+    context: State<'_, AppContext>,
+) -> Result<String, String> {
+    ensure_desktop_backend_started(backend_state.inner(), context.inner())?;
+    for _ in 0..50 {
+        if let Some(endpoint) = backend_state
+            .ws_endpoint
+            .lock()
+            .ok()
+            .and_then(|value| value.as_ref().cloned())
+            .filter(|value| !value.trim().is_empty())
+        {
+            return Ok(endpoint);
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    Err("desktop backend endpoint not ready".to_string())
 }
 
 fn sanitize_team_name(name: &str) -> String {
@@ -4860,8 +5079,7 @@ fn open_mcp_settings_file() -> Result<String, String> {
 }
 
 fn main() {
-    let chat_store = Arc::new(ChatSessionStore::default());
-    let chat_ws_bridge = Arc::new(ChatWsBridgeState::default());
+    let desktop_backend = Arc::new(DesktopBackendState::default());
     let launch_cwd = std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| ".".to_string());
@@ -4870,68 +5088,28 @@ fn main() {
         launch_cwd,
         workspace_root,
     };
-    if let Err(error) = bootstrap_rpc_gateway(&app_context) {
-        eprintln!("[rpc] startup bootstrap failed: {error}");
-    }
 
     tauri::Builder::default()
-        .manage(chat_store)
-        .manage(chat_ws_bridge)
+        .manage(desktop_backend)
         .manage(app_context)
         .setup(|app| {
-            let app_handle = app.handle().clone();
-            let chat_state = app.state::<Arc<ChatSessionStore>>().inner().clone();
             let app_context = app.state::<AppContext>().inner().clone();
-            let chat_ws = app.state::<Arc<ChatWsBridgeState>>().inner().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(error) =
-                    start_chat_ws_bridge(app_handle, chat_state, app_context, chat_ws).await
-                {
-                    eprintln!("[chat-ws] bridge exited: {error}");
+            let backend_state = app.state::<Arc<DesktopBackendState>>().inner().clone();
+            if let Err(error) = ensure_desktop_backend_started(&backend_state, &app_context) {
+                eprintln!("[desktop-backend] startup failed: {error}");
+            }
+            thread::spawn(move || loop {
+                thread::sleep(Duration::from_secs(5));
+                if let Err(error) = ensure_desktop_backend_started(&backend_state, &app_context) {
+                    eprintln!("[desktop-backend] health check failed: {error}");
                 }
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            list_cli_sessions,
-            run_provider_oauth_login,
-            list_provider_catalog,
-            list_provider_models,
-            save_provider_settings,
-            add_provider,
-            list_routine_schedules,
-            create_routine_schedule,
-            pause_routine_schedule,
-            resume_routine_schedule,
-            trigger_routine_schedule,
-            delete_routine_schedule,
-            search_workspace_files,
-            delete_cli_session,
-            read_session_hooks,
-            read_team_state,
-            read_team_history,
-            list_existing_teams,
-            get_process_context,
+            get_desktop_backend_endpoint,
             pick_workspace_directory,
-            get_git_branch,
-            list_git_branches,
-            checkout_git_branch,
-            list_user_instruction_configs,
-            list_mcp_servers,
-            set_mcp_server_disabled,
-            upsert_mcp_server,
-            delete_mcp_server,
-            open_mcp_settings_file,
-            get_chat_ws_endpoint,
-            chat_session_command,
-            read_session_transcript,
-            read_session_messages,
-            list_discovered_sessions,
-            list_chat_sessions,
-            update_chat_session_title,
-            delete_chat_session,
-            poll_tool_approvals,
-            respond_tool_approval
+            open_mcp_settings_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri app");

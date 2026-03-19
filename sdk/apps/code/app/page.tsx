@@ -1,6 +1,5 @@
 "use client";
 
-import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentHeader } from "@/components/agent-header";
 import { AgentSidebar } from "@/components/agent-sidebar";
@@ -16,6 +15,7 @@ import { DiffView } from "@/components/views/chat/diff-view";
 import { SettingsView } from "@/components/views/settings/settings-view";
 import { WorkspaceProvider } from "@/contexts/workspace-context";
 import { useChatSession } from "@/hooks/use-chat-session";
+import { desktopClient } from "@/lib/desktop-client";
 import {
 	getSessionMetadataTitle,
 	type SessionHistoryItem,
@@ -243,7 +243,7 @@ function ChatThreadPane({
 
 		async function loadProviderCredentials() {
 			try {
-				const payload = await invoke<{
+				const payload = await desktopClient.invoke<{
 					providers?: Array<{
 						id?: string;
 						apiKey?: string;
@@ -302,9 +302,12 @@ function ChatThreadPane({
 
 	const refreshGitBranch = useCallback(async () => {
 		try {
-			const payload = await invoke<{ branch?: string }>("get_git_branch", {
-				cwd: getWorkspaceCwd(),
-			});
+			const payload = await desktopClient.invoke<{ branch?: string }>(
+				"get_git_branch",
+				{
+					cwd: getWorkspaceCwd(),
+				},
+			);
 			const branch = payload?.branch?.trim();
 			setGitBranch(branch && branch.length > 0 ? branch : "no-git");
 		} catch {
@@ -317,12 +320,12 @@ function ChatThreadPane({
 		branches: string[];
 	}> => {
 		try {
-			const payload = await invoke<{ current?: string; branches?: string[] }>(
-				"list_git_branches",
-				{
-					cwd: getWorkspaceCwd(),
-				},
-			);
+			const payload = await desktopClient.invoke<{
+				current?: string;
+				branches?: string[];
+			}>("list_git_branches", {
+				cwd: getWorkspaceCwd(),
+			});
 			const current = payload?.current?.trim() || "no-git";
 			const branches = Array.isArray(payload?.branches)
 				? payload.branches.filter((item) => item.trim().length > 0)
@@ -336,7 +339,7 @@ function ChatThreadPane({
 	const switchGitBranch = useCallback(
 		async (nextBranch: string): Promise<boolean> => {
 			try {
-				const payload = await invoke<{ branch?: string }>(
+				const payload = await desktopClient.invoke<{ branch?: string }>(
 					"checkout_git_branch",
 					{
 						cwd: getWorkspaceCwd(),
@@ -370,10 +373,11 @@ function ChatThreadPane({
 			}
 
 			try {
-				const discovered = await invoke<WorkspaceSessionItem[]>(
-					"list_discovered_sessions",
-					{ limit: 20 },
-				).catch(() => []);
+				const discovered = await desktopClient
+					.invoke<WorkspaceSessionItem[]>("list_discovered_sessions", {
+						limit: 20,
+					})
+					.catch(() => []);
 
 				for (const session of discovered) {
 					const candidate = (session.workspaceRoot || session.cwd || "").trim();
@@ -432,9 +436,10 @@ function ChatThreadPane({
 			});
 
 			// Fire git branch + workspace list refresh in the background
-			invoke<{ branch?: string }>("get_git_branch", {
-				cwd: nextWorkspace,
-			})
+			desktopClient
+				.invoke<{ branch?: string }>("get_git_branch", {
+					cwd: nextWorkspace,
+				})
 				.then((payload) => {
 					const branch = payload?.branch?.trim();
 					setGitBranch(branch && branch.length > 0 ? branch : "no-git");
@@ -454,7 +459,7 @@ function ChatThreadPane({
 	const pickWorkspaceDirectory = useCallback(
 		async (initialPath?: string): Promise<string | null> => {
 			try {
-				const selected = await invoke<string | null>(
+				const selected = await desktopClient.invoke<string | null>(
 					"pick_workspace_directory",
 					{
 						initialPath: initialPath?.trim() || undefined,
@@ -554,7 +559,7 @@ function ChatThreadPane({
 
 		setDeletingSession(true);
 		try {
-			await invoke("delete_chat_session", {
+			await desktopClient.invoke("delete_chat_session", {
 				sessionId: activeSessionToDelete,
 			});
 			setPromptInput("");
@@ -595,7 +600,7 @@ function ChatThreadPane({
 			}
 			setRenamingSession(true);
 			try {
-				await invoke("update_chat_session_title", {
+				await desktopClient.invoke("update_chat_session_title", {
 					sessionId: activeSessionForTitle,
 					title: nextTitle,
 				});

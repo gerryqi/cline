@@ -1,6 +1,5 @@
 "use client";
 
-import { invoke } from "@tauri-apps/api/core";
 import {
 	Bot,
 	Code,
@@ -14,6 +13,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { desktopClient } from "@/lib/desktop-client";
 import { cn } from "@/lib/utils";
 
 type ShortcutTab = "Rules" | "Workflows" | "Hooks" | "Skills" | "Agents";
@@ -102,7 +102,9 @@ function normalizePath(path: string): string {
 }
 
 async function fetchUserInstructionLists(): Promise<UserInstructionListsResponse> {
-	return invoke<UserInstructionListsResponse>("list_user_instruction_configs");
+	return desktopClient.invoke<UserInstructionListsResponse>(
+		"list_user_instruction_configs",
+	);
 }
 
 export async function primeExtensionsListsCache(): Promise<void> {
@@ -210,7 +212,7 @@ export function RulesView() {
 
 		setHookExecutionLoading(true);
 		try {
-			const sessions = await invoke<CliDiscoveredSession[]>(
+			const sessions = await desktopClient.invoke<CliDiscoveredSession[]>(
 				"list_cli_sessions",
 				{
 					limit: 300,
@@ -236,10 +238,13 @@ export function RulesView() {
 				return;
 			}
 
-			const events = await invoke<SessionHookEvent[]>("read_session_hooks", {
-				sessionId: latestSession.sessionId,
-				limit: 5000,
-			});
+			const events = await desktopClient.invoke<SessionHookEvent[]>(
+				"read_session_hooks",
+				{
+					sessionId: latestSession.sessionId,
+					limit: 5000,
+				},
+			);
 			const next: Record<string, HookExecutionSummary> = {};
 			for (const event of events ?? []) {
 				const hookName = event.hookEventName?.trim();

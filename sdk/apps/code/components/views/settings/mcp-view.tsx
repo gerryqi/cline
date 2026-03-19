@@ -1,11 +1,11 @@
 "use client";
 
-import { invoke } from "@tauri-apps/api/core";
 import { Circle, Eye, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
+import { desktopClient } from "@/lib/desktop-client";
 import { cn } from "@/lib/utils";
 
 interface McpServer {
@@ -195,7 +195,8 @@ export function McpServersContent() {
 		setIsLoading(true);
 		setErrorMessage(null);
 		try {
-			const response = await invoke<McpServersResponse>("list_mcp_servers");
+			const response =
+				await desktopClient.invoke<McpServersResponse>("list_mcp_servers");
 			applyResponse(response);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
@@ -213,7 +214,7 @@ export function McpServersContent() {
 		setBusyServerName(server.name);
 		setErrorMessage(null);
 		try {
-			const response = await invoke<McpServersResponse>(
+			const response = await desktopClient.invoke<McpServersResponse>(
 				"set_mcp_server_disabled",
 				{
 					name: server.name,
@@ -233,9 +234,12 @@ export function McpServersContent() {
 		setBusyServerName(input.name);
 		setErrorMessage(null);
 		try {
-			const response = await invoke<McpServersResponse>("upsert_mcp_server", {
-				input,
-			});
+			const response = await desktopClient.invoke<McpServersResponse>(
+				"upsert_mcp_server",
+				{
+					input,
+				},
+			);
 			applyResponse(response);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
@@ -249,9 +253,12 @@ export function McpServersContent() {
 		setBusyServerName(serverName);
 		setErrorMessage(null);
 		try {
-			const response = await invoke<McpServersResponse>("delete_mcp_server", {
-				name: serverName,
-			});
+			const response = await desktopClient.invoke<McpServersResponse>(
+				"delete_mcp_server",
+				{
+					name: serverName,
+				},
+			);
 			applyResponse(response);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
@@ -285,7 +292,9 @@ export function McpServersContent() {
 		setIsOpeningSettingsFile(true);
 		setErrorMessage(null);
 		try {
-			const openedPath = await invoke<string>("open_mcp_settings_file");
+			const openedPath = await desktopClient.invoke<string>(
+				"open_mcp_settings_file",
+			);
 			if (openedPath.trim().length > 0) {
 				setSettingsPath(openedPath);
 				setHasSettingsFile(true);

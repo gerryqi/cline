@@ -1,6 +1,5 @@
 "use client";
 
-import { invoke } from "@tauri-apps/api/core";
 import {
 	ChevronDown,
 	Filter,
@@ -30,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useSidebar } from "@/components/ui/sidebar";
 import { normalizeTitle } from "@/components/utils";
+import { desktopClient } from "@/lib/desktop-client";
 import type {
 	SessionHistoryItem,
 	SessionHistoryStatus,
@@ -499,10 +499,9 @@ export function AgentSidebar({
 		const limit = fetchLimitRef.current;
 		setIsLoadingHistory(true);
 		try {
-			const discovered = await invoke<CliDiscoveredSession[]>(
-				"list_discovered_sessions",
-				{ limit },
-			).catch(() => []);
+			const discovered = await desktopClient
+				.invoke<CliDiscoveredSession[]>("list_discovered_sessions", { limit })
+				.catch(() => []);
 			const topLevelSessions = discovered
 				.map((session) => {
 					const normalized: SessionHistoryItem = {
@@ -617,14 +616,15 @@ export function AgentSidebar({
 				continue;
 			}
 			usageLoadingRef.current.add(sessionId);
-			void invoke<SessionMessage[]>("read_session_messages", {
-				sessionId,
-				maxMessages: 1200,
-			})
+			void desktopClient
+				.invoke<SessionMessage[]>("read_session_messages", {
+					sessionId,
+					maxMessages: 1200,
+				})
 				.then(async (sessionMessages) => {
 					const usage = summarizeUsageFromMessages(sessionMessages);
 					if (!usage) {
-						const events = await invoke<SessionHookEvent[]>(
+						const events = await desktopClient.invoke<SessionHookEvent[]>(
 							"read_session_hooks",
 							{
 								sessionId,
@@ -717,10 +717,11 @@ export function AgentSidebar({
 				continue;
 			}
 			titleLoadingRef.current.add(sessionId);
-			void invoke<SessionMessage[]>("read_session_messages", {
-				sessionId,
-				maxMessages: 80,
-			})
+			void desktopClient
+				.invoke<SessionMessage[]>("read_session_messages", {
+					sessionId,
+					maxMessages: 80,
+				})
 				.then((messages) => {
 					const nextTitle = hasManualTitle ? null : titleFromMessages(messages);
 					setThreads((current) =>

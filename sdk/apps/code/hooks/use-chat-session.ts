@@ -1,17 +1,8 @@
 "use client";
 
-import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { serializeAttachments } from "@/hooks/chat-session/attachments";
-import {
-	CHAT_TRANSPORT_UNAVAILABLE_MESSAGE,
-	CHAT_WS_ENDPOINT_RETRY_ATTEMPTS,
-	CHAT_WS_ENDPOINT_RETRY_DELAY_MS,
-	CHAT_WS_RECONNECT_BASE_DELAY_MS,
-	CHAT_WS_RECONNECT_MAX_DELAY_MS,
-	CHAT_WS_REQUEST_TIMEOUT_MS,
-	getInitialChatConfig,
-} from "@/hooks/chat-session/constants";
+import { getInitialChatConfig } from "@/hooks/chat-session/constants";
 import {
 	buildToolPayloadString,
 	extractAssistantTextFromRpcMessages,
@@ -25,8 +16,6 @@ import type {
 	ChatApiResult,
 	ChatSessionHookEvent,
 	ChatTransportState,
-	ChatWsChunkEvent,
-	ChatWsResponseEvent,
 	CoreLogChunk,
 	ProcessContext,
 	ToolApprovalRequestItem,
@@ -39,6 +28,7 @@ import {
 	ChatSessionConfigSchema,
 	type ChatSessionStatus,
 } from "@/lib/chat-schema";
+import { desktopClient } from "@/lib/desktop-client";
 import {
 	buildSessionDiffState,
 	EMPTY_DIFF_SUMMARY,
@@ -77,29 +67,8 @@ export function useChatSession() {
 	const activeSessionIdRef = useRef<string | null>(null);
 	const activeAssistantMessageIdRef = useRef<string | null>(null);
 	const hydrationRequestIdRef = useRef(0);
-	const wsRef = useRef<WebSocket | null>(null);
-	const wsReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-		null,
-	);
-	const hasWsConnectedOnceRef = useRef(false);
-	const wsReadyResolveRef = useRef<(() => void) | null>(null);
-	const wsReadyPromiseRef = useRef<Promise<void> | null>(null);
 	const [chatTransportState, setChatTransportState] =
-		useState<ChatTransportState>("connecting");
-	const wsRequestResolversRef = useRef<
-		Map<
-			string,
-			{
-				resolve: (value: {
-					sessionId?: string;
-					result?: ChatApiResult;
-					ok?: boolean;
-				}) => void;
-				reject: (error: Error) => void;
-				timeoutId: ReturnType<typeof setTimeout>;
-			}
-		>
-	>(new Map());
+		useState<ChatTransportState>(desktopClient.getTransportState());
 	const messagesRef = useRef<ChatMessage[]>([]);
 
 	useEffect(() => {
@@ -117,7 +86,7 @@ export function useChatSession() {
 	const refreshSessionDiffSummary = useCallback(
 		async (targetSessionId: string) => {
 			try {
-				const events = await invoke<ChatSessionHookEvent[]>(
+				const events = await desktopClient.invoke<ChatSessionHookEvent[]>(
 					"read_session_hooks",
 					{
 						sessionId: targetSessionId,
@@ -240,7 +209,9 @@ export function useChatSession() {
 
 	const applyProcessContext = useCallback(async () => {
 		try {
-			const ctx = await invoke<ProcessContext>("get_process_context");
+			const ctx = await desktopClient.invoke<ProcessContext>(
+				"get_process_context",
+			);
 			setConfig((prev) => ({
 				...prev,
 				workspaceRoot: ctx.workspaceRoot || ctx.cwd,
@@ -266,43 +237,37 @@ export function useChatSession() {
 	}, [refreshSessionDiffSummary, sessionId]);
 
 	useEffect(() => {
-		let disposed = false;
-		let timer: ReturnType<typeof setInterval> | null = null;
 		const activeSessionId = sessionId;
 		if (!activeSessionId) {
 			setPendingToolApprovals([]);
 			return;
 		}
 
-		const poll = async () => {
-			try {
-				const pending = await invoke<ToolApprovalRequestItem[]>(
-					"poll_tool_approvals",
-					{
-						sessionId: activeSessionId,
-						limit: 20,
-					},
-				);
-				if (disposed) {
-					return;
-				}
+		void desktopClient
+			.invoke<ToolApprovalRequestItem[]>("poll_tool_approvals", {
+				sessionId: activeSessionId,
+				limit: 20,
+			})
+			.then((pending) => {
 				setPendingToolApprovals(pending);
-			} catch {
-				// Ignore in non-Tauri mode.
-			}
-		};
+			})
+			.catch(() => {
+				// Ignore initial hydration failures.
+			});
 
-		void poll();
-		timer = setInterval(() => {
-			void poll();
-		}, 500);
-
-		return () => {
-			disposed = true;
-			if (timer) {
-				clearInterval(timer);
+		return desktopClient.subscribe("tool_approval_state", (payload) => {
+			if (!payload || typeof payload !== "object") {
+				return;
 			}
-		};
+			const record = payload as {
+				sessionId?: string;
+				items?: ToolApprovalRequestItem[];
+			};
+			if (record.sessionId !== activeSessionId) {
+				return;
+			}
+			setPendingToolApprovals(Array.isArray(record.items) ? record.items : []);
+		});
 	}, [sessionId]);
 
 	const handleIncomingChunk = useCallback(
@@ -463,224 +428,33 @@ export function useChatSession() {
 	);
 
 	const postSession = useCallback(async (body: Record<string, unknown>) => {
-		const postViaInvoke = async () => {
-			return await invoke<{
-				sessionId?: string;
-				result?: ChatApiResult;
-				ok?: boolean;
-			}>("chat_session_command", {
-				request: body,
-			});
-		};
-		if (!wsReadyPromiseRef.current) {
-			return await postViaInvoke();
-		}
-		try {
-			await Promise.race([
-				wsReadyPromiseRef.current,
-				new Promise<void>((_resolve, reject) =>
-					setTimeout(
-						() => reject(new Error(CHAT_TRANSPORT_UNAVAILABLE_MESSAGE)),
-						5000,
-					),
-				),
-			]);
-		} catch {
-			return await postViaInvoke();
-		}
-		const socket = wsRef.current;
-		if (!socket || socket.readyState !== WebSocket.OPEN) {
-			return await postViaInvoke();
-		}
-		const requestId = makeId("chat_req");
-		const response = await new Promise<{
+		return await desktopClient.invoke<{
 			sessionId?: string;
 			result?: ChatApiResult;
 			ok?: boolean;
-		}>((resolve, reject) => {
-			const timeoutId = setTimeout(() => {
-				const pending = wsRequestResolversRef.current.get(requestId);
-				if (!pending) {
-					return;
-				}
-				wsRequestResolversRef.current.delete(requestId);
-				pending.reject(
-					new Error("Chat request timed out waiting for websocket response"),
-				);
-			}, CHAT_WS_REQUEST_TIMEOUT_MS);
-			wsRequestResolversRef.current.set(requestId, {
-				resolve,
-				reject,
-				timeoutId,
-			});
-			socket.send(
-				JSON.stringify({
-					requestId,
-					request: body,
-				}),
-			);
+		}>("chat_session_command", {
+			request: body,
 		});
-		return response;
 	}, []);
 
 	useEffect(() => {
-		let disposed = false;
-		let reconnectAttempt = 0;
-		const clearReconnectTimer = () => {
-			if (wsReconnectTimerRef.current) {
-				clearTimeout(wsReconnectTimerRef.current);
-				wsReconnectTimerRef.current = null;
-			}
-		};
-		const resetWsReadyPromise = () => {
-			wsReadyPromiseRef.current = new Promise<void>((resolve) => {
-				wsReadyResolveRef.current = resolve;
-			});
-		};
-		const rejectPendingRequests = (errorMessage: string) => {
-			for (const pending of wsRequestResolversRef.current.values()) {
-				clearTimeout(pending.timeoutId);
-				pending.reject(new Error(errorMessage));
-			}
-			wsRequestResolversRef.current.clear();
-		};
-		const setTransportUnavailableErrorIfActive = () => {
-			if (
-				!activeSessionIdRef.current &&
-				wsRequestResolversRef.current.size === 0
-			) {
-				return;
-			}
-			setError(CHAT_TRANSPORT_UNAVAILABLE_MESSAGE);
-			setStatus((prev) => (prev === "running" ? prev : "error"));
-		};
-		const scheduleReconnect = () => {
-			if (disposed) {
-				return;
-			}
-			clearReconnectTimer();
-			const delayMs = Math.min(
-				CHAT_WS_RECONNECT_BASE_DELAY_MS * 2 ** reconnectAttempt,
-				CHAT_WS_RECONNECT_MAX_DELAY_MS,
-			);
-			reconnectAttempt += 1;
-			wsReconnectTimerRef.current = setTimeout(() => {
-				void connect();
-			}, delayMs);
-		};
-		resetWsReadyPromise();
-		const connect = async () => {
-			let endpoint = "";
-			const currentSocket = wsRef.current;
-			if (
-				currentSocket &&
-				(currentSocket.readyState === WebSocket.OPEN ||
-					currentSocket.readyState === WebSocket.CONNECTING)
-			) {
-				return;
-			}
-			setChatTransportState(
-				hasWsConnectedOnceRef.current ? "reconnecting" : "connecting",
-			);
-			resetWsReadyPromise();
-			for (
-				let attempt = 0;
-				attempt < CHAT_WS_ENDPOINT_RETRY_ATTEMPTS;
-				attempt += 1
-			) {
-				try {
-					endpoint = await invoke<string>("get_chat_ws_endpoint");
-					if (endpoint.trim()) {
-						break;
-					}
-				} catch {
-					// wait for bridge startup
-				}
-				await new Promise((resolve) =>
-					setTimeout(resolve, CHAT_WS_ENDPOINT_RETRY_DELAY_MS),
-				);
-			}
-			if (!endpoint.trim() || disposed) {
-				if (disposed) {
+		const unsubscribeTransport = desktopClient.subscribeTransportState(
+			(next) => {
+				setChatTransportState(next);
+			},
+		);
+		const unsubscribeEvents = desktopClient.subscribe(
+			"chat_event",
+			(payload) => {
+				if (!payload || typeof payload !== "object") {
 					return;
 				}
-				setTransportUnavailableErrorIfActive();
-				scheduleReconnect();
-				return;
-			}
-			const socket = new WebSocket(endpoint);
-			wsRef.current = socket;
-			socket.onopen = () => {
-				if (disposed || wsRef.current !== socket) {
-					return;
-				}
-				reconnectAttempt = 0;
-				hasWsConnectedOnceRef.current = true;
-				setChatTransportState("connected");
-				wsReadyResolveRef.current?.();
-				wsReadyResolveRef.current = null;
-				setError((prev) =>
-					prev === CHAT_TRANSPORT_UNAVAILABLE_MESSAGE ? null : prev,
-				);
-			};
-			socket.onmessage = (message) => {
-				if (disposed || wsRef.current !== socket) {
-					return;
-				}
-				let parsed: ChatWsResponseEvent | ChatWsChunkEvent;
-				try {
-					parsed = JSON.parse(message.data as string) as
-						| ChatWsResponseEvent
-						| ChatWsChunkEvent;
-				} catch {
-					return;
-				}
-				if (parsed.type === "chat_event") {
-					handleIncomingChunk(parsed.event);
-					return;
-				}
-				if (parsed.type === "chat_response") {
-					const resolver = wsRequestResolversRef.current.get(parsed.requestId);
-					if (!resolver) {
-						return;
-					}
-					clearTimeout(resolver.timeoutId);
-					wsRequestResolversRef.current.delete(parsed.requestId);
-					if (parsed.error) {
-						resolver.reject(new Error(parsed.error));
-						return;
-					}
-					resolver.resolve(parsed.response ?? {});
-				}
-			};
-			socket.onerror = () => {
-				if (disposed || wsRef.current !== socket) {
-					return;
-				}
-			};
-			socket.onclose = () => {
-				if (wsRef.current === socket) {
-					wsRef.current = null;
-				}
-				if (disposed) {
-					return;
-				}
-				setTransportUnavailableErrorIfActive();
-				rejectPendingRequests(CHAT_TRANSPORT_UNAVAILABLE_MESSAGE);
-				resetWsReadyPromise();
-				scheduleReconnect();
-			};
-		};
-		void connect();
+				handleIncomingChunk(payload as AgentChunkEvent);
+			},
+		);
 		return () => {
-			disposed = true;
-			clearReconnectTimer();
-			rejectPendingRequests("chat websocket closed");
-			wsRef.current?.close();
-			wsRef.current = null;
-			wsReadyPromiseRef.current = null;
-			wsReadyResolveRef.current = null;
-			setChatTransportState("connecting");
+			unsubscribeTransport();
+			unsubscribeEvents();
 		};
 	}, [handleIncomingChunk]);
 
@@ -895,7 +669,7 @@ export function useChatSession() {
 				} else {
 					// Recovery path: if transport missed result text, load canonical messages.
 					try {
-						const historyMessages = await invoke<ChatMessage[]>(
+						const historyMessages = await desktopClient.invoke<ChatMessage[]>(
 							"read_session_messages",
 							{
 								sessionId: activeSessionId,
@@ -1022,7 +796,7 @@ export function useChatSession() {
 			if (!activeSessionId) {
 				return;
 			}
-			await invoke("respond_tool_approval", {
+			await desktopClient.invoke("respond_tool_approval", {
 				sessionId: activeSessionId,
 				requestId,
 				approved,
@@ -1120,7 +894,7 @@ export function useChatSession() {
 			liveToolInputsRef.current = {};
 
 			try {
-				const historyMessages = await invoke<ChatMessage[]>(
+				const historyMessages = await desktopClient.invoke<ChatMessage[]>(
 					"read_session_messages",
 					{
 						sessionId: session.sessionId,
@@ -1155,10 +929,13 @@ export function useChatSession() {
 					});
 				}
 				try {
-					const transcript = await invoke<string>("read_session_transcript", {
-						sessionId: session.sessionId,
-						maxChars: 20000,
-					});
+					const transcript = await desktopClient.invoke<string>(
+						"read_session_transcript",
+						{
+							sessionId: session.sessionId,
+							maxChars: 20000,
+						},
+					);
 					const text = transcript.trim();
 					if (text) {
 						synthesizedMessages = [

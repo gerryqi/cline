@@ -53,6 +53,7 @@ export type WebviewOutboundMessage =
 	| { type: "error"; text: string }
 	| { type: "session_started"; sessionId: string }
 	| { type: "assistant_delta"; text: string }
+	| { type: "reasoning_delta"; text: string; redacted?: boolean }
 	| { type: "tool_event"; text: string; event?: WebviewToolEvent }
 	| {
 			type: "turn_done";

@@ -1,6 +1,5 @@
 "use client";
 
-import { invoke } from "@tauri-apps/api/core";
 import {
 	Circle,
 	Eye,
@@ -42,6 +41,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { desktopClient } from "@/lib/desktop-client";
 import { readModelSelectionStorageFromWindow } from "@/lib/model-selection";
 import { cn } from "@/lib/utils";
 
@@ -96,7 +96,7 @@ let routineOverviewCache:
 	| null = null;
 
 async function fetchRoutineOverview(): Promise<RoutineOverviewResponse> {
-	const response = await invoke<RoutineOverviewResponse>(
+	const response = await desktopClient.invoke<RoutineOverviewResponse>(
 		"list_routine_schedules",
 	);
 	return {
@@ -344,7 +344,7 @@ export function RoutineSchedulesContent() {
 
 		async function loadEnabledProviders() {
 			try {
-				const payload = await invoke<{
+				const payload = await desktopClient.invoke<{
 					providers?: Array<{ id?: string; enabled?: boolean }>;
 				}>("list_provider_catalog");
 				if (cancelled) {
@@ -463,11 +463,11 @@ export function RoutineSchedulesContent() {
 		setErrorMessage(null);
 		try {
 			if (enabled) {
-				await invoke("resume_routine_schedule", {
+				await desktopClient.invoke("resume_routine_schedule", {
 					schedule_id: schedule.scheduleId,
 				});
 			} else {
-				await invoke("pause_routine_schedule", {
+				await desktopClient.invoke("pause_routine_schedule", {
 					schedule_id: schedule.scheduleId,
 				});
 			}
@@ -484,7 +484,7 @@ export function RoutineSchedulesContent() {
 		setBusyScheduleId(scheduleId);
 		setErrorMessage(null);
 		try {
-			await invoke("trigger_routine_schedule", {
+			await desktopClient.invoke("trigger_routine_schedule", {
 				schedule_id: scheduleId,
 			});
 			await refreshSchedules();
@@ -500,7 +500,7 @@ export function RoutineSchedulesContent() {
 		setBusyScheduleId(scheduleId);
 		setErrorMessage(null);
 		try {
-			await invoke("delete_routine_schedule", {
+			await desktopClient.invoke("delete_routine_schedule", {
 				schedule_id: scheduleId,
 			});
 			await refreshSchedules();
@@ -517,7 +517,9 @@ export function RoutineSchedulesContent() {
 		setCreateFormError(null);
 		let context: ProcessContext = { workspaceRoot: "", cwd: "" };
 		try {
-			context = await invoke<ProcessContext>("get_process_context");
+			context = await desktopClient.invoke<ProcessContext>(
+				"get_process_context",
+			);
 		} catch {
 			// Use empty defaults when context lookup fails.
 		}
@@ -588,7 +590,7 @@ export function RoutineSchedulesContent() {
 				createForm.model.trim() ||
 				(visibleProviderModels[provider] ?? [])[0] ||
 				"openai/gpt-5.3-codex";
-			await invoke("create_routine_schedule", {
+			await desktopClient.invoke("create_routine_schedule", {
 				name,
 				cron_pattern: cronPattern,
 				prompt,

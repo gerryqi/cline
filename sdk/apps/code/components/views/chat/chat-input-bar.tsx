@@ -1,6 +1,5 @@
 "use client";
 
-import { invoke } from "@tauri-apps/api/core";
 import {
 	ArrowUp,
 	Brain,
@@ -23,6 +22,7 @@ import {
 } from "@/components/ui/combobox";
 import { useWorkspace } from "@/contexts/workspace-context";
 import type { ChatSessionStatus } from "@/lib/chat-schema";
+import { desktopClient } from "@/lib/desktop-client";
 import {
 	readModelSelectionStorageFromWindow,
 	writeModelSelectionStorageToWindow,
@@ -214,11 +214,14 @@ export function ChatInputBar({
 				setMentionLoading(true);
 			}
 			try {
-				const results = await invoke<string[]>("search_workspace_files", {
-					workspaceRoot,
-					query: activeMention.query,
-					limit: 10,
-				});
+				const results = await desktopClient.invoke<string[]>(
+					"search_workspace_files",
+					{
+						workspaceRoot,
+						query: activeMention.query,
+						limit: 10,
+					},
+				);
 				if (cancelled) {
 					return;
 				}
@@ -587,7 +590,7 @@ function ModelSelector({
 
 		async function loadEnabledProviders() {
 			try {
-				const payload = await invoke<{
+				const payload = await desktopClient.invoke<{
 					providers?: Array<{ id?: string; enabled?: boolean }>;
 				}>("list_provider_catalog");
 				if (cancelled) {

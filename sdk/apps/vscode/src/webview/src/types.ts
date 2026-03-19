@@ -7,6 +7,8 @@ export type ChatMessage = {
 	id: string;
 	role: "user" | "assistant" | "meta" | "error";
 	text: string;
+	reasoning?: string;
+	reasoningRedacted?: boolean;
 	toolEvents?: ToolEvent[];
 };
 
