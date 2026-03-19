@@ -24,6 +24,10 @@ export type RpcRuntimeBridgeCommand =
 			sessionId: string;
 	  }
 	| {
+			action: "stop";
+			sessionId: string;
+	  }
+	| {
 			action: "set_sessions";
 			sessionIds: string[];
 	  }
@@ -135,6 +139,15 @@ export async function runRpcRuntimeCommandBridge(options: {
 		}
 		if (command.action === "abort") {
 			const applied = await client.abortSession(command.sessionId);
+			respond({
+				type: "response",
+				requestId,
+				response: { ok: applied },
+			});
+			return false;
+		}
+		if (command.action === "stop") {
+			const applied = await client.stopSession(command.sessionId);
 			respond({
 				type: "response",
 				requestId,

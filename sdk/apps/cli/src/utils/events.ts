@@ -117,14 +117,15 @@ export function handleEvent(event: AgentEvent, _config: Config): void {
 			closeInlineStreamIfNeeded();
 			const iterations = event.iterations;
 			const usage = event.usage;
+			const isAborted = event.reason === "aborted";
 			if (usage) {
 				const costStr = formatUsd(usage.totalCost ?? 0);
 				write(
-					`\n${c.dim}── finished in ${iterations} turns | ${costStr} | ${usage.inputTokens}/${usage.outputTokens} tokens used ──${c.reset}`,
+					`\n${c.dim}── ${isAborted ? "aborted" : "finished"} in ${iterations} turns | ${costStr} | ${usage.inputTokens}/${usage.outputTokens} tokens used ──${c.reset}`,
 				);
 			} else {
 				write(
-					`\n${c.dim}── finished: ${event.reason} (${iterations} iterations) ──${c.reset}`,
+					`\n${c.dim}── ${isAborted ? "aborted" : "finished"}: ${event.reason} (${iterations} iterations) ──${c.reset}`,
 				);
 			}
 			activeInlineStream = undefined;

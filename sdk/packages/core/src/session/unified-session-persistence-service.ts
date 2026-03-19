@@ -10,7 +10,7 @@ import type {
 	SubAgentStartContext,
 } from "@clinebot/agents";
 import type { providers as LlmsProviders } from "@clinebot/llms";
-import { resolveRootSessionId } from "@clinebot/shared";
+import { normalizeUserInput, resolveRootSessionId } from "@clinebot/shared";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import type { SessionStatus } from "../types/common";
@@ -53,14 +53,50 @@ function normalizeSessionTitle(title?: string | null): string | undefined {
 	return trimmed ? trimmed.slice(0, 120) : undefined;
 }
 
-function sanitizeMetadataForStorage(
+function deriveSessionTitleFromPrompt(
+	prompt?: string | null,
+): string | undefined {
+	const normalizedPrompt = normalizeUserInput(prompt ?? "").trim();
+	if (!normalizedPrompt) {
+		return undefined;
+	}
+	const firstLine = normalizedPrompt.split("\n")[0]?.trim();
+	return normalizeSessionTitle(firstLine);
+}
+
+function normalizeMetadataForStorage(
 	metadata: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> | undefined {
 	if (!metadata) {
 		return undefined;
 	}
 	const next = { ...metadata };
-	delete next.title;
+	if (typeof next.title === "string") {
+		const normalizedTitle = normalizeSessionTitle(next.title);
+		if (normalizedTitle) {
+			next.title = normalizedTitle;
+		} else {
+			delete next.title;
+		}
+	} else {
+		delete next.title;
+	}
+	return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function metadataWithResolvedTitle(input: {
+	metadata?: Record<string, unknown> | null;
+	title?: string | null;
+	prompt?: string | null;
+}): Record<string, unknown> | undefined {
+	const next = { ...(normalizeMetadataForStorage(input.metadata) ?? {}) };
+	const resolvedTitle =
+		input.title !== undefined
+			? normalizeSessionTitle(input.title)
+			: deriveSessionTitleFromPrompt(input.prompt);
+	if (resolvedTitle) {
+		next.title = resolvedTitle;
+	}
 	return Object.keys(next).length > 0 ? next : undefined;
 }
 
@@ -228,7 +264,7 @@ export class UnifiedSessionPersistenceService {
 						return undefined;
 					})()
 				: undefined;
-		const sanitizedMetadata = sanitizeMetadataForStorage(existingMetadata);
+		const sanitizedMetadata = normalizeMetadataForStorage(existingMetadata);
 		const { manifest } = this.readSessionManifestFile(row.session_id);
 		const manifestTitle = normalizeSessionTitle(
 			typeof manifest?.metadata?.title === "string"
@@ -281,10 +317,13 @@ export class UnifiedSessionPersistenceService {
 			enable_spawn: input.enableSpawn,
 			enable_teams: input.enableTeams,
 			prompt: input.prompt?.trim() || undefined,
-			metadata: input.metadata,
+			metadata: metadataWithResolvedTitle({
+				metadata: input.metadata,
+				prompt: input.prompt,
+			}),
 			messages_path: messagesPath,
 		});
-		const storedMetadata = sanitizeMetadataForStorage(manifest.metadata);
+		const storedMetadata = normalizeMetadataForStorage(manifest.metadata);
 
 		await this.adapter.upsertSession({
 			session_id: sessionId,
@@ -378,15 +417,54 @@ export class UnifiedSessionPersistenceService {
 			const sanitizedMetadata =
 				input.metadata === undefined
 					? undefined
-					: sanitizeMetadataForStorage(input.metadata);
+					: normalizeMetadataForStorage(input.metadata);
+			const existingMetadata = (() => {
+				const raw = row.metadata_json?.trim();
+				if (!raw) {
+					return undefined;
+				}
+				try {
+					const parsed = JSON.parse(raw) as unknown;
+					if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+						return normalizeMetadataForStorage(
+							parsed as Record<string, unknown>,
+						);
+					}
+				} catch {
+					// Ignore malformed metadata payloads.
+				}
+				return undefined;
+			})();
+			const existingTitle = normalizeSessionTitle(
+				typeof existingMetadata?.title === "string"
+					? (existingMetadata.title as string)
+					: undefined,
+			);
+			const nextTitle =
+				input.title !== undefined
+					? normalizeSessionTitle(input.title)
+					: input.prompt !== undefined
+						? deriveSessionTitleFromPrompt(input.prompt)
+						: existingTitle;
+			const nextMetadata =
+				input.metadata !== undefined
+					? { ...(sanitizedMetadata ?? {}) }
+					: { ...(existingMetadata ?? {}) };
+			if (nextTitle) {
+				nextMetadata.title = nextTitle;
+			} else {
+				delete nextMetadata.title;
+			}
 			const changed = await this.adapter.updateSession({
 				sessionId: input.sessionId,
 				prompt: input.prompt,
 				metadataJson:
-					input.metadata === undefined
+					input.metadata === undefined &&
+					input.prompt === undefined &&
+					input.title === undefined
 						? undefined
-						: stringifyMetadataJson(sanitizedMetadata),
-				title: input.title,
+						: stringifyMetadataJson(nextMetadata),
+				title: nextTitle,
 				expectedStatusLock: row.status_lock,
 			});
 			if (!changed.updated) {
@@ -399,19 +477,10 @@ export class UnifiedSessionPersistenceService {
 				if (input.prompt !== undefined) {
 					manifest.prompt = input.prompt ?? undefined;
 				}
-				const existingTitle = normalizeSessionTitle(
-					typeof manifest.metadata?.title === "string"
-						? (manifest.metadata.title as string)
-						: undefined,
-				);
-				const nextTitle =
-					input.title !== undefined
-						? normalizeSessionTitle(input.title)
-						: existingTitle;
 				const nextMetadata =
 					input.metadata !== undefined
-						? { ...(sanitizeMetadataForStorage(input.metadata) ?? {}) }
-						: { ...(sanitizeMetadataForStorage(manifest.metadata) ?? {}) };
+						? { ...(normalizeMetadataForStorage(input.metadata) ?? {}) }
+						: { ...(normalizeMetadataForStorage(manifest.metadata) ?? {}) };
 				if (nextTitle) {
 					nextMetadata.title = nextTitle;
 				}
@@ -513,7 +582,9 @@ export class UnifiedSessionPersistenceService {
 				conversation_id: input.conversationId,
 				is_subagent: 1,
 				prompt,
-				metadata_json: null,
+				metadata_json: stringifyMetadataJson(
+					metadataWithResolvedTitle({ prompt }),
+				),
 				transcript_path: artifactPaths.transcriptPath,
 				hook_path: artifactPaths.hookPath,
 				messages_path: artifactPaths.messagesPath,
@@ -535,6 +606,30 @@ export class UnifiedSessionPersistenceService {
 			agentId: input.agentId,
 			conversationId: input.conversationId,
 			prompt: existing.prompt ?? prompt ?? null,
+			metadataJson: stringifyMetadataJson(
+				metadataWithResolvedTitle({
+					metadata: (() => {
+						const raw = existing.metadata_json?.trim();
+						if (!raw) {
+							return undefined;
+						}
+						try {
+							const parsed = JSON.parse(raw) as unknown;
+							if (
+								parsed &&
+								typeof parsed === "object" &&
+								!Array.isArray(parsed)
+							) {
+								return parsed as Record<string, unknown>;
+							}
+						} catch {
+							// Ignore malformed metadata payloads.
+						}
+						return undefined;
+					})(),
+					prompt: existing.prompt ?? prompt ?? null,
+				}),
+			),
 			expectedStatusLock: existing.status_lock,
 		});
 		return sessionId;
@@ -692,7 +787,9 @@ export class UnifiedSessionPersistenceService {
 			conversation_id: null,
 			is_subagent: 1,
 			prompt: message || `Team task for ${agentId}`,
-			metadata_json: null,
+			metadata_json: stringifyMetadataJson(
+				metadataWithResolvedTitle({ prompt: message }),
+			),
 			transcript_path: transcriptPath,
 			hook_path: hookPath,
 			messages_path: messagesPath,

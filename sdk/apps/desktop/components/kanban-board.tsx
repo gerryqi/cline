@@ -72,12 +72,23 @@ function normalizeDiscoveredStatus(status: string): AgentStatus {
 	return "queued";
 }
 
+function normalizePromptPreview(value: string | undefined): string {
+	if (!value) {
+		return "";
+	}
+	return value
+		.replace(/<user_input\b[^>]*>([\s\S]*?)<\/user_input>/gi, "$1")
+		.trim();
+}
+
 function deriveDiscoveredDisplayName(session: CliDiscoveredSession): string {
 	const backendTitle = session.title?.trim();
 	if (backendTitle) {
 		return backendTitle.slice(0, 80);
 	}
-	const promptLine = session.prompt?.trim().split("\n")[0]?.trim();
+	const promptLine = normalizePromptPreview(session.prompt)
+		.split("\n")[0]
+		?.trim();
 	if (promptLine) {
 		return promptLine.slice(0, 60);
 	}
@@ -346,6 +357,7 @@ export function KanbanBoard() {
 	const agentsRef = useRef<Agent[]>([]);
 	const refreshInFlightRef = useRef<Promise<void> | null>(null);
 	const hydratedSessionMetricsRef = useRef<Set<string>>(new Set());
+	const suppressedSessionIdsRef = useRef<Set<string>>(new Set());
 
 	useEffect(() => {
 		agentsRef.current = agents;
@@ -428,6 +440,7 @@ export function KanbanBoard() {
 			if (!payload) {
 				return;
 			}
+			suppressedSessionIdsRef.current.add(payload.sessionId);
 			setAgents((prev) =>
 				prev.map((agent) => {
 					if (agent.sessionId !== payload.sessionId) {
@@ -519,6 +532,24 @@ export function KanbanBoard() {
 					},
 				)
 					.then(async (sessions) => {
+						const discoveredById = new Map(
+							sessions
+								.map((session) => [session.sessionId?.trim(), session] as const)
+								.filter((entry): entry is [string, CliDiscoveredSession] =>
+									Boolean(entry[0]),
+								),
+						);
+						for (const sessionId of [...suppressedSessionIdsRef.current]) {
+							const discovered = discoveredById.get(sessionId);
+							if (!discovered) {
+								suppressedSessionIdsRef.current.delete(sessionId);
+								continue;
+							}
+							if (normalizeDiscoveredStatus(discovered.status) !== "running") {
+								suppressedSessionIdsRef.current.delete(sessionId);
+							}
+						}
+
 						setAgents((prev) => {
 							const next = force
 								? prev.filter((agent) => !agent.sessionId)
@@ -532,8 +563,14 @@ export function KanbanBoard() {
 									(agent) => agent.sessionId === sessionId,
 								);
 								const status = normalizeDiscoveredStatus(session.status);
+								const isSuppressedRunning =
+									suppressedSessionIdsRef.current.has(sessionId) &&
+									status === "running";
 								if (idx >= 0) {
 									const current = next[idx];
+									if (isSuppressedRunning) {
+										continue;
+									}
 									const nextProgress =
 										status === "completed"
 											? 100
@@ -573,6 +610,9 @@ export function KanbanBoard() {
 													current.completedAt,
 										progress: nextProgress,
 									};
+									continue;
+								}
+								if (isSuppressedRunning) {
 									continue;
 								}
 
@@ -1022,19 +1062,46 @@ export function KanbanBoard() {
 			setAgents((prev) =>
 				prev.map((item) =>
 					item.id === id
-						? { ...item, logs: [...item.logs, "Stop requested..."] }
+						? {
+								...item,
+								status: "cancelled",
+								completedAt: nowDisplayTimestamp(),
+								logs: [...item.logs, "Abort requested from desktop..."],
+								tasks: item.tasks.map((task) => ({
+									...task,
+									status:
+										task.status === "completed" ? "completed" : "cancelled",
+									completedAt: nowDisplayTimestamp(),
+								})),
+							}
 						: item,
 				),
 			);
+			suppressedSessionIdsRef.current.add(agent.sessionId);
 
 			void invoke("abort_session", { sessionId: agent.sessionId }).catch(
 				(error) => {
 					const message =
 						error instanceof Error ? error.message : String(error);
+					suppressedSessionIdsRef.current.delete(agent.sessionId as string);
 					setAgents((prev) =>
 						prev.map((item) =>
 							item.id === id
-								? { ...item, logs: [...item.logs, `Stop failed: ${message}`] }
+								? {
+										...item,
+										status: "running",
+										completedAt: undefined,
+										logs: [...item.logs, `Stop failed: ${message}`],
+										tasks: item.tasks.map((task) => ({
+											...task,
+											status:
+												task.status === "completed" ? "completed" : "running",
+											completedAt:
+												task.status === "completed"
+													? task.completedAt
+													: undefined,
+										})),
+									}
 								: item,
 						),
 					);

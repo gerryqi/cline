@@ -46,6 +46,11 @@ export class RpcRuntimeChatClient {
 		return response.applied;
 	}
 
+	async stopSession(sessionId: string): Promise<boolean> {
+		const response = await this.client.stopRuntimeSession(sessionId);
+		return response.applied;
+	}
+
 	streamEvents(
 		clientId: string,
 		sessionIds: string[],

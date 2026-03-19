@@ -561,6 +561,9 @@ export class DefaultSessionManager implements SessionManager {
 		if (!prompt) {
 			throw new Error("prompt cannot be empty");
 		}
+		if (!session.artifacts && !session.pendingPrompt) {
+			session.pendingPrompt = prompt;
+		}
 		await this.ensureSessionPersisted(session);
 		await this.syncOAuthCredentials(session);
 

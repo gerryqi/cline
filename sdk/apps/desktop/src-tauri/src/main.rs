@@ -1003,7 +1003,8 @@ fn derive_prompt_from_messages(messages: &[Value]) -> Option<String> {
             continue;
         }
         let content = stringify_message_content(message.get("content").unwrap_or(&Value::Null));
-        let trimmed = content.trim();
+        let normalized = normalize_user_input_text(&content);
+        let trimmed = normalized.trim();
         if !trimmed.is_empty() {
             return Some(trimmed.to_string());
         }
@@ -1011,8 +1012,29 @@ fn derive_prompt_from_messages(messages: &[Value]) -> Option<String> {
     None
 }
 
+fn normalize_user_input_text(input: &str) -> String {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    if let Some(open_idx) = trimmed.find("<user_input") {
+        if let Some(open_end_rel) = trimmed[open_idx..].find('>') {
+            let content_start = open_idx + open_end_rel + 1;
+            if let Some(close_idx) = trimmed[content_start..].find("</user_input>") {
+                return trimmed[content_start..content_start + close_idx]
+                    .trim()
+                    .to_string();
+            }
+        }
+    }
+
+    trimmed.to_string()
+}
+
 fn first_prompt_line(value: &str) -> Option<String> {
-    let line = value.trim().lines().next().unwrap_or("").trim();
+    let normalized = normalize_user_input_text(value);
+    let line = normalized.lines().next().unwrap_or("").trim();
     if line.is_empty() {
         None
     } else {
@@ -1075,6 +1097,21 @@ fn derive_prompt_from_transcript_file(path: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn title_from_metadata_json(raw: Option<&str>) -> Option<String> {
+    let raw = raw?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let parsed = serde_json::from_str::<Value>(raw).ok()?;
+    let title = parsed.get("title").and_then(|value| value.as_str())?;
+    let trimmed = title.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.chars().take(80).collect())
+    }
 }
 
 fn derive_session_title(
@@ -3349,6 +3386,8 @@ fn send_prompt(
 fn stop_session(
     app: AppHandle,
     state: State<'_, Arc<SessionStore>>,
+    chat_state: State<'_, Arc<ChatSessionStore>>,
+    context: State<'_, AppContext>,
     session_id: String,
 ) -> Result<(), String> {
     let mut sessions = state
@@ -3364,8 +3403,27 @@ fn stop_session(
         let _ = session.child.kill();
         let _ = session.child.wait();
         emit_session_ended(&app, &session_id, "session stopped".to_string());
+        return Ok(());
     }
 
+    let response = run_chat_runtime_bridge_command(
+        &app,
+        chat_state.inner(),
+        context.inner(),
+        serde_json::json!({
+            "action": "stop",
+            "sessionId": session_id,
+        }),
+    )?;
+    let applied = response
+        .get("ok")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    if !applied {
+        return Err(format!("session not found: {session_id}"));
+    }
+
+    emit_session_ended(&app, &session_id, "session stopped".to_string());
     Ok(())
 }
 
@@ -3373,6 +3431,8 @@ fn stop_session(
 fn abort_session(
     app: AppHandle,
     state: State<'_, Arc<SessionStore>>,
+    chat_state: State<'_, Arc<ChatSessionStore>>,
+    context: State<'_, AppContext>,
     session_id: String,
 ) -> Result<(), String> {
     let mut sessions = state
@@ -3380,9 +3440,28 @@ fn abort_session(
         .lock()
         .map_err(|_| "failed to lock session store")?;
 
-    let mut session = sessions
-        .remove(&session_id)
-        .ok_or_else(|| format!("session not found: {session_id}"))?;
+    let Some(mut session) = sessions.remove(&session_id) else {
+        drop(sessions);
+
+        let response = run_chat_runtime_bridge_command(
+            &app,
+            chat_state.inner(),
+            context.inner(),
+            serde_json::json!({
+                "action": "abort",
+                "sessionId": session_id,
+            }),
+        )?;
+        let applied = response
+            .get("ok")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        if !applied {
+            return Err(format!("session not found: {session_id}"));
+        }
+        emit_session_ended(&app, &session_id, "session aborted".to_string());
+        return Ok(());
+    };
 
     if let Some(stdin) = session.stdin.as_mut() {
         let _ = stdin.write_all(&[3]);
@@ -3515,6 +3594,7 @@ fn list_cli_sessions(
         col_expr("conversation_id", "''"),
         col_expr("is_subagent", "0"),
         col_expr("prompt", "''"),
+        col_expr("metadata_json", "''"),
         col_expr("started_at", "''"),
         col_expr("ended_at", "''"),
         col_expr("interactive", "0"),
@@ -3569,7 +3649,7 @@ fn list_cli_sessions(
             continue;
         }
         let fields: Vec<&str> = line.split('\t').collect();
-        if fields.len() < 19 {
+        if fields.len() < 20 {
             continue;
         }
 
@@ -3586,9 +3666,10 @@ fn list_cli_sessions(
                 root
             }
         };
-        let messages_path = as_opt(fields[16]);
-        let hook_path = as_opt(fields[17]);
-        let transcript_path = as_opt(fields[18]);
+        let metadata_title = title_from_metadata_json(Some(fields[13]));
+        let messages_path = as_opt(fields[17]);
+        let hook_path = as_opt(fields[18]);
+        let transcript_path = as_opt(fields[19]);
         let prompt = match as_opt(fields[12]) {
             Some(value) => Some(value),
             None => read_persisted_chat_messages(&session_id)
@@ -3619,12 +3700,9 @@ fn list_cli_sessions(
         };
         let is_subagent = as_bool(fields[11]);
         let agent_id = as_opt(fields[9]);
-        let title = derive_session_title(
-            &session_id,
-            is_subagent,
-            agent_id.as_deref(),
-            prompt.as_deref(),
-        );
+        let title = metadata_title.unwrap_or_else(|| {
+            derive_session_title(&session_id, is_subagent, agent_id.as_deref(), prompt.as_deref())
+        });
 
         out.push(CliDiscoveredSession {
             session_id,
@@ -3655,9 +3733,9 @@ fn list_cli_sessions(
             conversation_id: as_opt(fields[10]),
             is_subagent,
             prompt,
-            started_at: fields[13].trim().to_string(),
-            ended_at: as_opt(fields[14]),
-            interactive: as_bool(fields[15]),
+            started_at: fields[14].trim().to_string(),
+            ended_at: as_opt(fields[15]),
+            interactive: as_bool(fields[16]),
         });
     }
 
