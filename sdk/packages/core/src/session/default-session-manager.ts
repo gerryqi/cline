@@ -326,6 +326,14 @@ export class DefaultSessionManager implements SessionManager {
 						}),
 					);
 				}
+				if (event.type === "iteration_end") {
+					void this.invoke<void>(
+						"persistSessionMessages",
+						sessionId,
+						liveSession?.agent.getMessages() ?? [],
+						liveSession?.config.systemPrompt,
+					);
+				}
 				this.emit({
 					type: "agent_event",
 					payload: {
