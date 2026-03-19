@@ -70,23 +70,24 @@ export function formatToolInput(toolName: string, input: unknown): string {
 	switch (toolName) {
 		case "run_commands":
 			if (Array.isArray(obj.commands)) {
-				return obj.commands.map((cmd) => truncate(String(cmd), 60)).join("; ");
+				return obj.commands.join("; ");
 			}
 			break;
 		case "read_files":
 			if (Array.isArray(obj.file_paths)) {
-				return obj.file_paths.map((p) => truncate(String(p), 40)).join(", ");
+				return obj.file_paths.join(", ");
 			}
 			break;
 		case "search_codebase":
 			if (Array.isArray(obj.queries)) {
-				return obj.queries.map((q) => truncate(String(q), 40)).join(", ");
+				return obj.queries.join(", ");
 			}
 			break;
 		case "fetch_web_content":
 			if (Array.isArray(obj.requests)) {
 				return obj.requests
-					.map((r: { url?: string }) => truncate(String(r.url ?? ""), 40))
+					.map((r) => r.url)
+					.filter(Boolean)
 					.join(", ");
 			}
 			break;
@@ -98,7 +99,7 @@ export function formatToolInput(toolName: string, input: unknown): string {
 				70,
 			);
 		case "ask_followup_question":
-			return truncate(String(obj.question ?? ""), 70);
+			return String(obj.question ?? "");
 		case "team_member": {
 			const action = String(obj.action ?? "");
 			if (action === "spawn") {

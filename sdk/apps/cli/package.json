@@ -29,6 +29,7 @@
 		"link": "bun unlink && bun link"
 	},
 	"dependencies": {
+		"@agentclientprotocol/sdk": "^0.16.1",
 		"@chat-adapter/gchat": "^4.20.2",
 		"@chat-adapter/telegram": "^4.20.2",
 		"@chat-adapter/whatsapp": "^4.20.2",

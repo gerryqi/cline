@@ -292,6 +292,14 @@ export async function runCli(): Promise<void> {
 		process.exit(1);
 	}
 
+	// ACP mode: mutually exclusive with interactive/piped modes.
+	// Enters the Agent Client Protocol stdio transport and never falls through.
+	if (args.acpMode) {
+		const { runAcpMode } = await import("./acp/index");
+		await runAcpMode();
+		return;
+	}
+
 	// Keep command-style subcommands on a narrow path. Runtime-only imports pull
 	// in provider resolution, config watchers, and session startup wiring that
 	// should only load when the CLI is actually starting an agent session.

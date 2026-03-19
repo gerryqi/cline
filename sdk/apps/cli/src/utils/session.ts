@@ -73,6 +73,7 @@ export interface CliSessionManager {
 	stop(sessionId: string): Promise<void>;
 	dispose(reason?: string): Promise<void>;
 	subscribe(listener: (event: unknown) => void): () => void;
+	updateSessionModel?(sessionId: string, modelId: string): Promise<void>;
 }
 
 function createInitialAccumulatedUsage(): SessionAccumulatedUsage {
@@ -754,6 +755,13 @@ function createRpcRuntimeCliSessionManager(
 			return () => {
 				listeners.delete(listener);
 			};
+		},
+		updateSessionModel: async (sessionId, modelId) => {
+			const config = sessionConfigs.get(sessionId);
+			if (!config) {
+				throw new Error(`session not found: ${sessionId}`);
+			}
+			config.model = modelId;
 		},
 	};
 }

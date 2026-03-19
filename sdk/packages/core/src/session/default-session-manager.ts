@@ -1208,4 +1208,16 @@ export class DefaultSessionManager implements SessionManager {
 			apiKey: resolved.apiKey,
 		});
 	}
+
+	async updateSessionModel(sessionId: string, modelId: string): Promise<void> {
+		const session = this.sessions.get(sessionId);
+		if (!session) {
+			throw new Error(`session not found: ${sessionId}`);
+		}
+		session.config.modelId = modelId;
+		const agentWithConnection = session.agent as Agent & {
+			updateConnection?: (overrides: { modelId?: string }) => void;
+		};
+		agentWithConnection.updateConnection?.({ modelId });
+	}
 }

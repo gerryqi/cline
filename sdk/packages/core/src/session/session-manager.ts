@@ -64,4 +64,5 @@ export interface SessionManager {
 	readTranscript(sessionId: string, maxChars?: number): Promise<string>;
 	readHooks(sessionId: string, limit?: number): Promise<unknown[]>;
 	subscribe(listener: (event: CoreSessionEvent) => void): () => void;
+	updateSessionModel?(sessionId: string, modelId: string): Promise<void>;
 }
