@@ -10,7 +10,8 @@
 				"../../packages/agents/src/index.browser.ts"
 			],
 			"@clinebot/core": ["../../packages/core/src/index.node.ts"],
-			"@clinebot/core/server": ["../../packages/core/src/server/index.ts"],
+			"@clinebot/core/node": ["../../packages/core/src/index.node.ts"],
+			"@clinebot/rpc": ["../../packages/rpc/src/index.ts"],
 			"@clinebot/llms": ["../../packages/llms/src/index.ts"],
 			"@clinebot/llms/node": ["../../packages/llms/src/index.ts"],
 			"@clinebot/llms/browser": ["../../packages/llms/src/index.browser.ts"],

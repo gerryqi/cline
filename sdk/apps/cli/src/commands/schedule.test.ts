@@ -5,7 +5,7 @@ const mockListSchedules = vi.hoisted(() => vi.fn());
 const mockClientClose = vi.hoisted(() => vi.fn());
 const mockGetRpcServerHealth = vi.hoisted(() => vi.fn());
 
-vi.mock("@clinebot/core/server", () => ({
+vi.mock("@clinebot/rpc", () => ({
 	getRpcServerHealth: mockGetRpcServerHealth,
 	RpcSessionClient: class {
 		async listSchedules(input: unknown) {

@@ -4,23 +4,19 @@ import type {
 	RpcProviderActionRequest,
 } from "@clinebot/core";
 import {
+	addLocalProvider,
 	ClineAccountService,
-	executeRpcClineAccountAction,
-	ProviderSettingsManager,
-} from "@clinebot/core/server";
-import {
-	loginProvider,
-	normalizeOAuthProvider,
-	resolveClineAuthToken,
-	saveProviderOAuthCredentials,
-} from "./provider-oauth";
-import {
-	addProvider,
 	ensureCustomProvidersLoaded,
-	getProviderModels,
-	listProviders,
-	saveProviderSettings,
-} from "./provider-registry";
+	executeRpcClineAccountAction,
+	getLocalProviderModels,
+	listLocalProviders,
+	loginLocalProvider,
+	normalizeOAuthProvider,
+	ProviderSettingsManager,
+	resolveLocalClineAuthToken,
+	saveLocalProviderOAuthCredentials,
+	saveLocalProviderSettings,
+} from "@clinebot/core/node";
 
 export async function runProviderAction(
 	request: RpcProviderActionRequest,
@@ -33,7 +29,7 @@ export async function runProviderAction(
 		const settings = manager.getProviderSettings("cline");
 		const accountService = new ClineAccountService({
 			apiBaseUrl: settings?.baseUrl?.trim() || "https://api.cline.bot",
-			getAuthToken: async () => resolveClineAuthToken(settings),
+			getAuthToken: async () => resolveLocalClineAuthToken(settings),
 		});
 		return {
 			result: await executeRpcClineAccountAction(
@@ -43,16 +39,16 @@ export async function runProviderAction(
 		};
 	}
 	if (parsed.action === "listProviders") {
-		return { result: await listProviders(manager) };
+		return { result: await listLocalProviders(manager) };
 	}
 	if (parsed.action === "getProviderModels") {
-		return { result: await getProviderModels(parsed.providerId) };
+		return { result: await getLocalProviderModels(parsed.providerId) };
 	}
 	if (parsed.action === "addProvider") {
-		return { result: await addProvider(manager, parsed) };
+		return { result: await addLocalProvider(manager, parsed) };
 	}
 	if (parsed.action === "saveProviderSettings") {
-		return { result: saveProviderSettings(manager, parsed) };
+		return { result: saveLocalProviderSettings(manager, parsed) };
 	}
 	throw new Error(`unsupported provider action: ${String(parsed)}`);
 }
@@ -63,8 +59,10 @@ export async function runProviderOAuthLogin(
 	const providerId = normalizeOAuthProvider(provider);
 	const manager = new ProviderSettingsManager();
 	const existing = manager.getProviderSettings(providerId);
-	const credentials = await loginProvider(providerId, existing);
-	const saved = saveProviderOAuthCredentials(
+	const credentials = await loginLocalProvider(providerId, existing, (url) => {
+		throw new Error(`RPC OAuth login cannot open browser directly: ${url}`);
+	});
+	const saved = saveLocalProviderOAuthCredentials(
 		manager,
 		providerId,
 		existing,

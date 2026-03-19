@@ -5,9 +5,9 @@ import type {
 import {
 	CoreSessionService,
 	ProviderSettingsManager,
-	RpcSessionClient,
 	SqliteSessionStore,
-} from "@clinebot/core/server";
+} from "@clinebot/core/node";
+import { RpcSessionClient } from "@clinebot/rpc";
 import type { Thread } from "chat";
 import {
 	ensureOAuthProviderApiKey,

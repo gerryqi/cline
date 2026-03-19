@@ -3,7 +3,7 @@ import {
 	buildWorkspaceMetadata,
 	resolveWorkflowSlashCommandFromWatcher,
 	type UserInstructionConfigWatcher,
-} from "@clinebot/core/server";
+} from "@clinebot/core/node";
 
 const WORKSPACE_CONFIGURATION_MARKER = "# Workspace Configuration";
 

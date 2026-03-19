@@ -236,6 +236,68 @@ try {
 		}
 	}
 
+	console.log("\n--- Verifying publish-only package invariants ---");
+	for (const pkg of published) {
+		if (pkg.name !== "@clinebot/core") {
+			continue;
+		}
+
+		const testFile = join(testDir, `test-${pkg.workspace}-publish-shape.ts`);
+		await writeFile(
+			testFile,
+			[
+				`import { readFileSync } from "node:fs";`,
+				`import { join } from "node:path";`,
+				`const pkgJson = JSON.parse(readFileSync(join(process.cwd(), "node_modules", "@clinebot", "core", "package.json"), "utf8"));`,
+				`if (pkgJson.exports?.["./node"]) {`,
+				`  console.error("  FAIL @clinebot/core: publish manifest still exposes ./node");`,
+				`  process.exit(1);`,
+				`}`,
+				`try {`,
+				`  await import("@clinebot/core/node");`,
+				`  console.error("  FAIL @clinebot/core: @clinebot/core/node should not be importable from published package");`,
+				`  process.exit(1);`,
+				`} catch (error) {`,
+				`  const message = error instanceof Error ? error.message : String(error);`,
+				`  if (!message.includes("Package subpath") && !message.includes("Cannot find module") && !message.includes("Cannot find package")) {`,
+				`    console.error("  FAIL @clinebot/core: unexpected error when importing removed subpath:", message);`,
+				`    process.exit(1);`,
+				`  }`,
+				`}`,
+				`console.log("  OK @clinebot/core publish shape");`,
+			].join("\n"),
+		);
+		try {
+			const proc = Bun.spawn(["bun", testFile], {
+				cwd: testDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+			const result = await Promise.race([
+				proc.exited,
+				new Promise<never>((_, reject) =>
+					setTimeout(() => {
+						proc.kill();
+						reject(new Error("timed out after 30s"));
+					}, 30_000),
+				),
+			]);
+			const stdout = await new Response(proc.stdout).text();
+			const stderr = await new Response(proc.stderr).text();
+			const output = (stdout + stderr).trim();
+			if (output) console.log(output);
+			if (result !== 0 || output.includes("FAIL")) {
+				importFailed = true;
+			}
+		} catch (e: unknown) {
+			importFailed = true;
+			const msg = e instanceof Error ? e.message : String(e);
+			console.error(
+				`  FAIL — could not verify publish shape for ${pkg.name}: ${msg}`,
+			);
+		}
+	}
+
 	if (importFailed) {
 		console.error("\nSome packages failed to import.");
 		exitCode = 1;

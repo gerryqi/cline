@@ -547,7 +547,7 @@ export function createAskQuestionTool(
  * @example
  * ```typescript
  * import { Agent } from "@clinebot/agents"
- * import { createDefaultTools } from "@clinebot/core/server"
+ * import { createDefaultTools } from "@clinebot/core/node"
  * import * as fs from "fs/promises"
  * import { exec } from "child_process"
  *

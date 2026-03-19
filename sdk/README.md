@@ -149,11 +149,11 @@ Allowed cross-workspace imports:
 - `@clinebot/agents`
 - `@clinebot/rpc`
 - `@clinebot/core`
-- `@clinebot/core/server` (intentional Node-runtime-only exception)
+- `@clinebot/core/node` (intentional Node-runtime-only exception)
 
 Disallowed:
 
-- all other deep imports like `@clinebot/llms/*`, `@clinebot/agents/*`, `@clinebot/core/*` (except `@clinebot/core/server`)
+- all other deep imports like `@clinebot/llms/*`, `@clinebot/agents/*`, `@clinebot/core/*` (except `@clinebot/core/node`)
 
 Keep these boundaries in mind when adding imports — cross-boundary deep imports will cause build/type errors.
 
@@ -365,7 +365,7 @@ Start with:
 Development notes:
 
 - `@clinebot/core` owns stateful runtime assembly, storage, provider settings, and default host tools; keep the stateless agent loop in `@clinebot/agents`
-- Host-oriented Node helpers belong under `@clinebot/core/server`
+- Host-oriented Node helpers belong under `@clinebot/core/node`
 - RPC session persistence backends, team persistence, plugin loading, OAuth refresh, and hook/config discovery all belong in core rather than app packages
 
 ### `apps/cli` (`@clinebot/cli`)
@@ -376,7 +376,7 @@ Use this package to see how the SDK packages are composed in a real app:
 
 - argument parsing + runtime config (`apps/cli/src/index.ts`)
 - provider/model refresh (`@clinebot/llms`)
-- runtime assembly/session management (`@clinebot/core/server`)
+- runtime assembly/session management (`@clinebot/core/node`)
 - agent loop execution + tools + hooks (`@clinebot/agents`)
 - gRPC server mode (`clite rpc start`) (`@clinebot/rpc`)
 
@@ -451,7 +451,7 @@ Minimal composition sketch:
 
 ```ts
 import { Agent, createBuiltinTools } from "@clinebot/agents"
-import { DefaultRuntimeBuilder } from "@clinebot/core/server"
+import { DefaultRuntimeBuilder } from "@clinebot/core/node"
 import { providers } from "@clinebot/llms"
 
 const catalog = await providers.getLiveModelsCatalog()

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { getFileIndex } from "@clinebot/core/server";
+import { getFileIndex } from "@clinebot/core/node";
 
 type WorkspaceFileSearchRequest = {
 	workspaceRoot?: string;

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import type { RpcChatStartSessionRequest } from "@clinebot/core";
 import { resolveClineDataDir } from "@clinebot/core";
-import { RpcSessionClient, registerRpcClient } from "@clinebot/core/server";
+import { RpcSessionClient, registerRpcClient } from "@clinebot/rpc";
 import { Chat, ConsoleLogger, type Thread } from "chat";
 import { ensureRpcRuntimeAddress } from "../../commands/rpc";
 import type { CliLoggerAdapter } from "../../logging/adapter";
@@ -38,6 +38,7 @@ import {
 	readSessionReplyText,
 	stopConnectorSessions,
 } from "../session-runtime";
+import { startConnectorTaskUpdateRelay } from "../task-updates";
 import {
 	type ConnectorBindingStore,
 	type ConnectorThreadState,
@@ -701,6 +702,15 @@ async function runConnectTelegramCommand(
 	});
 
 	await bot.initialize();
+	const stopTaskUpdateStream =
+		startConnectorTaskUpdateRelay<TelegramThreadState>({
+			client,
+			clientId,
+			bot,
+			logger: loggerAdapter,
+			bindingsPath,
+			transport: "telegram",
+		});
 
 	const stopEventStream = client.streamEvents(
 		{ clientId: `${clientId}-server-events` },
@@ -796,6 +806,7 @@ async function runConnectTelegramCommand(
 
 	await stopPromise;
 
+	stopTaskUpdateStream();
 	stopEventStream();
 	await dispatchConnectorHook(
 		options.hookCommand,

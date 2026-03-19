@@ -1,9 +1,11 @@
 import { createInterface } from "node:readline";
 import {
 	createOAuthClientCallbacks,
+	ensureCustomProvidersLoaded,
+	listLocalProviders,
 	type ProviderSettingsManager,
-} from "@clinebot/core/server";
-import { models, providers } from "@clinebot/llms";
+} from "@clinebot/core/node";
+import { providers } from "@clinebot/llms";
 import { Box, render, Text, useApp, useInput } from "ink";
 import open from "open";
 import React, { useEffect, useMemo, useState } from "react";
@@ -90,7 +92,7 @@ let cachedCoreOAuthApi: Promise<CoreOAuthApi> | undefined;
 
 async function getCoreOAuthApi(): Promise<CoreOAuthApi> {
 	if (!cachedCoreOAuthApi) {
-		cachedCoreOAuthApi = import("@clinebot/core/server").then((module) => {
+		cachedCoreOAuthApi = import("@clinebot/core/node").then((module) => {
 			const runtimeApi = module as Partial<CoreOAuthApi>;
 			if (
 				typeof runtimeApi.loginClineOAuth !== "function" ||
@@ -189,15 +191,27 @@ export function parseAuthCommandArgs(args: string[]): ParsedAuthCommandArgs {
 	return parsed;
 }
 
-function getSupportedProviderIds(): string[] {
-	return models.getProviderIds().sort((a, b) => a.localeCompare(b));
+async function loadProviderCatalog(
+	providerSettingsManager: ProviderSettingsManager,
+): Promise<Array<{ id: string; name: string }>> {
+	await ensureCustomProvidersLoaded(providerSettingsManager);
+	const catalog = await listLocalProviders(providerSettingsManager);
+	return catalog.providers
+		.map((provider) => ({
+			id: provider.id.trim(),
+			name: provider.name.trim() || provider.id.trim(),
+		}))
+		.filter((provider) => provider.id.length > 0)
+		.sort((a, b) => a.id.localeCompare(b.id));
 }
 
-function ensureQuickSetupInputValid(
+async function ensureQuickSetupInputValid(
 	input: AuthQuickSetupInput,
-): string | undefined {
+	providerSettingsManager: ProviderSettingsManager,
+): Promise<string | undefined> {
 	const normalizedProvider = normalizeProviderId(input.provider);
-	if (!models.hasProvider(normalizedProvider)) {
+	const providerCatalog = await loadProviderCatalog(providerSettingsManager);
+	if (!providerCatalog.some((provider) => provider.id === normalizedProvider)) {
 		return `invalid provider "${input.provider}"`;
 	}
 	if (!input.apikey.trim()) {
@@ -379,12 +393,15 @@ async function runQuickAuthSetup(input: AuthCommandInput): Promise<number> {
 	const apikey = input.apikey?.trim() ?? "";
 	const modelid = input.modelid?.trim() ?? "";
 	const baseurl = input.baseurl?.trim();
-	const validationError = ensureQuickSetupInputValid({
-		provider: providerId,
-		apikey,
-		modelid,
-		baseurl,
-	});
+	const validationError = await ensureQuickSetupInputValid(
+		{
+			provider: providerId,
+			apikey,
+			modelid,
+			baseurl,
+		},
+		input.providerSettingsManager,
+	);
 	if (validationError) {
 		input.io.writeErr(validationError);
 		return 1;
@@ -490,7 +507,13 @@ async function runInteractiveAuthTui(input: AuthCommandInput): Promise<number> {
 		);
 		return 1;
 	}
-	const providerIds = getSupportedProviderIds();
+	const providerCatalog = await loadProviderCatalog(
+		input.providerSettingsManager,
+	);
+	const providerIds = providerCatalog.map((provider) => provider.id);
+	const providerLabels = providerCatalog.map(
+		(provider) => `${provider.name} (${provider.id})`,
+	);
 	const defaultProvider =
 		normalizeProviderId(
 			input.providerSettingsManager.getLastUsedProviderSettings()?.provider ??
@@ -722,35 +745,44 @@ async function runInteractiveAuthTui(input: AuthCommandInput): Promise<number> {
 							modelid: state.modelId,
 							baseurl: state.baseUrl.trim() || undefined,
 						};
-						const validationError = ensureQuickSetupInputValid(payload);
-						if (validationError) {
-							setState((prev) => ({ ...prev, errorMessage: validationError }));
-							return;
-						}
 						setState((prev) => ({
 							...prev,
 							busy: true,
 							busyMessage: "Saving provider settings...",
 							errorMessage: undefined,
 						}));
-						try {
-							saveQuickAuthProviderSettings({
-								providerSettingsManager: input.providerSettingsManager,
-								providerId: normalizeProviderId(payload.provider),
-								apikey: payload.apikey,
-								modelid: payload.modelid,
-								baseurl: payload.baseurl,
-							});
-							finalize(0);
-						} catch (error) {
-							setState((prev) => ({
-								...prev,
-								busy: false,
-								busyMessage: undefined,
-								errorMessage:
-									error instanceof Error ? error.message : String(error),
-							}));
-						}
+						void ensureQuickSetupInputValid(
+							payload,
+							input.providerSettingsManager,
+						).then((validationError) => {
+							if (validationError) {
+								setState((prev) => ({
+									...prev,
+									busy: false,
+									busyMessage: undefined,
+									errorMessage: validationError,
+								}));
+								return;
+							}
+							try {
+								saveQuickAuthProviderSettings({
+									providerSettingsManager: input.providerSettingsManager,
+									providerId: normalizeProviderId(payload.provider),
+									apikey: payload.apikey,
+									modelid: payload.modelid,
+									baseurl: payload.baseurl,
+								});
+								finalize(0);
+							} catch (error) {
+								setState((prev) => ({
+									...prev,
+									busy: false,
+									busyMessage: undefined,
+									errorMessage:
+										error instanceof Error ? error.message : String(error),
+								}));
+							}
+						});
 						return;
 					}
 					if (key.backspace || key.delete) {
@@ -780,7 +812,7 @@ async function runInteractiveAuthTui(input: AuthCommandInput): Promise<number> {
 			}, [exit, props, state.exitCode, state.screen]);
 
 			const menuItems = AUTH_MENU_ITEMS.map((item) => item.label);
-			const providerItems = providerIds;
+			const providerItems = providerLabels;
 			const showBaseUrlInput =
 				currentProvider === "openai" || currentProvider === "openai-native";
 

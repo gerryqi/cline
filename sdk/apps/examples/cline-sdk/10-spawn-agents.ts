@@ -22,7 +22,7 @@
  * Run: bun run 10-spawn-agents.ts
  */
 
-import { createSessionHost } from "@clinebot/core/server";
+import { createSessionHost } from "@clinebot/core/node";
 
 async function demoBasicSpawn() {
 	console.log("\n=== Basic Agent Spawning ===\n");

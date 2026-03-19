@@ -66,7 +66,7 @@ flowchart LR
 1. Host uses `RpcCoreSessionService` (through `@clinebot/core`) for session persistence/control-plane calls.
 2. `@clinebot/rpc` server handles session/task/event/approval RPCs and schedule/execution RPCs.
 3. `@clinebot/rpc` embeds `@clinebot/scheduler` to trigger scheduled runtime turns with concurrency and timeout guards.
-4. SQLite session backend is provided by `@clinebot/core/server` (`createSqliteRpcSessionBackend`).
+4. SQLite session backend is provided by `@clinebot/core/node` (`createSqliteRpcSessionBackend`).
 
 ### Session persistence implementation (latest)
 
@@ -109,7 +109,7 @@ flowchart LR
 Workspace boundary rule:
 
 - Use explicit Node runtime imports: `@clinebot/llms/node`, `@clinebot/agents/node`, `@clinebot/rpc/node`.
-- Import core runtime services from `@clinebot/core/server/node` and shared contracts from `@clinebot/core/node`.
+- Import core runtime services from `@clinebot/core/node` and shared contracts from `@clinebot/core`.
 
 ### Runtime composition
 
@@ -383,7 +383,7 @@ Outside `@clinebot/agents` (in `@clinebot/core`):
 Boundary rule:
 
 - Frontend/browser modules: `@clinebot/llms/browser`
-- Node runtime hosts (CLI/Tauri scripts): `@clinebot/llms/node`, `@clinebot/agents/node`, `@clinebot/core/node`, `@clinebot/core/server/node`, `@clinebot/rpc/node`
+- Node runtime hosts (CLI/Tauri scripts): `@clinebot/llms/node`, `@clinebot/agents/node`, `@clinebot/core/node`, `@clinebot/rpc/node`
 
 ### Layer details
 
@@ -409,7 +409,7 @@ RPC runtime (`apps/cli/src/commands/rpc.ts`, `apps/cli/src/commands/rpc-runtime.
 
 - hosts shared runtime handlers (`start/send/abort runtime session`)
 - publishes runtime chat events (`runtime.chat.text_delta`, `runtime.chat.tool_call_*`)
-- owns stateful runtime/session lifecycle via `@clinebot/core/server`
+- owns stateful runtime/session lifecycle via `@clinebot/core/node`
 
 CLI + Agents (`apps/cli/src/index.ts`):
 

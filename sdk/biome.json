@@ -46,10 +46,10 @@
 									"@clinebot/llms/*",
 									"@clinebot/agents/*",
 									"@clinebot/core/*",
-									"!@clinebot/core/server",
-									"!@clinebot/core/server/*"
+									"!@clinebot/core/node",
+									"!@clinebot/core/node/*"
 								],
-								"message": "Cross-workspace deep imports are forbidden (except @clinebot/core/server). Import from package entry points instead."
+								"message": "Cross-workspace deep imports are forbidden (except @clinebot/core/node). Import from package entry points instead."
 							}
 						]
 					}

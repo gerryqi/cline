@@ -38,7 +38,7 @@ This directory is the single documentation source for package-level responsibili
 
 - Node-oriented imports: `@clinebot/<pkg>/node`
 - Browser entry points exist for API compatibility; some packages intentionally throw in browser mode for server-only features (`agents`, `core`, `rpc`).
-- `@clinebot/core/server/node` contains server-side runtime/session services.
+- `@clinebot/core/node` contains Node-only runtime/session services.
 
 ## Notes for Doc Consolidation
 

@@ -9,10 +9,7 @@ import type {
 	RpcChatTurnResult,
 } from "@clinebot/core";
 import { setHomeDir, setHomeDirIfUnset } from "@clinebot/core";
-import {
-	type DefaultSessionManager,
-	SessionSource,
-} from "@clinebot/core/server";
+import { type DefaultSessionManager, SessionSource } from "@clinebot/core/node";
 import type { providers as LlmsProviders } from "@clinebot/llms";
 import { providers } from "@clinebot/llms";
 import { createCliLoggerAdapter } from "../../logging/adapter";

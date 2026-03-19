@@ -3,7 +3,7 @@ import {
 	prewarmFileIndex,
 	SessionSource,
 	type UserInstructionConfigWatcher,
-} from "@clinebot/core/server";
+} from "@clinebot/core/node";
 import type { providers } from "@clinebot/llms";
 import { askQuestionInTerminal, requestToolApproval } from "../utils/approval";
 import { handleEvent, handleTeamEvent } from "../utils/events";

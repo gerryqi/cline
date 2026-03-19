@@ -64,7 +64,7 @@ Using these SDK packages in your own app (npm/pnpm/yarn):
 npm add @clinebot/core @clinebot/agents @clinebot/llms
 ```
 
-If you need RPC client/server helpers, use `@clinebot/core` exports (for example `RpcSessionClient`, `getRpcServerHealth`) instead of depending on `@clinebot/rpc` directly.
+If you need RPC client/server helpers, import them from `@clinebot/rpc` directly. `@clinebot/core` is now the transport-agnostic session/runtime package.
 
 > **Note:** `createSessionHost` works without the CLI app installed. It runs local in-process sessions and falls back to a local SQLite backend when RPC is unavailable. Use `CLINE_BACKEND_MODE=local` to force local mode explicitly.
 
@@ -80,7 +80,7 @@ CLINE_BACKEND_MODE=local bun run 14-full-control.ts
 The Cline SDK is organized into focused packages:
 
 - **`@clinebot/core`** - Session management, storage, runtime orchestration
-- **`@clinebot/core` RPC re-exports** - Optional remote-session helpers (`RpcSessionClient`, `getRpcServerHealth`, etc.)
+- **`@clinebot/rpc`** - Optional remote-session helpers (`RpcSessionClient`, `getRpcServerHealth`, etc.)
 - **`@clinebot/agents`** - Agent runtime loop, tools, hooks, teams
 - **`@clinebot/llms`** - Model catalog, provider settings, handlers
 - Shared primitives/types/path helpers are consumed through `@clinebot/core` re-exports in app/example code.
@@ -114,7 +114,7 @@ All tools respect the agent's working directory and can be customized with polic
 ### Minimal Session
 
 ```typescript
-import { createSessionHost } from "@clinebot/core/server";
+import { createSessionHost } from "@clinebot/core/node";
 
 const sessionManager = await createSessionHost({});
 
@@ -139,7 +139,7 @@ console.log(result.result?.text);
 ### With Custom Model
 
 ```typescript
-import { createSessionHost } from "@clinebot/core/server";
+import { createSessionHost } from "@clinebot/core/node";
 
 await sessionManager.start({
   config: {
@@ -199,7 +199,7 @@ await sessionManager.stop(sessionId);
 ### Custom Tools
 
 ```typescript
-import { createSessionHost } from "@clinebot/core/server";
+import { createSessionHost } from "@clinebot/core/node";
 import type { Tool } from "@clinebot/agents";
 
 const myTool: Tool = {
@@ -396,7 +396,7 @@ process.env.CLINE_SESSION_DATA_DIR = "/custom/path";
 Enable verbose logging:
 
 ```typescript
-import { createLogger } from "@clinebot/core/server";
+import { createLogger } from "@clinebot/core/node";
 
 const logger = createLogger({ level: "debug" });
 

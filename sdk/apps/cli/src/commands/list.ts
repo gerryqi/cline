@@ -13,7 +13,7 @@ import {
 	resolveWorkflowsConfigSearchPaths,
 	type SkillConfig,
 	type WorkflowConfig,
-} from "@clinebot/core/server";
+} from "@clinebot/core/node";
 import type { CliOutputMode } from "../utils/types";
 
 type ListIo = {

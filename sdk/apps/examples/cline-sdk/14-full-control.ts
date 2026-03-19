@@ -13,7 +13,7 @@
 import { exec as execCb } from "node:child_process";
 import { promisify } from "node:util";
 import type { AgentConfig, Tool, ToolContext } from "@clinebot/agents";
-import { createSessionHost, type ToolExecutors } from "@clinebot/core/server";
+import { createSessionHost, type ToolExecutors } from "@clinebot/core/node";
 
 const exec = promisify(execCb);
 

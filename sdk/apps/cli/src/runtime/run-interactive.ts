@@ -4,7 +4,7 @@ import {
 	prewarmFileIndex,
 	SessionSource,
 	type UserInstructionConfigWatcher,
-} from "@clinebot/core/server";
+} from "@clinebot/core/node";
 import type { providers } from "@clinebot/llms";
 import { render } from "ink";
 import React from "react";

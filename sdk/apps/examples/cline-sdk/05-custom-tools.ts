@@ -17,7 +17,7 @@
  */
 
 import type { Tool } from "@clinebot/agents";
-import { createSessionHost } from "@clinebot/core/server";
+import { createSessionHost } from "@clinebot/core/node";
 
 // Example 1: Simple calculator tool
 const calculatorTool: Tool = {

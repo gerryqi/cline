@@ -88,6 +88,20 @@ for (const workspace of workspaces) {
 					}
 				}
 			}
+
+			if (pkg.name === "@clinebot/core") {
+				pkg.main = "./dist/index.js";
+				pkg.types = "./dist/index.d.ts";
+				if (pkg.exports?.["."]) {
+					pkg.exports["."] = {
+						browser: "./dist/index.browser.js",
+						development: "./dist/index.js",
+						types: "./dist/index.d.ts",
+						import: "./dist/index.js",
+					};
+				}
+				delete pkg.exports?.["./node"];
+			}
 		}
 
 		const out = `${JSON.stringify(pkg, null, "\t")}\n`;

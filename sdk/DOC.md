@@ -987,7 +987,7 @@ Each line is a newline-delimited JSON record with a `ts` timestamp prepended.
 
 ### Provider & Model Configuration
 
-**Source:** `src/main.ts` → `runCli()`, `ProviderSettingsManager` from `@clinebot/core/server`
+**Source:** `src/main.ts` → `runCli()`, `ProviderSettingsManager` from `@clinebot/core/node`
 
 #### Provider Selection
 
@@ -1100,7 +1100,7 @@ Workflows are loaded from the `UserInstructionConfigWatcher` which watches `.cli
 
 ## Configuration Object (`Config`)
 
-The `Config` interface is the internal runtime configuration assembled from parsed args and environment variables. It extends `CoreSessionConfig` from `@clinebot/core/server`:
+The `Config` interface is the internal runtime configuration assembled from parsed args and environment variables. It extends `CoreSessionConfig` from `@clinebot/core/node`:
 
 ```typescript
 interface Config extends Omit<CoreSessionConfig, "apiKey" | "mode"> {

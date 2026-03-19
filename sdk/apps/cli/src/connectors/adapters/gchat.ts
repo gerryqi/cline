@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { createGoogleChatAdapter } from "@chat-adapter/gchat";
 import type { RpcChatStartSessionRequest } from "@clinebot/core";
 import { resolveClineDataDir } from "@clinebot/core";
-import { RpcSessionClient, registerRpcClient } from "@clinebot/core/server";
+import { RpcSessionClient, registerRpcClient } from "@clinebot/rpc";
 import { Chat, ConsoleLogger, type Thread } from "chat";
 import { ensureRpcRuntimeAddress } from "../../commands/rpc";
 import type { CliLoggerAdapter } from "../../logging/adapter";
@@ -39,6 +39,7 @@ import {
 	readSessionReplyText,
 	stopConnectorSessions,
 } from "../session-runtime";
+import { startConnectorTaskUpdateRelay } from "../task-updates";
 import {
 	type ConnectorBindingStore,
 	type ConnectorThreadState,
@@ -648,6 +649,15 @@ async function runConnectGoogleChatCommand(
 	});
 
 	await bot.initialize();
+	const stopTaskUpdateStream =
+		startConnectorTaskUpdateRelay<GoogleChatThreadState>({
+			client,
+			clientId,
+			bot,
+			logger: loggerAdapter,
+			bindingsPath,
+			transport: "gchat",
+		});
 
 	const server = await startConnectorWebhookServer({
 		host: options.host,
@@ -726,6 +736,7 @@ async function runConnectGoogleChatCommand(
 	io.writeln(`[gchat] configure Google Chat App URL: ${endpointUrl}`);
 
 	await stopPromise;
+	stopTaskUpdateStream();
 	stopEventStream();
 	await server.close();
 	client.close();

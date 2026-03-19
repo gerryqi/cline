@@ -22,7 +22,7 @@
  */
 
 import type { AgentConfig, Tool } from "@clinebot/agents";
-import { createSessionHost } from "@clinebot/core/server";
+import { createSessionHost } from "@clinebot/core/node";
 
 type AgentExtension = NonNullable<AgentConfig["extensions"]>[number];
 

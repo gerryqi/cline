@@ -23,7 +23,7 @@ async function requestDesktopToolApprovalFromCore(
 	request: ToolApprovalRequest,
 ): Promise<ToolApprovalResult> {
 	if (!cachedDesktopApprovalRequester) {
-		cachedDesktopApprovalRequester = import("@clinebot/core/server")
+		cachedDesktopApprovalRequester = import("@clinebot/core/node")
 			.then((module) => {
 				const fn = (
 					module as {

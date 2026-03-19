@@ -1,15 +1,45 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { providers as LlmsProviders } from "@clinebot/llms";
+import { models } from "@clinebot/llms";
 import type {
 	RpcAddProviderActionRequest,
+	RpcOAuthProviderId,
 	RpcProviderCapability,
 	RpcProviderListItem,
 	RpcProviderModel,
 	RpcSaveProviderSettingsActionRequest,
-} from "@clinebot/core";
-import type { ProviderSettingsManager } from "@clinebot/core/server";
-import { models } from "@clinebot/llms";
-import type { StoredModelsFile } from "./types";
+} from "@clinebot/shared";
+import { createOAuthClientCallbacks } from "../auth/client";
+import { loginClineOAuth } from "../auth/cline";
+import { loginOpenAICodex } from "../auth/codex";
+import { loginOcaOAuth } from "../auth/oca";
+import type { ProviderSettingsManager } from "../storage/provider-settings-manager";
+
+type StoredModelsFile = {
+	version: 1;
+	providers: Record<
+		string,
+		{
+			provider: {
+				name: string;
+				baseUrl: string;
+				defaultModelId?: string;
+				capabilities?: RpcProviderCapability[];
+				modelsSourceUrl?: string;
+			};
+			models: Record<
+				string,
+				{
+					id: string;
+					name: string;
+					supportsVision?: boolean;
+					supportsAttachments?: boolean;
+				}
+			>;
+		}
+	>;
+};
 
 function resolveVisibleApiKey(settings: {
 	apiKey?: string;
@@ -132,18 +162,10 @@ function toModelCapabilities(
 	if (!capabilities || capabilities.length === 0) {
 		return [...next];
 	}
-	if (capabilities.includes("streaming")) {
-		next.add("streaming");
-	}
-	if (capabilities.includes("tools")) {
-		next.add("tools");
-	}
-	if (capabilities.includes("reasoning")) {
-		next.add("reasoning");
-	}
-	if (capabilities.includes("prompt-cache")) {
-		next.add("prompt-cache");
-	}
+	if (capabilities.includes("streaming")) next.add("streaming");
+	if (capabilities.includes("tools")) next.add("tools");
+	if (capabilities.includes("reasoning")) next.add("reasoning");
+	if (capabilities.includes("prompt-cache")) next.add("prompt-cache");
 	if (capabilities.includes("vision")) {
 		next.add("images");
 		next.add("files");
@@ -207,9 +229,7 @@ function parseModelIdList(input: unknown): string[] {
 	if (Array.isArray(input)) {
 		return input
 			.map((item) => {
-				if (typeof item === "string") {
-					return item.trim();
-				}
+				if (typeof item === "string") return item.trim();
 				if (item && typeof item === "object" && "id" in item) {
 					const id = (item as { id?: unknown }).id;
 					return typeof id === "string" ? id.trim() : "";
@@ -226,21 +246,15 @@ function extractModelIdsFromPayload(
 	providerId: string,
 ): string[] {
 	const rootArray = parseModelIdList(payload);
-	if (rootArray.length > 0) {
-		return rootArray;
-	}
-	if (!payload || typeof payload !== "object") {
-		return [];
-	}
+	if (rootArray.length > 0) return rootArray;
+	if (!payload || typeof payload !== "object") return [];
 	const data = payload as {
 		data?: unknown;
 		models?: unknown;
 		providers?: Record<string, unknown>;
 	};
 	const direct = parseModelIdList(data.data ?? data.models);
-	if (direct.length > 0) {
-		return direct;
-	}
+	if (direct.length > 0) return direct;
 	if (
 		data.models &&
 		typeof data.models === "object" &&
@@ -249,17 +263,13 @@ function extractModelIdsFromPayload(
 		const modelKeys = Object.keys(data.models).filter(
 			(key) => key.trim().length > 0,
 		);
-		if (modelKeys.length > 0) {
-			return modelKeys;
-		}
+		if (modelKeys.length > 0) return modelKeys;
 	}
 	const providerScoped = data.providers?.[providerId];
 	if (providerScoped && typeof providerScoped === "object") {
 		const nested = providerScoped as { models?: unknown };
 		const nestedList = parseModelIdList(nested.models ?? providerScoped);
-		if (nestedList.length > 0) {
-			return nestedList;
-		}
+		if (nestedList.length > 0) return nestedList;
 	}
 	return [];
 }
@@ -278,7 +288,7 @@ async function fetchModelIdsFromSource(
 	return extractModelIdsFromPayload(payload, providerId);
 }
 
-export async function addProvider(
+export async function addLocalProvider(
 	manager: ProviderSettingsManager,
 	request: RpcAddProviderActionRequest,
 ): Promise<{
@@ -288,20 +298,14 @@ export async function addProvider(
 	modelsCount: number;
 }> {
 	const providerId = request.providerId.trim().toLowerCase();
-	if (!providerId) {
-		throw new Error("providerId is required");
-	}
+	if (!providerId) throw new Error("providerId is required");
 	if (models.hasProvider(providerId)) {
 		throw new Error(`provider "${providerId}" already exists`);
 	}
 	const providerName = request.name.trim();
-	if (!providerName) {
-		throw new Error("name is required");
-	}
+	if (!providerName) throw new Error("name is required");
 	const baseUrl = request.baseUrl.trim();
-	if (!baseUrl) {
-		throw new Error("baseUrl is required");
-	}
+	if (!baseUrl) throw new Error("baseUrl is required");
 
 	const typedModels = (request.models ?? [])
 		.map((model) => model.trim())
@@ -379,7 +383,9 @@ export async function addProvider(
 	};
 }
 
-export async function listProviders(manager: ProviderSettingsManager): Promise<{
+export async function listLocalProviders(
+	manager: ProviderSettingsManager,
+): Promise<{
 	providers: RpcProviderListItem[];
 	settingsPath: string;
 }> {
@@ -417,7 +423,7 @@ export async function listProviders(manager: ProviderSettingsManager): Promise<{
 	};
 }
 
-export async function getProviderModels(
+export async function getLocalProviderModels(
 	providerId: string,
 ): Promise<{ providerId: string; models: RpcProviderModel[] }> {
 	const id = providerId.trim();
@@ -436,7 +442,7 @@ export async function getProviderModels(
 	};
 }
 
-export function saveProviderSettings(
+export function saveLocalProviderSettings(
 	manager: ProviderSettingsManager,
 	request: RpcSaveProviderSettingsActionRequest,
 ): { providerId: string; enabled: boolean; settingsPath: string } {
@@ -490,4 +496,96 @@ export function saveProviderSettings(
 		enabled: true,
 		settingsPath: manager.getFilePath(),
 	};
+}
+
+export function normalizeOAuthProvider(provider: string): RpcOAuthProviderId {
+	const normalized = provider.trim().toLowerCase();
+	if (normalized === "codex" || normalized === "openai-codex") {
+		return "openai-codex";
+	}
+	if (normalized === "cline" || normalized === "oca") {
+		return normalized;
+	}
+	throw new Error(
+		`provider "${provider}" does not support OAuth login (supported: cline, oca, openai-codex)`,
+	);
+}
+
+function toProviderApiKey(
+	providerId: RpcOAuthProviderId,
+	credentials: { access: string },
+): string {
+	if (providerId === "cline") {
+		return `workos:${credentials.access}`;
+	}
+	return credentials.access;
+}
+
+export async function loginLocalProvider(
+	providerId: RpcOAuthProviderId,
+	existing: LlmsProviders.ProviderSettings | undefined,
+	openUrl: (url: string) => void,
+): Promise<{
+	access: string;
+	refresh: string;
+	expires: number;
+	accountId?: string;
+}> {
+	const callbacks = createOAuthClientCallbacks({
+		onPrompt: async (prompt) => prompt.defaultValue ?? "",
+		openUrl,
+		onOpenUrlError: ({ error }) => {
+			throw error instanceof Error ? error : new Error(String(error));
+		},
+	});
+
+	if (providerId === "cline") {
+		return loginClineOAuth({
+			apiBaseUrl: existing?.baseUrl?.trim() || "https://api.cline.bot",
+			callbacks,
+		});
+	}
+	if (providerId === "oca") {
+		return loginOcaOAuth({
+			mode: existing?.oca?.mode,
+			callbacks,
+		});
+	}
+	return loginOpenAICodex(callbacks);
+}
+
+export function saveLocalProviderOAuthCredentials(
+	manager: ProviderSettingsManager,
+	providerId: RpcOAuthProviderId,
+	existing: LlmsProviders.ProviderSettings | undefined,
+	credentials: {
+		access: string;
+		refresh: string;
+		expires: number;
+		accountId?: string;
+	},
+): LlmsProviders.ProviderSettings {
+	const auth = {
+		...(existing?.auth ?? {}),
+		accessToken: toProviderApiKey(providerId, credentials),
+		refreshToken: credentials.refresh,
+		accountId: credentials.accountId,
+	} as LlmsProviders.ProviderSettings["auth"] & { expiresAt?: number };
+	auth.expiresAt = credentials.expires;
+	const merged: LlmsProviders.ProviderSettings = {
+		...(existing ?? {
+			provider: providerId as LlmsProviders.ProviderSettings["provider"],
+		}),
+		provider: providerId as LlmsProviders.ProviderSettings["provider"],
+		auth,
+	};
+	manager.saveProviderSettings(merged, { tokenSource: "oauth" });
+	return merged;
+}
+
+export function resolveLocalClineAuthToken(
+	settings: LlmsProviders.ProviderSettings | undefined,
+): string | undefined {
+	const token = settings?.auth?.accessToken?.trim() || settings?.apiKey?.trim();
+	return token && token.length > 0 ? token : undefined;
 }

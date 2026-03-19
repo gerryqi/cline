@@ -8,10 +8,8 @@ import {
 	RPC_TEAM_PROGRESS_EVENT_TYPE,
 	type TeamProgressProjectionEvent,
 } from "@clinebot/core";
-import type {
-	DefaultSessionManager,
-	RpcSessionClient,
-} from "@clinebot/core/server";
+import type { DefaultSessionManager } from "@clinebot/core/node";
+import type { RpcSessionClient } from "@clinebot/rpc";
 
 export function createRpcToolApprovalRequester(input: {
 	eventClient: RpcSessionClient;

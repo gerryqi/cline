@@ -17,15 +17,14 @@ import type {
 } from "@clinebot/core";
 import {
 	createSessionHost,
-	getRpcServerDefaultAddress,
 	RpcCoreSessionService,
-	RpcSessionClient,
 	resolveSessionBackend,
 	type SessionAccumulatedUsage,
 	type SessionBackend,
 	type SessionManifest,
 	SessionSource,
-} from "@clinebot/core/server";
+} from "@clinebot/core/node";
+import { getRpcServerDefaultAddress, RpcSessionClient } from "@clinebot/rpc";
 
 function resolveRpcAddress(): string {
 	return process.env.CLINE_RPC_ADDRESS?.trim() || getRpcServerDefaultAddress();
@@ -33,20 +32,18 @@ function resolveRpcAddress(): string {
 
 export interface CliSessionManager {
 	start(input: {
-		config: import("@clinebot/core/server").CoreSessionConfig & {
+		config: import("@clinebot/core/node").CoreSessionConfig & {
 			loggerConfig?: RpcChatRuntimeLoggerConfig;
 		};
-		source?: import("@clinebot/core/server").SessionSource;
+		source?: import("@clinebot/core/node").SessionSource;
 		prompt?: string;
 		interactive?: boolean;
 		initialMessages?: import("@clinebot/llms").providers.Message[];
 		userImages?: string[];
 		userFiles?: string[];
-		userInstructionWatcher?: import("@clinebot/core/server").UserInstructionConfigWatcher;
+		userInstructionWatcher?: import("@clinebot/core/node").UserInstructionConfigWatcher;
 		onTeamRestored?: () => void;
-		defaultToolExecutors?: Partial<
-			import("@clinebot/core/server").ToolExecutors
-		>;
+		defaultToolExecutors?: Partial<import("@clinebot/core/node").ToolExecutors>;
 		toolPolicies?: import("@clinebot/agents").AgentConfig["toolPolicies"];
 		requestToolApproval?: (
 			request: import("@clinebot/agents").ToolApprovalRequest,
@@ -122,7 +119,7 @@ export async function getCoreSessionBackend(): Promise<SessionBackend> {
 }
 
 export async function createDefaultCliSessionManager(options?: {
-	defaultToolExecutors?: Partial<import("@clinebot/core/server").ToolExecutors>;
+	defaultToolExecutors?: Partial<import("@clinebot/core/node").ToolExecutors>;
 	toolPolicies?: import("@clinebot/agents").AgentConfig["toolPolicies"];
 	requestToolApproval?: (
 		request: ToolApprovalRequest,
@@ -467,7 +464,7 @@ function createRpcRuntimeCliSessionManager(
 	options:
 		| {
 				defaultToolExecutors?: Partial<
-					import("@clinebot/core/server").ToolExecutors
+					import("@clinebot/core/node").ToolExecutors
 				>;
 				toolPolicies?: import("@clinebot/agents").AgentConfig["toolPolicies"];
 				requestToolApproval?: (

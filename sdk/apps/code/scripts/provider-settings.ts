@@ -1,6 +1,13 @@
 import { readFileSync } from "node:fs";
 import type { RpcProviderActionRequest } from "@clinebot/core";
-import { RpcSessionClient } from "@clinebot/core/server";
+import {
+	addLocalProvider,
+	ensureCustomProvidersLoaded,
+	getLocalProviderModels,
+	listLocalProviders,
+	ProviderSettingsManager,
+	saveLocalProviderSettings,
+} from "@clinebot/core/node";
 
 function readStdin(): string {
 	return readFileSync(0, "utf8");
@@ -8,14 +15,34 @@ function readStdin(): string {
 
 async function main() {
 	const parsed = JSON.parse(readStdin()) as RpcProviderActionRequest;
-	const address = process.env.CLINE_RPC_ADDRESS?.trim() || "127.0.0.1:4317";
-	const client = new RpcSessionClient({ address });
-	try {
-		const response = await client.runProviderAction(parsed);
-		process.stdout.write(`${JSON.stringify(response.result)}\n`);
-	} finally {
-		client.close();
+	const manager = new ProviderSettingsManager();
+	await ensureCustomProvidersLoaded(manager);
+
+	if (parsed.action === "listProviders") {
+		process.stdout.write(
+			`${JSON.stringify(await listLocalProviders(manager))}\n`,
+		);
+		return;
 	}
+	if (parsed.action === "getProviderModels") {
+		process.stdout.write(
+			`${JSON.stringify(await getLocalProviderModels(parsed.providerId))}\n`,
+		);
+		return;
+	}
+	if (parsed.action === "addProvider") {
+		process.stdout.write(
+			`${JSON.stringify(await addLocalProvider(manager, parsed))}\n`,
+		);
+		return;
+	}
+	if (parsed.action === "saveProviderSettings") {
+		process.stdout.write(
+			`${JSON.stringify(saveLocalProviderSettings(manager, parsed))}\n`,
+		);
+		return;
+	}
+	throw new Error(`unsupported provider action: ${String(parsed.action)}`);
 }
 
 main().catch((error) => {

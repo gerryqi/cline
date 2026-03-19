@@ -80,7 +80,7 @@ export function ProviderListContent({
 							<Switch
 								aria-label={`Toggle ${prov.name}`}
 								checked={prov.enabled}
-								onChange={() => onToggle(prov.id)}
+								onCheckedChange={() => onToggle(prov.id)}
 							/>
 						</div>
 					))}

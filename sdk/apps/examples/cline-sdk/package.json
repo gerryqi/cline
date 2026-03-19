@@ -28,7 +28,8 @@
 	"dependencies": {
 		"@clinebot/agents": "nightly",
 		"@clinebot/core": "nightly",
-		"@clinebot/llms": "nightly"
+		"@clinebot/llms": "nightly",
+		"@clinebot/rpc": "nightly"
 	},
 	"devDependencies": {
 		"@types/node": "^22.10.5",

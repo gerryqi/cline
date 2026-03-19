@@ -28,21 +28,6 @@
 			"development": "./dist/index.browser.js",
 			"types": "./dist/index.browser.d.ts",
 			"import": "./dist/index.browser.js"
-		},
-		"./server": {
-			"development": "./dist/server/index.js",
-			"types": "./dist/server/index.d.ts",
-			"import": "./dist/server/index.js"
-		},
-		"./server/node": {
-			"development": "./dist/server/index.js",
-			"types": "./dist/server/index.d.ts",
-			"import": "./dist/server/index.js"
-		},
-		"./server/browser": {
-			"development": "./dist/server/index.js",
-			"types": "./dist/server.browser.d.ts",
-			"import": "./dist/server.browser.js"
 		}
 	},
 	"description": "State-aware orchestration for Cline Agent runtimes",

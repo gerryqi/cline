@@ -27,7 +27,7 @@
  */
 
 import type { AgentConfig } from "@clinebot/agents";
-import { createSessionHost } from "@clinebot/core/server";
+import { createSessionHost } from "@clinebot/core/node";
 
 type AgentHooksConfig = NonNullable<AgentConfig["hooks"]>;
 

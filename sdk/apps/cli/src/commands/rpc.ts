@@ -1,15 +1,15 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import { isAbsolute, resolve as resolvePath } from "node:path";
+import { createSqliteRpcSessionBackend } from "@clinebot/core/node";
 import {
-	createSqliteRpcSessionBackend,
 	getRpcServerHealth,
 	RpcSessionClient,
 	registerRpcClient,
 	requestRpcServerShutdown,
 	startRpcServer,
 	stopRpcServer,
-} from "@clinebot/core/server";
+} from "@clinebot/rpc";
 import { createCliLoggerAdapter } from "../logging/adapter";
 import { createRpcRuntimeHandlers } from "./rpc-runtime";
 

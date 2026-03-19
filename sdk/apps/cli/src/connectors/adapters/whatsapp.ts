@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { createWhatsAppAdapter } from "@chat-adapter/whatsapp";
 import type { RpcChatStartSessionRequest } from "@clinebot/core";
 import { resolveClineDataDir } from "@clinebot/core";
-import { RpcSessionClient, registerRpcClient } from "@clinebot/core/server";
+import { RpcSessionClient, registerRpcClient } from "@clinebot/rpc";
 import { Chat, ConsoleLogger, type Thread } from "chat";
 import { ensureRpcRuntimeAddress } from "../../commands/rpc";
 import type { CliLoggerAdapter } from "../../logging/adapter";
@@ -39,6 +39,7 @@ import {
 	readSessionReplyText,
 	stopConnectorSessions,
 } from "../session-runtime";
+import { startConnectorTaskUpdateRelay } from "../task-updates";
 import {
 	type ConnectorBindingStore,
 	type ConnectorThreadState,
@@ -671,6 +672,15 @@ async function runConnectWhatsAppCommand(
 	});
 
 	await bot.initialize();
+	const stopTaskUpdateStream =
+		startConnectorTaskUpdateRelay<WhatsAppThreadState>({
+			client,
+			clientId,
+			bot,
+			logger: loggerAdapter,
+			bindingsPath,
+			transport: "whatsapp",
+		});
 
 	const endpointUrl = `${options.baseUrl.replace(/\/$/, "")}/api/webhooks/whatsapp`;
 	const server = await startConnectorWebhookServer({
@@ -751,6 +761,7 @@ async function runConnectWhatsAppCommand(
 	io.writeln(`[whatsapp] configure WhatsApp webhook URL: ${endpointUrl}`);
 
 	await stopPromise;
+	stopTaskUpdateStream();
 	stopEventStream();
 	await server.close();
 	client.close();

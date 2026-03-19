@@ -9,7 +9,7 @@ import {
 	buildWorkspaceMetadata,
 	createSessionHost,
 	type SessionHost,
-} from "@clinebot/core/server";
+} from "@clinebot/core/node";
 import { models as llmModels, providers as llmProviders } from "@clinebot/llms";
 import * as vscode from "vscode";
 import type {

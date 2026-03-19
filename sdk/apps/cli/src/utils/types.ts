@@ -4,7 +4,7 @@ import type {
 	SessionLineage,
 	ToolPolicy,
 } from "@clinebot/core";
-import type { CoreSessionConfig, SessionManifest } from "@clinebot/core/server";
+import type { CoreSessionConfig, SessionManifest } from "@clinebot/core/node";
 import type { providers as LlmsProviders } from "@clinebot/llms";
 
 export type CliOutputMode = "text" | "json";

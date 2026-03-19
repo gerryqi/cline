@@ -3,7 +3,7 @@ import {
 	createAgentConfigWatcher,
 	listHookConfigFiles,
 	type UserInstructionConfigWatcher,
-} from "@clinebot/core/server";
+} from "@clinebot/core/node";
 
 export type InteractiveConfigTab =
 	| "workflows"

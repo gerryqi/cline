@@ -1,9 +1,11 @@
 import type { RpcSaveProviderSettingsActionRequest } from "@clinebot/core";
-import type { ProviderSettingsManager } from "@clinebot/core/server";
+import {
+	type ProviderSettingsManager,
+	saveLocalProviderSettings,
+} from "@clinebot/core/node";
 import { describe, expect, it, vi } from "vitest";
-import { saveProviderSettings } from "./provider-registry";
 
-describe("saveProviderSettings", () => {
+describe("saveLocalProviderSettings", () => {
 	it("ignores null apiKey/baseUrl updates", () => {
 		const save = vi.fn();
 		const manager = {
@@ -20,7 +22,7 @@ describe("saveProviderSettings", () => {
 			saveProviderSettings: save,
 		};
 
-		saveProviderSettings(
+		saveLocalProviderSettings(
 			manager as unknown as ProviderSettingsManager,
 			{
 				action: "saveProviderSettings",
@@ -57,7 +59,7 @@ describe("saveProviderSettings", () => {
 			saveProviderSettings: save,
 		};
 
-		saveProviderSettings(
+		saveLocalProviderSettings(
 			manager as unknown as ProviderSettingsManager,
 			{
 				action: "saveProviderSettings",
@@ -96,7 +98,7 @@ describe("saveProviderSettings", () => {
 			saveProviderSettings: save,
 		};
 
-		saveProviderSettings(
+		saveLocalProviderSettings(
 			manager as unknown as ProviderSettingsManager,
 			{
 				action: "saveProviderSettings",

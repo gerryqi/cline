@@ -3,7 +3,7 @@ import {
 	getFileIndex,
 	listAvailableWorkflowsFromWatcher,
 	type UserInstructionConfigWatcher,
-} from "@clinebot/core/server";
+} from "@clinebot/core/node";
 import type { providers } from "@clinebot/llms";
 import { formatCreditBalance, normalizeCreditBalance } from "../utils/output";
 import type { Config } from "../utils/types";
