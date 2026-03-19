@@ -191,9 +191,9 @@
       "name": "examples",
       "dependencies": {
         "@chat-adapter/slack": "^4.16.1",
-        "@clinebot/agents": "nightly",
-        "@clinebot/core": "nightly",
-        "@clinebot/llms": "nightly",
+        "@clinebot/agents": "latest",
+        "@clinebot/core": "latest",
+        "@clinebot/llms": "latest",
         "chat": "^4.16.1",
       },
       "devDependencies": {
@@ -277,7 +277,7 @@
     },
     "packages/agents": {
       "name": "@clinebot/agents",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "dependencies": {
         "@clinebot/llms": "workspace:*",
         "@clinebot/shared": "workspace:*",
@@ -286,7 +286,7 @@
     },
     "packages/core": {
       "name": "@clinebot/core",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "dependencies": {
         "@clinebot/agents": "workspace:*",
         "@clinebot/llms": "workspace:*",
@@ -300,7 +300,7 @@
     },
     "packages/llms": {
       "name": "@clinebot/llms",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "dependencies": {
         "@ai-sdk/amazon-bedrock": "^4.0.67",
         "@ai-sdk/google-vertex": "^4.0.74",
@@ -328,7 +328,7 @@
     },
     "packages/rpc": {
       "name": "@clinebot/rpc",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "dependencies": {
         "@clinebot/scheduler": "workspace:*",
         "@clinebot/shared": "workspace:*",
@@ -338,14 +338,14 @@
     },
     "packages/scheduler": {
       "name": "@clinebot/scheduler",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "dependencies": {
         "@clinebot/shared": "workspace:*",
       },
     },
     "packages/shared": {
       "name": "@clinebot/shared",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "dependencies": {
         "better-sqlite3": "^11.10.0",
         "jsonrepair": "^3.13.2",
@@ -3051,11 +3051,11 @@
 
     "eslint/chalk": ["chalk@4.1.2", "", { "dependencies": { "ansi-styles": "^4.1.0", "supports-color": "^7.1.0" } }, "sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA=="],
 
-    "examples/@clinebot/agents": ["@clinebot/agents@0.0.2", "", { "dependencies": { "@clinebot/llms": "0.0.2", "zod": "^4.3.6" } }, "sha512-yh7mYXyLB1JKkkMyWNa5byRjM4p2gboAKS7WuoAkYO5b52nDBWwb80ONxL9O3A8m7JolvRygXUrGtKOrilfw6Q=="],
+    "examples/@clinebot/agents": ["@clinebot/agents@0.0.3", "", { "dependencies": { "@clinebot/llms": "0.0.3", "zod": "^4.3.6" } }, "sha512-D7bChcmfw0SIFzWYAuE66LjryUBoHmOf3vRmRz36LQnhFbiSQKZV0cut7nKCNQMtzfCWQYFnIa07MRglDJlHTQ=="],
 
-    "examples/@clinebot/core": ["@clinebot/core@0.0.2", "", { "dependencies": { "@clinebot/agents": "0.0.2", "@clinebot/llms": "0.0.2", "nanoid": "^5.1.7", "simple-git": "^3.32.3", "yaml": "^2.8.2", "zod": "^4.3.6" } }, "sha512-3mQ0lx+tikQoCTjs9b+cUQSX6gpd9Q+RyXkUj6ImXDW1BMwOhpTqvk/lKURAS4cSptClhB/qgttEhRq8DSAuvQ=="],
+    "examples/@clinebot/core": ["@clinebot/core@0.0.3", "", { "dependencies": { "@clinebot/agents": "0.0.3", "@clinebot/llms": "0.0.3", "nanoid": "^5.1.7", "simple-git": "^3.32.3", "yaml": "^2.8.2", "zod": "^4.3.6" } }, "sha512-B78TeqeKSpLEjm68phYEZJQsegUkFxsqORw2tpXge90IEC/p3eimnXf6j/3/iCaiyv0BZk5r1gOm0NE0/N5A1w=="],
 
-    "examples/@clinebot/llms": ["@clinebot/llms@0.0.2", "", { "dependencies": { "@ai-sdk/amazon-bedrock": "^4.0.67", "@ai-sdk/google-vertex": "^4.0.74", "@ai-sdk/mistral": "^3.0.24", "@anthropic-ai/sdk": "^0.78.0", "@aws-sdk/credential-providers": "^3.922.0", "@google/genai": "^1.43.0", "@streamparser/json": "^0.0.21", "ai": "^6.0.112", "ai-sdk-provider-claude-code": "^3.4.3", "ai-sdk-provider-codex-cli": "^1.1.0", "ai-sdk-provider-opencode-sdk": "^2.1.2", "dify-ai-provider": "^1.1.0", "nanoid": "^5.1.7", "openai": "^6.25.0", "zod": "^4.3.6" }, "peerDependencies": { "@aws-sdk/client-bedrock-runtime": "^3.0.0" }, "optionalPeers": ["@aws-sdk/client-bedrock-runtime"] }, "sha512-zGlWHtE1Z+99ksD245e+si83ohwwbQQuBk+YrHBBCBzbCDBTsAGn5m678c6l0Mbk8cKvUkXRKUxQzfpy35f+Ag=="],
+    "examples/@clinebot/llms": ["@clinebot/llms@0.0.3", "", { "dependencies": { "@ai-sdk/amazon-bedrock": "^4.0.67", "@ai-sdk/google-vertex": "^4.0.74", "@ai-sdk/mistral": "^3.0.24", "@anthropic-ai/sdk": "^0.78.0", "@aws-sdk/credential-providers": "^3.922.0", "@google/genai": "^1.43.0", "@streamparser/json": "^0.0.21", "ai": "^6.0.112", "ai-sdk-provider-claude-code": "^3.4.3", "ai-sdk-provider-codex-cli": "^1.1.0", "ai-sdk-provider-opencode-sdk": "^2.1.2", "dify-ai-provider": "^1.1.0", "nanoid": "^5.1.7", "openai": "^6.25.0", "zod": "^4.3.6" }, "peerDependencies": { "@aws-sdk/client-bedrock-runtime": "^3.0.0" }, "optionalPeers": ["@aws-sdk/client-bedrock-runtime"] }, "sha512-rWRhchJmQFN4mSJ9Qq3Px4Tv/1bBp1wIR3Ruac+yEUMPxYesEWUpRJJB3nTSJhQbLBBiXT08Ko3Y9zYSJ3T/ww=="],
 
     "execa/is-stream": ["is-stream@4.0.1", "", {}, "sha512-Dnz92NInDqYckGEUJv689RbRiTSEHCQ7wOVeALbkOz999YpqT46yMRIGtSNl2iCL1waAZSx40+h59NV/EwzV/A=="],
 
@@ -3638,6 +3638,12 @@
     "d3-sankey/d3-shape/d3-path": ["d3-path@1.0.9", "", {}, "sha512-VLaYcn81dtHVTjEHd8B+pbe9yHWpXKZUC87PzoFmsFrJqgFwDe/qxfp5MlfsfM1V5E/iVt0MmEbWQ7FVIXh/bg=="],
 
     "eslint/chalk/ansi-styles": ["ansi-styles@4.3.0", "", { "dependencies": { "color-convert": "^2.0.1" } }, "sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg=="],
+
+    "examples/@clinebot/agents/@clinebot/llms": ["@clinebot/llms@workspace:packages/llms"],
+
+    "examples/@clinebot/core/@clinebot/agents": ["@clinebot/agents@workspace:packages/agents"],
+
+    "examples/@clinebot/core/@clinebot/llms": ["@clinebot/llms@workspace:packages/llms"],
 
     "form-data/mime-types/mime-db": ["mime-db@1.52.0", "", {}, "sha512-sPU4uV7dYlvtWJxwwxHD0PuihVNiE7TyAbQ5SWxDCB9mUYvOgroQOwYQQOKPJ8CIbE+1ETVlOoK1UC2nU3gYvg=="],
 

@@ -5,9 +5,9 @@
     "": {
       "name": "cline-sdk-examples",
       "dependencies": {
-        "@clinebot/agents": "nightly",
-        "@clinebot/core": "nightly",
-        "@clinebot/llms": "nightly",
+        "@clinebot/agents": "latest",
+        "@clinebot/core": "latest",
+        "@clinebot/llms": "latest",
       },
       "devDependencies": {
         "@types/node": "^22.10.5",
@@ -100,11 +100,11 @@
 
     "@babel/runtime": ["@babel/runtime@7.29.2", "", {}, "sha512-JiDShH45zKHWyGe4ZNVRrCjBz8Nh9TMmZG1kh4QTK8hCBTWBi8Da+i7s1fJw7/lYpM4ccepSNfqzZ/QvABBi5g=="],
 
-    "@clinebot/agents": ["@clinebot/agents@0.0.2", "", { "dependencies": { "@clinebot/llms": "0.0.2", "zod": "^4.3.6" } }, "sha512-yh7mYXyLB1JKkkMyWNa5byRjM4p2gboAKS7WuoAkYO5b52nDBWwb80ONxL9O3A8m7JolvRygXUrGtKOrilfw6Q=="],
+    "@clinebot/agents": ["@clinebot/agents@0.0.3", "", { "dependencies": { "@clinebot/llms": "0.0.3", "zod": "^4.3.6" } }, "sha512-D7bChcmfw0SIFzWYAuE66LjryUBoHmOf3vRmRz36LQnhFbiSQKZV0cut7nKCNQMtzfCWQYFnIa07MRglDJlHTQ=="],
 
-    "@clinebot/core": ["@clinebot/core@0.0.2", "", { "dependencies": { "@clinebot/agents": "0.0.2", "@clinebot/llms": "0.0.2", "nanoid": "^5.1.7", "simple-git": "^3.32.3", "yaml": "^2.8.2", "zod": "^4.3.6" } }, "sha512-3mQ0lx+tikQoCTjs9b+cUQSX6gpd9Q+RyXkUj6ImXDW1BMwOhpTqvk/lKURAS4cSptClhB/qgttEhRq8DSAuvQ=="],
+    "@clinebot/core": ["@clinebot/core@0.0.3", "", { "dependencies": { "@clinebot/agents": "0.0.3", "@clinebot/llms": "0.0.3", "nanoid": "^5.1.7", "simple-git": "^3.32.3", "yaml": "^2.8.2", "zod": "^4.3.6" } }, "sha512-B78TeqeKSpLEjm68phYEZJQsegUkFxsqORw2tpXge90IEC/p3eimnXf6j/3/iCaiyv0BZk5r1gOm0NE0/N5A1w=="],
 
-    "@clinebot/llms": ["@clinebot/llms@0.0.2", "", { "dependencies": { "@ai-sdk/amazon-bedrock": "^4.0.67", "@ai-sdk/google-vertex": "^4.0.74", "@ai-sdk/mistral": "^3.0.24", "@anthropic-ai/sdk": "^0.78.0", "@aws-sdk/credential-providers": "^3.922.0", "@google/genai": "^1.43.0", "@streamparser/json": "^0.0.21", "ai": "^6.0.112", "ai-sdk-provider-claude-code": "^3.4.3", "ai-sdk-provider-codex-cli": "^1.1.0", "ai-sdk-provider-opencode-sdk": "^2.1.2", "dify-ai-provider": "^1.1.0", "nanoid": "^5.1.7", "openai": "^6.25.0", "zod": "^4.3.6" }, "peerDependencies": { "@aws-sdk/client-bedrock-runtime": "^3.0.0" }, "optionalPeers": ["@aws-sdk/client-bedrock-runtime"] }, "sha512-zGlWHtE1Z+99ksD245e+si83ohwwbQQuBk+YrHBBCBzbCDBTsAGn5m678c6l0Mbk8cKvUkXRKUxQzfpy35f+Ag=="],
+    "@clinebot/llms": ["@clinebot/llms@0.0.3", "", { "dependencies": { "@ai-sdk/amazon-bedrock": "^4.0.67", "@ai-sdk/google-vertex": "^4.0.74", "@ai-sdk/mistral": "^3.0.24", "@anthropic-ai/sdk": "^0.78.0", "@aws-sdk/credential-providers": "^3.922.0", "@google/genai": "^1.43.0", "@streamparser/json": "^0.0.21", "ai": "^6.0.112", "ai-sdk-provider-claude-code": "^3.4.3", "ai-sdk-provider-codex-cli": "^1.1.0", "ai-sdk-provider-opencode-sdk": "^2.1.2", "dify-ai-provider": "^1.1.0", "nanoid": "^5.1.7", "openai": "^6.25.0", "zod": "^4.3.6" }, "peerDependencies": { "@aws-sdk/client-bedrock-runtime": "^3.0.0" }, "optionalPeers": ["@aws-sdk/client-bedrock-runtime"] }, "sha512-rWRhchJmQFN4mSJ9Qq3Px4Tv/1bBp1wIR3Ruac+yEUMPxYesEWUpRJJB3nTSJhQbLBBiXT08Ko3Y9zYSJ3T/ww=="],
 
     "@google/genai": ["@google/genai@1.46.0", "", { "dependencies": { "google-auth-library": "^10.3.0", "p-retry": "^4.6.2", "protobufjs": "^7.5.4", "ws": "^8.18.0" }, "peerDependencies": { "@modelcontextprotocol/sdk": "^1.25.2" }, "optionalPeers": ["@modelcontextprotocol/sdk"] }, "sha512-ewPMN5JkKfgU5/kdco9ZhXBHDPhVqZpMQqIFQhwsHLf8kyZfx1cNpw1pHo1eV6PGEW7EhIBFi3aYZraFndAXqg=="],
 
