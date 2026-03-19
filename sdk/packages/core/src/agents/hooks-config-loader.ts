@@ -45,10 +45,28 @@ const HOOK_CONFIG_FILE_LOOKUP = new Map<string, HookConfigFileName>(
 	Object.values(HookConfigFileName).map((name) => [name.toLowerCase(), name]),
 );
 
+const SUPPORTED_HOOK_FILE_EXTENSIONS = new Set([
+	"",
+	".sh",
+	".bash",
+	".zsh",
+	".js",
+	".mjs",
+	".cjs",
+	".ts",
+	".mts",
+	".cts",
+	".py",
+]);
+
 export function toHookConfigFileName(
 	fileName: string,
 ): HookConfigFileName | undefined {
-	const key = basename(fileName, extname(fileName)).trim().toLowerCase();
+	const extension = extname(fileName).toLowerCase();
+	if (!SUPPORTED_HOOK_FILE_EXTENSIONS.has(extension)) {
+		return undefined;
+	}
+	const key = basename(fileName, extension).trim().toLowerCase();
 	return HOOK_CONFIG_FILE_LOOKUP.get(key);
 }
 

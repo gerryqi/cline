@@ -323,6 +323,9 @@ function inferHookCommand(path: string): string[] {
 	) {
 		return ["bun", "run", path];
 	}
+	if (lowered.endsWith(".py")) {
+		return ["python3", path];
+	}
 	// Default to bash for legacy hook files with no extension/shebang.
 	return ["/bin/bash", path];
 }

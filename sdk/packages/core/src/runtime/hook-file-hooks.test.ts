@@ -17,6 +17,22 @@ async function createWorkspaceWithHook(
 }
 
 describe("createHookConfigFileHooks", () => {
+	it("ignores example hook files", async () => {
+		const { workspace } = await createWorkspaceWithHook(
+			"PreToolUse.example",
+			'echo \'HOOK_CONTROL\t{"cancel":true,"context":"should-not-run"}\'\n',
+		);
+		try {
+			const hooks = createHookConfigFileHooks({
+				cwd: workspace,
+				workspacePath: workspace,
+			});
+			expect(hooks).toBeUndefined();
+		} finally {
+			await rm(workspace, { recursive: true, force: true });
+		}
+	});
+
 	it("executes extensionless legacy hook files via bash fallback", async () => {
 		const { workspace } = await createWorkspaceWithHook(
 			"PreToolUse",
@@ -98,6 +114,37 @@ describe("createHookConfigFileHooks", () => {
 			expect(control).toMatchObject({
 				review: true,
 				context: "needs-review",
+			});
+		} finally {
+			await rm(workspace, { recursive: true, force: true });
+		}
+	});
+
+	it("executes python hook files", async () => {
+		const { workspace } = await createWorkspaceWithHook(
+			"PreToolUse.py",
+			'print(\'HOOK_CONTROL\\t{"cancel": false, "context": "python-ok"}\')\n',
+		);
+		try {
+			const hooks = createHookConfigFileHooks({
+				cwd: workspace,
+				workspacePath: workspace,
+			});
+			expect(hooks?.onToolCallStart).toBeTypeOf("function");
+			const control = await hooks?.onToolCallStart?.({
+				agentId: "agent_1",
+				conversationId: "conv_1",
+				parentAgentId: null,
+				iteration: 1,
+				call: {
+					id: "call_1",
+					name: "read_file",
+					input: { path: "README.md" },
+				},
+			});
+			expect(control).toMatchObject({
+				cancel: false,
+				context: "python-ok",
 			});
 		} finally {
 			await rm(workspace, { recursive: true, force: true });

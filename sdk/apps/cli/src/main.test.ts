@@ -32,6 +32,9 @@ const runtimeMocks = vi.hoisted(() => ({
 	}),
 	runInteractive: vi.fn(),
 }));
+const historyMocks = vi.hoisted(() => ({
+	runHistoryCommand: vi.fn(async () => 0),
+}));
 const loggingMocks = vi.hoisted(() => ({
 	createCliLoggerAdapter: vi.fn(() => ({
 		core: undefined,
@@ -79,6 +82,7 @@ vi.mock("@clinebot/llms", () => ({
 vi.mock("./runtime/prompt", () => ({
 	resolveSystemPrompt: promptMocks.resolveSystemPrompt,
 }));
+vi.mock("./commands/history", () => historyMocks);
 vi.mock("./logging/adapter", () => loggingMocks);
 
 describe("runCli lightweight command dispatch", () => {
