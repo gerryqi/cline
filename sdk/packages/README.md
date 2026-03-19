@@ -36,9 +36,9 @@ This directory is the single documentation source for package-level responsibili
 
 ## Runtime Entry Points
 
-- Node-oriented imports: `@clinebot/<pkg>/node`
-- Browser entry points exist for API compatibility; some packages intentionally throw in browser mode for server-only features (`agents`, `core`, `rpc`).
-- `@clinebot/core/node` contains Node-only runtime/session services.
+- Node-oriented imports exist where packages expose a distinct Node alias.
+- `@clinebot/core` itself is now the Node/runtime-oriented entry point for host/session services.
+- Browser entry points still exist in packages that intentionally publish a browser surface, but `@clinebot/core` no longer does.
 
 ## Notes for Doc Consolidation
 

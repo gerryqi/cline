@@ -1,7 +1,7 @@
 {
 	"name": "@clinebot/core",
-	"version": "0.0.3",
-	"main": "dist/index.node.js",
+	"version": "0.0.4",
+	"main": "./dist/index.node.js",
 	"dependencies": {
 		"@clinebot/agents": "workspace:*",
 		"@clinebot/llms": "workspace:*",
@@ -14,7 +14,6 @@
 	},
 	"exports": {
 		".": {
-			"browser": "./dist/index.browser.js",
 			"development": "./dist/index.node.js",
 			"types": "./dist/index.node.d.ts",
 			"import": "./dist/index.node.js"
@@ -23,11 +22,6 @@
 			"development": "./src/index.node.ts",
 			"types": "./dist/index.node.d.ts",
 			"import": "./dist/index.node.js"
-		},
-		"./browser": {
-			"development": "./dist/index.browser.js",
-			"types": "./dist/index.browser.d.ts",
-			"import": "./dist/index.browser.js"
 		}
 	},
 	"description": "State-aware orchestration for Cline Agent runtimes",
@@ -45,5 +39,5 @@
 		"test:watch": "vitest --config vitest.config.ts"
 	},
 	"type": "module",
-	"types": "dist/index.node.d.ts"
+	"types": "./dist/index.node.d.ts"
 }

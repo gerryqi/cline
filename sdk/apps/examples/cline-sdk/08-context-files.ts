@@ -15,7 +15,7 @@
  * Run: bun run 08-context-files.ts
  */
 
-import { createSessionHost } from "@clinebot/core/node";
+import { createSessionHost } from "@clinebot/core";
 
 async function demoSingleFile() {
 	console.log("\n=== Single File Context ===\n");

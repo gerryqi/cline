@@ -29,6 +29,9 @@ import {
 	toRpcTurnResult,
 } from "./rpc-runtime/session-helpers";
 
+const RPC_RUNTIME_NAME = "rpc-runtime";
+const RPC_SESSION_COMPONENT = "rpc-runtime-session";
+
 export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 	const sessionManager = new DefaultSessionManager({
 		distinctId: process.pid.toString(),
@@ -72,11 +75,12 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 			const config = parseStartPayload(request);
 			applyHomeDir(config);
 			const runtimeLogger = createCliLoggerAdapter({
-				runtime: "rpc-runtime",
-				component: "rpc-runtime-session",
+				runtime: RPC_RUNTIME_NAME,
+				component: RPC_SESSION_COMPONENT,
 				runtimeConfig: config.logger,
 			}).core;
-			const sessionId = `${Date.now()}_${randomUUID().slice(0, 5)}`;
+			const sessionId =
+				config.sessionId?.trim() || `${Date.now()}_${randomUUID().slice(0, 5)}`;
 			const startedConfig = await buildSessionStartInput({
 				config,
 				sessionId,
@@ -112,8 +116,8 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 			const request = parseSendPayload(requestInput);
 			applyHomeDir(request.config);
 			const runtimeLogger = createCliLoggerAdapter({
-				runtime: "rpc-runtime",
-				component: "rpc-runtime-session",
+				runtime: RPC_RUNTIME_NAME,
+				component: RPC_SESSION_COMPONENT,
 				runtimeConfig: request.config.logger,
 			}).core;
 			const input = request.prompt.trim();
@@ -192,8 +196,8 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 			const known = activeSessions.has(id);
 			await sessionManager.abort(id);
 			createCliLoggerAdapter({
-				runtime: "rpc-runtime",
-				component: "rpc-runtime-session",
+				runtime: RPC_RUNTIME_NAME,
+				component: RPC_SESSION_COMPONENT,
 			}).core.info?.("RPC runtime session abort requested", {
 				sessionId: id,
 				known,
@@ -208,8 +212,8 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 			const known = activeSessions.has(id);
 			await sessionManager.stop(id);
 			createCliLoggerAdapter({
-				runtime: "rpc-runtime",
-				component: "rpc-runtime-session",
+				runtime: RPC_RUNTIME_NAME,
+				component: RPC_SESSION_COMPONENT,
 			}).core.info?.("RPC runtime session stopped", {
 				sessionId: id,
 				known,

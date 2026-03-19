@@ -23,7 +23,7 @@
  * Run: bun run 11-teams.ts
  */
 
-import { createSessionHost } from "@clinebot/core/node";
+import { createSessionHost } from "@clinebot/core";
 
 async function demoBasicTeam() {
 	console.log("\n=== Basic Agent Team ===\n");

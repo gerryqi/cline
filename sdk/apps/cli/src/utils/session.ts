@@ -193,6 +193,7 @@ function toRpcStartRequest(
 ): RpcChatStartSessionRequest {
 	const config = input.config;
 	const request: RpcChatStartSessionRequest = {
+		sessionId: config.sessionId,
 		workspaceRoot: config.workspaceRoot ?? config.cwd,
 		cwd: config.cwd,
 		provider: config.providerId,

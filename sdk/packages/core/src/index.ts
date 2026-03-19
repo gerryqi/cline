@@ -4,6 +4,15 @@
  * Runtime-agnostic core contracts and shared state utilities.
  */
 
+export {
+	type AgentConfig,
+	createTool,
+	getClineDefaultSystemPrompt,
+	type Tool,
+	type ToolApprovalRequest,
+	type ToolApprovalResult,
+	type ToolContext,
+} from "@clinebot/agents";
 // Shared contracts and path helpers re-exported for app consumers.
 export type {
 	AgentMode,

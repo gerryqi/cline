@@ -10,7 +10,7 @@ session lifecycle into a host-ready runtime.
 - provider settings and account services
 - default runtime tools and MCP integration
 - storage-backed session and team state helpers
-- host-facing Node helpers through `@clinebot/core/node`
+- host-facing Node helpers through `@clinebot/core`
 
 ## Installation
 
@@ -20,15 +20,15 @@ npm install @clinebot/core
 
 ## Entry Points
 
-- `@clinebot/core`: core contracts, shared utilities, and RPC helper re-exports (`RpcSessionClient`, `getRpcServerHealth`, runtime bridge helpers)
-- `@clinebot/core/node`: Node/server helpers for building hosts and runtimes
+- `@clinebot/core`: core contracts, shared utilities, and Node/server helpers for building hosts and runtimes
+- `@clinebot/core/node`: optional alias for the same Node/server runtime surface
 
 ## Typical Usage
 
-Most host apps should start with `@clinebot/core/node`.
+Most host apps should start with `@clinebot/core`.
 
 ```ts
-import { createSessionHost } from "@clinebot/core/node";
+import { createSessionHost } from "@clinebot/core";
 
 const host = await createSessionHost({});
 
@@ -53,7 +53,7 @@ await host.dispose();
 
 ### Runtime and Sessions
 
-Use `@clinebot/core/node` for host-facing runtime assembly:
+Use `@clinebot/core` for host-facing runtime assembly:
 
 - `createSessionHost(...)`
 - `DefaultSessionManager`
@@ -73,7 +73,7 @@ The package also exports storage and settings helpers such as:
 
 - `ProviderSettingsManager`
 - `SqliteTeamStore`
-- SQLite RPC session backend helpers from `@clinebot/core/node`
+- SQLite RPC session backend helpers from `@clinebot/core`
 
 ## Related Packages
 

@@ -90,17 +90,15 @@ for (const workspace of workspaces) {
 			}
 
 			if (pkg.name === "@clinebot/core") {
-				pkg.main = "./dist/index.js";
-				pkg.types = "./dist/index.d.ts";
+				pkg.main = "./dist/index.node.js";
+				pkg.types = "./dist/index.node.d.ts";
 				if (pkg.exports?.["."]) {
 					pkg.exports["."] = {
-						browser: "./dist/index.browser.js",
-						development: "./dist/index.js",
-						types: "./dist/index.d.ts",
-						import: "./dist/index.js",
+						development: "./dist/index.node.js",
+						types: "./dist/index.node.d.ts",
+						import: "./dist/index.node.js",
 					};
 				}
-				delete pkg.exports?.["./node"];
 			}
 		}
 

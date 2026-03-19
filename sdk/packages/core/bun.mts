@@ -5,7 +5,6 @@ export {};
 const external = [
 	"@clinebot/agents",
 	"@clinebot/llms",
-	"@clinebot/rpc",
 	"nanoid",
 	"simple-git",
 	"yaml",
@@ -14,16 +13,6 @@ const external = [
 
 const builds: Parameters<typeof Bun.build>[0][] = [
 	{
-		entrypoints: ["./src/index.ts"],
-		outdir: "./dist",
-		target: "node",
-		format: "esm",
-		minify: true,
-		packages: "bundle",
-		sourcemap: "none",
-		external,
-	},
-	{
 		entrypoints: ["./src/index.node.ts"],
 		outdir: "./dist",
 		target: "node",
@@ -31,15 +20,6 @@ const builds: Parameters<typeof Bun.build>[0][] = [
 		minify: true,
 		packages: "bundle",
 		sourcemap: "none",
-		external,
-	},
-	{
-		entrypoints: ["./src/index.browser.ts"],
-		outdir: "./dist",
-		format: "esm",
-		minify: true,
-		sourcemap: "none",
-		packages: "bundle",
 		external,
 	},
 ];

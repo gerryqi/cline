@@ -49,6 +49,7 @@ async function runSessionsList(
 			Number.isFinite(limit) ? limit : 200,
 		)) as HistoryListRow[];
 		if (!sessions || sessions.length === 0) {
+			process.stdout.write(JSON.stringify([]));
 			return 0;
 		}
 

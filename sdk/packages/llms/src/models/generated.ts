@@ -14,7 +14,7 @@ export const GENERATED_PROVIDER_MODELS: {
 	version: number;
 	providers: Record<string, Record<string, ModelInfo>>;
 } = {
-	version: 1773862738565,
+	version: 1773940480693,
 	providers: {
 		aihubmix: {
 			"claude-sonnet-4-6": {
@@ -4235,6 +4235,20 @@ export const GENERATED_PROVIDER_MODELS: {
 			},
 		},
 		ollama: {
+			"minimax-m2.7": {
+				id: "minimax-m2.7",
+				name: "minimax-m2.7",
+				contextWindow: 204800,
+				maxTokens: 131072,
+				capabilities: ["tools", "reasoning"],
+				pricing: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+				},
+				releaseDate: "2026-03-18",
+			},
 			"nemotron-3-super": {
 				id: "nemotron-3-super",
 				name: "nemotron-3-super",
@@ -5240,6 +5254,45 @@ export const GENERATED_PROVIDER_MODELS: {
 					output: 1.2,
 					cacheRead: 0.06,
 					cacheWrite: 0.375,
+				},
+				releaseDate: "2026-03-18",
+			},
+			"xiaomi/mimo-v2-omni": {
+				id: "xiaomi/mimo-v2-omni",
+				name: "MiMo-V2-Omni",
+				contextWindow: 262144,
+				maxTokens: 65536,
+				capabilities: [
+					"images",
+					"tools",
+					"reasoning",
+					"structured_output",
+					"temperature",
+				],
+				pricing: {
+					input: 0.4,
+					output: 2,
+					cacheRead: 0,
+					cacheWrite: 0,
+				},
+				releaseDate: "2026-03-18",
+			},
+			"xiaomi/mimo-v2-pro": {
+				id: "xiaomi/mimo-v2-pro",
+				name: "MiMo-V2-Pro",
+				contextWindow: 1048576,
+				maxTokens: 65536,
+				capabilities: [
+					"tools",
+					"reasoning",
+					"structured_output",
+					"temperature",
+				],
+				pricing: {
+					input: 1,
+					output: 3,
+					cacheRead: 0,
+					cacheWrite: 0,
 				},
 				releaseDate: "2026-03-18",
 			},
@@ -11582,20 +11635,6 @@ export const GENERATED_PROVIDER_MODELS: {
 			"grok-4.20-beta-latest-reasoning": {
 				id: "grok-4.20-beta-latest-reasoning",
 				name: "Grok 4.20 Beta (Reasoning)",
-				contextWindow: 2000000,
-				maxTokens: 30000,
-				capabilities: ["images", "tools", "reasoning", "temperature"],
-				pricing: {
-					input: 2,
-					output: 6,
-					cacheRead: 0.2,
-					cacheWrite: 0,
-				},
-				releaseDate: "2026-03-09",
-			},
-			"grok-4.20-multi-agent-beta-latest": {
-				id: "grok-4.20-multi-agent-beta-latest",
-				name: "Grok 4.20 Multi-Agent Beta",
 				contextWindow: 2000000,
 				maxTokens: 30000,
 				capabilities: ["images", "tools", "reasoning", "temperature"],

@@ -1,4 +1,17 @@
-import type { AgentEvent } from "@clinebot/agents";
+import { EventEmitter } from "node:events";
+import type { AgentEvent, TeamEvent } from "@clinebot/agents";
+
+export const getUIEventEmitter = () =>
+	new EventEmitter() as InteractiveEventBridge;
+
+interface InteractiveEventBridge {
+	on(event: "agent", listener: (event: AgentEvent) => void): this;
+	on(event: "team", listener: (event: TeamEvent) => void): this;
+	off(event: "agent", listener: (event: AgentEvent) => void): this;
+	off(event: "team", listener: (event: TeamEvent) => void): this;
+	emit(event: "agent", payload: AgentEvent): boolean;
+	emit(event: "team", payload: TeamEvent): boolean;
+}
 
 type SessionManagerSubscriber = {
 	subscribe(listener: (event: unknown) => void): () => void;

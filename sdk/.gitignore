@@ -7,6 +7,7 @@ dist
 *.tgz
 target
 .next
+.map
 
 # code coverage
 coverage

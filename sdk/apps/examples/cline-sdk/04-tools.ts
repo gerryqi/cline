@@ -24,7 +24,7 @@
  * Run: bun run 04-tools.ts
  */
 
-import { createSessionHost } from "@clinebot/core/node";
+import { createSessionHost } from "@clinebot/core";
 
 const POLICY_ALLOWED = { enabled: true, autoApprove: true };
 const POLICY_BLOCKED = { enabled: false, autoApprove: false };

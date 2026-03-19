@@ -1,10 +1,9 @@
-import { EventEmitter } from "node:events";
-import type { AgentEvent, TeamEvent } from "@clinebot/agents";
+import type { AgentEvent } from "@clinebot/agents";
 import {
 	prewarmFileIndex,
 	SessionSource,
 	type UserInstructionConfigWatcher,
-} from "@clinebot/core/node";
+} from "@clinebot/core";
 import type { providers } from "@clinebot/llms";
 import { render } from "ink";
 import React from "react";
@@ -31,16 +30,7 @@ import {
 	resolveClineWelcomeLine,
 } from "./interactive-welcome";
 import { buildUserInputMessage } from "./prompt";
-import { subscribeToAgentEvents } from "./session-events";
-
-interface InteractiveEventBridge {
-	on(event: "agent", listener: (event: AgentEvent) => void): this;
-	on(event: "team", listener: (event: TeamEvent) => void): this;
-	off(event: "agent", listener: (event: AgentEvent) => void): this;
-	off(event: "team", listener: (event: TeamEvent) => void): this;
-	emit(event: "agent", payload: AgentEvent): boolean;
-	emit(event: "team", payload: TeamEvent): boolean;
-}
+import { getUIEventEmitter, subscribeToAgentEvents } from "./session-events";
 
 export async function runInteractive(
 	config: Config,
@@ -92,7 +82,7 @@ export async function runInteractive(
 		},
 	});
 
-	const uiEvents = new EventEmitter() as InteractiveEventBridge;
+	const uiEvents = getUIEventEmitter();
 
 	const onAgentEvent = (event: AgentEvent) => {
 		uiEvents.emit("agent", event);
@@ -176,8 +166,29 @@ export async function runInteractive(
 			guidance: `mistake_limit_reached: ${answer.trim()}`,
 		};
 	};
+	// Tracks the session that is currently live for send/abort/stop operations.
 	let activeSessionId = "";
-	const startSession = async (initial?: typeof initialMessages) => {
+	// One-time startup input: when present, the first interactive session
+	// reuses this historical id instead of allocating a new one.
+	const initialResumeSessionId = resumeSessionId?.trim() || undefined;
+	const applyStartedSession = (
+		started: Awaited<ReturnType<typeof sessionManager.start>>,
+	) => {
+		setActiveCliSession({
+			manifestPath: started.manifestPath,
+			transcriptPath: started.transcriptPath,
+			hookPath: started.hookPath,
+			messagesPath: started.messagesPath,
+			manifest: started.manifest,
+		});
+		activeSessionId = started.sessionId;
+	};
+	/**
+	 * Starts a brand-new interactive session. This path is used for normal boot
+	 * when we are not resuming, and for later reset/new-session flows where we
+	 * intentionally want a fresh session id.
+	 */
+	const startFreshSession = async (initial: typeof initialMessages = []) => {
 		const started = await sessionManager.start({
 			source: SessionSource.CLI,
 			config: {
@@ -196,16 +207,43 @@ export async function runInteractive(
 			userInstructionWatcher,
 			onTeamRestored: () => {},
 		});
-		setActiveCliSession({
-			manifestPath: started.manifestPath,
-			transcriptPath: started.transcriptPath,
-			hookPath: started.hookPath,
-			messagesPath: started.messagesPath,
-			manifest: started.manifest,
-		});
-		activeSessionId = started.sessionId;
+		applyStartedSession(started);
 	};
-	await startSession(initialMessages);
+	/**
+	 * Starts the initial interactive session by continuing an existing historical
+	 * session id. This is only used once during startup when `--resume` selected
+	 * a session; later reset/new-session flows use `startFreshSession()` instead.
+	 */
+	const startResumedSession = async (
+		resumeId: string,
+		initial: typeof initialMessages,
+	) => {
+		const started = await sessionManager.start({
+			source: SessionSource.CLI,
+			config: {
+				...config,
+				sessionId: resumeId,
+				enableTools: chatCommandState.enableTools,
+				cwd: chatCommandState.cwd,
+				workspaceRoot: chatCommandState.workspaceRoot,
+				hooks,
+				onTeamEvent: (event) => {
+					uiEvents.emit("team", event);
+				},
+				onConsecutiveMistakeLimitReached: resolveMistakeLimitDecision,
+			},
+			interactive: true,
+			initialMessages: initial,
+			userInstructionWatcher,
+			onTeamRestored: () => {},
+		});
+		applyStartedSession(started);
+	};
+	if (initialResumeSessionId) {
+		await startResumedSession(initialResumeSessionId, initialMessages);
+	} else {
+		await startFreshSession(initialMessages);
+	}
 
 	let isRunning = false;
 	let abortRequested = false;
@@ -298,7 +336,7 @@ export async function runInteractive(
 								if (activeSessionId) {
 									await sessionManager.stop(activeSessionId);
 								}
-								await startSession([]);
+								await startFreshSession([]);
 							},
 							stop: async () => {
 								requestExit();

@@ -33,6 +33,7 @@ export interface RpcChatRuntimeLoggerConfig {
 }
 
 export interface RpcChatStartSessionRequest extends RpcChatRuntimeConfigBase {
+	sessionId?: string;
 	workspaceRoot: string;
 	provider: string;
 	model: string;

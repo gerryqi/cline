@@ -382,6 +382,7 @@ export class RpcSessionClient {
 		request: RpcChatStartSessionRequest,
 	): Promise<RpcChatStartSessionResponse> {
 		const runtimeRequest = {
+			sessionId: request.sessionId ?? "",
 			workspaceRoot: request.workspaceRoot,
 			cwd: request.cwd ?? "",
 			provider: request.provider,

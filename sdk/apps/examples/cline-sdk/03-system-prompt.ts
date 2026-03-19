@@ -15,7 +15,7 @@
  * Run: bun run 03-system-prompt.ts
  */
 
-import { createSessionHost } from "@clinebot/core/node";
+import { createSessionHost } from "@clinebot/core";
 
 async function demoBasicSystemPrompt() {
 	console.log("\n=== Basic System Prompt ===");

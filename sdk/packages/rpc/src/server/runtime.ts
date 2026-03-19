@@ -353,6 +353,7 @@ export class ClineGatewayRuntime {
 		}
 		const payload = request.request
 			? {
+					sessionId: safeString(request.request.sessionId),
 					workspaceRoot: safeString(request.request.workspaceRoot),
 					cwd: safeString(request.request.cwd),
 					provider: safeString(request.request.provider),

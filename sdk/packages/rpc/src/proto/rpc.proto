@@ -225,26 +225,27 @@ message RuntimeLoggerConfig {
 }
 
 message RuntimeSessionConfig {
-  string workspace_root = 1;
-  string cwd = 2;
-  string provider = 3;
-  string model = 4;
-  string mode = 5;
-  string api_key = 6;
-  string system_prompt = 7;
-  int32 max_iterations = 8;
-  bool has_max_iterations = 9;
-  bool enable_tools = 10;
-  bool enable_spawn = 11;
-  bool enable_teams = 12;
-  bool auto_approve_tools = 13;
-  bool has_auto_approve_tools = 14;
-  string team_name = 15;
-  int32 mission_step_interval = 16;
-  int32 mission_time_interval_ms = 17;
-  map<string, RuntimeToolPolicy> tool_policies = 18;
-  repeated RuntimeChatMessage initial_messages = 19;
-  RuntimeLoggerConfig logger = 20;
+  string session_id = 1;
+  string workspace_root = 2;
+  string cwd = 3;
+  string provider = 4;
+  string model = 5;
+  string mode = 6;
+  string api_key = 7;
+  string system_prompt = 8;
+  int32 max_iterations = 9;
+  bool has_max_iterations = 10;
+  bool enable_tools = 11;
+  bool enable_spawn = 12;
+  bool enable_teams = 13;
+  bool auto_approve_tools = 14;
+  bool has_auto_approve_tools = 15;
+  string team_name = 16;
+  int32 mission_step_interval = 17;
+  int32 mission_time_interval_ms = 18;
+  map<string, RuntimeToolPolicy> tool_policies = 19;
+  repeated RuntimeChatMessage initial_messages = 20;
+  RuntimeLoggerConfig logger = 21;
 }
 
 message RuntimeAttachmentFile {

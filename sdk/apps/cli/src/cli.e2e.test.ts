@@ -127,7 +127,7 @@ describe("cli e2e", () => {
 		expect(asText(result.stdout)).toContain("--reasoning-effort");
 		expect(asText(result.stdout)).toContain("--refresh-models");
 		expect(asText(result.stdout)).toContain(
-			"list <workflows|rules|skills|agents|history|hooks|mcp>",
+			"list <workflows|rules|skills|agents|hooks|mcp>",
 		);
 	});
 
@@ -187,7 +187,7 @@ describe("cli e2e", () => {
 		});
 		expect(result.status).toBe(1);
 		expect(asText(result.stderr)).toContain(
-			'list requires one of: workflows, rules, skills, agents, history, hooks, mcp (got "unknown-target")',
+			'list requires one of: workflows, rules, skills, agents, hooks, mcp (got "unknown-target")',
 		);
 	});
 
@@ -233,11 +233,11 @@ describe("cli e2e", () => {
 		expect(Array.isArray(parsed)).toBe(true);
 	});
 
-	it("lists history items from isolated storage", () => {
+	it("prints empty history state from isolated storage", () => {
 		const homeDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-home-"));
 		const sessionDir = mkdtempSync(path.join(os.tmpdir(), "cli-e2e-sessions-"));
 		tempDirs.push(homeDir, sessionDir);
-		const result = runCli(["list", "history", "--limit", "5"], {
+		const result = runCli(["history", "--limit", "5"], {
 			env: {
 				...createIsolatedEnv(),
 				HOME: homeDir,
@@ -246,13 +246,7 @@ describe("cli e2e", () => {
 		});
 
 		expect(result.status).toBe(0);
-		const lines = asText(result.stdout)
-			.split("\n")
-			.map((line) => line.trim())
-			.filter((line) => line.length > 0);
-		for (const line of lines) {
-			expect(line).toMatch(/^.+ - .+ - .+ - .+$/);
-		}
+		expect(asText(result.stdout)).toContain("No history found.");
 	});
 
 	it("returns an error when deleting a session without --session-id", () => {

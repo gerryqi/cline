@@ -290,41 +290,6 @@ async function runHooksListCommand(
 	return 0;
 }
 
-async function runHistoryListCommand(
-	rawArgs: string[],
-	outputMode: CliOutputMode,
-	io: ListIo,
-): Promise<number> {
-	const { listSessions } = await import("../utils/session");
-	const { formatHistoryListLine } = await import("./history");
-	const limitIndex = rawArgs.indexOf("--limit");
-	const limit =
-		limitIndex >= 0 && limitIndex + 1 < rawArgs.length
-			? Number.parseInt(rawArgs[limitIndex + 1] ?? "200", 10)
-			: 200;
-
-	const sessions = await listSessions(Number.isFinite(limit) ? limit : 200);
-
-	if (!sessions || sessions.length === 0) {
-		if (outputMode === "json") {
-			process.stdout.write(JSON.stringify([]));
-		} else {
-			io.writeln("No history found.");
-		}
-		return 0;
-	}
-
-	if (outputMode === "json") {
-		process.stdout.write(JSON.stringify(sessions));
-		return 0;
-	}
-
-	for (const row of sessions as any[]) {
-		io.writeln(formatHistoryListLine(row));
-	}
-	return 0;
-}
-
 async function runMcpListCommand(
 	outputMode: CliOutputMode,
 	io: ListIo,
@@ -388,9 +353,6 @@ export async function runListCommand(input: {
 	if (listTarget === "agents") {
 		return runAgentsListCommand(input.outputMode, input.io);
 	}
-	if (listTarget === "history") {
-		return runHistoryListCommand(input.rawArgs, input.outputMode, input.io);
-	}
 	if (listTarget === "hooks") {
 		return runHooksListCommand(input.cwd, input.outputMode, input.io);
 	}
@@ -398,7 +360,7 @@ export async function runListCommand(input: {
 		return runMcpListCommand(input.outputMode, input.io);
 	}
 	input.io.writeErr(
-		`list requires one of: workflows, rules, skills, agents, history, hooks, mcp (got "${input.rawArgs[1] ?? ""}")`,
+		`list requires one of: workflows, rules, skills, agents, hooks, mcp (got "${input.rawArgs[1] ?? ""}")`,
 	);
 	return 1;
 }

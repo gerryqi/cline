@@ -19,6 +19,7 @@ describe("buildSessionStartInput", () => {
 	it("keeps maxIterations unset when not provided", async () => {
 		const { buildSessionStartInput } = await import("./session-helpers");
 		const built = await buildSessionStartInput({
+			sessionId: "session-123",
 			config: {
 				provider: "cline",
 				model: "anthropic/claude-sonnet-4.6",
@@ -31,6 +32,7 @@ describe("buildSessionStartInput", () => {
 			} as any,
 		});
 
+		expect(built.sessionInput.config.sessionId).toBe("session-123");
 		expect(built.sessionInput.config.maxIterations).toBeUndefined();
 	});
 });

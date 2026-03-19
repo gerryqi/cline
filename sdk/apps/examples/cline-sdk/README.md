@@ -114,7 +114,7 @@ All tools respect the agent's working directory and can be customized with polic
 ### Minimal Session
 
 ```typescript
-import { createSessionHost } from "@clinebot/core/node";
+import { createSessionHost } from "@clinebot/core";
 
 const sessionManager = await createSessionHost({});
 
@@ -139,7 +139,7 @@ console.log(result.result?.text);
 ### With Custom Model
 
 ```typescript
-import { createSessionHost } from "@clinebot/core/node";
+import { createSessionHost } from "@clinebot/core";
 
 await sessionManager.start({
   config: {
@@ -199,7 +199,7 @@ await sessionManager.stop(sessionId);
 ### Custom Tools
 
 ```typescript
-import { createSessionHost } from "@clinebot/core/node";
+import { createSessionHost } from "@clinebot/core";
 import type { Tool } from "@clinebot/agents";
 
 const myTool: Tool = {
@@ -396,9 +396,20 @@ process.env.CLINE_SESSION_DATA_DIR = "/custom/path";
 Enable verbose logging:
 
 ```typescript
-import { createLogger } from "@clinebot/core/node";
-
-const logger = createLogger({ level: "debug" });
+const logger = {
+  debug: (message: string, metadata?: Record<string, unknown>) => {
+    console.debug("[cline]", message, metadata);
+  },
+  info: (message: string, metadata?: Record<string, unknown>) => {
+    console.info("[cline]", message, metadata);
+  },
+  warn: (message: string, metadata?: Record<string, unknown>) => {
+    console.warn("[cline]", message, metadata);
+  },
+  error: (message: string, metadata?: Record<string, unknown>) => {
+    console.error("[cline]", message, metadata);
+  },
+};
 
 await sessionManager.start({
   config: {
