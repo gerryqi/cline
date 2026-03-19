@@ -15,7 +15,7 @@ import type {
 	SessionPromptConfig,
 	SessionWorkspaceConfig,
 } from "@clinebot/shared";
-import type { ToolRoutingRule } from "../default-tools/model-tool-routing.js";
+import type { ToolRoutingRule } from "../tools/model-tool-routing.js";
 
 export type CoreAgentMode = AgentMode;
 

@@ -18,11 +18,6 @@ import { formatUserInputBlock, normalizeUserInput } from "@clinebot/shared";
 import { setHomeDirIfUnset } from "@clinebot/shared/storage";
 import { nanoid } from "nanoid";
 import { resolveAndLoadAgentPlugins } from "../agents/plugin-config-loader";
-import {
-	createBuiltinTools,
-	type ToolExecutors,
-	ToolPresets,
-} from "../default-tools";
 import { enrichPromptWithMentions } from "../input";
 import {
 	createHookAuditHooks,
@@ -36,6 +31,7 @@ import {
 	buildTeamProgressSummary,
 	toTeamProgressLifecycleEvent,
 } from "../team";
+import { createBuiltinTools, type ToolExecutors, ToolPresets } from "../tools";
 import { SessionSource, type SessionStatus } from "../types/common";
 import type { CoreSessionConfig } from "../types/config";
 import type { CoreSessionEvent } from "../types/events";

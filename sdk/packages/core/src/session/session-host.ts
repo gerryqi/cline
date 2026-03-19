@@ -9,8 +9,8 @@ import type {
 import { getRpcServerDefaultAddress, getRpcServerHealth } from "@clinebot/rpc";
 import { resolveSessionDataDir } from "@clinebot/shared/storage";
 import { nanoid } from "nanoid";
-import type { ToolExecutors } from "../default-tools";
 import { SqliteSessionStore } from "../storage/sqlite-session-store";
+import type { ToolExecutors } from "../tools";
 import { DefaultSessionManager } from "./default-session-manager";
 import { RpcCoreSessionService } from "./rpc-session-service";
 import type { SessionManager } from "./session-manager";

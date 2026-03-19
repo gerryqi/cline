@@ -14,6 +14,7 @@ import {
 	type SkillConfig,
 	type UserInstructionConfigWatcher,
 } from "../agents";
+import { SqliteTeamStore } from "../storage/sqlite-team-store";
 import {
 	createBuiltinTools,
 	DEFAULT_MODEL_TOOL_ROUTING_RULES,
@@ -22,8 +23,7 @@ import {
 	type ToolExecutors,
 	ToolPresets,
 	type ToolRoutingRule,
-} from "../default-tools";
-import { SqliteTeamStore } from "../storage/sqlite-team-store";
+} from "../tools";
 import type { CoreAgentMode, CoreSessionConfig } from "../types/config";
 import type {
 	RuntimeBuilder,

@@ -48,6 +48,22 @@ function stringifyMetadataJson(
 	return JSON.stringify(metadata);
 }
 
+function normalizeSessionTitle(title?: string | null): string | undefined {
+	const trimmed = title?.trim();
+	return trimmed ? trimmed.slice(0, 120) : undefined;
+}
+
+function sanitizeMetadataForStorage(
+	metadata: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | undefined {
+	if (!metadata) {
+		return undefined;
+	}
+	const next = { ...metadata };
+	delete next.title;
+	return Object.keys(next).length > 0 ? next : undefined;
+}
+
 export interface PersistedSessionUpdateInput {
 	sessionId: string;
 	expectedStatusLock?: number;
@@ -56,6 +72,7 @@ export interface PersistedSessionUpdateInput {
 	exitCode?: number | null;
 	prompt?: string | null;
 	metadataJson?: string | null;
+	title?: string | null;
 	parentSessionId?: string | null;
 	parentAgentId?: string | null;
 	agentId?: string | null;
@@ -173,6 +190,63 @@ export class UnifiedSessionPersistenceService {
 		);
 	}
 
+	private readSessionManifestFile(sessionId: string): {
+		path: string;
+		manifest?: SessionManifest;
+	} {
+		const manifestPath = this.sessionManifestPath(sessionId, false);
+		if (!existsSync(manifestPath)) {
+			return { path: manifestPath };
+		}
+		try {
+			const manifest = SessionManifestSchema.parse(
+				JSON.parse(readFileSync(manifestPath, "utf8")) as SessionManifest,
+			);
+			return { path: manifestPath, manifest };
+		} catch {
+			return { path: manifestPath };
+		}
+	}
+
+	private applyResolvedTitleToRow(row: SessionRowShape): SessionRowShape {
+		const existingMetadata =
+			typeof row.metadata_json === "string" &&
+			row.metadata_json.trim().length > 0
+				? (() => {
+						try {
+							const parsed = JSON.parse(row.metadata_json) as unknown;
+							if (
+								parsed &&
+								typeof parsed === "object" &&
+								!Array.isArray(parsed)
+							) {
+								return parsed as Record<string, unknown>;
+							}
+						} catch {
+							// Ignore malformed metadata payloads.
+						}
+						return undefined;
+					})()
+				: undefined;
+		const sanitizedMetadata = sanitizeMetadataForStorage(existingMetadata);
+		const { manifest } = this.readSessionManifestFile(row.session_id);
+		const manifestTitle = normalizeSessionTitle(
+			typeof manifest?.metadata?.title === "string"
+				? (manifest.metadata.title as string)
+				: undefined,
+		);
+		const resolvedMetadata = manifestTitle
+			? {
+					...(sanitizedMetadata ?? {}),
+					title: manifestTitle,
+				}
+			: sanitizedMetadata;
+		return {
+			...row,
+			metadata_json: stringifyMetadataJson(resolvedMetadata),
+		};
+	}
+
 	private createRootSessionId(): string {
 		return `${Date.now()}_${nanoid(5)}`;
 	}
@@ -210,6 +284,7 @@ export class UnifiedSessionPersistenceService {
 			metadata: input.metadata,
 			messages_path: messagesPath,
 		});
+		const storedMetadata = sanitizeMetadataForStorage(manifest.metadata);
 
 		await this.adapter.upsertSession({
 			session_id: sessionId,
@@ -235,7 +310,7 @@ export class UnifiedSessionPersistenceService {
 			conversation_id: null,
 			is_subagent: 0,
 			prompt: manifest.prompt ?? null,
-			metadata_json: stringifyMetadataJson(manifest.metadata),
+			metadata_json: stringifyMetadataJson(storedMetadata),
 			transcript_path: transcriptPath,
 			hook_path: hookPath,
 			messages_path: messagesPath,
@@ -293,40 +368,56 @@ export class UnifiedSessionPersistenceService {
 		sessionId: string;
 		prompt?: string | null;
 		metadata?: Record<string, unknown> | null;
+		title?: string | null;
 	}): Promise<{ updated: boolean }> {
 		for (let attempt = 0; attempt < 4; attempt++) {
 			const row = await this.adapter.getSession(input.sessionId);
 			if (!row || typeof row.status_lock !== "number") {
 				return { updated: false };
 			}
+			const sanitizedMetadata =
+				input.metadata === undefined
+					? undefined
+					: sanitizeMetadataForStorage(input.metadata);
 			const changed = await this.adapter.updateSession({
 				sessionId: input.sessionId,
 				prompt: input.prompt,
 				metadataJson:
 					input.metadata === undefined
 						? undefined
-						: stringifyMetadataJson(input.metadata),
+						: stringifyMetadataJson(sanitizedMetadata),
+				title: input.title,
 				expectedStatusLock: row.status_lock,
 			});
 			if (!changed.updated) {
 				continue;
 			}
-			const manifestPath = this.sessionManifestPath(input.sessionId, false);
-			if (existsSync(manifestPath)) {
-				try {
-					const manifest = SessionManifestSchema.parse(
-						JSON.parse(readFileSync(manifestPath, "utf8")) as SessionManifest,
-					);
-					if (input.prompt !== undefined) {
-						manifest.prompt = input.prompt ?? undefined;
-					}
-					if (input.metadata !== undefined) {
-						manifest.metadata = input.metadata ?? undefined;
-					}
-					this.writeSessionManifestFile(manifestPath, manifest);
-				} catch {
-					// Ignore malformed manifests and keep backend session state as source of truth.
+			const { path: manifestPath, manifest } = this.readSessionManifestFile(
+				input.sessionId,
+			);
+			if (manifest) {
+				if (input.prompt !== undefined) {
+					manifest.prompt = input.prompt ?? undefined;
 				}
+				const existingTitle = normalizeSessionTitle(
+					typeof manifest.metadata?.title === "string"
+						? (manifest.metadata.title as string)
+						: undefined,
+				);
+				const nextTitle =
+					input.title !== undefined
+						? normalizeSessionTitle(input.title)
+						: existingTitle;
+				const nextMetadata =
+					input.metadata !== undefined
+						? { ...(sanitizeMetadataForStorage(input.metadata) ?? {}) }
+						: { ...(sanitizeMetadataForStorage(manifest.metadata) ?? {}) };
+				if (nextTitle) {
+					nextMetadata.title = nextTitle;
+				}
+				manifest.metadata =
+					Object.keys(nextMetadata).length > 0 ? nextMetadata : undefined;
+				this.writeSessionManifestFile(manifestPath, manifest);
 			}
 			return { updated: true };
 		}
@@ -750,7 +841,9 @@ export class UnifiedSessionPersistenceService {
 			}
 			rows = await this.adapter.listSessions({ limit: scanLimit });
 		}
-		return rows.slice(0, requestedLimit);
+		return rows
+			.slice(0, requestedLimit)
+			.map((row) => this.applyResolvedTitleToRow(row));
 	}
 
 	async deleteSession(sessionId: string): Promise<{ deleted: boolean }> {

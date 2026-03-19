@@ -7,7 +7,7 @@ import type {
 } from "@clinebot/agents";
 import type { BasicLogger } from "@clinebot/shared";
 import type { UserInstructionConfigWatcher } from "../agents";
-import type { ToolExecutors } from "../default-tools";
+import type { ToolExecutors } from "../tools";
 import type { CoreSessionConfig } from "../types/config";
 
 export interface BuiltRuntime {

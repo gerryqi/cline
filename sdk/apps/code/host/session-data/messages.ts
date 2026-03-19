@@ -1,0 +1,359 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import {
+	sharedSessionMessagesPath,
+	sharedSessionMessagesWritePath,
+} from "../paths";
+import { nowMs } from "../state";
+import type { ChatTurnResult, HostContext, JsonRecord } from "../types";
+import {
+	parseF64Value,
+	parseU64Value,
+	stringifyMessageContent,
+} from "./common";
+
+function extractMessageUsageMeta(message: JsonRecord): JsonRecord | undefined {
+	const metrics =
+		message.metrics && typeof message.metrics === "object"
+			? (message.metrics as JsonRecord)
+			: undefined;
+	const modelInfo =
+		message.modelInfo && typeof message.modelInfo === "object"
+			? (message.modelInfo as JsonRecord)
+			: undefined;
+	const inputTokens = parseU64Value(metrics?.inputTokens);
+	const outputTokens = parseU64Value(metrics?.outputTokens);
+	const totalCost = parseF64Value(metrics?.cost);
+	const providerId =
+		(typeof message.providerId === "string" && message.providerId) ||
+		(typeof modelInfo?.provider === "string" ? modelInfo.provider : undefined);
+	const modelId =
+		(typeof message.modelId === "string" && message.modelId) ||
+		(typeof modelInfo?.id === "string" ? modelInfo.id : undefined);
+	if (
+		inputTokens === undefined &&
+		outputTokens === undefined &&
+		totalCost === undefined &&
+		!providerId &&
+		!modelId
+	) {
+		return undefined;
+	}
+	return {
+		inputTokens,
+		outputTokens,
+		totalCost,
+		providerId,
+		modelId,
+	};
+}
+
+export function readPersistedChatMessages(sessionId: string): unknown[] | null {
+	const path = sharedSessionMessagesPath(sessionId);
+	if (!existsSync(path)) {
+		return null;
+	}
+	try {
+		const parsed = JSON.parse(readFileSync(path, "utf8")) as
+			| { messages?: unknown[] }
+			| unknown[];
+		if (Array.isArray(parsed)) {
+			return parsed;
+		}
+		return Array.isArray(parsed.messages) ? parsed.messages : [];
+	} catch {
+		return null;
+	}
+}
+
+export function persistUsageInMessages(
+	messages: unknown[],
+	config: JsonRecord,
+	result: ChatTurnResult,
+): unknown[] {
+	const next = [...messages];
+	let assistantIndex = -1;
+	for (let i = next.length - 1; i >= 0; i -= 1) {
+		const item = next[i];
+		if (!item || typeof item !== "object") {
+			continue;
+		}
+		if ((item as JsonRecord).role === "assistant") {
+			assistantIndex = i;
+			break;
+		}
+	}
+	if (assistantIndex < 0) {
+		return next;
+	}
+
+	const assistantMessage = next[assistantIndex];
+	if (!assistantMessage || typeof assistantMessage !== "object") {
+		return next;
+	}
+
+	const record = { ...(assistantMessage as JsonRecord) };
+	const metrics =
+		record.metrics && typeof record.metrics === "object"
+			? { ...(record.metrics as JsonRecord) }
+			: {};
+	const inputTokens = result.usage?.inputTokens ?? result.inputTokens;
+	const outputTokens = result.usage?.outputTokens ?? result.outputTokens;
+	const totalCost = result.usage?.totalCost ?? result.totalCost;
+	if (typeof inputTokens === "number") {
+		metrics.inputTokens = inputTokens;
+	}
+	if (typeof outputTokens === "number") {
+		metrics.outputTokens = outputTokens;
+	}
+	if (
+		typeof totalCost === "number" &&
+		Number.isFinite(totalCost) &&
+		totalCost >= 0
+	) {
+		metrics.cost = totalCost;
+	}
+	record.metrics = metrics;
+	if (typeof config.provider === "string" && config.provider.trim()) {
+		record.providerId = config.provider.trim();
+	}
+	if (typeof config.model === "string" && config.model.trim()) {
+		record.modelId = config.model.trim();
+	}
+	const modelInfo =
+		record.modelInfo && typeof record.modelInfo === "object"
+			? { ...(record.modelInfo as JsonRecord) }
+			: {};
+	if (
+		typeof config.model === "string" &&
+		config.model.trim() &&
+		!modelInfo.id
+	) {
+		modelInfo.id = config.model.trim();
+	}
+	if (
+		typeof config.provider === "string" &&
+		config.provider.trim() &&
+		!modelInfo.provider
+	) {
+		modelInfo.provider = config.provider.trim();
+	}
+	record.modelInfo = modelInfo;
+	if (!record.ts) {
+		record.ts = nowMs();
+	}
+	next[assistantIndex] = record;
+	return next;
+}
+
+function buildToolPayloadJson(
+	toolName: string,
+	input: unknown,
+	result: unknown,
+	isError: boolean,
+): string {
+	return JSON.stringify({
+		toolName,
+		input,
+		result,
+		isError,
+	});
+}
+
+function normalizeRole(role: unknown): string {
+	switch (role) {
+		case "user":
+		case "assistant":
+		case "tool":
+		case "system":
+		case "status":
+		case "error":
+			return String(role);
+		default:
+			return "assistant";
+	}
+}
+
+export async function readSessionMessages(
+	ctx: HostContext,
+	sessionId: string,
+	maxMessages = 800,
+): Promise<unknown[]> {
+	const persisted = readPersistedChatMessages(sessionId);
+	const messages =
+		persisted && persisted.length > 0
+			? persisted
+			: (ctx.liveSessions.get(sessionId)?.messages ?? []);
+	const max = Math.max(1, maxMessages);
+	const start = Math.max(0, messages.length - max);
+	const baseTs = nowMs() - messages.length;
+	const out: JsonRecord[] = [];
+	const pendingToolMessages = new Map<string, [number, string, unknown]>();
+
+	for (let idx = start; idx < messages.length; idx += 1) {
+		const rawMessage = messages[idx];
+		if (!rawMessage || typeof rawMessage !== "object") {
+			continue;
+		}
+		const message = rawMessage as JsonRecord;
+		let textMeta = extractMessageUsageMeta(message);
+		const role = normalizeRole(message.role);
+		const createdAtBase = parseU64Value(message.ts) ?? baseTs + idx;
+		const messageIdBase =
+			(typeof message.id === "string" && message.id.trim()) ||
+			`history_message_${idx}`;
+		const contentBlocks = Array.isArray(message.content)
+			? (message.content as unknown[])
+			: null;
+
+		if (!contentBlocks) {
+			const content = stringifyMessageContent(message.content);
+			if (!content.trim()) {
+				continue;
+			}
+			out.push({
+				id: messageIdBase,
+				sessionId,
+				role,
+				content,
+				createdAt: createdAtBase,
+				meta: textMeta,
+			});
+			continue;
+		}
+
+		const textParts: string[] = [];
+		let textSegmentIndex = 0;
+		const outStartIndex = out.length;
+		const flushTextParts = (ts: number) => {
+			if (textParts.length === 0) {
+				return;
+			}
+			const joined = textParts.join("\n");
+			textParts.length = 0;
+			if (!joined.trim()) {
+				return;
+			}
+			out.push({
+				id: `${messageIdBase}_text_${textSegmentIndex}`,
+				sessionId,
+				role,
+				content: joined,
+				createdAt: ts,
+				meta: textMeta,
+			});
+			textSegmentIndex += 1;
+			textMeta = undefined;
+		};
+
+		for (let blockIdx = 0; blockIdx < contentBlocks.length; blockIdx += 1) {
+			const block = contentBlocks[blockIdx];
+			const blockTs = createdAtBase + blockIdx;
+			if (!block || typeof block !== "object") {
+				const line = stringifyMessageContent(block);
+				if (line.trim()) {
+					textParts.push(line);
+				}
+				continue;
+			}
+			const record = block as JsonRecord;
+			const blockType = typeof record.type === "string" ? record.type : "";
+			if (blockType === "tool_use") {
+				flushTextParts(blockTs);
+				const toolName =
+					typeof record.name === "string" ? record.name : "tool_call";
+				const toolUseId = typeof record.id === "string" ? record.id : "";
+				const input = record.input ?? null;
+				const outIndex = out.length;
+				out.push({
+					id: `${messageIdBase}_tool_use_${blockIdx}`,
+					sessionId,
+					role: "tool",
+					content: buildToolPayloadJson(toolName, input, null, false),
+					createdAt: blockTs,
+					meta: {
+						toolName,
+						hookEventName: "history_tool_use",
+					},
+				});
+				if (toolUseId.trim()) {
+					pendingToolMessages.set(toolUseId, [outIndex, toolName, input]);
+				}
+				continue;
+			}
+			if (blockType === "tool_result") {
+				flushTextParts(blockTs);
+				const toolUseId =
+					typeof record.tool_use_id === "string" ? record.tool_use_id : "";
+				const result = record.content ?? null;
+				const isError = Boolean(record.is_error);
+				const existing = pendingToolMessages.get(toolUseId);
+				if (existing) {
+					const [outIndex, toolName, input] = existing;
+					const target = out[outIndex];
+					if (target) {
+						target.content = buildToolPayloadJson(
+							toolName,
+							input,
+							result,
+							isError,
+						);
+						target.meta = {
+							toolName,
+							hookEventName: "history_tool_result",
+						};
+					}
+					pendingToolMessages.delete(toolUseId);
+				} else {
+					out.push({
+						id: `${messageIdBase}_tool_result_${blockIdx}`,
+						sessionId,
+						role: "tool",
+						content: buildToolPayloadJson("tool_result", null, result, isError),
+						createdAt: blockTs,
+						meta: {
+							toolName: "tool_result",
+							hookEventName: "history_tool_result",
+						},
+					});
+				}
+				continue;
+			}
+			const line = stringifyMessageContent(block);
+			if (line.trim()) {
+				textParts.push(line);
+			}
+		}
+
+		flushTextParts(createdAtBase + contentBlocks.length);
+		if (textMeta && out[outStartIndex]) {
+			out[outStartIndex].meta = {
+				...(typeof out[outStartIndex].meta === "object"
+					? (out[outStartIndex].meta as JsonRecord)
+					: {}),
+				...textMeta,
+			};
+		}
+	}
+
+	return out;
+}
+
+export function persistSessionMessages(
+	sessionId: string,
+	persistedMessages: unknown[],
+) {
+	const writePath = sharedSessionMessagesWritePath(sessionId);
+	mkdirSync(dirname(writePath), { recursive: true });
+	writeFileSync(
+		writePath,
+		JSON.stringify(
+			{
+				messages: persistedMessages,
+				ts: nowMs(),
+			},
+			null,
+			2,
+		),
+	);
+}

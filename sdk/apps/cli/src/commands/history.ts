@@ -1,3 +1,4 @@
+import { formatHumanReadableDate } from "@clinebot/shared";
 import { Box, render, Text, useInput } from "ink";
 import React, { useMemo, useState } from "react";
 import { formatUsd, writeln } from "../utils/output";
@@ -6,23 +7,7 @@ import {
 	type HistoryListRow,
 	listHistoryRows,
 } from "../utils/session-history-rows";
-import { updateSessionManifestTitle } from "../utils/session-manifest-title";
 import type { CliOutputMode } from "../utils/types";
-
-function formatDate(dateStr?: string): string {
-	if (!dateStr) return "(unknown-date)";
-	const date = new Date(dateStr);
-	if (Number.isNaN(date.getTime())) return dateStr;
-	return date.toLocaleString("en-US", {
-		year: "numeric",
-		month: "numeric",
-		day: "numeric",
-		hour: "numeric",
-		minute: "numeric",
-		second: "numeric",
-		hour12: true,
-	});
-}
 
 export function formatHistoryListLine(row: HistoryListRow): string {
 	const sessionId = row.session_id?.trim() || "(unknown-session)";
@@ -31,7 +16,7 @@ export function formatHistoryListLine(row: HistoryListRow): string {
 	const cost = formatUsd(row.metadata?.totalCost ?? 0);
 	const provider = row.provider?.trim() || "(unknown-provider)";
 	const model = row.model?.trim() || "(unknown-model)";
-	const date = formatDate(row.started_at);
+	const date = formatHumanReadableDate(row.started_at);
 	return `${date} - ${sessionId} - ${title} - ${cost} - ${provider} - ${model}`;
 }
 
@@ -136,20 +121,12 @@ async function runHistoryUpdate(
 	}
 
 	try {
-		const titleResult =
-			title !== undefined
-				? updateSessionManifestTitle(sessionId, title)
-				: { updated: false };
-		const result =
-			prompt !== undefined || metadata !== undefined
-				? await updateSession(sessionId, { prompt, metadata })
-				: { updated: titleResult.updated };
-		const updated = Boolean(result.updated || titleResult.updated);
+		const result = await updateSession(sessionId, { prompt, metadata, title });
 		if (outputMode === "json") {
-			process.stdout.write(JSON.stringify({ updated }));
-			return updated ? 0 : 1;
+			process.stdout.write(JSON.stringify(result));
+			return result.updated ? 0 : 1;
 		}
-		if (updated) {
+		if (result.updated) {
 			io.writeln(`Updated session ${sessionId}`);
 			return 0;
 		}

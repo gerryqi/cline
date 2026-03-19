@@ -1,5 +1,4 @@
 import { createDefaultCliSessionManager, listSessions } from "./session";
-import { readSessionManifestTitle } from "./session-manifest-title";
 import {
 	inferProviderAndModelFromMessages,
 	inferTitleFromMessages,
@@ -32,36 +31,22 @@ export async function hydrateHistoryRows(
 				if (!sessionId) {
 					return row;
 				}
-				const manifestTitle = readSessionManifestTitle(sessionId);
-				const rowMetadata = row.metadata ? { ...row.metadata } : undefined;
-				if (rowMetadata) {
-					delete rowMetadata.title;
-				}
-				const nextRow = manifestTitle
-					? {
-							...row,
-							metadata: {
-								...(rowMetadata ?? {}),
-								title: manifestTitle,
-							},
-						}
-					: rowMetadata
-						? { ...row, metadata: rowMetadata }
-						: row;
-				const hasTitle = Boolean(manifestTitle || nextRow.prompt?.trim());
-				const hasProvider = Boolean(nextRow.provider?.trim());
-				const hasModel = Boolean(nextRow.model?.trim());
-				const knownCost = nextRow.metadata?.totalCost;
+				const hasTitle = Boolean(
+					row.metadata?.title?.trim() || row.prompt?.trim(),
+				);
+				const hasProvider = Boolean(row.provider?.trim());
+				const hasModel = Boolean(row.model?.trim());
+				const knownCost = row.metadata?.totalCost;
 				const hasCost =
 					typeof knownCost === "number" &&
 					Number.isFinite(knownCost) &&
 					knownCost > 0;
 				if (hasTitle && hasProvider && hasModel && hasCost) {
-					return nextRow;
+					return row;
 				}
 				const messages = await sessionManager.readMessages(sessionId);
 				if (messages.length === 0) {
-					return nextRow;
+					return row;
 				}
 				const inferredTitle = hasTitle
 					? undefined
@@ -70,16 +55,16 @@ export async function hydrateHistoryRows(
 				const inferredProviderModel =
 					inferProviderAndModelFromMessages(messages);
 				return {
-					...nextRow,
-					prompt: nextRow.prompt?.trim() || inferredTitle || nextRow.prompt,
-					provider: nextRow.provider?.trim() || inferredProviderModel.provider,
-					model: nextRow.model?.trim() || inferredProviderModel.model,
+					...row,
+					prompt: row.prompt?.trim() || inferredTitle || row.prompt,
+					provider: row.provider?.trim() || inferredProviderModel.provider,
+					model: row.model?.trim() || inferredProviderModel.model,
 					metadata: {
-						...(nextRow.metadata ?? {}),
-						title: manifestTitle || inferredTitle,
+						...(row.metadata ?? {}),
+						title: row.metadata?.title?.trim() || inferredTitle,
 						totalCost:
 							hasCost || inferredUsageCost <= 0
-								? nextRow.metadata?.totalCost
+								? row.metadata?.totalCost
 								: inferredUsageCost,
 					},
 				};

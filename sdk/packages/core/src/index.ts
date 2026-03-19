@@ -86,25 +86,6 @@ export {
 	ChatViewStateSchema,
 } from "./chat/chat-schema";
 export {
-	ALL_DEFAULT_TOOL_NAMES,
-	type AskQuestionExecutor,
-	type CreateBuiltinToolsOptions,
-	type CreateDefaultToolsOptions,
-	createBuiltinTools,
-	createDefaultExecutors,
-	createDefaultTools,
-	createDefaultToolsWithPreset,
-	createToolPoliciesWithPreset,
-	type DefaultExecutorsOptions,
-	type DefaultToolName,
-	DefaultToolNames,
-	type DefaultToolsConfig,
-	type ToolExecutors,
-	type ToolPolicyPresetName,
-	type ToolPresetName,
-	ToolPresets,
-} from "./default-tools";
-export {
 	hasMcpSettingsFile,
 	InMemoryMcpManager,
 	type LoadMcpSettingsOptions,
@@ -135,6 +116,25 @@ export {
 	buildTeamProgressSummary,
 	toTeamProgressLifecycleEvent,
 } from "./team";
+export {
+	ALL_DEFAULT_TOOL_NAMES,
+	type AskQuestionExecutor,
+	type CreateBuiltinToolsOptions,
+	type CreateDefaultToolsOptions,
+	createBuiltinTools,
+	createDefaultExecutors,
+	createDefaultTools,
+	createDefaultToolsWithPreset,
+	createToolPoliciesWithPreset,
+	type DefaultExecutorsOptions,
+	type DefaultToolName,
+	DefaultToolNames,
+	type DefaultToolsConfig,
+	type ToolExecutors,
+	type ToolPolicyPresetName,
+	type ToolPresetName,
+	ToolPresets,
+} from "./tools";
 // Compatibility barrel (legacy imports).
 export type { RuntimeEnvironment, SessionEvent, StoredMessages } from "./types";
 export type { SessionStatus } from "./types/common";

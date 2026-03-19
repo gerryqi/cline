@@ -15,6 +15,7 @@ import {
 	loginLocalProvider,
 	normalizeOAuthProvider,
 	ProviderSettingsManager,
+	resolveSessionBackend,
 	SqliteSessionStore,
 	saveLocalProviderOAuthCredentials,
 	saveLocalProviderSettings,
@@ -44,7 +45,6 @@ import {
 	readSessionMessages,
 	readSessionTranscript,
 	searchWorkspaceFiles,
-	updateSessionTitle,
 } from "./session-data";
 import type {
 	ChatSessionCommandRequest,
@@ -208,7 +208,14 @@ export async function handleCommand(
 			throw new Error("session id is required");
 		}
 		const title = normalizeSessionTitle(String(args?.title ?? ""));
-		updateSessionTitle(sessionId, title);
+		const backend = await resolveSessionBackend({ backendMode: "local" });
+		const result = await backend.updateSession({
+			sessionId,
+			title,
+		});
+		if (!result.updated) {
+			throw new Error(`Session ${sessionId} not found`);
+		}
 		const liveSession = ctx.liveSessions.get(sessionId);
 		if (liveSession) {
 			liveSession.title = title;

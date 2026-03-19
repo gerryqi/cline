@@ -773,6 +773,7 @@ export async function updateSession(
 	updates: {
 		prompt?: string | null;
 		metadata?: Record<string, unknown> | null;
+		title?: string | null;
 	},
 ): Promise<{ updated: boolean }> {
 	return await (await getCoreSessions()).updateSession({

@@ -16,7 +16,7 @@ export interface StartSessionInput {
 	userFiles?: string[];
 	userInstructionWatcher?: import("../agents").UserInstructionConfigWatcher;
 	onTeamRestored?: () => void;
-	defaultToolExecutors?: Partial<import("../default-tools").ToolExecutors>;
+	defaultToolExecutors?: Partial<import("../tools").ToolExecutors>;
 	toolPolicies?: import("@clinebot/agents").AgentConfig["toolPolicies"];
 	requestToolApproval?: (
 		request: import("@clinebot/agents").ToolApprovalRequest,
