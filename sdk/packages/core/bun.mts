@@ -13,7 +13,7 @@ const external = [
 
 const builds: Parameters<typeof Bun.build>[0][] = [
 	{
-		entrypoints: ["./src/index.node.ts"],
+		entrypoints: ["./src/index.node.ts", "./src/telemetry/opentelemetry.ts"],
 		outdir: "./dist",
 		target: "node",
 		format: "esm",

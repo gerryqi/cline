@@ -9,5 +9,9 @@
 		"rootDir": "./src",
 		"incremental": false
 	},
-	"include": ["src/index.ts", "src/index.node.ts"]
+	"include": [
+		"src/index.ts",
+		"src/index.node.ts",
+		"src/telemetry/opentelemetry.ts"
+	]
 }

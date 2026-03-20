@@ -116,6 +116,19 @@ export {
 	buildTeamProgressSummary,
 	toTeamProgressLifecycleEvent,
 } from "./team";
+export type {
+	ITelemetryAdapter,
+	TelemetryArray,
+	TelemetryMetadata,
+	TelemetryObject,
+	TelemetryPrimitive,
+	TelemetryProperties,
+	TelemetryValue,
+} from "./telemetry/ITelemetryAdapter";
+export {
+	TelemetryService,
+	type TelemetryServiceOptions,
+} from "./telemetry/TelemetryService";
 export {
 	ALL_DEFAULT_TOOL_NAMES,
 	type AskQuestionExecutor,

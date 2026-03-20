@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentResult } from "@clinebot/agents";
 import { describe, expect, it, vi } from "vitest";
+import { TelemetryService } from "../telemetry/TelemetryService";
 import { SessionSource } from "../types/common";
 import type { CoreSessionConfig } from "../types/config";
 import { DefaultSessionManager } from "./default-session-manager";
@@ -70,6 +71,77 @@ function createConfig(
 }
 
 describe("DefaultSessionManager", () => {
+	it("emits session lifecycle telemetry when configured", async () => {
+		const sessionId = "sess-telemetry";
+		const manifest = createManifest(sessionId);
+		const adapter = {
+			name: "test",
+			emit: vi.fn(),
+			emitRequired: vi.fn(),
+			recordCounter: vi.fn(),
+			recordHistogram: vi.fn(),
+			recordGauge: vi.fn(),
+			isEnabled: vi.fn(() => true),
+			flush: vi.fn().mockResolvedValue(undefined),
+			dispose: vi.fn().mockResolvedValue(undefined),
+		};
+		const telemetry = new TelemetryService({
+			adapters: [adapter],
+			distinctId: distinctId,
+		});
+		const sessionService = {
+			ensureSessionsDir: vi.fn().mockReturnValue("/tmp/sessions"),
+			createRootSessionWithArtifacts: vi.fn().mockResolvedValue({
+				manifestPath: "/tmp/manifest.json",
+				transcriptPath: "/tmp/transcript.log",
+				hookPath: "/tmp/hook.log",
+				messagesPath: "/tmp/messages.json",
+				manifest,
+			}),
+			persistSessionMessages: vi.fn(),
+			updateSessionStatus: vi.fn().mockResolvedValue({
+				updated: true,
+				endedAt: "2026-01-01T00:00:05.000Z",
+			}),
+			writeSessionManifest: vi.fn(),
+			listSessions: vi.fn().mockResolvedValue([]),
+			deleteSession: vi.fn().mockResolvedValue({ deleted: true }),
+		};
+		const runtimeBuilder = {
+			build: vi.fn().mockReturnValue({
+				tools: [],
+				shutdown: vi.fn(),
+			}),
+		};
+		const agent = {
+			run: vi.fn().mockResolvedValue(createResult()),
+			continue: vi.fn().mockResolvedValue(createResult()),
+			getMessages: vi.fn().mockReturnValue([]),
+			abort: vi.fn(),
+			shutdown: vi.fn().mockResolvedValue(undefined),
+		};
+		const manager = new DefaultSessionManager({
+			distinctId,
+			sessionService: sessionService as never,
+			runtimeBuilder: runtimeBuilder as never,
+			createAgent: () => agent as never,
+			telemetry,
+		});
+
+		await manager.start({
+			config: createConfig({ telemetry, sessionId }),
+			prompt: "hello",
+		});
+
+		expect(adapter.emit).toHaveBeenCalledWith(
+			"session.started",
+			expect.objectContaining({
+				sessionId,
+				distinct_id: distinctId,
+			}),
+		);
+	});
+
 	it("runs a non-interactive prompt and persists messages/status", async () => {
 		const sessionId = "sess-1";
 		const manifest = createManifest(sessionId);
