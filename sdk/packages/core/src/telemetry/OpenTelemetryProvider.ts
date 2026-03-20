@@ -1,12 +1,12 @@
-import { credentials as grpcCredentials } from "@grpc/grpc-js";
+import type {
+	ITelemetryService,
+	OpenTelemetryClientConfig,
+	TelemetryMetadata,
+} from "@clinebot/shared";
 import { metrics } from "@opentelemetry/api";
 import { logs } from "@opentelemetry/api-logs";
-import { OTLPLogExporter as OTLPLogExporterGrpc } from "@opentelemetry/exporter-logs-otlp-grpc";
 import { OTLPLogExporter as OTLPLogExporterHttp } from "@opentelemetry/exporter-logs-otlp-http";
-import { OTLPLogExporter as OTLPLogExporterProto } from "@opentelemetry/exporter-logs-otlp-proto";
-import { OTLPMetricExporter as OTLPMetricExporterGrpc } from "@opentelemetry/exporter-metrics-otlp-grpc";
 import { OTLPMetricExporter as OTLPMetricExporterHttp } from "@opentelemetry/exporter-metrics-otlp-http";
-import { OTLPMetricExporter as OTLPMetricExporterProto } from "@opentelemetry/exporter-metrics-otlp-proto";
 import { Resource } from "@opentelemetry/resources";
 import {
 	BatchLogRecordProcessor,
@@ -24,7 +24,6 @@ import {
 	ATTR_SERVICE_NAME,
 	ATTR_SERVICE_VERSION,
 } from "@opentelemetry/semantic-conventions";
-import type { TelemetryMetadata } from "./ITelemetryAdapter";
 import {
 	OpenTelemetryAdapter,
 	type OpenTelemetryAdapterOptions,
@@ -32,17 +31,18 @@ import {
 import { TelemetryService } from "./TelemetryService";
 
 type OpenTelemetryExporterKind = "console" | "otlp";
-type OpenTelemetryProtocol = "grpc" | "http/json" | "http/protobuf";
+type OpenTelemetryProtocol = "http/json";
 
-export interface OpenTelemetryProviderOptions {
+export interface OpenTelemetryProviderOptions
+	extends Omit<
+		OpenTelemetryClientConfig,
+		"enabled" | "logsExporter" | "metricsExporter"
+	> {
 	serviceName?: string;
 	serviceVersion?: string;
-	logsExporter?: OpenTelemetryExporterKind | OpenTelemetryExporterKind[];
-	metricsExporter?: OpenTelemetryExporterKind | OpenTelemetryExporterKind[];
-	otlpEndpoint?: string;
-	otlpHeaders?: Record<string, string>;
-	otlpInsecure?: boolean;
-	otlpProtocol?: OpenTelemetryProtocol;
+	enabled?: boolean;
+	logsExporter?: string | OpenTelemetryExporterKind[];
+	metricsExporter?: string | OpenTelemetryExporterKind[];
 	metricExportIntervalMs?: number;
 	logMaxQueueSize?: number;
 	logBatchSize?: number;
@@ -53,7 +53,7 @@ export interface CreateOpenTelemetryTelemetryServiceOptions
 	extends OpenTelemetryProviderOptions,
 		Pick<
 			OpenTelemetryAdapterOptions,
-			"name" | "enabled" | "distinctId" | "commonProperties"
+			"name" | "distinctId" | "commonProperties"
 		> {
 	metadata: TelemetryMetadata;
 }
@@ -101,10 +101,10 @@ export class OpenTelemetryProvider {
 			CreateOpenTelemetryTelemetryServiceOptions,
 			keyof OpenTelemetryProviderOptions
 		>,
-	): TelemetryService {
+	): ITelemetryService {
 		const adapter = this.createAdapter({
 			name: options.name,
-			enabled: options.enabled,
+			enabled: this.options.enabled,
 			metadata: options.metadata,
 		});
 		return new TelemetryService({
@@ -136,7 +136,9 @@ export class OpenTelemetryProvider {
 
 		const interval = Math.max(
 			1_000,
-			this.options.metricExportIntervalMs ?? 60_000,
+			this.options.metricExportIntervalMs ??
+				this.options.metricExportInterval ??
+				60_000,
 		);
 		const timeout = Math.min(30_000, Math.floor(interval * 0.8));
 		const readers = exporters
@@ -145,7 +147,7 @@ export class OpenTelemetryProvider {
 					endpoint: this.options.otlpEndpoint,
 					headers: this.options.otlpHeaders,
 					insecure: this.options.otlpInsecure ?? false,
-					protocol: this.options.otlpProtocol ?? "grpc",
+					protocol: "http/json",
 					interval,
 					timeout,
 				}),
@@ -174,7 +176,7 @@ export class OpenTelemetryProvider {
 				endpoint: this.options.otlpEndpoint,
 				headers: this.options.otlpHeaders,
 				insecure: this.options.otlpInsecure ?? false,
-				protocol: this.options.otlpProtocol ?? "grpc",
+				protocol: "http/json",
 			});
 			if (!logExporter) {
 				continue;
@@ -183,7 +185,10 @@ export class OpenTelemetryProvider {
 				new BatchLogRecordProcessor(logExporter, {
 					maxQueueSize: this.options.logMaxQueueSize ?? 2048,
 					maxExportBatchSize: this.options.logBatchSize ?? 512,
-					scheduledDelayMillis: this.options.logBatchTimeoutMs ?? 5000,
+					scheduledDelayMillis:
+						this.options.logBatchTimeoutMs ??
+						this.options.logBatchTimeout ??
+						5000,
 				}),
 			);
 		}
@@ -193,12 +198,42 @@ export class OpenTelemetryProvider {
 
 export function createOpenTelemetryTelemetryService(
 	options: CreateOpenTelemetryTelemetryServiceOptions,
-): { provider: OpenTelemetryProvider; telemetry: TelemetryService } {
+): { provider: OpenTelemetryProvider; telemetry: ITelemetryService } {
 	const provider = new OpenTelemetryProvider(options);
+	const telemetry = provider.createTelemetryService(options);
+	telemetry.captureRequired("telemetry.provider_created", {
+		provider: "opentelemetry",
+		enabled: options.enabled ?? true,
+		logsExporter: Array.isArray(options.logsExporter)
+			? options.logsExporter.join(",")
+			: options.logsExporter,
+		metricsExporter: Array.isArray(options.metricsExporter)
+			? options.metricsExporter.join(",")
+			: options.metricsExporter,
+		otlpProtocol: options.otlpProtocol,
+		hasOtlpEndpoint: Boolean(options.otlpEndpoint),
+		serviceName: options.serviceName,
+		serviceVersion: options.serviceVersion,
+	});
 	return {
 		provider,
-		telemetry: provider.createTelemetryService(options),
+		telemetry,
 	};
+}
+
+export function createConfiguredTelemetryService(
+	options: CreateOpenTelemetryTelemetryServiceOptions,
+): {
+	provider?: OpenTelemetryProvider;
+	telemetry: ITelemetryService;
+} {
+	if (options.enabled !== true) {
+		return {
+			telemetry: new TelemetryService(),
+		};
+	}
+
+	return createOpenTelemetryTelemetryService(options);
 }
 
 function normalizeExporters(
@@ -207,7 +242,13 @@ function normalizeExporters(
 	if (!exporters) {
 		return [];
 	}
-	return Array.isArray(exporters) ? exporters : [exporters];
+	const values = Array.isArray(exporters) ? exporters : exporters.split(",");
+	return values
+		.map((value) => value.trim())
+		.filter(
+			(value): value is OpenTelemetryExporterKind =>
+				value === "console" || value === "otlp",
+		);
 }
 
 function createLogExporter(
@@ -227,26 +268,10 @@ function createLogExporter(
 	}
 
 	const endpoint = ensurePathSuffix(options.endpoint, "/v1/logs");
-	switch (options.protocol) {
-		case "grpc":
-			return new OTLPLogExporterGrpc({
-				url: stripHttpProtocol(options.endpoint),
-				credentials: options.insecure
-					? grpcCredentials.createInsecure()
-					: grpcCredentials.createSsl(),
-				headers: options.headers,
-			});
-		case "http/json":
-			return new OTLPLogExporterHttp({
-				url: endpoint,
-				headers: options.headers,
-			});
-		case "http/protobuf":
-			return new OTLPLogExporterProto({
-				url: endpoint,
-				headers: options.headers,
-			});
-	}
+	return new OTLPLogExporterHttp({
+		url: endpoint,
+		headers: options.headers,
+	});
 }
 
 function createMetricReader(
@@ -272,38 +297,14 @@ function createMetricReader(
 	}
 
 	const endpoint = ensurePathSuffix(options.endpoint, "/v1/metrics");
-	switch (options.protocol) {
-		case "grpc":
-			return new PeriodicExportingMetricReader({
-				exporter: new OTLPMetricExporterGrpc({
-					url: stripHttpProtocol(options.endpoint),
-					credentials: options.insecure
-						? grpcCredentials.createInsecure()
-						: grpcCredentials.createSsl(),
-					headers: options.headers,
-				}),
-				exportIntervalMillis: options.interval,
-				exportTimeoutMillis: options.timeout,
-			});
-		case "http/json":
-			return new PeriodicExportingMetricReader({
-				exporter: new OTLPMetricExporterHttp({
-					url: endpoint,
-					headers: options.headers,
-				}),
-				exportIntervalMillis: options.interval,
-				exportTimeoutMillis: options.timeout,
-			});
-		case "http/protobuf":
-			return new PeriodicExportingMetricReader({
-				exporter: new OTLPMetricExporterProto({
-					url: endpoint,
-					headers: options.headers,
-				}),
-				exportIntervalMillis: options.interval,
-				exportTimeoutMillis: options.timeout,
-			});
-	}
+	return new PeriodicExportingMetricReader({
+		exporter: new OTLPMetricExporterHttp({
+			url: endpoint,
+			headers: options.headers,
+		}),
+		exportIntervalMillis: options.interval,
+		exportTimeoutMillis: options.timeout,
+	});
 }
 
 function ensurePathSuffix(endpoint: string, suffix: string): string {
@@ -315,8 +316,4 @@ function ensurePathSuffix(endpoint: string, suffix: string): string {
 		? normalized
 		: `${normalized}${suffix}`;
 	return url.toString();
-}
-
-function stripHttpProtocol(endpoint: string): string {
-	return endpoint.replace(/^https?:\/\//, "");
 }

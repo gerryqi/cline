@@ -1,8 +1,9 @@
 import type {
-	ITelemetryAdapter,
+	ITelemetryService,
 	TelemetryMetadata,
 	TelemetryProperties,
-} from "./ITelemetryAdapter";
+} from "@clinebot/shared";
+import type { ITelemetryAdapter } from "./ITelemetryAdapter";
 
 export interface TelemetryServiceOptions {
 	adapters?: ITelemetryAdapter[];
@@ -11,7 +12,7 @@ export interface TelemetryServiceOptions {
 	commonProperties?: TelemetryProperties;
 }
 
-export class TelemetryService {
+export class TelemetryService implements ITelemetryService {
 	private adapters: ITelemetryAdapter[];
 	private metadata: Partial<TelemetryMetadata>;
 	private distinctId?: string;

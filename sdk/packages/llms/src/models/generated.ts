@@ -14,7 +14,7 @@ export const GENERATED_PROVIDER_MODELS: {
 	version: number;
 	providers: Record<string, Record<string, ModelInfo>>;
 } = {
-	version: 1773940480693,
+	version: 1773975012193,
 	providers: {
 		aihubmix: {
 			"claude-sonnet-4-6": {
@@ -5295,6 +5295,47 @@ export const GENERATED_PROVIDER_MODELS: {
 					cacheWrite: 0,
 				},
 				releaseDate: "2026-03-18",
+			},
+			"openai/gpt-5.4-mini": {
+				id: "openai/gpt-5.4-mini",
+				name: "GPT-5.4 Mini",
+				contextWindow: 400000,
+				maxTokens: 128000,
+				capabilities: [
+					"images",
+					"files",
+					"tools",
+					"reasoning",
+					"structured_output",
+					"temperature",
+				],
+				pricing: {
+					input: 7.5e-7,
+					output: 0.0000045,
+					cacheRead: 7.5e-8,
+					cacheWrite: 0,
+				},
+				releaseDate: "2026-03-17",
+			},
+			"openai/gpt-5.4-nano": {
+				id: "openai/gpt-5.4-nano",
+				name: "GPT-5.4 Nano",
+				contextWindow: 400000,
+				maxTokens: 128000,
+				capabilities: [
+					"images",
+					"files",
+					"tools",
+					"structured_output",
+					"temperature",
+				],
+				pricing: {
+					input: 2e-7,
+					output: 0.00000125,
+					cacheRead: 2e-8,
+					cacheWrite: 0,
+				},
+				releaseDate: "2026-03-17",
 			},
 			"x-ai/grok-4.20-beta": {
 				id: "x-ai/grok-4.20-beta",

@@ -7,10 +7,10 @@ import type {
 	ToolApprovalResult,
 } from "@clinebot/agents";
 import { getRpcServerDefaultAddress, getRpcServerHealth } from "@clinebot/rpc";
+import type { ITelemetryService } from "@clinebot/shared";
 import { resolveSessionDataDir } from "@clinebot/shared/storage";
 import { nanoid } from "nanoid";
 import { SqliteSessionStore } from "../storage/sqlite-session-store";
-import type { TelemetryService } from "../telemetry/TelemetryService";
 import type { ToolExecutors } from "../tools";
 import { DefaultSessionManager } from "./default-session-manager";
 import { RpcCoreSessionService } from "./rpc-session-service";
@@ -34,7 +34,7 @@ export interface CreateSessionHostOptions {
 	rpcConnectAttempts?: number;
 	rpcConnectDelayMs?: number;
 	defaultToolExecutors?: Partial<ToolExecutors>;
-	telemetry?: TelemetryService;
+	telemetry?: ITelemetryService;
 	toolPolicies?: AgentConfig["toolPolicies"];
 	requestToolApproval?: (
 		request: ToolApprovalRequest,

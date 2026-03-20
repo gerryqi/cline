@@ -19,6 +19,7 @@ export type {
 	BasicLogger,
 	ConnectorHookEvent,
 	HookSessionContext,
+	ITelemetryService,
 	RpcAddProviderActionRequest,
 	RpcChatMessage,
 	RpcChatRunTurnRequest,
@@ -38,6 +39,12 @@ export type {
 	RpcSaveProviderSettingsActionRequest,
 	SessionLineage,
 	TeamProgressProjectionEvent,
+	TelemetryArray,
+	TelemetryMetadata,
+	TelemetryObject,
+	TelemetryPrimitive,
+	TelemetryProperties,
+	TelemetryValue,
 	ToolPolicy,
 } from "@clinebot/shared";
 export {
@@ -116,15 +123,7 @@ export {
 	buildTeamProgressSummary,
 	toTeamProgressLifecycleEvent,
 } from "./team";
-export type {
-	ITelemetryAdapter,
-	TelemetryArray,
-	TelemetryMetadata,
-	TelemetryObject,
-	TelemetryPrimitive,
-	TelemetryProperties,
-	TelemetryValue,
-} from "./telemetry/ITelemetryAdapter";
+export type { ITelemetryAdapter } from "./telemetry/ITelemetryAdapter";
 export {
 	LoggerTelemetryAdapter,
 	type LoggerTelemetryAdapterOptions,

@@ -1,6 +1,9 @@
+import * as os from "node:os";
 import { join } from "node:path";
 import { getClineDefaultSystemPrompt } from "@clinebot/agents";
 import {
+	type BasicLogger,
+	type ITelemetryService,
 	ProviderSettingsManager,
 	type RpcProviderModel,
 	type ToolPolicy,
@@ -10,16 +13,27 @@ import {
 	createSessionHost,
 	type SessionHost,
 } from "@clinebot/core/node";
+import { createConfiguredTelemetryService } from "@clinebot/core/telemetry/opentelemetry";
 import { models as llmModels, providers as llmProviders } from "@clinebot/llms";
+import {
+	createClineTelemetryServiceConfig,
+	createClineTelemetryServiceMetadata,
+} from "@clinebot/shared";
 import * as vscode from "vscode";
+import { displayName, version } from "../package.json";
 import type {
 	WebviewInboundMessage,
 	WebviewOutboundMessage,
 } from "./webview-protocol";
 
 export function activate(context: vscode.ExtensionContext): void {
-	const sidebarProvider = new ClineChatViewProvider(context.extensionUri);
+	const outputChannel = vscode.window.createOutputChannel("Cline");
+	const sidebarProvider = new ClineChatViewProvider(
+		context.extensionUri,
+		outputChannel,
+	);
 	context.subscriptions.push(
+		outputChannel,
 		vscode.window.registerWebviewViewProvider(
 			"clineVscode.chatView",
 			sidebarProvider,
@@ -46,6 +60,7 @@ export function activate(context: vscode.ExtensionContext): void {
 			const controller = new CoreChatWebviewController(
 				panel.webview,
 				context.extensionUri,
+				outputChannel,
 				panel.onDidDispose,
 			);
 			context.subscriptions.push(controller);
@@ -60,9 +75,11 @@ export function deactivate(): void {
 
 class ClineChatViewProvider implements vscode.WebviewViewProvider {
 	private readonly extensionUri: vscode.Uri;
+	private readonly outputChannel: vscode.OutputChannel;
 
-	constructor(extensionUri: vscode.Uri) {
+	constructor(extensionUri: vscode.Uri, outputChannel: vscode.OutputChannel) {
 		this.extensionUri = extensionUri;
+		this.outputChannel = outputChannel;
 	}
 
 	public resolveWebviewView(
@@ -79,6 +96,7 @@ class ClineChatViewProvider implements vscode.WebviewViewProvider {
 		const controller = new CoreChatWebviewController(
 			webviewView.webview,
 			this.extensionUri,
+			this.outputChannel,
 			webviewView.onDidDispose,
 		);
 		webviewView.onDidDispose(() => controller.dispose());
@@ -101,6 +119,7 @@ type StartConfig = {
 	missionLogIntervalMs: number;
 	mode: "act" | "plan";
 	apiKey: string;
+	logger: BasicLogger;
 };
 
 type ProviderListItem = {
@@ -119,6 +138,7 @@ type LlmModelInfo = {
 class CoreChatWebviewController implements vscode.Disposable {
 	private readonly webview: vscode.Webview;
 	private readonly extensionUri: vscode.Uri;
+	private readonly logger: BasicLogger;
 	private readonly disposables: vscode.Disposable[] = [];
 	private readonly providerSettingsManager = new ProviderSettingsManager();
 	private host: SessionHost | undefined;
@@ -128,14 +148,17 @@ class CoreChatWebviewController implements vscode.Disposable {
 	private sending = false;
 	private streamedAssistantText = "";
 	private streamedReasoningText = "";
+	private telemetry: ITelemetryService | undefined;
 
 	constructor(
 		webview: vscode.Webview,
 		extensionUri: vscode.Uri,
+		outputChannel: vscode.OutputChannel,
 		onDidDispose?: vscode.Event<void>,
 	) {
 		this.webview = webview;
 		this.extensionUri = extensionUri;
+		this.logger = createOutputChannelLogger(outputChannel);
 		this.disposables.push(
 			this.webview.onDidReceiveMessage((message: WebviewInboundMessage) => {
 				void this.handleMessage(message);
@@ -148,6 +171,21 @@ class CoreChatWebviewController implements vscode.Disposable {
 				}),
 			);
 		}
+
+		const { telemetry } = createConfiguredTelemetryService(
+			createClineTelemetryServiceConfig({
+				metadata: createClineTelemetryServiceMetadata({
+					extension_version: version,
+					cline_type: displayName,
+					platform: vscode.env.appName,
+					platform_version: vscode.version,
+					os_type: os.platform(),
+					os_version: os.version(),
+				}),
+			}),
+		);
+		this.telemetry = telemetry;
+
 		void this.initializeWebview();
 	}
 
@@ -484,6 +522,7 @@ class CoreChatWebviewController implements vscode.Disposable {
 			teamName: "vscode-chat",
 			missionLogIntervalSteps: 3,
 			missionLogIntervalMs: 120000,
+			logger: this.logger,
 		};
 
 		if (this.sessionId && this.startConfig) {
@@ -686,6 +725,7 @@ class CoreChatWebviewController implements vscode.Disposable {
 		if (!this.host) {
 			this.host = await createSessionHost({
 				backendMode: "local",
+				telemetry: this.telemetry,
 			});
 		}
 		return this.host;
@@ -729,4 +769,37 @@ function createNonce(): string {
 		nonce += chars.charAt(Math.floor(Math.random() * chars.length));
 	}
 	return nonce;
+}
+
+function createOutputChannelLogger(
+	outputChannel: vscode.OutputChannel,
+): BasicLogger {
+	const write = (
+		level: "debug" | "info" | "warn" | "error",
+		message: string,
+		metadata?: Record<string, unknown>,
+	): void => {
+		const suffix = formatLogMetadata(metadata);
+		outputChannel.appendLine(
+			`[${new Date().toISOString()}] [${level.toUpperCase()}] ${message}${suffix}`,
+		);
+	};
+
+	return {
+		debug: (message, metadata) => write("debug", message, metadata),
+		info: (message, metadata) => write("info", message, metadata),
+		warn: (message, metadata) => write("warn", message, metadata),
+		error: (message, metadata) => write("error", message, metadata),
+	};
+}
+
+function formatLogMetadata(metadata?: Record<string, unknown>): string {
+	if (!metadata || Object.keys(metadata).length === 0) {
+		return "";
+	}
+	try {
+		return ` ${JSON.stringify(metadata)}`;
+	} catch {
+		return " [unserializable metadata]";
+	}
 }

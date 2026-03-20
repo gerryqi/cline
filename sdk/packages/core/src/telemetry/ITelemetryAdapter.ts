@@ -7,56 +7,16 @@
  * backend without pulling in the full extension runtime.
  */
 
-// ---------------------------------------------------------------------------
-// Property types
-// ---------------------------------------------------------------------------
+import type { TelemetryProperties } from "@clinebot/shared";
 
-/** A JSON-serialisable primitive accepted as a telemetry attribute value. */
-export type TelemetryPrimitive = string | number | boolean | null | undefined;
-
-/** A JSON-serialisable value accepted as a telemetry property. */
-export type TelemetryValue =
-	| TelemetryPrimitive
-	| TelemetryObject
-	| TelemetryArray;
-
-/** A JSON-serialisable object accepted as telemetry properties. */
-export type TelemetryObject = { [key: string]: TelemetryValue };
-
-/** A JSON-serialisable array accepted as telemetry properties. */
-export type TelemetryArray = Array<TelemetryValue>;
-
-/** Properties that can be safely passed to telemetry adapters. */
-export type TelemetryProperties = TelemetryObject;
-
-// ---------------------------------------------------------------------------
-// Metadata
-// ---------------------------------------------------------------------------
-
-/**
- * Standard metadata that is merged into every telemetry event.
- * Mirrors {@link TelemetryMetadata} from the extension's TelemetryService so
- * that downstream consumers see the same schema.
- */
-export interface TelemetryMetadata {
-	/** Cline core / extension version (semver string). */
-	extension_version: string;
-	/**
-	 * The distribution type: "vscode-extension" | "jetbrains-plugin" | "cli"
-	 * etc.
-	 */
-	cline_type: string;
-	/** Host IDE / environment name (e.g. "VSCode", "IntelliJ", "terminal"). */
-	platform: string;
-	/** Host environment version string. */
-	platform_version: string;
-	/** OS platform as returned by `os.platform()` (e.g. "darwin"). */
-	os_type: string;
-	/** OS version as returned by `os.version()`. */
-	os_version: string;
-	/** "true" when running in development mode, undefined otherwise. */
-	is_dev?: string;
-}
+export type {
+	TelemetryArray,
+	TelemetryMetadata,
+	TelemetryObject,
+	TelemetryPrimitive,
+	TelemetryProperties,
+	TelemetryValue,
+} from "@clinebot/shared";
 
 // ---------------------------------------------------------------------------
 // Adapter interface

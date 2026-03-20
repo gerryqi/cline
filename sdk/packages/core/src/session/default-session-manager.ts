@@ -14,7 +14,11 @@ import {
 	type ToolApprovalResult,
 } from "@clinebot/agents";
 import type { providers as LlmsProviders } from "@clinebot/llms";
-import { formatUserInputBlock, normalizeUserInput } from "@clinebot/shared";
+import {
+	formatUserInputBlock,
+	type ITelemetryService,
+	normalizeUserInput,
+} from "@clinebot/shared";
 import { setHomeDirIfUnset } from "@clinebot/shared/storage";
 import { nanoid } from "nanoid";
 import { resolveAndLoadAgentPlugins } from "../agents/plugin-config-loader";
@@ -31,7 +35,6 @@ import {
 	buildTeamProgressSummary,
 	toTeamProgressLifecycleEvent,
 } from "../team";
-import type { TelemetryService } from "../telemetry/TelemetryService";
 import { createBuiltinTools, type ToolExecutors, ToolPresets } from "../tools";
 import { SessionSource, type SessionStatus } from "../types/common";
 import type { CoreSessionConfig } from "../types/config";
@@ -90,7 +93,7 @@ export interface DefaultSessionManagerOptions {
 	toolPolicies?: AgentConfig["toolPolicies"];
 	providerSettingsManager?: ProviderSettingsManager;
 	oauthTokenManager?: RuntimeOAuthTokenManager;
-	telemetry?: TelemetryService;
+	telemetry?: ITelemetryService;
 	requestToolApproval?: (
 		request: ToolApprovalRequest,
 	) => Promise<ToolApprovalResult>;
@@ -122,7 +125,7 @@ export class DefaultSessionManager implements SessionManager {
 	private readonly defaultToolPolicies?: AgentConfig["toolPolicies"];
 	private readonly providerSettingsManager: ProviderSettingsManager;
 	private readonly oauthTokenManager: RuntimeOAuthTokenManager;
-	private readonly defaultTelemetry?: TelemetryService;
+	private readonly defaultTelemetry?: ITelemetryService;
 	private readonly defaultRequestToolApproval?: (
 		request: ToolApprovalRequest,
 	) => Promise<ToolApprovalResult>;

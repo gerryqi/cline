@@ -11,11 +11,11 @@ import type { providers as LlmsProviders } from "@clinebot/llms";
 import type {
 	AgentMode,
 	BasicLogger,
+	ITelemetryService,
 	SessionExecutionConfig,
 	SessionPromptConfig,
 	SessionWorkspaceConfig,
 } from "@clinebot/shared";
-import type { TelemetryService } from "../telemetry/TelemetryService";
 import type { ToolRoutingRule } from "../tools/model-tool-routing.js";
 
 export type CoreAgentMode = AgentMode;
@@ -65,7 +65,7 @@ export interface CoreSessionConfig
 	hooks?: AgentHooks;
 	hookErrorMode?: HookErrorMode;
 	logger?: BasicLogger;
-	telemetry?: TelemetryService;
+	telemetry?: ITelemetryService;
 	extraTools?: Tool[];
 	pluginPaths?: string[];
 	extensions?: AgentConfig["extensions"];

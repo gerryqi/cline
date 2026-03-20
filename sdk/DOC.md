@@ -179,22 +179,24 @@ Use `createOpenTelemetryTelemetryService` when you want the SDK to configure Ope
 
 ```ts
 import { createSessionHost } from "@clinebot/core/node"
-import { createOpenTelemetryTelemetryService } from "@clinebot/core/telemetry/opentelemetry"
+import { createConfiguredTelemetryService } from "@clinebot/core/telemetry/opentelemetry"
+import {
+	createClineTelemetryServiceConfig,
+	createClineTelemetryServiceMetadata,
+} from "@clinebot/shared";
 
-const { telemetry, provider } = createOpenTelemetryTelemetryService({
-	metadata: {
-		extension_version: "0.0.5",
-		cline_type: "cli",
-		platform: "terminal",
-		platform_version: process.version,
-		os_type: process.platform,
-		os_version: "unknown",
-	},
-	logsExporter: "otlp",
-	metricsExporter: "otlp",
-	otlpEndpoint: "http://localhost:4318",
-	otlpProtocol: "http/protobuf",
-})
+const config = createClineTelemetryServiceConfig({
+  metadata: createClineTelemetryServiceMetadata({
+    extension_version: version,
+    cline_type: "cli",
+    platform: "terminal",
+    platform_version: process.version,
+    os_type: process.platform,
+    os_version: "unknown",
+  }),
+});
+
+const { telemetry, provider } = createConfiguredTelemetryService(config);
 
 const host = await createSessionHost({
 	telemetry,
@@ -252,6 +254,7 @@ Notes:
   - [Extensions vs Hooks](#extensions-vs-hooks)
   - [Migration Notes](#migration-notes)
   - [Minimal Runtime Example](#minimal-runtime-example)
+  - [`@clinebot/core` Telemetry](#clinebotcore-telemetry)
   - [`@clinebot/cli`](#clinebotcli)
   - [Table of Contents](#table-of-contents)
   - [Overview](#overview)

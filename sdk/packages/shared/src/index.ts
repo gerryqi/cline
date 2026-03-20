@@ -83,6 +83,21 @@ export {
 	RPC_TEAM_PROGRESS_EVENT_TYPE,
 } from "./rpc/team-progress";
 export type {
+	ITelemetryService,
+	OpenTelemetryClientConfig,
+	TelemetryArray,
+	TelemetryMetadata,
+	TelemetryObject,
+	TelemetryPrimitive,
+	TelemetryProperties,
+	TelemetryValue,
+} from "./services/telemetry";
+export type { ClineTelemetryServiceConfig } from "./services/telemetry-config";
+export {
+	createClineTelemetryServiceConfig,
+	createClineTelemetryServiceMetadata,
+} from "./services/telemetry-config";
+export type {
 	HookSessionContext,
 	HookSessionContextProvider,
 } from "./session/hook-context";
@@ -103,3 +118,4 @@ export type {
 	SessionPromptConfig,
 	SessionWorkspaceConfig,
 } from "./session/runtime-config";
+export type { RuntimeEnv } from "./session/runtime-env";

@@ -26,6 +26,7 @@ import {
 } from "@clinebot/core/node";
 import { getRpcServerDefaultAddress, RpcSessionClient } from "@clinebot/rpc";
 import { ensureRpcRuntimeAddress } from "../commands/rpc";
+import { getCliTelemetryService } from "./telemetry";
 
 function resolveRpcAddress(): string {
 	return process.env.CLINE_RPC_ADDRESS?.trim() || getRpcServerDefaultAddress();
@@ -137,6 +138,7 @@ export async function createDefaultCliSessionManager(options?: {
 	return (await createSessionHost({
 		sessionService: sessionBackend,
 		defaultToolExecutors: options?.defaultToolExecutors,
+		telemetry: getCliTelemetryService(),
 		toolPolicies: options?.toolPolicies,
 		requestToolApproval: options?.requestToolApproval,
 	})) as CliSessionManager;
