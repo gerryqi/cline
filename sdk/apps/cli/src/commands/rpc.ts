@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { isAbsolute, join, resolve as resolvePath } from "node:path";
+import { dirname, isAbsolute, join, resolve as resolvePath } from "node:path";
 import { resolveClineDataDir } from "@clinebot/core";
 import { createSqliteRpcSessionBackend } from "@clinebot/core/node";
 import {
@@ -224,6 +224,7 @@ async function withRpcStartupLock<T>(
 
 	const lockDir = getRpcStartupLockDir(address);
 	const startedAt = Date.now();
+	await mkdir(dirname(lockDir), { recursive: true });
 
 	while (true) {
 		try {
