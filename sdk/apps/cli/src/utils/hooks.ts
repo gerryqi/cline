@@ -3,7 +3,7 @@ import type {
 	HookEventPayload,
 	RunHookResult,
 } from "@clinebot/agents";
-import { createSubprocessHooks } from "@clinebot/agents";
+import { createPersistentSubprocessHooks } from "@clinebot/agents";
 import type { HookSessionContext } from "@clinebot/core";
 import { formatHookDispatchOutput } from "../commands/hook";
 import { closeInlineStreamIfNeeded } from "./events";
@@ -40,6 +40,13 @@ function getHookCommand(): string[] | undefined {
 		return undefined;
 	}
 	return [process.execPath, process.argv[1], "hook"];
+}
+
+function getHookWorkerCommand(): string[] | undefined {
+	if (!process.argv[1]) {
+		return undefined;
+	}
+	return [process.execPath, process.argv[1], "hook-worker"];
 }
 
 export function currentHookSessionContext(): HookSessionContext | undefined {
@@ -104,13 +111,13 @@ function writeHookInvocation(
 export function createRuntimeHooks(options?: {
 	verbose?: boolean;
 }): AgentHooks | undefined {
-	const command = getHookCommand();
-	if (!command) {
+	const hookCommand = getHookCommand();
+	const workerCommand = getHookWorkerCommand();
+	if (!hookCommand || !workerCommand) {
 		return undefined;
 	}
 	const verbose = options?.verbose === true;
-	return createSubprocessHooks({
-		command,
+	const sharedOptions = {
 		env: process.env,
 		cwd: process.cwd(),
 		sessionContext: currentHookSessionContext,
@@ -122,5 +129,9 @@ export function createRuntimeHooks(options?: {
 		onDispatch: ({ payload, result }) => {
 			writeHookInvocation(payload, { verbose }, result);
 		},
+	};
+	return createPersistentSubprocessHooks({
+		...sharedOptions,
+		command: workerCommand,
 	}).hooks;
 }

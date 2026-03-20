@@ -1,4 +1,11 @@
 export {
+	createPersistentSubprocessHooks,
+	PersistentHookClient,
+	type PersistentHookClientOptions,
+	type PersistentSubprocessHookControl,
+	type PersistentSubprocessHooksOptions,
+} from "./persistent.js";
+export {
 	createSubprocessHooks,
 	type HookEventName,
 	HookEventNameSchema,

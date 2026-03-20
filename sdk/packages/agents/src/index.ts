@@ -37,6 +37,9 @@ export {
 export type {
 	HookEventName,
 	HookEventPayload,
+	PersistentHookClientOptions,
+	PersistentSubprocessHookControl,
+	PersistentSubprocessHooksOptions,
 	RunHookOptions,
 	RunHookResult,
 	RunSubprocessEventOptions,
@@ -45,9 +48,11 @@ export type {
 	SubprocessHooksOptions,
 } from "./hooks/node.js";
 export {
+	createPersistentSubprocessHooks,
 	createSubprocessHooks,
 	HookEventNameSchema,
 	HookEventPayloadSchema,
+	PersistentHookClient,
 	parseHookEventPayload,
 	runHook,
 	runSubprocessEvent,
