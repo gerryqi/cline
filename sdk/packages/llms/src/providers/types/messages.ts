@@ -121,6 +121,8 @@ export interface Message {
 export interface MessageWithMetadata extends Message {
 	/** Unique message ID */
 	id?: string;
+	/** Additional message metadata for storage/history consumers */
+	metadata?: Record<string, unknown>;
 	/** Provider ID used to generate this message */
 	providerId?: string;
 	/** Model ID used to generate this message */

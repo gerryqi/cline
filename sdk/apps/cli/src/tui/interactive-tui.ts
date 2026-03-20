@@ -601,6 +601,8 @@ export function InteractiveTui(props: InteractiveTuiProps): React.ReactElement {
 					onTurnErrorReported(true);
 					appendLine(`${c.red}error:${c.reset} ${event.error.message}`);
 					break;
+				case "notice":
+					break;
 			}
 		},
 		[appendInline, appendLine, closeInlineStream, onTurnErrorReported],

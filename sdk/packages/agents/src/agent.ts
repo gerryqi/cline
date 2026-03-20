@@ -301,7 +301,7 @@ export class Agent {
 		this.conversationStore.clearHistory();
 	}
 
-	restore(messages: providers.Message[]): void {
+	restore(messages: providers.MessageWithMetadata[]): void {
 		this.conversationStore.restore(messages);
 	}
 
@@ -643,15 +643,10 @@ export class Agent {
 						});
 						throw errorObj;
 					}
-					this.conversationStore.appendMessage({
-						role: "user",
-						content: [
-							{
-								type: "text",
-								text: `The previous turn failed with an API/runtime error: ${message}. Retry and continue from the latest state.`,
-							},
-						],
-					});
+					this.appendRecoveryNotice(
+						`The previous turn failed with an API/runtime error: ${message}. Retry and continue from the latest state.`,
+						"api_error",
+					);
 					const shouldContinue = await this.recordMistake({
 						iteration,
 						reason: "api_error",
@@ -722,15 +717,10 @@ export class Agent {
 				});
 
 				if (turn.invalidToolCalls.length > 0) {
-					this.conversationStore.appendMessage({
-						role: "user",
-						content: [
-							{
-								type: "text",
-								text: this.buildInvalidToolCallFeedback(turn.invalidToolCalls),
-							},
-						],
-					});
+					this.appendRecoveryNotice(
+						this.buildInvalidToolCallFeedback(turn.invalidToolCalls),
+						"invalid_tool_call",
+					);
 					const shouldContinue = await this.recordMistake({
 						iteration,
 						reason: "invalid_tool_call",
@@ -1042,10 +1032,7 @@ export class Agent {
 		if (decision.action === "continue") {
 			const guidance = decision.guidance?.trim();
 			if (guidance) {
-				this.conversationStore.appendMessage({
-					role: "user",
-					content: [{ type: "text", text: guidance }],
-				});
+				this.appendRecoveryNotice(guidance, input.reason);
 			}
 			input.setConsecutiveMistakes(0);
 			return true;
@@ -1287,6 +1274,34 @@ export class Agent {
 					text,
 				},
 			],
+		});
+	}
+
+	private appendRecoveryNotice(
+		message: string,
+		reason: "api_error" | "invalid_tool_call" | "tool_execution_failed",
+	): void {
+		const text = message.trim();
+		if (!text) {
+			return;
+		}
+		const metadata = {
+			kind: "recovery_notice",
+			reason,
+			displayRole: "system",
+		} as const;
+		this.conversationStore.appendMessage({
+			role: "user",
+			content: [{ type: "text", text }],
+			metadata,
+		});
+		this.emit({
+			type: "notice",
+			noticeType: "recovery",
+			message: text,
+			displayRole: "system",
+			reason,
+			metadata: { ...metadata },
 		});
 	}
 

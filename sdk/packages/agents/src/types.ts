@@ -40,6 +40,7 @@ export type AgentEvent =
 	| AgentContentEndEvent
 	| AgentIterationStartEvent
 	| AgentIterationEndEvent
+	| AgentNoticeEvent
 	| AgentUsageEvent
 	| AgentDoneEvent
 	| AgentErrorEvent;
@@ -116,6 +117,15 @@ export interface AgentUsageEvent {
 	totalInputTokens: number;
 	totalOutputTokens: number;
 	totalCost?: number;
+}
+
+export interface AgentNoticeEvent {
+	type: "notice";
+	noticeType: "recovery";
+	message: string;
+	displayRole?: "system" | "status";
+	reason?: "api_error" | "invalid_tool_call" | "tool_execution_failed";
+	metadata?: Record<string, unknown>;
 }
 
 export interface AgentDoneEvent {
@@ -1065,6 +1075,6 @@ export interface ProcessedTurn {
 // =============================================================================
 
 export type ContentBlock = LlmsProviders.ContentBlock;
-export type Message = LlmsProviders.Message;
+export type Message = LlmsProviders.MessageWithMetadata;
 export type ModelInfo = LlmsProviders.ModelInfo;
 export type ToolDefinition = LlmsProviders.ToolDefinition;

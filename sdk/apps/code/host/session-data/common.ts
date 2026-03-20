@@ -133,6 +133,16 @@ export function derivePromptFromMessages(
 		if (record.role !== "user") {
 			continue;
 		}
+		const metadata =
+			record.metadata && typeof record.metadata === "object"
+				? (record.metadata as JsonRecord)
+				: undefined;
+		if (
+			typeof metadata?.kind === "string" &&
+			metadata.kind === "recovery_notice"
+		) {
+			continue;
+		}
 		const content = stringifyMessageContent(record.content);
 		if (content.trim()) {
 			return content.trim();

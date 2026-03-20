@@ -137,6 +137,8 @@ export function handleEvent(event: AgentEvent, _config: Config): void {
 			closeInlineStreamIfNeeded();
 			writeErr(event.error.message);
 			break;
+		case "notice":
+			break;
 	}
 }
 
