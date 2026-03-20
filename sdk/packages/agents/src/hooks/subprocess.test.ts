@@ -41,6 +41,33 @@ afterEach(async () => {
 	tmpPaths.length = 0;
 });
 
+async function waitFor<T>(
+	read: () => Promise<T>,
+	accept: (value: T) => boolean,
+	options: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<T> {
+	const timeoutMs = options.timeoutMs ?? 2_000;
+	const intervalMs = options.intervalMs ?? 25;
+	const deadline = Date.now() + timeoutMs;
+	let lastError: unknown;
+
+	while (Date.now() < deadline) {
+		try {
+			const value = await read();
+			if (accept(value)) {
+				return value;
+			}
+		} catch (error) {
+			lastError = error;
+		}
+		await new Promise((resolve) => setTimeout(resolve, intervalMs));
+	}
+
+	throw lastError instanceof Error
+		? lastError
+		: new Error(`Timed out after ${timeoutMs}ms waiting for condition`);
+}
+
 describe("hooks", () => {
 	it("runHook pipes payload to command and parses JSON stdout", async () => {
 		const result = await runHook(
@@ -197,7 +224,10 @@ describe("hooks", () => {
 			}),
 		).resolves.toBeUndefined();
 
-		await new Promise((resolve) => setTimeout(resolve, 30));
+		await waitFor(
+			async () => onDispatchError.mock.calls.length,
+			(callCount) => callCount > 0,
+		);
 		expect(onDispatchError).toHaveBeenCalled();
 	});
 

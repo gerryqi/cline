@@ -174,7 +174,7 @@ describe("createHookConfigFileHooks", () => {
 
 	it("maps TaskError hook files to agent_error stop events", async () => {
 		const outputPath = join(tmpdir(), `hooks-task-error-${Date.now()}.json`);
-		const { workspace, hookPath } = await createWorkspaceWithHook(
+		const { workspace } = await createWorkspaceWithHook(
 			"TaskError.js",
 			`let data='';process.stdin.on('data',c=>data+=c);process.stdin.on('end',()=>{require('node:fs').writeFileSync(${JSON.stringify(outputPath)}, data);});\n`,
 		);
