@@ -55,6 +55,7 @@
         "@clinebot/core": "workspace:*",
         "@clinebot/llms": "workspace:*",
         "@clinebot/rpc": "workspace:*",
+        "@clinebot/shared": "workspace:*",
         "@hookform/resolvers": "^3.9.1",
         "@radix-ui/react-accordion": "1.2.12",
         "@radix-ui/react-alert-dialog": "1.1.15",
@@ -279,7 +280,7 @@
     },
     "packages/agents": {
       "name": "@clinebot/agents",
-      "version": "0.0.5",
+      "version": "0.0.6",
       "dependencies": {
         "@clinebot/llms": "workspace:*",
         "@clinebot/shared": "workspace:*",
@@ -288,7 +289,7 @@
     },
     "packages/core": {
       "name": "@clinebot/core",
-      "version": "0.0.5",
+      "version": "0.0.6",
       "dependencies": {
         "@clinebot/agents": "workspace:*",
         "@clinebot/llms": "workspace:*",
@@ -311,7 +312,7 @@
     },
     "packages/llms": {
       "name": "@clinebot/llms",
-      "version": "0.0.5",
+      "version": "0.0.6",
       "dependencies": {
         "@ai-sdk/amazon-bedrock": "^4.0.67",
         "@ai-sdk/google-vertex": "^4.0.74",
@@ -339,7 +340,7 @@
     },
     "packages/rpc": {
       "name": "@clinebot/rpc",
-      "version": "0.0.5",
+      "version": "0.0.6",
       "dependencies": {
         "@clinebot/scheduler": "workspace:*",
         "@clinebot/shared": "workspace:*",
@@ -349,14 +350,14 @@
     },
     "packages/scheduler": {
       "name": "@clinebot/scheduler",
-      "version": "0.0.5",
+      "version": "0.0.6",
       "dependencies": {
         "@clinebot/shared": "workspace:*",
       },
     },
     "packages/shared": {
       "name": "@clinebot/shared",
-      "version": "0.0.5",
+      "version": "0.0.6",
       "dependencies": {
         "better-sqlite3": "^11.10.0",
         "jsonrepair": "^3.13.2",

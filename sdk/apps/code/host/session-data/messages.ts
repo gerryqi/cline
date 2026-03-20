@@ -12,6 +12,54 @@ import {
 	stringifyMessageContent,
 } from "./common";
 
+function readMessageMetadata(message: JsonRecord): JsonRecord | undefined {
+	return message.metadata && typeof message.metadata === "object"
+		? (message.metadata as JsonRecord)
+		: undefined;
+}
+
+function resolveDisplayRole(
+	role: string,
+	metadata: JsonRecord | undefined,
+): string {
+	const displayRole =
+		typeof metadata?.displayRole === "string"
+			? metadata.displayRole.trim().toLowerCase()
+			: "";
+	if (
+		displayRole === "system" ||
+		displayRole === "status" ||
+		displayRole === "error"
+	) {
+		return displayRole;
+	}
+	return role;
+}
+
+function extractStoredMessageMeta(message: JsonRecord): JsonRecord | undefined {
+	const metadata = readMessageMetadata(message);
+	if (!metadata) {
+		return undefined;
+	}
+	const hookEventName =
+		typeof metadata.kind === "string" ? "history_notice" : undefined;
+	const messageKind =
+		typeof metadata.kind === "string" ? metadata.kind : undefined;
+	const displayRole =
+		typeof metadata.displayRole === "string" ? metadata.displayRole : undefined;
+	const reason =
+		typeof metadata.reason === "string" ? metadata.reason : undefined;
+	if (!hookEventName && !messageKind && !displayRole && !reason) {
+		return undefined;
+	}
+	return {
+		hookEventName,
+		messageKind,
+		displayRole,
+		reason,
+	};
+}
+
 function extractMessageUsageMeta(message: JsonRecord): JsonRecord | undefined {
 	const metrics =
 		message.metrics && typeof message.metrics === "object"
@@ -197,7 +245,14 @@ export async function readSessionMessages(
 		}
 		const message = rawMessage as JsonRecord;
 		let textMeta = extractMessageUsageMeta(message);
-		const role = normalizeRole(message.role);
+		const storedMeta = extractStoredMessageMeta(message);
+		if (storedMeta) {
+			textMeta = { ...(textMeta ?? {}), ...storedMeta };
+		}
+		const role = resolveDisplayRole(
+			normalizeRole(message.role),
+			readMessageMetadata(message),
+		);
 		const createdAtBase = parseU64Value(message.ts) ?? baseTs + idx;
 		const messageIdBase =
 			(typeof message.id === "string" && message.id.trim()) ||

@@ -683,6 +683,9 @@ struct HydratedChatMessage {
 struct HydratedChatMessageMeta {
     tool_name: Option<String>,
     hook_event_name: Option<String>,
+    message_kind: Option<String>,
+    display_role: Option<String>,
+    reason: Option<String>,
     input_tokens: Option<u64>,
     output_tokens: Option<u64>,
     total_cost: Option<f64>,
@@ -1158,6 +1161,16 @@ fn derive_prompt_from_messages(messages: &[Value]) -> Option<String> {
         if role != "user" {
             continue;
         }
+        let is_recovery_notice = message
+            .get("metadata")
+            .and_then(|value| value.as_object())
+            .and_then(|metadata| metadata.get("kind"))
+            .and_then(|value| value.as_str())
+            .map(|kind| kind == "recovery_notice")
+            .unwrap_or(false);
+        if is_recovery_notice {
+            continue;
+        }
         let content = stringify_message_content(message.get("content").unwrap_or(&Value::Null));
         let trimmed = content.trim();
         if !trimmed.is_empty() {
@@ -1324,12 +1337,65 @@ fn extract_message_usage_meta(message: &Value) -> Option<HydratedChatMessageMeta
     Some(HydratedChatMessageMeta {
         tool_name: None,
         hook_event_name: None,
+        message_kind: None,
+        display_role: None,
+        reason: None,
         input_tokens,
         output_tokens,
         total_cost,
         provider_id,
         model_id,
     })
+}
+
+fn extract_message_notice_meta(message: &Value) -> Option<HydratedChatMessageMeta> {
+    let metadata = message.get("metadata").and_then(|v| v.as_object())?;
+    let message_kind = metadata
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .map(|v| v.to_string());
+    let display_role = metadata
+        .get("displayRole")
+        .and_then(|v| v.as_str())
+        .map(|v| v.to_string());
+    let reason = metadata
+        .get("reason")
+        .and_then(|v| v.as_str())
+        .map(|v| v.to_string());
+
+    if message_kind.is_none() && display_role.is_none() && reason.is_none() {
+        return None;
+    }
+
+    Some(HydratedChatMessageMeta {
+        tool_name: None,
+        hook_event_name: message_kind
+            .as_ref()
+            .map(|_| "history_notice".to_string()),
+        message_kind,
+        display_role,
+        reason,
+        input_tokens: None,
+        output_tokens: None,
+        total_cost: None,
+        provider_id: None,
+        model_id: None,
+    })
+}
+
+fn resolve_message_display_role(message: &Value, normalized_role: &str) -> String {
+    let display_role = message
+        .get("metadata")
+        .and_then(|value| value.as_object())
+        .and_then(|metadata| metadata.get("displayRole"))
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_ascii_lowercase())
+        .unwrap_or_default();
+
+    match display_role.as_str() {
+        "system" | "status" | "error" => display_role,
+        _ => normalized_role.to_string(),
+    }
 }
 
 fn merge_hydrated_message_meta(
@@ -1346,6 +1412,15 @@ fn merge_hydrated_message_meta(
         }
         if current.hook_event_name.is_none() {
             current.hook_event_name = extra.hook_event_name;
+        }
+        if current.message_kind.is_none() {
+            current.message_kind = extra.message_kind;
+        }
+        if current.display_role.is_none() {
+            current.display_role = extra.display_role;
+        }
+        if current.reason.is_none() {
+            current.reason = extra.reason;
         }
         if current.input_tokens.is_none() {
             current.input_tokens = extra.input_tokens;
@@ -4329,14 +4404,18 @@ fn read_session_messages(
 
     for (idx, message) in messages.iter().enumerate().skip(start) {
         let mut text_meta = extract_message_usage_meta(message);
+        if let Some(notice_meta) = extract_message_notice_meta(message) {
+            merge_hydrated_message_meta(&mut text_meta, notice_meta);
+        }
         let role_raw = message
             .get("role")
             .and_then(|v| v.as_str())
             .unwrap_or("assistant");
-        let role = match role_raw {
+        let normalized_role = match role_raw {
             "user" | "assistant" | "tool" | "system" | "status" | "error" => role_raw,
             _ => "assistant",
         };
+        let role = resolve_message_display_role(message, normalized_role);
         let created_at_base = message
             .get("ts")
             .and_then(|v| v.as_u64())
@@ -4356,7 +4435,7 @@ fn read_session_messages(
             out.push(HydratedChatMessage {
                 id: message_id_base,
                 session_id: Some(session_id.clone()),
-                role: role.to_string(),
+                role: role.clone(),
                 content,
                 created_at: created_at_base,
                 meta: text_meta.take(),
@@ -4385,7 +4464,7 @@ fn read_session_messages(
                         &mut out,
                         &mut text_parts,
                         &session_id,
-                        role,
+                        &role,
                         &message_id_base,
                         &mut text_segment_index,
                         block_ts,
@@ -4414,6 +4493,9 @@ fn read_session_messages(
                         meta: Some(HydratedChatMessageMeta {
                             tool_name: Some(tool_name.clone()),
                             hook_event_name: Some("history_tool_use".to_string()),
+                            message_kind: None,
+                            display_role: None,
+                            reason: None,
                             input_tokens: None,
                             output_tokens: None,
                             total_cost: None,
@@ -4430,7 +4512,7 @@ fn read_session_messages(
                         &mut out,
                         &mut text_parts,
                         &session_id,
-                        role,
+                        &role,
                         &message_id_base,
                         &mut text_segment_index,
                         block_ts,
@@ -4456,6 +4538,9 @@ fn read_session_messages(
                             existing.meta = Some(HydratedChatMessageMeta {
                                 tool_name: Some(tool_name),
                                 hook_event_name: Some("history_tool_result".to_string()),
+                                message_kind: None,
+                                display_role: None,
+                                reason: None,
                                 input_tokens: None,
                                 output_tokens: None,
                                 total_cost: None,
@@ -4478,6 +4563,9 @@ fn read_session_messages(
                             meta: Some(HydratedChatMessageMeta {
                                 tool_name: Some("tool_result".to_string()),
                                 hook_event_name: Some("history_tool_result".to_string()),
+                                message_kind: None,
+                                display_role: None,
+                                reason: None,
                                 input_tokens: None,
                                 output_tokens: None,
                                 total_cost: None,
@@ -4500,7 +4588,7 @@ fn read_session_messages(
             &mut out,
             &mut text_parts,
             &session_id,
-            role,
+            &role,
             &message_id_base,
             &mut text_segment_index,
             created_at_base.saturating_add(content_blocks.len() as u64),

@@ -5,11 +5,11 @@ function createConversationId(): string {
 }
 
 export class ConversationStore {
-	private messages: providers.Message[] = [];
+	private messages: providers.MessageWithMetadata[] = [];
 	private conversationId = createConversationId();
 	private sessionStarted = false;
 
-	constructor(initialMessages?: providers.Message[]) {
+	constructor(initialMessages?: providers.MessageWithMetadata[]) {
 		if ((initialMessages?.length ?? 0) > 0) {
 			this.restore(initialMessages ?? []);
 		}
@@ -19,15 +19,15 @@ export class ConversationStore {
 		return this.conversationId;
 	}
 
-	getMessages(): providers.Message[] {
+	getMessages(): providers.MessageWithMetadata[] {
 		return [...this.messages];
 	}
 
-	appendMessage(message: providers.Message): void {
+	appendMessage(message: providers.MessageWithMetadata): void {
 		this.messages.push(message);
 	}
 
-	appendMessages(messages: providers.Message[]): void {
+	appendMessages(messages: providers.MessageWithMetadata[]): void {
 		if (messages.length === 0) {
 			return;
 		}
@@ -46,7 +46,7 @@ export class ConversationStore {
 		this.sessionStarted = false;
 	}
 
-	restore(messages: providers.Message[]): void {
+	restore(messages: providers.MessageWithMetadata[]): void {
 		this.messages = [...messages];
 		this.sessionStarted = false;
 	}
