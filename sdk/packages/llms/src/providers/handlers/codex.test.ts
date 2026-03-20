@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { OPENAI_CODEX_PROVIDER } from "../../models/providers/openai-codex";
 import { CodexHandler } from "./community-sdk";
 
 const streamTextSpy = vi.fn();
@@ -119,5 +120,41 @@ describe("CodexHandler", () => {
 		expect(createOptions?.defaultSettings?.env?.OPENAI_API_KEY).toBe(
 			"sk-test-key",
 		);
+	});
+
+	it("does not surface Codex native tool calls as local tool calls", async () => {
+		streamTextSpy.mockReturnValue({
+			fullStream: makeStreamParts([
+				{
+					type: "tool-call",
+					toolCallId: "codex-call-1",
+					toolName: "read_file",
+					args: { path: "README.md" },
+				},
+				{
+					type: "finish",
+					usage: { inputTokens: 8, outputTokens: 3 },
+				},
+			]),
+		});
+
+		const handler = new CodexHandler({
+			providerId: "openai-codex",
+			modelId: "gpt-5.3-codex",
+		});
+
+		const chunks: Array<Record<string, unknown>> = [];
+		for await (const chunk of handler.createMessage("System", [
+			{ role: "user", content: "Hi" },
+		])) {
+			chunks.push(chunk as unknown as Record<string, unknown>);
+		}
+
+		expect(chunks.map((chunk) => chunk.type)).toEqual(["usage", "done"]);
+	});
+
+	it("does not advertise custom tool capability for Codex models", () => {
+		const model = OPENAI_CODEX_PROVIDER.models["gpt-5.3-codex"];
+		expect(model?.capabilities).not.toContain("tools");
 	});
 });

@@ -9,8 +9,25 @@ import { getGeneratedModelsForProvider } from "../generated-access";
 import type { ModelCollection, ModelInfo } from "../schemas/index";
 import { OPENAI_MODELS } from "./openai";
 
+function removeCustomToolCapability(model: ModelInfo): ModelInfo {
+	if (!model.capabilities?.includes("tools")) {
+		return model;
+	}
+
+	return {
+		...model,
+		capabilities: model.capabilities.filter(
+			(capability) => capability !== "tools",
+		),
+	};
+}
+
 export const OPENAI_CODEX_MODELS: Record<string, ModelInfo> =
-	getGeneratedModelsForProvider("openai");
+	Object.fromEntries(
+		Object.entries(getGeneratedModelsForProvider("openai")).map(
+			([modelId, model]) => [modelId, removeCustomToolCapability(model)],
+		),
+	);
 
 export const OPENAI_CODEX_DEFAULT_MODEL =
 	Object.keys(OPENAI_CODEX_MODELS)[0] ?? "gpt-5.3-codex";
@@ -26,5 +43,5 @@ export const OPENAI_CODEX_PROVIDER: ModelCollection = {
 		defaultModelId: OPENAI_CODEX_DEFAULT_MODEL,
 		capabilities: ["reasoning", "oauth"],
 	},
-	models: OPENAI_MODELS,
+	models: OPENAI_CODEX_MODELS,
 };

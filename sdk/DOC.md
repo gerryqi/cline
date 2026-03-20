@@ -172,6 +172,20 @@ const result = await agent.run("Summarize this repository.")
 console.log(result.text)
 ```
 
+## Codex Provider Tool Behavior
+
+`openai-codex` is different from providers that support SDK-defined custom tools.
+
+- Do not pass custom tool definitions to the Codex provider.
+- Do not rely on model `tool_calls` from `openai-codex` being executable by `@clinebot/agents`.
+- Codex may still use its own built-in provider-native tools internally.
+- Provider-native Codex tool events are treated as informational provider behavior and are not forwarded into local tool execution, which avoids `Unknown tool` errors for built-in Codex tools.
+
+Practical effect:
+- If you disable session tools for `openai-codex`, local Cline tools stay off.
+- Codex can still use its built-in tools inside the provider runtime.
+- Those built-in tool invocations are not mapped onto the Cline tool registry.
+
 ## `@clinebot/core` Telemetry
 
 `@clinebot/core` exposes a lightweight `TelemetryService` from `@clinebot/core` and an OpenTelemetry-backed factory from the lazy subpath `@clinebot/core/telemetry/opentelemetry`.
@@ -1147,7 +1161,7 @@ If the refresh fails, it logs a dim warning and falls back to bundled defaults. 
 |---|---|---|
 | `anthropic` | `ANTHROPIC_API_KEY` | Default provider |
 | `openai` | `OPENAI_API_KEY` | Use with `-p openai` |
-| `openai-codex` | OAuth | OAuth-only; use `clite auth openai-codex` |
+| `openai-codex` | OAuth | OAuth-only; use `clite auth openai-codex`. Does not accept SDK custom tools; Codex built-in tools remain provider-native and are not executed through the local Cline tool registry. |
 | `openrouter` | `OPENROUTER_API_KEY` | Use with `-p openrouter` |
 | `vercel-ai-gateway` | `AI_GATEWAY_API_KEY` | Use with `-p vercel-ai-gateway` |
 | `cline` | `CLINE_API_KEY` or OAuth | Cline-hosted; shows account/credit info on start |
