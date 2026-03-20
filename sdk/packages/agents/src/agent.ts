@@ -717,6 +717,9 @@ export class Agent {
 				});
 
 				if (turn.invalidToolCalls.length > 0) {
+					this.conversationStore.appendMessage(
+						this.buildInvalidToolResultMessage(turn.invalidToolCalls),
+					);
 					this.appendRecoveryNotice(
 						this.buildInvalidToolCallFeedback(turn.invalidToolCalls),
 						"invalid_tool_call",
@@ -953,6 +956,7 @@ export class Agent {
 		invalidToolCalls: Array<{
 			id: string;
 			name?: string;
+			input?: unknown;
 			reason: "missing_name" | "missing_arguments" | "invalid_arguments";
 		}>,
 	): string {
@@ -969,6 +973,36 @@ export class Agent {
 			})
 			.join("; ");
 		return `One or more tool calls were invalid or missing required parameters (${details}). Retry with valid tool names and arguments.`;
+	}
+
+	private buildInvalidToolResultMessage(
+		invalidToolCalls: Array<{
+			id: string;
+			name?: string;
+			input?: unknown;
+			reason: "missing_name" | "missing_arguments" | "invalid_arguments";
+		}>,
+	): providers.Message {
+		return {
+			role: "user",
+			content: invalidToolCalls.map((call) => ({
+				type: "tool_result" as const,
+				tool_use_id: call.id,
+				content: JSON.stringify({
+					toolName: call.name?.trim() || "(unknown tool)",
+					query: call.input ?? {},
+					result: "",
+					error:
+						call.reason === "missing_name"
+							? "Tool call was missing a tool name"
+							: call.reason === "missing_arguments"
+								? "Tool call was missing required arguments"
+								: "Tool call arguments were invalid JSON",
+					success: false,
+				}),
+				is_error: true,
+			})),
+		};
 	}
 
 	private buildFailedToolCallFeedback(toolResults: ToolCallRecord[]): string {

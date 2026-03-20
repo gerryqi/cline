@@ -35,6 +35,50 @@ export function formatToolResult(output: unknown, error?: string): string {
 	}
 }
 
+function normalizeQuery(input: unknown): unknown {
+	if (input && typeof input === "object" && !Array.isArray(input)) {
+		const record = input as Record<string, unknown>;
+		const command =
+			typeof record.command === "string" ? record.command.trim() : "";
+		const path = typeof record.path === "string" ? record.path.trim() : "";
+		if (command && path) {
+			return `${command}:${path}`;
+		}
+	}
+	return input;
+}
+
+function enrichToolOutput(toolName: string, output: unknown): unknown {
+	if (Array.isArray(output)) {
+		return output.map((entry) => enrichToolOutput(toolName, entry));
+	}
+	if (output && typeof output === "object") {
+		return {
+			toolName,
+			...(output as Record<string, unknown>),
+		};
+	}
+	return {
+		toolName,
+		result: output,
+		success: true,
+	};
+}
+
+export function formatStructuredToolResult(record: ToolCallRecord): string {
+	if (record.error) {
+		return JSON.stringify({
+			toolName: record.name,
+			query: normalizeQuery(record.input),
+			result: "",
+			error: record.error,
+			success: false,
+		});
+	}
+
+	return formatToolResult(enrichToolOutput(record.name, record.output));
+}
+
 /**
  * Format multiple tool results into a structured summary
  */

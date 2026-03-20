@@ -50,4 +50,57 @@ describe("ToolOrchestrator reminder cadence", () => {
 		expect(at52.content).toHaveLength(1);
 		expect(at101.content).toHaveLength(2);
 	});
+
+	it("includes tool name and query in structured tool results", () => {
+		const orchestrator = createOrchestrator();
+		const results = [
+			{
+				id: "tool-1",
+				name: "run_commands",
+				input: { commands: ["pwd"] },
+				durationMs: 100,
+				startedAt: new Date(),
+				endedAt: new Date(),
+				output: [{ query: "pwd", result: "/tmp", success: true }],
+			},
+			{
+				id: "tool-2",
+				name: "editor",
+				input: { command: "create", path: "/tmp/file.txt" },
+				durationMs: 100,
+				startedAt: new Date(),
+				endedAt: new Date(),
+				output: null,
+				error: "file_text is required",
+			},
+		] satisfies ToolCallRecord[];
+
+		const message = orchestrator.buildToolResultMessage(results, 1, {
+			afterIterations: 0,
+			text: "reminder",
+		});
+		expect(message.content).toHaveLength(2);
+		expect(message.content[0]).toMatchObject({
+			type: "tool_result",
+			tool_use_id: "tool-1",
+			is_error: false,
+		});
+		expect((message.content[0] as { content: string }).content).toContain(
+			'"toolName":"run_commands"',
+		);
+		expect((message.content[0] as { content: string }).content).toContain(
+			'"query":"pwd"',
+		);
+		expect(message.content[1]).toMatchObject({
+			type: "tool_result",
+			tool_use_id: "tool-2",
+			is_error: true,
+		});
+		expect((message.content[1] as { content: string }).content).toContain(
+			'"toolName":"editor"',
+		);
+		expect((message.content[1] as { content: string }).content).toContain(
+			'"query":"create:/tmp/file.txt"',
+		);
+	});
 });

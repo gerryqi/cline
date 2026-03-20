@@ -1054,6 +1054,7 @@ export interface ProcessedTurn {
 	invalidToolCalls: Array<{
 		id: string;
 		name?: string;
+		input?: unknown;
 		reason: "missing_name" | "missing_arguments" | "invalid_arguments";
 	}>;
 	/** Token usage for this turn */

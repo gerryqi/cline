@@ -112,4 +112,49 @@ describe("TurnProcessor", () => {
 			},
 		});
 	});
+
+	it("persists invalid tool calls with a synthetic tool_use block", async () => {
+		const processor = createProcessor([
+			{
+				type: "tool_calls",
+				id: "r1",
+				tool_call: {
+					call_id: "call_1",
+					function: {
+						name: "editor",
+						arguments: '{"command":"create","path":/tmp/file.txt}',
+					},
+				},
+			},
+			{ type: "done", id: "r1", success: true },
+		]);
+
+		const { turn, assistantMessage } = await processor.processTurn(
+			[],
+			"system",
+			[],
+			new AbortController().signal,
+		);
+
+		expect(turn.toolCalls).toEqual([]);
+		expect(turn.invalidToolCalls).toEqual([
+			{
+				id: "call_1",
+				name: "editor",
+				input: {
+					raw_arguments: '{"command":"create","path":/tmp/file.txt}',
+				},
+				reason: "invalid_arguments",
+			},
+		]);
+		expect(assistantMessage).toBeDefined();
+		expect(assistantMessage?.content).toContainEqual({
+			type: "tool_use",
+			id: "call_1",
+			name: "editor",
+			input: {
+				raw_arguments: '{"command":"create","path":/tmp/file.txt}',
+			},
+		});
+	});
 });

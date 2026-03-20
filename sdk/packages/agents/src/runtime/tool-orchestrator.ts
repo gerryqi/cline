@@ -1,5 +1,8 @@
 import type { providers } from "@clinebot/llms";
-import { executeToolsInParallel, formatToolResult } from "../tools/index.js";
+import {
+	executeToolsInParallel,
+	formatStructuredToolResult,
+} from "../tools/index.js";
 import type {
 	AgentEvent,
 	AgentHookControl,
@@ -157,7 +160,7 @@ export class ToolOrchestrator {
 			content.push({
 				type: "tool_result" as const,
 				tool_use_id: result.id,
-				content: formatToolResult(result.output, result.error),
+				content: formatStructuredToolResult(result),
 				is_error: !!result.error,
 			});
 		}

@@ -24,6 +24,7 @@ export {
 } from "./execution.js";
 // Formatting
 export {
+	formatStructuredToolResult,
 	formatToolCallRecord,
 	formatToolResult,
 	formatToolResultsSummary,

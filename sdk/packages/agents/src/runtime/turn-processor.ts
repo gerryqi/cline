@@ -171,6 +171,14 @@ export class TurnProcessor {
 				signature: call.signature,
 			});
 		}
+		for (const call of invalidToolCalls) {
+			assistantContent.push({
+				type: "tool_use",
+				id: call.id,
+				name: call.name?.trim() || "(unknown tool)",
+				input: this.toPersistedInvalidToolInput(call.input),
+			});
+		}
 
 		const assistantMessage =
 			assistantContent.length > 0
@@ -282,27 +290,64 @@ export class TurnProcessor {
 	): Array<{
 		id: string;
 		name?: string;
+		input?: unknown;
 		reason: "missing_name" | "missing_arguments" | "invalid_arguments";
 	}> {
 		const invalid: Array<{
 			id: string;
 			name?: string;
+			input?: unknown;
 			reason: "missing_name" | "missing_arguments" | "invalid_arguments";
 		}> = [];
 		for (const [id, pending] of pendingMap.entries()) {
 			if (!pending.name) {
-				invalid.push({ id, reason: "missing_name" });
+				invalid.push({
+					id,
+					input: this.buildInvalidToolInput(pending.arguments),
+					reason: "missing_name",
+				});
 				continue;
 			}
 			if (!pending.arguments) {
-				invalid.push({ id, name: pending.name, reason: "missing_arguments" });
+				invalid.push({
+					id,
+					name: pending.name,
+					input: {},
+					reason: "missing_arguments",
+				});
 				continue;
 			}
 			if (this.tryParseJson(pending.arguments) === undefined) {
-				invalid.push({ id, name: pending.name, reason: "invalid_arguments" });
+				invalid.push({
+					id,
+					name: pending.name,
+					input: this.buildInvalidToolInput(pending.arguments),
+					reason: "invalid_arguments",
+				});
 			}
 		}
 		return invalid;
+	}
+
+	private buildInvalidToolInput(value: string): unknown {
+		const trimmed = value.trim();
+		if (!trimmed) {
+			return {};
+		}
+		return { raw_arguments: value };
+	}
+
+	private toPersistedInvalidToolInput(input: unknown): Record<string, unknown> {
+		if (input && typeof input === "object" && !Array.isArray(input)) {
+			return input as Record<string, unknown>;
+		}
+		if (Array.isArray(input)) {
+			return { raw_arguments: JSON.stringify(input) };
+		}
+		if (input === undefined) {
+			return {};
+		}
+		return { raw_arguments: String(input) };
 	}
 
 	private tryParseJson(value: string): unknown | undefined {
