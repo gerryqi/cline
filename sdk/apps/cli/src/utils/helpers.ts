@@ -388,6 +388,7 @@ export function parseArgs(args: string[]): ParsedArgs {
 		showTimings: false,
 		outputMode: "text",
 		mode: "act",
+		yolo: false,
 		sandbox: false,
 		acpMode: false,
 		thinking: false,
@@ -474,6 +475,7 @@ export function parseArgs(args: string[]): ParsedArgs {
 		} else if (arg === "--auto-approve-all") {
 			result.defaultToolAutoApprove = true;
 		} else if (arg === "--yolo") {
+			result.yolo = true;
 			result.defaultToolAutoApprove = true;
 		} else if (arg === "--require-tool-approval") {
 			result.defaultToolAutoApprove = false;

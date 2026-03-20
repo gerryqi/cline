@@ -12,7 +12,7 @@ import {
 import { runConnectCommand } from "./commands/connect";
 import { runDevCommand } from "./commands/dev";
 import { showHelp, showVersion } from "./commands/help";
-import { runHookCommand } from "./commands/hook";
+import { runHookCommand, runHookWorkerCommand } from "./commands/hook";
 import { runScheduleCommand } from "./commands/schedule";
 import { createCliLoggerAdapter } from "./logging/adapter";
 import {
@@ -112,6 +112,10 @@ export async function runCli(): Promise<void> {
 
 	if (rawArgs[0] === "hook") {
 		const code = await runHookCommand(writeErr);
+		process.exit(code);
+	}
+	if (rawArgs[0] === "hook-worker") {
+		const code = await runHookWorkerCommand(writeErr);
 		process.exit(code);
 	}
 	if (rawArgs[0] === "dev") {
@@ -419,6 +423,7 @@ export async function runCli(): Promise<void> {
 					: effectiveReasoningEffort,
 			outputMode: args.outputMode,
 			mode: args.mode,
+			yolo: args.yolo === true,
 			logger: loggerAdapter.core,
 			loggerConfig: loggerAdapter.runtimeConfig,
 			defaultToolAutoApprove,

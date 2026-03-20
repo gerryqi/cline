@@ -32,6 +32,7 @@
         "@clinebot/core": "workspace:*",
         "@clinebot/llms": "workspace:*",
         "@clinebot/rpc": "workspace:*",
+        "@clinebot/shared": "workspace:*",
         "better-sqlite3": "^11.10.0",
         "chat": "^4.20.2",
         "ink": "^6.8.0",

@@ -29,7 +29,10 @@ export function showHelp(): void {
 			["-V, --version", "output the version number"],
 			["-a, --act", "Run in act mode"],
 			["-p, --plan", "Run in plan mode"],
-			["-y, --yolo", "Enable yolo mode (auto-approve actions)"],
+			[
+				"-y, --yolo",
+				"Enable yolo mode (auto-approve actions) with hooks disabled",
+			],
 			[
 				"--auto-approve-all",
 				"Enable auto-approve all actions while keeping interactive mode",

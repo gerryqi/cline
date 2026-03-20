@@ -64,7 +64,10 @@ export async function runInteractive(
 		userInstructionWatcher,
 	);
 
-	const hooks = createRuntimeHooks({ verbose: config.verbose });
+	const hooks = createRuntimeHooks({
+		verbose: config.verbose,
+		yolo: config.yolo,
+	});
 	const enableChatCommands = process.env.CLINE_ENABLE_CHAT_COMMANDS === "1";
 	const autoApproveAllRef = {
 		current: config.toolPolicies["*"]?.autoApprove !== false,

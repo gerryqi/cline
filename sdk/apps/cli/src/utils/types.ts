@@ -28,6 +28,7 @@ export interface Config extends Omit<CoreSessionConfig, "apiKey" | "mode"> {
 	showTimings: boolean;
 	outputMode: CliOutputMode;
 	mode: CliAgentMode;
+	yolo?: boolean;
 	defaultToolAutoApprove: boolean;
 	toolPolicies: Record<string, ToolPolicy>;
 }
@@ -79,6 +80,7 @@ export interface ParsedArgs {
 	showTimings: boolean;
 	outputMode: CliOutputMode;
 	mode: CliAgentMode;
+	yolo?: boolean;
 	timeoutSeconds?: number;
 	invalidTimeoutSeconds?: string;
 	thinking: boolean;

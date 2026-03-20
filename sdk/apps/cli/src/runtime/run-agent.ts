@@ -65,7 +65,10 @@ export async function runAgent(
 	}
 	const startTime = performance.now();
 	void prewarmFileIndex(config.cwd);
-	const hooks = createRuntimeHooks({ verbose: config.verbose });
+	const hooks = createRuntimeHooks({
+		verbose: config.verbose,
+		yolo: config.yolo,
+	});
 	const sessionManager = await createDefaultCliSessionManager({
 		defaultToolExecutors: {
 			askQuestion: askQuestionInTerminal,
