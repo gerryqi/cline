@@ -65,7 +65,7 @@ export async function runAgent(
 	}
 	const startTime = performance.now();
 	void prewarmFileIndex(config.cwd);
-	const hooks = createRuntimeHooks({
+	const runtimeHooks = createRuntimeHooks({
 		verbose: config.verbose,
 		yolo: config.yolo,
 	});
@@ -144,7 +144,7 @@ export async function runAgent(
 			source: SessionSource.CLI,
 			config: {
 				...config,
-				hooks,
+				hooks: runtimeHooks.hooks,
 				onTeamEvent: handleTeamEvent,
 				onConsecutiveMistakeLimitReached: (context) =>
 					resolveMistakeLimitDecision(config, context),
@@ -288,6 +288,7 @@ export async function runAgent(
 			}
 		} finally {
 			await sessionManager.dispose("cli_run_shutdown");
+			await runtimeHooks.shutdown();
 		}
 		setActiveRuntimeAbort(undefined);
 	}

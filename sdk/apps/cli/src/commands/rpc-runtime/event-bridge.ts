@@ -71,6 +71,19 @@ function publishFromAgentEvent(input: {
 	sessionId: string;
 	event: AgentEvent;
 }): void {
+	if (input.event.type === "error") {
+		publishRuntimeEvent({
+			eventClient: input.eventClient,
+			sessionId: input.sessionId,
+			eventType: "runtime.chat.error",
+			payload: {
+				message: input.event.error.message,
+				recoverable: input.event.recoverable,
+				iteration: input.event.iteration,
+			},
+		});
+		return;
+	}
 	if (
 		input.event.type === "content_start" &&
 		input.event.contentType === "text"

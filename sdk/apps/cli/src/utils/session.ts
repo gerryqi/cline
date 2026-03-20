@@ -25,6 +25,7 @@ import {
 	SessionSource,
 } from "@clinebot/core/node";
 import { getRpcServerDefaultAddress, RpcSessionClient } from "@clinebot/rpc";
+import { ensureRpcRuntimeAddress } from "../commands/rpc";
 
 function resolveRpcAddress(): string {
 	return process.env.CLINE_RPC_ADDRESS?.trim() || getRpcServerDefaultAddress();
@@ -109,9 +110,12 @@ function accumulateUsageTotals(
 
 async function getCoreSessions(): Promise<SessionBackend> {
 	const requestedAddress = resolveRpcAddress();
-	process.env.CLINE_RPC_ADDRESS = requestedAddress;
+	const ensuredAddress = await ensureRpcRuntimeAddress(requestedAddress).catch(
+		() => requestedAddress,
+	);
+	process.env.CLINE_RPC_ADDRESS = ensuredAddress;
 	return await resolveSessionBackend({
-		rpcAddress: requestedAddress,
+		rpcAddress: ensuredAddress,
 	});
 }
 
@@ -634,6 +638,20 @@ function createRpcRuntimeCliSessionManager(
 										? payload.durationMs
 										: undefined,
 							} as unknown as AgentEvent);
+							return;
+						}
+						if (event.eventType === "runtime.chat.error") {
+							emitAgentEvent(listeners, input.sessionId, {
+								type: "error",
+								error: new Error(
+									typeof payload.message === "string"
+										? payload.message
+										: "runtime error",
+								),
+								recoverable: payload.recoverable !== false,
+								iteration:
+									typeof payload.iteration === "number" ? payload.iteration : 0,
+							});
 						}
 					},
 				},

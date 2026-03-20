@@ -46,6 +46,24 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 		sessionManager,
 		eventClient,
 	});
+	const cleanupFailedSession = async (
+		sessionId: string,
+		runtimeLogger: ReturnType<typeof createCliLoggerAdapter>["core"],
+		reason: string,
+	): Promise<void> => {
+		try {
+			await sessionManager.stop(sessionId);
+		} catch (stopError) {
+			runtimeLogger.warn?.("RPC runtime failed-session cleanup errored", {
+				sessionId,
+				reason,
+				error: stopError,
+			});
+		} finally {
+			activeSessions.delete(sessionId);
+			sessionModes.delete(sessionId);
+		}
+	};
 	const stopTrackedSessions = async (
 		shutdownReason: "rpc_runtime_dispose" | "rpc_runtime_shutdown",
 	): Promise<void> => {
@@ -149,6 +167,11 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 			} catch (error) {
 				if (!shouldRestoreSession(error)) {
 					runtimeLogger.error?.("RPC runtime turn send failed", { error });
+					await cleanupFailedSession(
+						sessionId,
+						runtimeLogger,
+						"send_failed_non_restorable",
+					);
 					throw error;
 				}
 
@@ -168,13 +191,35 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 				);
 				sessionModes.set(sessionId, restoredConfig.mode);
 				activeSessions.add(sessionId);
-				const restoredResult = await sessionManager.send({
-					sessionId,
-					prompt: input,
-					userImages,
-					userFiles: fileMaterialized.paths,
-				});
+				const restoredResult = await (async () => {
+					try {
+						return await sessionManager.send({
+							sessionId,
+							prompt: input,
+							userImages,
+							userFiles: fileMaterialized.paths,
+						});
+					} catch (restoredError) {
+						runtimeLogger.error?.(
+							"RPC runtime turn send failed after restore",
+							{
+								error: restoredError,
+							},
+						);
+						await cleanupFailedSession(
+							sessionId,
+							runtimeLogger,
+							"send_failed_after_restore",
+						);
+						throw restoredError;
+					}
+				})();
 				if (!restoredResult) {
+					await cleanupFailedSession(
+						sessionId,
+						runtimeLogger,
+						"send_missing_result_after_restore",
+					);
 					throw new Error("runtime send returned no result after restore");
 				}
 				runtimeLogger.info?.("RPC runtime turn completed after restore", {

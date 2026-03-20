@@ -11,6 +11,7 @@ import {
 } from "./commands/auth";
 import { runConnectCommand } from "./commands/connect";
 import { runDevCommand } from "./commands/dev";
+import { runDoctorCommand } from "./commands/doctor";
 import { showHelp, showVersion } from "./commands/help";
 import { runHookCommand, runHookWorkerCommand } from "./commands/hook";
 import { runScheduleCommand } from "./commands/schedule";
@@ -120,6 +121,10 @@ export async function runCli(): Promise<void> {
 	}
 	if (rawArgs[0] === "dev") {
 		const code = await runDevCommand(rawArgs, { writeln, writeErr });
+		process.exit(code);
+	}
+	if (rawArgs[0] === "doctor") {
+		const code = await runDoctorCommand(rawArgs, { writeln, writeErr });
 		process.exit(code);
 	}
 	if (rawArgs[0] === "version") {

@@ -62,6 +62,11 @@ export interface ApiHandler {
 	 * Abort the current request (optional)
 	 */
 	abort?(): void;
+
+	/**
+	 * Update the abort signal used for subsequent requests (optional).
+	 */
+	setAbortSignal?(signal: AbortSignal | undefined): void;
 }
 
 /**

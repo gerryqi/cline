@@ -102,6 +102,13 @@ export abstract class BaseHandler implements ApiHandler {
 		this.abortController?.abort();
 	}
 
+	setAbortSignal(signal: AbortSignal | undefined): void {
+		this.config.abortSignal = signal;
+		if (signal?.aborted) {
+			this.abortController?.abort(signal.reason);
+		}
+	}
+
 	/**
 	 * Helper to calculate cost from usage
 	 */

@@ -8,7 +8,7 @@
 	],
 	"scripts": {
 		"prepare": "husky",
-		"build": "bun run clean && bun install && bun run build:sdk && bun -F @clinebot/cli build && bun -F @clinebot/cli dev rpc stop",
+		"build": "bun run clean && bun install && bun run build:sdk && bun -F @clinebot/cli build",
 		"build:sdk": "bun -F @clinebot/shared build && bun -F @clinebot/llms build && bun -F @clinebot/scheduler build && bun -F @clinebot/rpc build && bun -F @clinebot/agents build && bun -F @clinebot/core build",
 		"build:apps": "bun build:models && bun -F './apps/**' build",
 		"build:models": "bun -F @clinebot/llms generate:models && bun format --write",

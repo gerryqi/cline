@@ -114,6 +114,10 @@ export function showHelp(): void {
 			["update [options]", "[TODO] Check for updates and install if available"],
 			["dev", "Developer tools and utilities"],
 			[
+				"doctor [--fix] [--json]",
+				"Inspect or clean stale local CLI/RPC processes",
+			],
+			[
 				"connect [options] <adapter>",
 				"Run a chat connector bridge (telegram, gchat, whatsapp). Use --stop to stop the bridge and its sessions",
 			],

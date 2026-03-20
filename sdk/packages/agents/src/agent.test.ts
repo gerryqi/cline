@@ -12,6 +12,7 @@ type FakeHandler = {
 	createMessage: ReturnType<typeof vi.fn>;
 	getModel: ReturnType<typeof vi.fn>;
 	getMessages: ReturnType<typeof vi.fn>;
+	setAbortSignal?: ReturnType<typeof vi.fn>;
 };
 
 const createHandlerMock = vi.fn<(config: unknown) => FakeHandler>();
@@ -309,6 +310,56 @@ describe("Agent", () => {
 		expect(onConsecutiveMistakeLimitReached).toHaveBeenCalledTimes(1);
 		expect(result.finishReason).toBe("completed");
 		expect(result.text).toBe("Recovered");
+	});
+
+	it("fails stalled provider turns when apiTimeoutMs is reached", async () => {
+		const { Agent } = await import("./agent.js");
+		let activeAbortSignal: AbortSignal | undefined;
+		const handler: FakeHandler = {
+			createMessage: vi.fn(
+				() =>
+					({
+						async *[Symbol.asyncIterator]() {
+							if (!activeAbortSignal) {
+								await new Promise(() => {});
+								return;
+							}
+							await new Promise<void>((resolve) => {
+								if (activeAbortSignal?.aborted) {
+									resolve();
+									return;
+								}
+								activeAbortSignal?.addEventListener("abort", () => resolve(), {
+									once: true,
+								});
+							});
+						},
+					}) as AsyncGenerator<FakeChunk>,
+			),
+			getModel: vi.fn(() => ({
+				id: "mock-model",
+				info: {},
+			})),
+			getMessages: vi.fn(),
+			setAbortSignal: vi.fn((signal: AbortSignal | undefined) => {
+				activeAbortSignal = signal;
+			}),
+		};
+		createHandlerMock.mockReturnValue(handler);
+
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "Handle stalled providers",
+			tools: [],
+			apiTimeoutMs: 10,
+			maxConsecutiveMistakes: 1,
+		});
+
+		await expect(agent.run("retry")).rejects.toThrow(
+			"API request timed out after 10ms",
+		);
+		expect(handler.setAbortSignal).toHaveBeenCalled();
 	});
 
 	it("executes tool calls and applies tool policy approval", async () => {

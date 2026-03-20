@@ -111,14 +111,23 @@ function writeHookInvocation(
 export function createRuntimeHooks(options?: {
 	verbose?: boolean;
 	yolo?: boolean;
-}): AgentHooks | undefined {
+}): {
+	hooks?: AgentHooks;
+	shutdown: () => Promise<void>;
+} {
 	if (options?.yolo === true) {
-		return undefined;
+		return {
+			hooks: undefined,
+			shutdown: async () => {},
+		};
 	}
 	const hookCommand = getHookCommand();
 	const workerCommand = getHookWorkerCommand();
 	if (!hookCommand || !workerCommand) {
-		return undefined;
+		return {
+			hooks: undefined,
+			shutdown: async () => {},
+		};
 	}
 	const verbose = options?.verbose === true;
 	const sharedOptions = {
@@ -134,8 +143,14 @@ export function createRuntimeHooks(options?: {
 			writeHookInvocation(payload, { verbose }, result);
 		},
 	};
-	return createPersistentSubprocessHooks({
+	const control = createPersistentSubprocessHooks({
 		...sharedOptions,
 		command: workerCommand,
-	}).hooks;
+	});
+	return {
+		hooks: control.hooks,
+		shutdown: async () => {
+			await control.client.close();
+		},
+	};
 }

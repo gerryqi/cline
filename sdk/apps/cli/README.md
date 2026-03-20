@@ -179,6 +179,11 @@ clite connect --stop whatsapp
 # Open the CLI runtime log file
 clite dev log
 
+# Inspect local CLI/RPC process health
+clite doctor
+# Kill stale local RPC listeners and old CLI processes
+clite doctor --fix
+
 # Open interactive config view directly
 clite config
 # Running `clite` with no prompt also enters interactive mode.
@@ -252,7 +257,9 @@ clite schedule import ./daily-review.yaml
 - `openai-codex`
 - `oca`
 
-When you run with one of these providers and no API key is available, `clite` will automatically start the OAuth login flow and persist credentials to provider settings.
+`clite` does not auto-start OAuth during normal command startup. Authenticate explicitly first with `clite auth <provider>`.
+
+For non-interactive runs, if one of these providers is selected and no saved credentials are available, `clite` fails fast with an authentication message instead of launching a hidden browser flow.
 
 During OAuth login, `clite` tries to open the authorization URL in your default browser automatically and still prints the URL for manual fallback.
 

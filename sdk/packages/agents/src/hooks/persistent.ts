@@ -111,12 +111,48 @@ export class PersistentHookClient {
 		if (!child) {
 			return;
 		}
-		if (!child.killed) {
-			child.kill("SIGTERM");
-		}
 		await new Promise<void>((resolve) => {
-			child.once("close", () => resolve());
-			setTimeout(resolve, 250);
+			let settled = false;
+			let forceKillId: NodeJS.Timeout | undefined;
+			const finish = () => {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				if (forceKillId) {
+					clearTimeout(forceKillId);
+				}
+				resolve();
+			};
+
+			child.once("close", () => finish());
+
+			try {
+				child.stdin.end();
+			} catch {
+				// Ignore stdin shutdown failures and continue to terminate the child.
+			}
+
+			if (!child.killed) {
+				try {
+					child.kill("SIGTERM");
+				} catch {
+					finish();
+					return;
+				}
+			}
+
+			forceKillId = setTimeout(() => {
+				if (!child.killed) {
+					try {
+						child.kill("SIGKILL");
+					} catch {
+						// Ignore final kill errors.
+					}
+				}
+			}, 250);
+
+			setTimeout(() => finish(), 1000);
 		});
 	}
 

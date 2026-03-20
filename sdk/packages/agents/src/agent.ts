@@ -410,6 +410,26 @@ export class Agent {
 		return providers.createHandler(normalizedProviderConfig);
 	}
 
+	private createApiTimeoutSignal(): AbortSignal | undefined {
+		const timeoutMs = this.config.apiTimeoutMs;
+		if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+			return undefined;
+		}
+
+		const abortSignalCtor = AbortSignal as unknown as {
+			timeout?: (milliseconds: number) => AbortSignal;
+		};
+		if (abortSignalCtor.timeout) {
+			return abortSignalCtor.timeout(timeoutMs);
+		}
+
+		const controller = new AbortController();
+		setTimeout(() => {
+			controller.abort(new Error(`API request timed out after ${timeoutMs}ms`));
+		}, timeoutMs);
+		return controller.signal;
+	}
+
 	private async executeLoop(triggerMessage: string): Promise<AgentResult> {
 		if (this.runState !== "idle") {
 			throw new Error(
@@ -577,16 +597,36 @@ export class Agent {
 							ReturnType<TurnProcessor["processTurn"]>
 					  >["assistantMessage"]
 					| undefined;
+				const apiTimeoutSignal = this.createApiTimeoutSignal();
+				const turnAbortSignal = this.mergeAbortSignals(
+					abortSignal,
+					apiTimeoutSignal,
+				);
+				(
+					this.handler as providers.ApiHandler & {
+						setAbortSignal?: (signal: AbortSignal | undefined) => void;
+					}
+				).setAbortSignal?.(turnAbortSignal);
 				try {
 					({ turn, assistantMessage } = await this.turnProcessor.processTurn(
 						this.conversationStore.getMessages(),
 						turnSystemPrompt,
 						this.config.tools,
-						abortSignal,
+						turnAbortSignal,
 					));
 				} catch (error) {
+					if (abortSignal.aborted) {
+						finishReason = "aborted";
+						break;
+					}
 					const errorObj =
-						error instanceof Error ? error : new Error(String(error));
+						apiTimeoutSignal?.aborted === true
+							? new Error(
+									`API request timed out after ${this.config.apiTimeoutMs}ms`,
+								)
+							: error instanceof Error
+								? error
+								: new Error(String(error));
 					const message = errorObj.message;
 					if (isNonRecoverableApiError(errorObj)) {
 						throw errorObj;

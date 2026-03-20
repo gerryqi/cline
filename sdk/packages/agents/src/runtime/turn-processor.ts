@@ -119,6 +119,17 @@ export class TurnProcessor {
 			}
 		}
 
+		if (abortSignal.aborted) {
+			const reason = abortSignal.reason;
+			if (reason instanceof Error) {
+				throw reason;
+			}
+			if (typeof reason === "string" && reason.trim().length > 0) {
+				throw new Error(reason);
+			}
+			throw new Error("model request aborted");
+		}
+
 		const toolCalls = this.finalizePendingToolCalls(pendingToolCallsMap);
 		const invalidToolCalls = this.collectInvalidToolCalls(pendingToolCallsMap);
 		const assistantContent: providers.ContentBlock[] = [];
