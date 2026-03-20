@@ -10,6 +10,7 @@ import { getRpcServerDefaultAddress, getRpcServerHealth } from "@clinebot/rpc";
 import { resolveSessionDataDir } from "@clinebot/shared/storage";
 import { nanoid } from "nanoid";
 import { SqliteSessionStore } from "../storage/sqlite-session-store";
+import type { TelemetryService } from "../telemetry/TelemetryService";
 import type { ToolExecutors } from "../tools";
 import { DefaultSessionManager } from "./default-session-manager";
 import { RpcCoreSessionService } from "./rpc-session-service";
@@ -33,6 +34,7 @@ export interface CreateSessionHostOptions {
 	rpcConnectAttempts?: number;
 	rpcConnectDelayMs?: number;
 	defaultToolExecutors?: Partial<ToolExecutors>;
+	telemetry?: TelemetryService;
 	toolPolicies?: AgentConfig["toolPolicies"];
 	requestToolApproval?: (
 		request: ToolApprovalRequest,
@@ -190,13 +192,16 @@ export async function resolveSessionBackend(
 export async function createSessionHost(
 	options: CreateSessionHostOptions,
 ): Promise<SessionHost> {
+	const distinctId = resolveHostDistinctId(options.distinctId);
+	options.telemetry?.setDistinctId(distinctId);
 	const backend =
 		options.sessionService ?? (await resolveSessionBackend(options));
 	return new DefaultSessionManager({
 		sessionService: backend,
 		defaultToolExecutors: options.defaultToolExecutors,
+		telemetry: options.telemetry,
 		toolPolicies: options.toolPolicies,
 		requestToolApproval: options.requestToolApproval,
-		distinctId: resolveHostDistinctId(options.distinctId),
+		distinctId,
 	});
 }

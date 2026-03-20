@@ -522,6 +522,7 @@ export class DefaultRuntimeBuilder implements RuntimeBuilder {
 		return {
 			tools,
 			logger: logger ?? config.logger,
+			telemetry: input.telemetry ?? config.telemetry,
 			teamRuntime,
 			completionGuard,
 			shutdown: (reason: string) => {

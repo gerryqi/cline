@@ -43,6 +43,15 @@ export const SearchCodebaseInputSchema = z.object({
 		.describe("Array of regex search queries to execute"),
 });
 
+/**
+ * Union schema for search_codebase tool input, allowing either a single string, an array of strings, or the full object schema
+ */
+export const SearchCodebaseUnionInputSchema = z.union([
+	SearchCodebaseInputSchema,
+	z.array(z.string()),
+	z.string(),
+]);
+
 const CommandInputSchema = z.string();
 /**
  * Schema for run_commands tool input

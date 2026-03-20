@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Tool } from "@clinebot/agents";
 import { describe, expect, it } from "vitest";
+import { TelemetryService } from "../telemetry/TelemetryService";
 import { DefaultRuntimeBuilder } from "./runtime-builder";
 
 function makeSpawnTool(): Tool {
@@ -53,6 +54,25 @@ describe("DefaultRuntimeBuilder", () => {
 		});
 
 		expect(runtime.logger).toBe(logger);
+	});
+
+	it("forwards telemetry for downstream runtime consumers", () => {
+		const telemetry = new TelemetryService();
+		const runtime = new DefaultRuntimeBuilder().build({
+			config: {
+				providerId: "anthropic",
+				modelId: "claude-sonnet-4-6",
+				apiKey: "key",
+				systemPrompt: "test",
+				cwd: process.cwd(),
+				enableTools: false,
+				enableSpawnAgent: false,
+				enableAgentTeams: false,
+				telemetry,
+			},
+		});
+
+		expect(runtime.telemetry).toBe(telemetry);
 	});
 
 	it("uses readonly preset in plan mode", () => {

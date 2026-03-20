@@ -31,6 +31,7 @@ import {
 	buildTeamProgressSummary,
 	toTeamProgressLifecycleEvent,
 } from "../team";
+import type { TelemetryService } from "../telemetry/TelemetryService";
 import { createBuiltinTools, type ToolExecutors, ToolPresets } from "../tools";
 import { SessionSource, type SessionStatus } from "../types/common";
 import type { CoreSessionConfig } from "../types/config";
@@ -89,6 +90,7 @@ export interface DefaultSessionManagerOptions {
 	toolPolicies?: AgentConfig["toolPolicies"];
 	providerSettingsManager?: ProviderSettingsManager;
 	oauthTokenManager?: RuntimeOAuthTokenManager;
+	telemetry?: TelemetryService;
 	requestToolApproval?: (
 		request: ToolApprovalRequest,
 	) => Promise<ToolApprovalResult>;
@@ -120,6 +122,7 @@ export class DefaultSessionManager implements SessionManager {
 	private readonly defaultToolPolicies?: AgentConfig["toolPolicies"];
 	private readonly providerSettingsManager: ProviderSettingsManager;
 	private readonly oauthTokenManager: RuntimeOAuthTokenManager;
+	private readonly defaultTelemetry?: TelemetryService;
 	private readonly defaultRequestToolApproval?: (
 		request: ToolApprovalRequest,
 	) => Promise<ToolApprovalResult>;
@@ -143,6 +146,7 @@ export class DefaultSessionManager implements SessionManager {
 			new RuntimeOAuthTokenManager({
 				providerSettingsManager: this.providerSettingsManager,
 			});
+		this.defaultTelemetry = options.telemetry;
 		this.defaultRequestToolApproval = options.requestToolApproval;
 	}
 
@@ -263,6 +267,7 @@ export class DefaultSessionManager implements SessionManager {
 			...input.config,
 			hooks: effectiveHooks,
 			extensions: effectiveExtensions,
+			telemetry: input.config.telemetry ?? this.defaultTelemetry,
 		};
 		const providerConfig =
 			this.buildResolvedProviderConfig(effectiveConfigBase);
@@ -276,6 +281,7 @@ export class DefaultSessionManager implements SessionManager {
 			hooks: effectiveHooks,
 			extensions: effectiveExtensions,
 			logger: effectiveConfig.logger,
+			telemetry: effectiveConfig.telemetry,
 			onTeamEvent: (event: TeamEvent) => {
 				void this.handleTeamEvent(sessionId, event);
 				effectiveConfig.onTeamEvent?.(event);
@@ -287,6 +293,18 @@ export class DefaultSessionManager implements SessionManager {
 				input.defaultToolExecutors ?? this.defaultToolExecutors,
 		});
 		const tools = [...runtime.tools, ...(effectiveConfig.extraTools ?? [])];
+		effectiveConfig.telemetry?.capture({
+			event: "session.started",
+			properties: {
+				sessionId,
+				source,
+				providerId: effectiveConfig.providerId,
+				modelId: effectiveConfig.modelId,
+				enableTools: effectiveConfig.enableTools,
+				enableSpawnAgent: effectiveConfig.enableSpawnAgent,
+				enableAgentTeams: effectiveConfig.enableAgentTeams,
+			},
+		});
 		const agent = this.createAgentInstance({
 			providerId: providerConfig.providerId,
 			modelId: providerConfig.modelId,
@@ -405,6 +423,15 @@ export class DefaultSessionManager implements SessionManager {
 		if (!session) {
 			throw new Error(`session not found: ${input.sessionId}`);
 		}
+		session.config.telemetry?.capture({
+			event: "session.input_sent",
+			properties: {
+				sessionId: input.sessionId,
+				promptLength: input.prompt.length,
+				userImageCount: input.userImages?.length ?? 0,
+				userFileCount: input.userFiles?.length ?? 0,
+			},
+		});
 		try {
 			const result = await this.runTurn(session, {
 				prompt: input.prompt,
@@ -436,6 +463,10 @@ export class DefaultSessionManager implements SessionManager {
 		if (!session) {
 			return;
 		}
+		session.config.telemetry?.capture({
+			event: "session.aborted",
+			properties: { sessionId },
+		});
 		session.aborting = true;
 		session.agent.abort();
 	}
@@ -445,6 +476,10 @@ export class DefaultSessionManager implements SessionManager {
 		if (!session) {
 			return;
 		}
+		session.config.telemetry?.capture({
+			event: "session.stopped",
+			properties: { sessionId },
+		});
 		await this.shutdownSession(session, {
 			status: "cancelled",
 			exitCode: null,

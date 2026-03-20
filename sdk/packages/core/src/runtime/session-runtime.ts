@@ -7,6 +7,7 @@ import type {
 } from "@clinebot/agents";
 import type { BasicLogger } from "@clinebot/shared";
 import type { UserInstructionConfigWatcher } from "../agents";
+import type { TelemetryService } from "../telemetry/TelemetryService";
 import type { ToolExecutors } from "../tools";
 import type { CoreSessionConfig } from "../types/config";
 
@@ -14,6 +15,7 @@ export interface BuiltRuntime {
 	tools: Tool[];
 	hooks?: AgentHooks;
 	logger?: BasicLogger;
+	telemetry?: TelemetryService;
 	teamRuntime?: AgentTeamsRuntime;
 	completionGuard?: () => string | undefined;
 	shutdown: (reason: string) => Promise<void> | void;
@@ -29,6 +31,7 @@ export interface RuntimeBuilderInput {
 	userInstructionWatcher?: UserInstructionConfigWatcher;
 	defaultToolExecutors?: Partial<ToolExecutors>;
 	logger?: BasicLogger;
+	telemetry?: TelemetryService;
 }
 
 export interface RuntimeBuilder {

@@ -170,6 +170,60 @@ const result = await agent.run("Summarize this repository.")
 console.log(result.text)
 ```
 
+## `@clinebot/core` Telemetry
+
+`@clinebot/core` exposes a lightweight `TelemetryService` from `@clinebot/core` and an OpenTelemetry-backed factory from the lazy subpath `@clinebot/core/telemetry/opentelemetry`.
+
+Use `createOpenTelemetryTelemetryService` when you want the SDK to configure OpenTelemetry log and metric exporters for you and return a `telemetry` service that can be passed through the rest of the SDK:
+
+```ts
+import { createSessionHost } from "@clinebot/core/node"
+import { createOpenTelemetryTelemetryService } from "@clinebot/core/telemetry/opentelemetry"
+
+const { telemetry, provider } = createOpenTelemetryTelemetryService({
+	metadata: {
+		extension_version: "0.0.5",
+		cline_type: "cli",
+		platform: "terminal",
+		platform_version: process.version,
+		os_type: process.platform,
+		os_version: "unknown",
+	},
+	logsExporter: "otlp",
+	metricsExporter: "otlp",
+	otlpEndpoint: "http://localhost:4318",
+	otlpProtocol: "http/protobuf",
+})
+
+const host = await createSessionHost({
+	telemetry,
+})
+
+const started = await host.start({
+	config: {
+		providerId: "anthropic",
+		modelId: "claude-sonnet-4-6",
+		apiKey: process.env.ANTHROPIC_API_KEY,
+		systemPrompt: "You are a coding assistant.",
+		cwd: process.cwd(),
+		enableTools: true,
+		enableSpawnAgent: false,
+		enableAgentTeams: false,
+		telemetry,
+	},
+	prompt: "Summarize this repository.",
+})
+
+await telemetry.flush()
+await provider.dispose()
+```
+
+Notes:
+- `telemetry` can be passed either at host construction time (`createSessionHost({ telemetry })`) or directly on `CoreSessionConfig`.
+- `createSessionHost` will attach the resolved SDK distinct ID to the telemetry service automatically.
+- The session manager emits basic lifecycle events including `session.started`, `session.input_sent`, `session.aborted`, and `session.stopped`.
+- The OpenTelemetry provider subpath stays separate from the main core barrel so OpenTelemetry code is only loaded when you import it.
+
 
 ## `@clinebot/cli`
 

@@ -100,6 +100,9 @@ export {
 	OCI_HEADER_OPC_REQUEST_ID,
 	refreshOcaToken,
 } from "./auth/oca";
+export async function loadOpenTelemetryAdapter() {
+	return import("./telemetry/opentelemetry.js");
+}
 export { startLocalOAuthServer } from "./auth/server";
 export type {
 	OAuthCredentials,

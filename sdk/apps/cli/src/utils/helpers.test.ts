@@ -51,6 +51,7 @@ describe("parseArgs", () => {
 			thinking: false,
 			reasoningEffort: undefined,
 			liveModelCatalog: false,
+			yolo: false,
 			enableSpawnAgent: true,
 			enableAgentTeams: true,
 			enableTools: true,

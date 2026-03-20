@@ -24,6 +24,7 @@ import {
 	RunCommandsInputUnionSchema,
 	type SearchCodebaseInput,
 	SearchCodebaseInputSchema,
+	SearchCodebaseUnionInputSchema,
 	type SkillsInput,
 	SkillsInputSchema,
 } from "./schemas.js";
@@ -213,36 +214,42 @@ export function createSearchTool(
 		maxRetries: 1,
 		execute: async (input, context) => {
 			// Validate input with Zod schema
-			const validatedInput = validateWithZod(SearchCodebaseInputSchema, input);
+			const validatedInput = validateWithZod(
+				SearchCodebaseUnionInputSchema,
+				input,
+			);
+			const queries = Array.isArray(validatedInput)
+				? validatedInput
+				: typeof validatedInput === "object"
+					? validatedInput.queries
+					: [validatedInput];
 
 			return Promise.all(
-				validatedInput.queries.map(
-					async (query): Promise<ToolOperationResult> => {
-						try {
-							const results = await withTimeout(
-								executor(query, cwd, context),
-								timeoutMs,
-								`Search timed out after ${timeoutMs}ms`,
-							);
-							// Check if results contain matches
-							const hasResults =
-								results.length > 0 && !results.includes("No results found");
-							return {
-								query,
-								result: results,
-								success: hasResults,
-							};
-						} catch (error) {
-							const msg = formatError(error);
-							return {
-								query,
-								result: "",
-								error: `Search failed: ${msg}`,
-								success: false,
-							};
-						}
-					},
-				),
+				queries.map(async (query): Promise<ToolOperationResult> => {
+					try {
+						const results = await withTimeout(
+							executor(query, cwd, context),
+							timeoutMs,
+							`Search timed out after ${timeoutMs}ms`,
+						);
+						// Check if results contain matches
+						const hasResults =
+							results.length > 0 && !results.includes("No results found");
+						return {
+							query,
+							result: results,
+							success: hasResults,
+						};
+					} catch (error) {
+						const msg = formatError(error);
+						return {
+							query,
+							result: "",
+							error: `Search failed: ${msg}`,
+							success: false,
+						};
+					}
+				}),
 			);
 		},
 	});
