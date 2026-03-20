@@ -84,4 +84,44 @@ describe("file indexer", () => {
 			await rm(cwd, { recursive: true, force: true });
 		}
 	});
+
+	it("evicts stale workspace indexes after 10 minutes when multiple workspaces exist", async () => {
+		vi.useFakeTimers();
+		const firstWorkspace = await createTempWorkspace();
+		const secondWorkspace = await createTempWorkspace();
+		try {
+			await writeFile(
+				path.join(firstWorkspace, "first.ts"),
+				"export const first = 1\n",
+				"utf8",
+			);
+			await writeFile(
+				path.join(secondWorkspace, "second.ts"),
+				"export const second = 2\n",
+				"utf8",
+			);
+
+			const firstIndex = await getFileIndex(firstWorkspace, { ttlMs: 60_000 });
+			expect(firstIndex.has("first.ts")).toBe(true);
+
+			await getFileIndex(secondWorkspace, { ttlMs: 60_000 });
+			vi.advanceTimersByTime(10 * 60_000 + 1);
+
+			await getFileIndex(secondWorkspace, { ttlMs: 60_000 });
+			await writeFile(
+				path.join(firstWorkspace, "later.ts"),
+				"export const later = 3\n",
+				"utf8",
+			);
+
+			const rebuiltFirstIndex = await getFileIndex(firstWorkspace, {
+				ttlMs: 60_000,
+			});
+			expect(rebuiltFirstIndex.has("later.ts")).toBe(true);
+		} finally {
+			vi.useRealTimers();
+			await rm(firstWorkspace, { recursive: true, force: true });
+			await rm(secondWorkspace, { recursive: true, force: true });
+		}
+	});
 });

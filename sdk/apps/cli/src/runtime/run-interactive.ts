@@ -400,8 +400,11 @@ export async function runInteractive(
 					if (!result) {
 						throw new Error("session manager did not return a result");
 					}
+					const usage =
+						(await sessionManager.getAccumulatedUsage(activeSessionId)) ??
+						result.usage;
 					return {
-						usage: result.usage,
+						usage,
 						iterations: result.iterations,
 					};
 				} finally {

@@ -10,7 +10,7 @@ Packages:
 
 - `packages/shared` (`@clinebot/shared`): cross-package primitives (paths, common types, helpers).
 - `packages/llms` (`@clinebot/llms`): provider settings schema, model catalog, handler creation.
-- `packages/scheduler` (`@clinebot/scheduler`): cron-based scheduled execution service and persistence.
+- `packages/scheduler` (`@clinebot/scheduler`): cron-based scheduled execution service and persistence, including bounded autonomous routine polling for follow-up work.
 - `packages/agents` (`@clinebot/agents`): stateless runtime loop, tools, hooks, teams.
 - `packages/rpc` (`@clinebot/rpc`): transport/control-plane APIs (session CRUD, tasks, events, approvals) plus shared runtime chat client helpers.
 - `packages/core` (`@clinebot/core`): stateful orchestration (runtime composition, sessions, storage, RPC-backed session adapter) plus app-facing re-exports for shared contracts/path helpers.
@@ -76,6 +76,22 @@ flowchart LR
    - RPC adapter (`RpcSessionClient`-backed CRUD/queue operations)
 3. Session artifact/manifest writes, subagent session upserts, team task sub-session lifecycle, and child-session status propagation are now executed by the shared service logic to keep behavior identical across local and RPC backends.
 
+### Core input indexing flow (latest)
+
+1. `@clinebot/core` owns a fast file index under `packages/core/src/input/file-indexer.ts` that provides a cached file list for workspace-scoped input features.
+2. The indexer is process-local. Each Node process creates at most one worker-thread client for file indexing, and that worker handles index-build requests in the background.
+3. Cache entries are keyed by the requested path string (`cwd` / `workspaceRoot`), so one process can hold indexes for multiple workspaces at the same time without mixing their file lists.
+4. Cached entries are reused for 15 seconds by default. If a process holds more than one workspace index, entries that have not been accessed for 10 minutes are evicted from memory.
+5. The worker only builds raw file lists. It does not own session state, workspace manifests, or any global cross-process registry.
+
+### Core input preparation flow (latest)
+
+1. `DefaultSessionManager` prepares each user turn before handing it to `@clinebot/agents`.
+2. Mention enrichment resolves `@path` tokens against `session.config.workspaceRoot ?? session.config.cwd`, so mentions are evaluated against the session's current workspace boundary rather than the process working directory.
+3. Mention enrichment asks the file indexer for the workspace file list, validates mentioned paths against that index, and converts matched relative paths into absolute attachments for the turn.
+4. Tool executors that need broad workspace file discovery, such as search, also consume the same file index so mention resolution and code/file search operate over the same workspace snapshot shape.
+5. Hosts can prewarm the index opportunistically when a session starts, but indexing remains best-effort: if the worker fails or times out, core falls back to building the file list on the main thread.
+
 ### Desktop Kanban session discovery (latest)
 
 1. `apps/desktop` Kanban session discovery reads directly from the root SQLite sessions DB at `~/.cline/data/sessions/sessions.db`.
@@ -101,7 +117,7 @@ flowchart LR
 6. Failed teammate task events now include the teammate conversation snapshot; core persists that message history to the team-task sub-session `*.messages.json` even when the run fails.
 7. Root session message artifacts are persisted for both successful and failed turns, so rendered conversation history is not lost when a turn exits with an error.
 8. Team async run records now carry live activity metadata (`currentActivity`, `lastProgressMessage`, `lastProgressAt`, `heartbeatAt`) surfaced by `team_list_runs`, and `team_await_run`/`team_await_all_runs` use a 1-hour tool timeout to avoid premature 30s failures during valid parallel teammate work.
-
+9. 
 ## CLI (`@clinebot/cli`)
 
 `@clinebot/cli` is the executable shell around the runtime stack. It parses CLI input into runtime config, composes runtime capabilities via `@clinebot/core/node`, executes agent loops via `@clinebot/agents/node`, resolves provider metadata via `@clinebot/llms/node`, and optionally runs the RPC gateway via `@clinebot/rpc/node`.
