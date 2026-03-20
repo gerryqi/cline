@@ -1,0 +1,29 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createRuntimeHooks } from "./hooks";
+
+describe("createRuntimeHooks", () => {
+	const originalArgv = process.argv.slice();
+
+	afterEach(() => {
+		process.argv = originalArgv.slice();
+		vi.restoreAllMocks();
+	});
+
+	it("disables runtime hooks in yolo mode", async () => {
+		process.argv = [process.argv[0] || "node", "/tmp/clite.js"];
+
+		const runtimeHooks = createRuntimeHooks({ yolo: true });
+
+		expect(runtimeHooks.hooks).toBeUndefined();
+		await expect(runtimeHooks.shutdown()).resolves.toBeUndefined();
+	});
+
+	it("returns hooks when the CLI entrypoint is available", async () => {
+		process.argv = [process.argv[0] || "node", "/tmp/clite.js"];
+
+		const runtimeHooks = createRuntimeHooks({ yolo: false });
+
+		expect(runtimeHooks.hooks).toBeDefined();
+		await expect(runtimeHooks.shutdown()).resolves.toBeUndefined();
+	});
+});

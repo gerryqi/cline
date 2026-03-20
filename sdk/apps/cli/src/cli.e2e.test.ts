@@ -98,6 +98,7 @@ describe("cli e2e", () => {
 			CLINE_DATA_DIR: dataDir,
 			CLINE_SESSION_DATA_DIR: sessionDir,
 			CLINE_TEAM_DATA_DIR: teamDir,
+			CLINE_SESSION_BACKEND_MODE: "local",
 			CLINE_PROVIDER_SETTINGS_PATH: path.join(
 				dataDir,
 				"settings",

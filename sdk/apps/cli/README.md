@@ -72,6 +72,7 @@ bun -F @clinebot/cli test:unit
 
 # Run CLI e2e tests
 bun -F @clinebot/cli test:e2e
+bun -F @clinebot/cli test:e2e:interactive
 ```
 
 ## Usage

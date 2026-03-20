@@ -33,6 +33,14 @@ function resolveRpcAddress(): string {
 	return process.env.CLINE_RPC_ADDRESS?.trim() || getRpcServerDefaultAddress();
 }
 
+function resolveSessionBackendMode(): "auto" | "rpc" | "local" {
+	const raw = process.env.CLINE_SESSION_BACKEND_MODE?.trim().toLowerCase();
+	if (raw === "rpc" || raw === "local") {
+		return raw;
+	}
+	return "auto";
+}
+
 export interface CliSessionManager {
 	start(input: {
 		config: import("@clinebot/core/node").CoreSessionConfig & {
@@ -111,12 +119,20 @@ function accumulateUsageTotals(
 }
 
 async function getCoreSessions(): Promise<SessionBackend> {
+	const backendMode = resolveSessionBackendMode();
+	if (backendMode === "local") {
+		return await resolveSessionBackend({
+			backendMode,
+			autoStartRpcServer: false,
+		});
+	}
 	const requestedAddress = resolveRpcAddress();
 	const ensuredAddress = await ensureRpcRuntimeAddress(requestedAddress).catch(
 		() => requestedAddress,
 	);
 	process.env.CLINE_RPC_ADDRESS = ensuredAddress;
 	return await resolveSessionBackend({
+		backendMode,
 		rpcAddress: ensuredAddress,
 	});
 }

@@ -3,11 +3,19 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const mockSpawn = vi.fn();
-const mockGetRpcServerHealth = vi.fn();
-const mockStopRuntimeSession = vi.fn();
-const mockClientClose = vi.fn();
-const mockCreateServer = vi.fn();
+const {
+	mockSpawn,
+	mockGetRpcServerHealth,
+	mockStopRuntimeSession,
+	mockClientClose,
+	mockCreateServer,
+} = vi.hoisted(() => ({
+	mockSpawn: vi.fn(),
+	mockGetRpcServerHealth: vi.fn(),
+	mockStopRuntimeSession: vi.fn(),
+	mockClientClose: vi.fn(),
+	mockCreateServer: vi.fn(),
+}));
 
 vi.mock("node:child_process", () => ({
 	spawn: mockSpawn,
@@ -19,6 +27,7 @@ vi.mock("node:net", () => ({
 }));
 
 vi.mock("@clinebot/rpc", () => ({
+	getRpcServerDefaultAddress: vi.fn(() => "127.0.0.1:4317"),
 	getRpcServerHealth: mockGetRpcServerHealth,
 	registerRpcClient: vi.fn(),
 	requestRpcServerShutdown: vi.fn(),
