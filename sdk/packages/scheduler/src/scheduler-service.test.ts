@@ -99,6 +99,10 @@ vi.mock("./schedule-store", () => ({
 					updates.timeoutSeconds === null
 						? undefined
 						: (updates.timeoutSeconds ?? current.timeoutSeconds),
+				createdBy:
+					updates.createdBy === null
+						? undefined
+						: (updates.createdBy ?? current.createdBy),
 				enabled: nextEnabled,
 				nextRunAt: computeNextRun(nextEnabled),
 				updatedAt: nowIso(),
@@ -207,6 +211,7 @@ vi.mock("./schedule-store", () => ({
 
 interface RuntimeBehavior {
 	neverResolveSend?: boolean;
+	sendResults?: RpcChatTurnResult[];
 }
 
 interface SchedulerHarness {
@@ -254,6 +259,9 @@ function successResult(): RpcChatTurnResult {
 			outputTokens: 3,
 			totalCost: 0.42,
 		},
+		finishReason: "end_turn",
+		messages: [],
+		toolCalls: [],
 	};
 }
 
@@ -267,6 +275,12 @@ function createHarness(behavior: RuntimeBehavior = {}): SchedulerHarness {
 				return await new Promise<{ result: RpcChatTurnResult }>(() => {
 					// Intentionally unresolved promise to force timeout path.
 				});
+			}
+			if (behavior.sendResults && behavior.sendResults.length > 0) {
+				const next = behavior.sendResults.shift();
+				if (next) {
+					return { result: next };
+				}
 			}
 			return { result: successResult() };
 		},
@@ -375,5 +389,78 @@ describe("SchedulerService", () => {
 			limit: 10,
 		});
 		expect(history[0]?.status).toBe("timeout");
+	});
+
+	it("supports autonomous routine polling and aggregates metrics across turns", async () => {
+		const harness = createHarness({
+			sendResults: [
+				{
+					text: "initial task complete",
+					iterations: 2,
+					inputTokens: 7,
+					outputTokens: 3,
+					usage: {
+						inputTokens: 7,
+						outputTokens: 3,
+						totalCost: 0.42,
+					},
+					finishReason: "",
+					messages: [],
+					toolCalls: [],
+				},
+				{
+					text: "Claimed task_0001 and finished follow-up work",
+					iterations: 1,
+					inputTokens: 2,
+					outputTokens: 4,
+					usage: {
+						inputTokens: 2,
+						outputTokens: 4,
+						totalCost: 0.1,
+					},
+					finishReason: "",
+					messages: [],
+					toolCalls: [],
+				},
+				{
+					text: "<idle-noop/>",
+					iterations: 1,
+					inputTokens: 1,
+					outputTokens: 1,
+					usage: {
+						inputTokens: 1,
+						outputTokens: 1,
+						totalCost: 0.01,
+					},
+					finishReason: "",
+					messages: [],
+					toolCalls: [],
+				},
+			],
+		});
+		const created = harness.service.createSchedule({
+			...baseScheduleInput,
+			name: "Autonomous routine",
+			metadata: {
+				autonomous: {
+					enabled: true,
+					idleTimeoutSeconds: 2,
+					pollIntervalSeconds: 1,
+				},
+			},
+		});
+
+		const execution = await harness.service.triggerScheduleNow(
+			created.scheduleId,
+		);
+
+		expect(execution?.status).toBe("success");
+		expect(execution?.iterations).toBe(4);
+		expect(execution?.tokensUsed).toBe(18);
+		expect(execution?.costUsd).toBe(0.53);
+		expect(harness.sendSession).toHaveBeenCalledTimes(3);
+		expect(harness.sendSession.mock.calls[1]?.[1].prompt).toContain(
+			"team_list_tasks",
+		);
 	});
 });

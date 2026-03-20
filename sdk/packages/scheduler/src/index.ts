@@ -7,6 +7,7 @@ export type {
 	CreateScheduleInput,
 	ListScheduleExecutionsOptions,
 	ListSchedulesOptions,
+	ScheduleAutonomousOptions,
 	ScheduleExecutionRecord,
 	ScheduleExecutionStats,
 	ScheduleExecutionStatus,

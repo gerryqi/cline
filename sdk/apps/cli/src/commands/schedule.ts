@@ -81,6 +81,67 @@ function mergeScheduleDeliveryMetadata(
 	return next;
 }
 
+function mergeScheduleAutonomousMetadata(
+	base: Record<string, unknown> | undefined,
+	rawArgs: string[],
+): Record<string, unknown> | undefined {
+	const autonomousEnabled = hasFlag(rawArgs, "--autonomous");
+	const autonomousDisabled = hasFlag(rawArgs, "--no-autonomous");
+	const idleTimeoutSeconds = getFlagValue(rawArgs, "--idle-timeout");
+	const pollIntervalSeconds = getFlagValue(rawArgs, "--poll-interval");
+	if (
+		!autonomousEnabled &&
+		!autonomousDisabled &&
+		!idleTimeoutSeconds &&
+		!pollIntervalSeconds
+	) {
+		return base;
+	}
+	const next = { ...(base ?? {}) };
+	const existingAutonomous =
+		next.autonomous &&
+		typeof next.autonomous === "object" &&
+		!Array.isArray(next.autonomous)
+			? (next.autonomous as Record<string, unknown>)
+			: {};
+	next.autonomous = {
+		...existingAutonomous,
+		...(autonomousEnabled ? { enabled: true } : {}),
+		...(autonomousDisabled ? { enabled: false } : {}),
+		...(idleTimeoutSeconds
+			? { idleTimeoutSeconds: toPositiveInt(idleTimeoutSeconds, 60) }
+			: {}),
+		...(pollIntervalSeconds
+			? { pollIntervalSeconds: toPositiveInt(pollIntervalSeconds, 5) }
+			: {}),
+	};
+	return next;
+}
+
+function hasMetadataPatchFlags(rawArgs: string[]): boolean {
+	return (
+		!!getFlagValue(rawArgs, "--metadata-json") ||
+		!!getFlagValue(rawArgs, "--delivery-adapter") ||
+		!!getFlagValue(rawArgs, "--delivery-thread") ||
+		!!getFlagValue(rawArgs, "--delivery-channel") ||
+		!!getFlagValue(rawArgs, "--delivery-bot") ||
+		hasFlag(rawArgs, "--autonomous") ||
+		hasFlag(rawArgs, "--no-autonomous") ||
+		!!getFlagValue(rawArgs, "--idle-timeout") ||
+		!!getFlagValue(rawArgs, "--poll-interval")
+	);
+}
+
+function mergeScheduleMetadata(
+	base: Record<string, unknown> | undefined,
+	rawArgs: string[],
+): Record<string, unknown> | undefined {
+	return mergeScheduleAutonomousMetadata(
+		mergeScheduleDeliveryMetadata(base, rawArgs),
+		rawArgs,
+	);
+}
+
 function isJsonPath(path: string): boolean {
 	return path.toLowerCase().endsWith(".json");
 }
@@ -181,7 +242,7 @@ export async function runScheduleCommand(
 				);
 				return 1;
 			}
-			const metadata = mergeScheduleDeliveryMetadata(
+			const metadata = mergeScheduleMetadata(
 				parseJsonObjectFlag(getFlagValue(rawArgs, "--metadata-json")),
 				rawArgs,
 			);
@@ -339,10 +400,12 @@ export async function runScheduleCommand(
 							.map((item) => (typeof item === "string" ? item.trim() : ""))
 							.filter((item) => item.length > 0)
 					: undefined,
-				metadata:
+				metadata: mergeScheduleMetadata(
 					parsed.metadata && typeof parsed.metadata === "object"
 						? (parsed.metadata as Record<string, unknown>)
 						: undefined,
+					rawArgs,
+				),
 			});
 			if (!created) {
 				io.writeErr("failed to import schedule");
@@ -368,10 +431,20 @@ export async function runScheduleCommand(
 				emitJsonOrText(rawArgs, io, schedule ?? { updated: false });
 				return schedule ? 0 : 1;
 			}
-			const metadata = mergeScheduleDeliveryMetadata(
-				parseJsonObjectFlag(getFlagValue(rawArgs, "--metadata-json")),
-				rawArgs,
-			);
+			let metadata: Record<string, unknown> | undefined;
+			if (hasMetadataPatchFlags(rawArgs)) {
+				const current = await client.getSchedule(scheduleId);
+				if (!current) {
+					io.writeErr(`schedule not found: ${scheduleId}`);
+					return 1;
+				}
+				const metadataBase = {
+					...((current.metadata as Record<string, unknown> | undefined) ?? {}),
+					...(parseJsonObjectFlag(getFlagValue(rawArgs, "--metadata-json")) ??
+						{}),
+				};
+				metadata = mergeScheduleMetadata(metadataBase, rawArgs);
+			}
 			const updated = await client.updateSchedule(scheduleId, {
 				name: getFlagValue(rawArgs, "--name"),
 				cronPattern: getFlagValue(rawArgs, "--cron"),

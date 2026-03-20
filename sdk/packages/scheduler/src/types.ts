@@ -1,5 +1,11 @@
 export type ScheduleMode = "act" | "plan";
 
+export interface ScheduleAutonomousOptions {
+	enabled?: boolean;
+	idleTimeoutSeconds?: number;
+	pollIntervalSeconds?: number;
+}
+
 export type ScheduleExecutionStatus =
 	| "pending"
 	| "running"

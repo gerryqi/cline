@@ -83,6 +83,7 @@ Workspace boundary note:
 - `team_spawn_teammate`
 - `team_shutdown_teammate`
 - `team_create_task`
+- `team_list_tasks`
 - `team_claim_task`
 - `team_complete_task`
 - `team_block_task`
@@ -793,6 +794,7 @@ When `--output json` (or `--json`) is used, output switches to **NDJSON**:
 | `team_spawn_teammate` | `<agentId>: <rolePrompt>` |
 | `team_shutdown_teammate` | `shutdown <agentId>` |
 | `team_create_task` | `create <title>` |
+| `team_list_tasks` | `list status=<status\|any> readyOnly=<bool>` |
 | `team_claim_task` | `claim <taskId>` |
 | `team_complete_task` | `complete <taskId>: <summary>` |
 | `team_block_task` | `block <taskId>: <reason>` |
@@ -927,6 +929,7 @@ Agent teams enable the lead agent to spawn, coordinate, and communicate with mul
 | `team_shutdown_teammate` | Shutdown a teammate by `agentId` |
 | `team_status` | Get a snapshot of all teammates, tasks, mailbox, and mission log |
 | `team_create_task` | Create a shared task |
+| `team_list_tasks` | List shared tasks, including `isReady` claimability and unresolved `blockedBy` dependencies |
 | `team_claim_task` | Claim a shared task |
 | `team_complete_task` | Complete a shared task |
 | `team_block_task` | Block a shared task |
@@ -947,6 +950,38 @@ Agent teams enable the lead agent to spawn, coordinate, and communicate with mul
 | `team_cleanup` | Clean up the team runtime |
 
 Team state is persisted in SQLite via `SqliteTeamStore` keyed by `teamName`. On restart with the same `--team-name`, the runtime snapshot is restored and stale queued/running runs are marked interrupted before continuing.
+
+`team_list_tasks` is the discovery primitive that makes autonomous task pickup possible. Agents can now inspect the shared task set, find tasks that are both unassigned and dependency-ready, then claim them with `team_claim_task`.
+
+### Scheduled Routines (`clite schedule`)
+
+Schedules are RPC-backed cron jobs that start a runtime session, run a prompt, and persist execution history through `@clinebot/scheduler`.
+
+Normal schedule behavior:
+- cron decides when a schedule becomes due
+- the scheduler starts one runtime session
+- the scheduler sends the configured prompt
+- the scheduler records execution metrics/history and stops the session
+
+Autonomous routine behavior:
+- enable it with schedule metadata `autonomous.enabled = true`
+- the CLI now supports metadata patch flags `--autonomous`, `--no-autonomous`, `--idle-timeout <seconds>`, and `--poll-interval <seconds>` on `schedule create`, `schedule import`, and `schedule update`
+- after the first scheduled turn, the scheduler can keep the same session alive for a bounded idle window
+- on each idle poll, the lead agent is prompted to inspect `team_read_mailbox` and `team_list_tasks`, claim one ready task if work exists, and continue in-session
+- if no actionable work appears for the full idle window, the scheduler stops the session cleanly
+- execution metrics aggregate across the initial turn and all autonomous follow-up turns
+
+Example:
+
+```bash
+clite schedule create daily-routine \
+  --cron "0 * * * *" \
+  --prompt "Review open shared tasks and keep the team moving." \
+  --workspace /path/to/workspace \
+  --autonomous \
+  --idle-timeout 60 \
+  --poll-interval 5
+```
 
 **Team event display** (`handleTeamEvent` in `src/events.ts`):
 

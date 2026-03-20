@@ -463,4 +463,61 @@ describe("createAgentTeamsTools runtime behavior", () => {
 		expect(awaitRun?.timeoutMs).toBe(60 * 60 * 1000);
 		expect(awaitAllRuns?.timeoutMs).toBe(60 * 60 * 1000);
 	});
+
+	it("lists ready-to-claim tasks through team_list_tasks", async () => {
+		const runtime = new AgentTeamsRuntime({ teamName: "test-team" });
+		const tools = createAgentTeamsTools({
+			runtime,
+			requesterId: "lead",
+			teammateRuntime: {
+				providerId: "anthropic",
+				modelId: "claude-sonnet-4-5-20250929",
+			},
+		});
+		const createTask = tools.find((tool) => tool.name === "team_create_task");
+		const listTasks = tools.find((tool) => tool.name === "team_list_tasks");
+		expect(createTask).toBeDefined();
+		expect(listTasks).toBeDefined();
+
+		const first = (await createTask?.execute(
+			{
+				title: "Ready task",
+				description: "Claim immediately",
+			},
+			{
+				agentId: "lead",
+				conversationId: "conv-1",
+				iteration: 1,
+			},
+		)) as { taskId: string };
+		await createTask?.execute(
+			{
+				title: "Blocked task",
+				description: "Wait on dependency",
+				dependsOn: [first.taskId],
+			},
+			{
+				agentId: "lead",
+				conversationId: "conv-1",
+				iteration: 1,
+			},
+		);
+
+		await expect(
+			listTasks?.execute(
+				{ readyOnly: true },
+				{
+					agentId: "lead",
+					conversationId: "conv-1",
+					iteration: 1,
+				},
+			),
+		).resolves.toEqual([
+			expect.objectContaining({
+				id: first.taskId,
+				isReady: true,
+				blockedBy: [],
+			}),
+		]);
+	});
 });

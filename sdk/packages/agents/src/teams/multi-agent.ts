@@ -638,6 +638,11 @@ export interface TeamTask {
 	summary?: string;
 }
 
+export interface TeamTaskListItem extends TeamTask {
+	isReady: boolean;
+	blockedBy: string[];
+}
+
 export type MissionLogKind =
 	| "progress"
 	| "handoff"
@@ -900,6 +905,41 @@ export class AgentTeamsRuntime {
 
 	listTasks(): TeamTask[] {
 		return Array.from(this.tasks.values());
+	}
+
+	listTaskItems(options?: {
+		status?: TeamTaskStatus;
+		assignee?: string;
+		unassignedOnly?: boolean;
+		readyOnly?: boolean;
+	}): TeamTaskListItem[] {
+		return Array.from(this.tasks.values())
+			.map((task) => {
+				const blockedBy = this.getUnresolvedDependencies(task);
+				return {
+					...task,
+					blockedBy,
+					isReady:
+						task.status === "pending" &&
+						!task.assignee &&
+						blockedBy.length === 0,
+				};
+			})
+			.filter((task) => {
+				if (options?.status && task.status !== options.status) {
+					return false;
+				}
+				if (options?.assignee && task.assignee !== options.assignee) {
+					return false;
+				}
+				if (options?.unassignedOnly && !!task.assignee) {
+					return false;
+				}
+				if (options?.readyOnly && !task.isReady) {
+					return false;
+				}
+				return true;
+			});
 	}
 
 	listMissionLog(limit?: number): MissionLogEntry[] {
@@ -1780,12 +1820,17 @@ export class AgentTeamsRuntime {
 	}
 
 	private assertDependenciesResolved(task: TeamTask): void {
-		for (const dependencyId of task.dependsOn) {
-			const dependency = this.tasks.get(dependencyId);
-			if (!dependency || dependency.status !== "completed") {
-				throw new Error(`Task "${task.id}" is blocked by "${dependencyId}"`);
-			}
+		const blockedBy = this.getUnresolvedDependencies(task);
+		if (blockedBy.length > 0) {
+			throw new Error(`Task "${task.id}" is blocked by "${blockedBy[0]}"`);
 		}
+	}
+
+	private getUnresolvedDependencies(task: TeamTask): string[] {
+		return task.dependsOn.filter((dependencyId) => {
+			const dependency = this.tasks.get(dependencyId);
+			return !dependency || dependency.status !== "completed";
+		});
 	}
 
 	private trackMeaningfulEvent(agentId: string, event: AgentEvent): void {

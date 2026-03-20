@@ -66,6 +66,7 @@ flowchart LR
 1. Host uses `RpcCoreSessionService` (through `@clinebot/core`) for session persistence/control-plane calls.
 2. `@clinebot/rpc` server handles session/task/event/approval RPCs and schedule/execution RPCs.
 3. `@clinebot/rpc` embeds `@clinebot/scheduler` to trigger scheduled runtime turns with concurrency and timeout guards.
+4. When schedule metadata enables `autonomous`, the scheduler keeps the scheduled session alive for a bounded idle window, periodically re-prompts the lead agent to inspect team mailbox and shared tasks, and shuts the session down after the idle timeout if no new work appears.
 4. SQLite session backend is provided by `@clinebot/core/node` (`createSqliteRpcSessionBackend`).
 
 ### Session persistence implementation (latest)
@@ -117,7 +118,17 @@ flowchart LR
 6. Failed teammate task events now include the teammate conversation snapshot; core persists that message history to the team-task sub-session `*.messages.json` even when the run fails.
 7. Root session message artifacts are persisted for both successful and failed turns, so rendered conversation history is not lost when a turn exits with an error.
 8. Team async run records now carry live activity metadata (`currentActivity`, `lastProgressMessage`, `lastProgressAt`, `heartbeatAt`) surfaced by `team_list_runs`, and `team_await_run`/`team_await_all_runs` use a 1-hour tool timeout to avoid premature 30s failures during valid parallel teammate work.
-9. 
+9. Team task discovery now includes `team_list_tasks`, which returns claimable readiness (`isReady`) plus unresolved dependencies (`blockedBy`) so lead or teammate agents can find unassigned work without relying on an external task-board format.
+
+### Scheduled routine execution (latest)
+
+1. Schedule definitions still use cron as the outer trigger and are executed by `@clinebot/scheduler` through RPC runtime handlers.
+2. A normal schedule execution is still one scheduled prompt plus standard timeout/concurrency enforcement.
+3. If schedule metadata contains `autonomous.enabled = true`, the scheduler appends autonomous instructions to the initial prompt, then enters an idle poll loop after the first turn.
+4. Each idle poll asks the lead agent to inspect `team_read_mailbox` and `team_list_tasks`, claim one ready unassigned task with `team_claim_task` when appropriate, and continue work in the same session.
+5. The autonomous loop is bounded by `autonomous.pollIntervalSeconds` and `autonomous.idleTimeoutSeconds`; no actionable work for the full idle window causes clean shutdown.
+6. Execution metrics (`iterations`, `tokensUsed`, `costUsd`) are aggregated across the initial scheduled turn and any autonomous follow-up turns so schedule history reflects the full routine lifecycle.
+
 ## CLI (`@clinebot/cli`)
 
 `@clinebot/cli` is the executable shell around the runtime stack. It parses CLI input into runtime config, composes runtime capabilities via `@clinebot/core/node`, executes agent loops via `@clinebot/agents/node`, resolves provider metadata via `@clinebot/llms/node`, and optionally runs the RPC gateway via `@clinebot/rpc/node`.
