@@ -14,6 +14,7 @@ import { SqliteSessionStore } from "../storage/sqlite-session-store";
 import type { ToolExecutors } from "../tools";
 import { DefaultSessionManager } from "./default-session-manager";
 import { RpcCoreSessionService } from "./rpc-session-service";
+import { tryAcquireRpcSpawnLease } from "./rpc-spawn-lease";
 import type { SessionManager } from "./session-manager";
 import { CoreSessionService } from "./session-service";
 
@@ -44,13 +45,19 @@ export interface CreateSessionHostOptions {
 export type SessionHost = SessionManager;
 
 function startRpcServerInBackground(address: string): void {
+	const lease = tryAcquireRpcSpawnLease(address);
+	if (!lease) {
+		return;
+	}
 	const launcher = process.execPath;
 	const entryArg = process.argv[1]?.trim();
 	if (!entryArg) {
+		lease.release();
 		return;
 	}
 	const entry = resolve(process.cwd(), entryArg);
 	if (!existsSync(entry)) {
+		lease.release();
 		return;
 	}
 	const conditionsArg = process.execArgv.find((arg) =>
@@ -75,6 +82,7 @@ function startRpcServerInBackground(address: string): void {
 		cwd: process.cwd(),
 	});
 	child.unref();
+	setTimeout(() => lease.release(), 10_000).unref();
 }
 
 async function tryConnectRpcBackend(

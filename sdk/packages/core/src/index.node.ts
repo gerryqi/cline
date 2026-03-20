@@ -171,6 +171,10 @@ export {
 export { DefaultSessionManager } from "./session/default-session-manager";
 export { RpcCoreSessionService } from "./session/rpc-session-service";
 export {
+	type RpcSpawnLease,
+	tryAcquireRpcSpawnLease,
+} from "./session/rpc-spawn-lease";
+export {
 	deriveSubsessionStatus,
 	makeSubSessionId,
 	makeTeamTaskSubSessionId,

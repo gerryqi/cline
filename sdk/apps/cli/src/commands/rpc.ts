@@ -3,7 +3,10 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { dirname, isAbsolute, join, resolve as resolvePath } from "node:path";
 import { resolveClineDataDir } from "@clinebot/core";
-import { createSqliteRpcSessionBackend } from "@clinebot/core/node";
+import {
+	createSqliteRpcSessionBackend,
+	tryAcquireRpcSpawnLease,
+} from "@clinebot/core/node";
 import {
 	getRpcServerHealth,
 	RpcSessionClient,
@@ -271,6 +274,10 @@ async function withRpcStartupLock<T>(
 }
 
 function spawnRpcStartDetached(address: string): void {
+	const lease = tryAcquireRpcSpawnLease(address);
+	if (!lease) {
+		return;
+	}
 	const launcher = process.execPath;
 	const entryArg = process.argv[1];
 	const entry = entryArg?.trim()
@@ -279,6 +286,7 @@ function spawnRpcStartDetached(address: string): void {
 			: resolvePath(process.cwd(), entryArg)
 		: undefined;
 	if (!entry) {
+		lease.release();
 		throw new Error("unable to resolve CLI entrypoint for detached rpc start");
 	}
 	const conditionsArg = process.execArgv.find((arg) =>
@@ -310,6 +318,7 @@ function spawnRpcStartDetached(address: string): void {
 		metadata: { rpcAddress: address, purpose: "rpc.start.background" },
 	});
 	child.unref();
+	setTimeout(() => lease.release(), 10_000).unref();
 }
 
 function forceKillListener(address: string): number {
