@@ -57,6 +57,7 @@ function isNonRecoverableApiError(error: Error): boolean {
 		[
 			"not found",
 			"unsupported for",
+			"missing api key",
 			"invalid api key",
 			"authentication",
 			"unauthorized",
@@ -135,7 +136,7 @@ export class Agent {
 			maxIterations: config.maxIterations,
 			maxParallelToolCalls: config.maxParallelToolCalls ?? 8,
 			apiTimeoutMs: config.apiTimeoutMs ?? 120000,
-			maxConsecutiveMistakes: config.maxConsecutiveMistakes ?? 0,
+			maxConsecutiveMistakes: config.maxConsecutiveMistakes ?? 3,
 			maxTokensPerTurn: config.maxTokensPerTurn ?? 8192,
 			reminderAfterIterations: config.reminderAfterIterations ?? 0,
 			reminderText: config.reminderText ?? DEFAULT_REMINDER_TEXT,
