@@ -8,6 +8,7 @@ import type {
 	AgentHookControl,
 	AgentHookRunStartContext,
 	AgentHookSessionShutdownContext,
+	AgentHookStopErrorContext,
 	AgentHooks,
 	AgentHookToolCallEndContext,
 	AgentHookToolCallStartContext,
@@ -24,6 +25,7 @@ export const HookEventNameSchema = z.enum([
 	"agent_resume",
 	"agent_abort",
 	"agent_end",
+	"agent_error",
 	"tool_call",
 	"tool_result",
 	"prompt_submit",
@@ -188,6 +190,16 @@ export interface AgentEndHookPayload extends HookEventPayloadBase {
 	turn: AgentHookTurnEndContext["turn"];
 }
 
+export interface AgentErrorHookPayload extends HookEventPayloadBase {
+	hookName: "agent_error";
+	iteration: number;
+	error: {
+		name: string;
+		message: string;
+		stack?: string;
+	};
+}
+
 export interface AgentStartHookPayload extends HookEventPayloadBase {
 	hookName: "agent_start";
 }
@@ -224,6 +236,7 @@ export type HookEventPayload =
 	| PromptSubmitHookPayload
 	| PreCompactHookPayload
 	| AgentEndHookPayload
+	| AgentErrorHookPayload
 	| SessionShutdownHookPayload;
 
 export const HookEventPayloadSchema = z
@@ -253,6 +266,13 @@ export const HookEventPayloadSchema = z
 			.optional(),
 		tool_result: z.custom<ToolCallRecord>().optional(),
 		turn: z.custom<AgentHookTurnEndContext["turn"]>().optional(),
+		error: z
+			.object({
+				name: z.string(),
+				message: z.string(),
+				stack: z.string().optional(),
+			})
+			.optional(),
 		preToolUse: PreToolUseDataSchema.optional(),
 		postToolUse: PostToolUseDataSchema.optional(),
 		userPromptSubmit: UserPromptSubmitDataSchema.optional(),
@@ -439,6 +459,14 @@ function basePayload(
 	};
 }
 
+function serializeHookError(error: Error): AgentErrorHookPayload["error"] {
+	return {
+		name: error.name,
+		message: error.message,
+		stack: error.stack,
+	};
+}
+
 function isAbortReason(reason?: string): boolean {
 	const value = String(reason ?? "").toLowerCase();
 	return (
@@ -473,6 +501,7 @@ async function dispatchDetached(
  * - agent_start (fire-and-forget)
  * - prompt_submit (fire-and-forget)
  * - agent_end (fire-and-forget)
+ * - agent_error (fire-and-forget)
  * - session_shutdown (fire-and-forget via returned `shutdown()`)
  */
 export function createSubprocessHooks(
@@ -594,6 +623,19 @@ export function createSubprocessHooks(
 		return undefined;
 	};
 
+	const onStopError = async (
+		ctx: AgentHookStopErrorContext,
+	): Promise<AgentHookControl | undefined> => {
+		const payload: AgentErrorHookPayload = {
+			...basePayload("agent_error", ctx, options),
+			hookName: "agent_error",
+			iteration: ctx.iteration,
+			error: serializeHookError(ctx.error),
+		};
+		await dispatchDetached(payload, options);
+		return undefined;
+	};
+
 	const shutdown = async (ctx: {
 		agentId: string;
 		conversationId: string;
@@ -623,6 +665,7 @@ export function createSubprocessHooks(
 			onToolCallStart,
 			onToolCallEnd,
 			onTurnEnd,
+			onStopError,
 			onSessionShutdown: async ({
 				agentId,
 				conversationId,

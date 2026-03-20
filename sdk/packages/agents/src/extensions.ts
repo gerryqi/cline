@@ -43,6 +43,7 @@ const ALLOWED_HOOK_STAGES = new Set<AgentExtensionHookStage>([
 	"tool_call_before",
 	"tool_call_after",
 	"turn_end",
+	"stop_error",
 	"iteration_end",
 	"run_end",
 	"session_shutdown",
@@ -63,6 +64,7 @@ const STAGE_TO_HANDLER: Record<
 		| "onToolCall"
 		| "onToolResult"
 		| "onAgentEnd"
+		| "onAgentError"
 		| "onIterationEnd"
 		| "onRunEnd"
 		| "onSessionShutdown"
@@ -79,6 +81,7 @@ const STAGE_TO_HANDLER: Record<
 	tool_call_before: "onToolCall",
 	tool_call_after: "onToolResult",
 	turn_end: "onAgentEnd",
+	stop_error: "onAgentError",
 	iteration_end: "onIterationEnd",
 	run_end: "onRunEnd",
 	session_shutdown: "onSessionShutdown",
@@ -101,6 +104,7 @@ function hasHookHandlers(extension: AgentExtension): boolean {
 		typeof extension.onToolCall === "function" ||
 		typeof extension.onToolResult === "function" ||
 		typeof extension.onAgentEnd === "function" ||
+		typeof extension.onAgentError === "function" ||
 		typeof extension.onIterationEnd === "function" ||
 		typeof extension.onRunEnd === "function" ||
 		typeof extension.onSessionShutdown === "function" ||

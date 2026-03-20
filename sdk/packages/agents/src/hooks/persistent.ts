@@ -5,6 +5,7 @@ import type {
 	AgentHookControl,
 	AgentHookRunStartContext,
 	AgentHookSessionShutdownContext,
+	AgentHookStopErrorContext,
 	AgentHooks,
 	AgentHookToolCallEndContext,
 	AgentHookToolCallStartContext,
@@ -13,6 +14,7 @@ import type {
 import {
 	type AgentAbortHookPayload,
 	type AgentEndHookPayload,
+	type AgentErrorHookPayload,
 	type AgentResumeHookPayload,
 	type AgentStartHookPayload,
 	createSubprocessHooks,
@@ -596,6 +598,31 @@ export function createPersistentSubprocessHooks(
 		return undefined;
 	};
 
+	const onStopError = async (
+		ctx: AgentHookStopErrorContext,
+	): Promise<AgentHookControl | undefined> => {
+		const payload: AgentErrorHookPayload = {
+			...basePayload("agent_error", ctx, options),
+			hookName: "agent_error",
+			iteration: ctx.iteration,
+			error: {
+				name: ctx.error.name,
+				message: ctx.error.message,
+				stack: ctx.error.stack,
+			},
+		};
+		void sendWithFallback(payload, {
+			detached: true,
+			fallback: async () =>
+				fallback?.hooks.onStopError
+					? ((await fallback.hooks.onStopError(ctx)) as
+							| AgentHookControl
+							| undefined)
+					: undefined,
+		});
+		return undefined;
+	};
+
 	const shutdown = async (ctx: {
 		agentId: string;
 		conversationId: string;
@@ -638,6 +665,7 @@ export function createPersistentSubprocessHooks(
 			onToolCallStart,
 			onToolCallEnd,
 			onTurnEnd,
+			onStopError,
 			onSessionShutdown: async ({
 				agentId,
 				conversationId,

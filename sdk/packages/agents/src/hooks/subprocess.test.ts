@@ -106,6 +106,15 @@ describe("hooks", () => {
 			}),
 		).resolves.toBeUndefined();
 		await expect(
+			hookControl.hooks.onStopError?.({
+				agentId: "agent-main",
+				conversationId: "conv-main",
+				parentAgentId: null,
+				iteration: 2,
+				error: new Error("rate limited"),
+			}),
+		).resolves.toBeUndefined();
+		await expect(
 			hookControl.shutdown({
 				agentId: "agent-main",
 				conversationId: "conv-main",
@@ -121,6 +130,12 @@ describe("hooks", () => {
 			.map((line) => JSON.parse(line));
 
 		expect(lines.some((e) => e.hookName === "tool_call")).toBe(true);
+		expect(
+			lines.some(
+				(e) =>
+					e.hookName === "agent_error" && e.error?.message === "rate limited",
+			),
+		).toBe(true);
 	});
 
 	it("reports dispatch errors without throwing", async () => {

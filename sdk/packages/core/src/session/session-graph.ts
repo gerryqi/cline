@@ -70,6 +70,8 @@ export function deriveSubsessionStatus(event: HookEventPayload): SessionStatus {
 	switch (event.hookName) {
 		case "agent_end":
 			return "completed";
+		case "agent_error":
+			return "failed";
 		case "session_shutdown": {
 			const reason = String(event.reason ?? "").toLowerCase();
 			if (

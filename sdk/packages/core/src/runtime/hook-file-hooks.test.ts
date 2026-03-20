@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -146,6 +146,36 @@ describe("createHookConfigFileHooks", () => {
 				cancel: false,
 				context: "python-ok",
 			});
+		} finally {
+			await rm(workspace, { recursive: true, force: true });
+		}
+	});
+
+	it("maps TaskError hook files to agent_error stop events", async () => {
+		const outputPath = join(tmpdir(), `hooks-task-error-${Date.now()}.json`);
+		const { workspace, hookPath } = await createWorkspaceWithHook(
+			"TaskError.js",
+			`let data='';process.stdin.on('data',c=>data+=c);process.stdin.on('end',()=>{require('node:fs').writeFileSync(${JSON.stringify(outputPath)}, data);});\n`,
+		);
+		try {
+			const hooks = createHookConfigFileHooks({
+				cwd: workspace,
+				workspacePath: workspace,
+			});
+			await hooks?.onStopError?.({
+				agentId: "agent_1",
+				conversationId: "conv_1",
+				parentAgentId: null,
+				iteration: 3,
+				error: new Error("401 unauthorized"),
+			});
+			await new Promise((resolve) => setTimeout(resolve, 80));
+			const payload = JSON.parse(await readFile(outputPath, "utf8")) as {
+				hookName: string;
+				error?: { message?: string };
+			};
+			expect(payload.hookName).toBe("agent_error");
+			expect(payload.error?.message).toBe("401 unauthorized");
 		} finally {
 			await rm(workspace, { recursive: true, force: true });
 		}

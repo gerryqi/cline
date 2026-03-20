@@ -30,6 +30,9 @@ type AgentHookToolCallEndContext = Parameters<
 type AgentHookTurnEndContext = Parameters<
 	NonNullable<AgentHooks["onTurnEnd"]>
 >[0];
+type AgentHookStopErrorContext = Parameters<
+	NonNullable<AgentHooks["onStopError"]>
+>[0];
 type AgentHookSessionShutdownContext = Parameters<
 	NonNullable<AgentHooks["onSessionShutdown"]>
 >[0];
@@ -491,6 +494,19 @@ export function createHookAuditHooks(options: {
 			});
 			return undefined;
 		},
+		onStopError: async (ctx: AgentHookStopErrorContext) => {
+			append({
+				...createPayloadBase(ctx, runtimeOptions),
+				hookName: "agent_error",
+				iteration: ctx.iteration,
+				error: {
+					name: ctx.error.name,
+					message: ctx.error.message,
+					stack: ctx.error.stack,
+				},
+			});
+			return undefined;
+		},
 		onSessionShutdown: async (ctx: AgentHookSessionShutdownContext) => {
 			if (isAbortReason(ctx.reason)) {
 				append({
@@ -634,6 +650,30 @@ export function createHookConfigFileHooks(
 		});
 	};
 
+	const runStopError = async (
+		ctx: AgentHookStopErrorContext,
+	): Promise<void> => {
+		const commandPaths = commandMap.agent_error ?? [];
+		if (commandPaths.length === 0) {
+			return;
+		}
+		runAsyncHookCommands({
+			commands: commandPaths,
+			cwd: options.cwd,
+			logger: options.logger,
+			payload: {
+				...createPayloadBase(ctx, options),
+				hookName: "agent_error",
+				iteration: ctx.iteration,
+				error: {
+					name: ctx.error.name,
+					message: ctx.error.message,
+					stack: ctx.error.stack,
+				},
+			},
+		});
+	};
+
 	const runSessionShutdown = async (
 		ctx: AgentHookSessionShutdownContext,
 	): Promise<void> => {
@@ -682,6 +722,10 @@ export function createHookConfigFileHooks(
 		},
 		onTurnEnd: async (ctx: AgentHookTurnEndContext) => {
 			await runTurnEnd(ctx);
+			return undefined;
+		},
+		onStopError: async (ctx: AgentHookStopErrorContext) => {
+			await runStopError(ctx);
 			return undefined;
 		},
 		onSessionShutdown: async (ctx: AgentHookSessionShutdownContext) => {

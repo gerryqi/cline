@@ -7,7 +7,6 @@
 
 import { getGeneratedModelsForProvider } from "../generated-access";
 import type { ModelCollection, ModelInfo } from "../schemas/index";
-import { OPENAI_MODELS } from "./openai";
 
 function removeCustomToolCapability(model: ModelInfo): ModelInfo {
 	if (!model.capabilities?.includes("tools")) {

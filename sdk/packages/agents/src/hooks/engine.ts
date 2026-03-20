@@ -149,6 +149,15 @@ const STAGE_DEFAULTS: Record<HookStage, HookStagePolicy> = {
 		maxConcurrency: 1,
 		queueLimit: 500,
 	},
+	stop_error: {
+		mode: "async",
+		timeoutMs: 3000,
+		retries: 1,
+		retryDelayMs: 200,
+		failureMode: "fail_open",
+		maxConcurrency: 2,
+		queueLimit: 500,
+	},
 	iteration_end: {
 		mode: "async",
 		timeoutMs: 3000,
