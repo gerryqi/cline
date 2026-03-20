@@ -4,6 +4,33 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createHookConfigFileHooks } from "./hook-file-hooks";
 
+async function waitFor<T>(
+	read: () => Promise<T>,
+	accept: (value: T) => boolean,
+	options: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<T> {
+	const timeoutMs = options.timeoutMs ?? 2_000;
+	const intervalMs = options.intervalMs ?? 25;
+	const deadline = Date.now() + timeoutMs;
+	let lastError: unknown;
+
+	while (Date.now() < deadline) {
+		try {
+			const value = await read();
+			if (accept(value)) {
+				return value;
+			}
+		} catch (error) {
+			lastError = error;
+		}
+		await new Promise((resolve) => setTimeout(resolve, intervalMs));
+	}
+
+	throw lastError instanceof Error
+		? lastError
+		: new Error(`Timed out after ${timeoutMs}ms waiting for condition`);
+}
+
 async function createWorkspaceWithHook(
 	fileName: string,
 	body: string,
@@ -169,11 +196,16 @@ describe("createHookConfigFileHooks", () => {
 				iteration: 3,
 				error: new Error("401 unauthorized"),
 			});
-			await new Promise((resolve) => setTimeout(resolve, 80));
-			const payload = JSON.parse(await readFile(outputPath, "utf8")) as {
-				hookName: string;
-				error?: { message?: string };
-			};
+			const payload = await waitFor(
+				async () =>
+					JSON.parse(await readFile(outputPath, "utf8")) as {
+						hookName: string;
+						error?: { message?: string };
+					},
+				(value) =>
+					value.hookName === "agent_error" &&
+					value.error?.message === "401 unauthorized",
+			);
 			expect(payload.hookName).toBe("agent_error");
 			expect(payload.error?.message).toBe("401 unauthorized");
 		} finally {

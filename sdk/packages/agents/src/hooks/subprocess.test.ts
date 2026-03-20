@@ -5,6 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSubprocessHooks, runHook } from "./subprocess.js";
 
 const tmpPaths: string[] = [];
+type LoggedHookEvent = {
+	hookName?: string;
+	error?: {
+		message?: string;
+	};
+};
 
 afterEach(async () => {
 	for (const path of tmpPaths) {
@@ -12,6 +18,33 @@ afterEach(async () => {
 	}
 	tmpPaths.length = 0;
 });
+
+async function waitFor<T>(
+	read: () => Promise<T>,
+	accept: (value: T) => boolean,
+	options: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<T> {
+	const timeoutMs = options.timeoutMs ?? 2_000;
+	const intervalMs = options.intervalMs ?? 25;
+	const deadline = Date.now() + timeoutMs;
+	let lastError: unknown;
+
+	while (Date.now() < deadline) {
+		try {
+			const value = await read();
+			if (accept(value)) {
+				return value;
+			}
+		} catch (error) {
+			lastError = error;
+		}
+		await new Promise((resolve) => setTimeout(resolve, intervalMs));
+	}
+
+	throw lastError instanceof Error
+		? lastError
+		: new Error(`Timed out after ${timeoutMs}ms waiting for condition`);
+}
 
 describe("hooks", () => {
 	it("runHook pipes payload to command and parses JSON stdout", async () => {
@@ -100,6 +133,7 @@ describe("hooks", () => {
 				turn: {
 					text: "done",
 					toolCalls: [],
+					invalidToolCalls: [],
 					usage: { inputTokens: 1, outputTokens: 1 },
 					truncated: false,
 				},
@@ -123,11 +157,23 @@ describe("hooks", () => {
 			}),
 		).resolves.toBeUndefined();
 
-		await new Promise((resolve) => setTimeout(resolve, 80));
-		const lines = (await readFile(output, "utf8"))
-			.trim()
-			.split("\n")
-			.map((line) => JSON.parse(line));
+		const lines = await waitFor(
+			async () =>
+				(await readFile(output, "utf8"))
+					.trim()
+					.split("\n")
+					.filter(Boolean)
+					.map((line) => JSON.parse(line) as LoggedHookEvent),
+			(value) =>
+				value.some((e) => e.hookName === "tool_call") &&
+				value.some(
+					(e) =>
+						e.hookName === "agent_error" &&
+						typeof e.error === "object" &&
+						e.error !== null &&
+						(e.error as { message?: string }).message === "rate limited",
+				),
+		);
 
 		expect(lines.some((e) => e.hookName === "tool_call")).toBe(true);
 		expect(
@@ -166,7 +212,10 @@ describe("hooks", () => {
 			}),
 		).resolves.toBeUndefined();
 
-		await new Promise((resolve) => setTimeout(resolve, 30));
+		await waitFor(
+			async () => onDispatchError.mock.calls.length,
+			(callCount) => callCount > 0,
+		);
 		expect(onDispatchError).toHaveBeenCalled();
 	});
 
