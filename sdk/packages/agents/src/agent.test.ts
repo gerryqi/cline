@@ -16,16 +16,24 @@ type FakeHandler = {
 };
 
 const createHandlerMock = vi.fn<(config: unknown) => FakeHandler>();
-const toProviderConfigMock = vi.fn((settings: any) => ({
-	knownModels: settings?.model
-		? {
-				[settings.model]: {
-					id: settings.model,
-					pricing: { input: 1, output: 1 },
-				},
-			}
-		: undefined,
-}));
+const toProviderConfigMock = vi.fn((settings: unknown) => {
+	const model =
+		typeof settings === "object" && settings !== null && "model" in settings
+			? settings.model
+			: undefined;
+
+	return {
+		knownModels:
+			typeof model === "string"
+				? {
+						[model]: {
+							id: model,
+							pricing: { input: 1, output: 1 },
+						},
+					}
+				: undefined,
+	};
+});
 
 vi.mock("@clinebot/llms", () => ({
 	providers: {
@@ -541,6 +549,68 @@ describe("Agent", () => {
 		expect(result.toolCalls).toHaveLength(1);
 		expect(result.toolCalls[0]?.output).toEqual({ total: 5 });
 		expect(result.text).toBe("Done");
+	});
+
+	it("stops when a truncated tool fragment is repaired into a failed tool call", async () => {
+		const { Agent } = await import("./agent.js");
+		const strReplaceTool = createTool({
+			name: "str_replace",
+			description: "Replace text in a file",
+			inputSchema: {
+				type: "object",
+				properties: {
+					command: { type: "string" },
+					path: { type: "string" },
+					old_str: { type: "string" },
+					new_str: { type: "string" },
+				},
+				required: ["command", "path", "old_str", "new_str"],
+			},
+			retryable: false,
+			maxRetries: 0,
+			execute: async (input: {
+				command?: string;
+				path?: string;
+				old_str?: string;
+				new_str?: string;
+			}) => {
+				if (!input.old_str || !input.new_str) {
+					throw new Error("missing replacement payload");
+				}
+				return { ok: true };
+			},
+		}) as Tool;
+
+		const handler = makeHandler([
+			[
+				{
+					type: "tool_calls",
+					id: "r1",
+					tool_call: {
+						call_id: "call_1",
+						function: {
+							name: "str_replace",
+							arguments: '{"command":"str_replace","path":"/some/file"',
+						},
+					},
+				},
+				{ type: "done", id: "r1", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "Run the replacement tool",
+			tools: [strReplaceTool],
+			maxConsecutiveMistakes: 1,
+		});
+
+		await expect(agent.run("replace this text")).rejects.toThrow(
+			"maximum consecutive mistakes reached (1)",
+		);
+		expect(handler.createMessage).toHaveBeenCalledTimes(1);
 	});
 
 	it("requests approval when a tool_call_before hook returns review", async () => {
