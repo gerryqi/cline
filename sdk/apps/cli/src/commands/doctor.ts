@@ -5,6 +5,7 @@ import { resolveClineDataDir } from "@clinebot/core";
 import { getRpcServerDefaultAddress, getRpcServerHealth } from "@clinebot/rpc";
 import { isProcessRunning } from "../connectors/common";
 import { getCliBuildInfo } from "../utils/common";
+import { c, writeln } from "../utils/output";
 
 type DoctorIo = {
 	writeln: (text?: string) => void;
@@ -311,9 +312,9 @@ async function collectDoctorStatus(address: string): Promise<DoctorStatus> {
 
 function formatPidList(label: string, pids: number[]): string {
 	if (pids.length === 0) {
-		return `${label}: none`;
+		return `${label} ${c.dim}0${c.reset}`;
 	}
-	return `${label}: ${pids.join(", ")}`;
+	return `${label} ${c.dim}${pids.join(", ")}${c.reset}`;
 }
 
 function formatRecentSpawnedProcess(record: SpawnedProcessRecord): string {
@@ -366,6 +367,7 @@ export async function runDoctorCommand(
 ): Promise<number> {
 	const jsonOutput = rawArgs.includes("--json");
 	const fix = rawArgs.includes("--fix");
+	const verbose = rawArgs.includes("--verbose") || rawArgs.includes("-v");
 	const address = resolveRpcAddress(rawArgs);
 	const before = await collectDoctorStatus(address);
 
@@ -374,25 +376,25 @@ export async function runDoctorCommand(
 			io.writeln(JSON.stringify(before));
 			return 0;
 		}
-		io.writeln(`rpc address: ${before.rpcAddress}`);
-		io.writeln(
-			`rpc healthy: ${before.rpcHealthy ? "yes" : "no"}${before.rpcServerId ? ` (${before.rpcServerId})` : ""}`,
+		writeln(`rpc address ${c.dim}${before.rpcAddress}${c.reset}`);
+		writeln(
+			`rpc healthy ${c.dim}${before.rpcHealthy ? "yes" : "no"}${before.rpcServerId ? ` (${before.rpcServerId})` : ""}${c.reset}`,
 		);
-		io.writeln(formatPidList("rpc listeners", before.listeningPids));
-		io.writeln(formatPidList("cli processes", before.staleCliPids));
-		io.writeln(formatPidList("hook workers", before.hookWorkerPids));
+		writeln(formatPidList("rpc listeners", before.listeningPids));
+		writeln(formatPidList("cli processes", before.staleCliPids));
+		writeln(formatPidList("hook workers", before.hookWorkerPids));
 		if (before.activeConnectors.length === 0) {
-			io.writeln("active connectors: none");
+			writeln(`active connectors ${c.dim}0${c.reset}`);
 		} else {
-			io.writeln("active connectors:");
+			writeln("active connectors:");
 			for (const record of before.activeConnectors) {
-				io.writeln(`- ${formatActiveConnector(record)}`);
+				writeln(`- ${c.dim}${formatActiveConnector(record)}${c.reset}`);
 			}
 		}
-		if (before.recentSpawnedProcesses.length > 0) {
-			io.writeln("recent spawned processes:");
+		if (verbose && before.recentSpawnedProcesses.length > 0) {
+			writeln("recent spawned processes:");
 			for (const record of before.recentSpawnedProcesses) {
-				io.writeln(`- ${formatRecentSpawnedProcess(record)}`);
+				writeln(`- ${c.dim}${formatRecentSpawnedProcess(record)}${c.reset}`);
 			}
 		}
 		if (
@@ -401,7 +403,7 @@ export async function runDoctorCommand(
 			before.hookWorkerPids.length > 0
 		) {
 			io.writeln(
-				"Run `clite doctor --fix` to kill stale local RPC/CLI/hook-worker processes.",
+				"\nRun `clite doctor --fix` to kill all stale local processes.",
 			);
 		}
 		return 0;
@@ -433,13 +435,12 @@ export async function runDoctorCommand(
 		);
 		return 0;
 	}
-
-	io.writeln(`killed rpc listeners: ${killedRpc}`);
-	io.writeln(`killed cli processes: ${killedCli}`);
-	io.writeln(`killed hook workers: ${killedHookWorkers}`);
-	io.writeln(`rpc healthy after fix: ${after.rpcHealthy ? "yes" : "no"}`);
-	io.writeln(formatPidList("remaining rpc listeners", after.listeningPids));
-	io.writeln(formatPidList("remaining cli processes", after.staleCliPids));
-	io.writeln(formatPidList("remaining hook workers", after.hookWorkerPids));
+	writeln(`killed rpc listeners ${c.dim}${killedRpc}${c.reset}`);
+	writeln(`killed cli processes ${c.dim}${killedCli}${c.reset}`);
+	writeln(`killed hook workers ${c.dim}${killedHookWorkers}${c.reset}`);
+	writeln(`rpc healthy after fix: ${after.rpcHealthy ? "yes" : "no"}`);
+	writeln(formatPidList("remaining rpc listeners", after.listeningPids));
+	writeln(formatPidList("remaining cli processes", after.staleCliPids));
+	writeln(formatPidList("remaining hook workers", after.hookWorkerPids));
 	return 0;
 }

@@ -114,7 +114,7 @@ export function showHelp(): void {
 			["update [options]", "[TODO] Check for updates and install if available"],
 			["dev", "Developer tools and utilities"],
 			[
-				"doctor [--fix] [--json]",
+				"doctor [--fix] [--json] [--verbose]",
 				"Inspect or clean stale local CLI/RPC processes",
 			],
 			[

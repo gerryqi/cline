@@ -181,6 +181,8 @@ clite dev log
 
 # Inspect local CLI/RPC process health
 clite doctor
+# Include historical spawn records from the shared CLI log
+clite doctor --verbose
 # Kill stale local RPC listeners and old CLI processes
 clite doctor --fix
 
