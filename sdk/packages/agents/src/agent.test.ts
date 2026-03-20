@@ -232,6 +232,51 @@ describe("Agent", () => {
 		expect(handler.createMessage).toHaveBeenCalledTimes(2);
 	});
 
+	it("uses the default consecutive mistake limit of 3 when config omits it", async () => {
+		const { Agent } = await import("./agent.js");
+		const handler = makeHandler([
+			[
+				{
+					type: "done",
+					id: "r1",
+					success: false,
+					error: "upstream api timeout",
+				},
+			],
+			[
+				{
+					type: "done",
+					id: "r2",
+					success: false,
+					error: "upstream api timeout",
+				},
+			],
+			[
+				{
+					type: "done",
+					id: "r3",
+					success: false,
+					error: "upstream api timeout",
+				},
+			],
+			[
+				{ type: "text", id: "r4", text: "should not run" },
+				{ type: "done", id: "r4", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "Handle retries",
+			tools: [],
+		});
+
+		await expect(agent.run("retry")).rejects.toThrow("upstream api timeout");
+		expect(handler.createMessage).toHaveBeenCalledTimes(3);
+	});
+
 	it("fails immediately on non-recoverable API errors", async () => {
 		const { Agent } = await import("./agent.js");
 		const handler = makeHandler([
@@ -256,6 +301,39 @@ describe("Agent", () => {
 		});
 
 		await expect(agent.run("retry")).rejects.toThrow("404");
+		expect(handler.createMessage).toHaveBeenCalledTimes(1);
+		expect(
+			agent
+				.getMessages()
+				.some((message) =>
+					JSON.stringify(message).includes("previous turn failed"),
+				),
+		).toBe(false);
+	});
+
+	it("fails immediately on missing api key errors", async () => {
+		const { Agent } = await import("./agent.js");
+		const handler = makeHandler([
+			[
+				{
+					type: "done",
+					id: "r1",
+					success: false,
+					error:
+						'Missing API key for provider "cline". Set apiKey explicitly or one of: CLINE_API_KEY.',
+				},
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const agent = new Agent({
+			providerId: "cline",
+			modelId: "anthropic/claude-sonnet-4.6",
+			systemPrompt: "Handle retries",
+			tools: [],
+		});
+
+		await expect(agent.run("retry")).rejects.toThrow("Missing API key");
 		expect(handler.createMessage).toHaveBeenCalledTimes(1);
 		expect(
 			agent
