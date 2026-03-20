@@ -14,7 +14,7 @@ export const GENERATED_PROVIDER_MODELS: {
 	version: number;
 	providers: Record<string, Record<string, ModelInfo>>;
 } = {
-	version: 1773975012193,
+	version: 1774031158558,
 	providers: {
 		aihubmix: {
 			"claude-sonnet-4-6": {
@@ -9232,6 +9232,20 @@ export const GENERATED_PROVIDER_MODELS: {
 					output: 2.4,
 					cacheRead: 0.06,
 					cacheWrite: 0.375,
+				},
+				releaseDate: "2026-03-18",
+			},
+			"xiaomi/mimo-v2-pro": {
+				id: "xiaomi/mimo-v2-pro",
+				name: "MiMo V2 Pro",
+				contextWindow: 1000000,
+				maxTokens: 128000,
+				capabilities: ["tools", "reasoning", "temperature"],
+				pricing: {
+					input: 1,
+					output: 3,
+					cacheRead: 0.19999999999999998,
+					cacheWrite: 0,
 				},
 				releaseDate: "2026-03-18",
 			},
