@@ -40,9 +40,10 @@ flowchart TD
 4. **Core** persists session state and artifacts (logs, messages).
 
 ### Bootstrap & RPC
-- **CLI**: Connects to `CLINE_RPC_ADDRESS` (default `127.0.0.1:4317`). Spawns a background RPC server if one isn't running.
+- **CLI**: Connects to `CLINE_RPC_ADDRESS` (default `127.0.0.1:4317`). RPC bootstrap is singleton-oriented across processes: CLI startup paths take a lock under `~/.cline/data/locks/`, reuse a healthy compatible server when available, and replace unhealthy listeners on the requested address before starting a fresh background RPC.
 - **UI Apps**: Use Tauri or Extension hosts to ensure a compatible RPC server and communicate via WebSocket or gRPC bridges.
 - **Connectors**: Background bridges (Telegram, WhatsApp, etc.) that map external threads to RPC sessions.
+- **Hooks**: Direct local CLI runs own one persistent `hook-worker` per CLI runtime; RPC-backed sessions share one persistent hook service owned by the RPC server process.
 
 ## Core Features
 
@@ -70,7 +71,7 @@ All data is rooted at `~/.cline/data` (overridable via `CLINE_DATA_DIR`).
 - `bun run lint / format / fix`: Code quality and formatting.
 
 ### Rebuilding
-Changes to `packages/*` require a rebuild (`bun run build:sdk`) and an RPC server restart (`clite rpc stop && clite rpc start`). Use `dev:*` scripts for automatic rebuilding during development.
+Changes to `packages/*` require a rebuild (`bun run build:sdk`) and an RPC server restart (`clite rpc stop && clite rpc start`). Runtime code should assume there is exactly one healthy RPC listener per address; if you touch CLI/RPC bootstrap, preserve the startup lock and unhealthy-listener replacement behavior rather than adding fallback duplicate spawns. Use `dev:*` scripts for automatic rebuilding during development.
 
 ### Publishing SDK Packages
 - Source workspace manifests must keep real workspace dependencies declared so `bun install` and local builds resolve correctly, even when some of those dependencies are bundled out of the published tarballs.

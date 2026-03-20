@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import type { AgentHooks } from "@clinebot/agents";
 import type {
 	RpcChatMessage,
 	RpcChatRunTurnRequest,
@@ -14,6 +15,7 @@ import type { providers as LlmsProviders } from "@clinebot/llms";
 import { providers } from "@clinebot/llms";
 import { createCliLoggerAdapter } from "../../logging/adapter";
 import { resolveSystemPrompt } from "../../runtime/prompt";
+import { getCliTelemetryService } from "../../utils/telemetry";
 
 function sanitizeFilename(name: string, index: number): string {
 	const base = basename(name || `attachment-${index + 1}`);
@@ -80,6 +82,7 @@ export async function buildSessionStartInput(input: {
 	config: RpcChatStartSessionRequest;
 	sessionId?: string;
 	initialMessages?: LlmsProviders.Message[];
+	hooks?: AgentHooks;
 }): Promise<{
 	mode: "act" | "plan";
 	sessionInput: Parameters<DefaultSessionManager["start"]>[0];
@@ -122,7 +125,9 @@ export async function buildSessionStartInput(input: {
 				teamName: config.teamName,
 				missionLogIntervalSteps: config.missionStepInterval,
 				missionLogIntervalMs: config.missionTimeIntervalMs,
+				hooks: input.hooks,
 				logger: logger.core,
+				telemetry: getCliTelemetryService(logger.core),
 			},
 			toolPolicies: resolveToolPolicies(config),
 		},

@@ -8,6 +8,7 @@ import type {
 	ToolApprovalResult,
 } from "@clinebot/agents";
 import type {
+	BasicLogger,
 	RpcChatMessage,
 	RpcChatRunTurnRequest,
 	RpcChatRuntimeLoggerConfig,
@@ -127,6 +128,7 @@ export async function getCoreSessionBackend(): Promise<SessionBackend> {
 export async function createDefaultCliSessionManager(options?: {
 	defaultToolExecutors?: Partial<import("@clinebot/core/node").ToolExecutors>;
 	toolPolicies?: import("@clinebot/agents").AgentConfig["toolPolicies"];
+	logger?: BasicLogger;
 	requestToolApproval?: (
 		request: ToolApprovalRequest,
 	) => Promise<ToolApprovalResult>;
@@ -138,7 +140,7 @@ export async function createDefaultCliSessionManager(options?: {
 	return (await createSessionHost({
 		sessionService: sessionBackend,
 		defaultToolExecutors: options?.defaultToolExecutors,
-		telemetry: getCliTelemetryService(),
+		telemetry: getCliTelemetryService(options?.logger),
 		toolPolicies: options?.toolPolicies,
 		requestToolApproval: options?.requestToolApproval,
 	})) as CliSessionManager;

@@ -440,7 +440,7 @@ Single-shot mode is the default when a prompt is provided as a positional argume
 1. Resolves a Cline welcome line (credit balance) if using the `cline` provider
 2. Records start time (`performance.now()`)
 3. Prewarms the file index for the working directory
-4. Creates runtime hooks (persistent hook worker, or disabled in `--yolo`)
+4. Creates runtime hooks (one persistent hook worker for that CLI runtime, or disabled in `--yolo`)
 5. Creates a `CliSessionManager` via `createDefaultCliSessionManager()`
 6. Subscribes to agent events via `subscribeToAgentEvents()`
 7. Registers SIGINT/SIGTERM handlers that call `sessionManager.abort()`
@@ -653,7 +653,9 @@ clite hook-worker   # long-lived internal hook worker
 
 **Source:** `src/commands/hook.ts` → `runHookCommand()`, `runHookWorkerCommand()`
 
-When the CLI starts an agent run, it sets up `createPersistentSubprocessHooks()` from `@clinebot/agents/node` unless hooks are disabled by `--yolo`. The SDK starts one long-lived `clite hook-worker` subprocess and exchanges newline-delimited JSON request/response messages with it. If the worker transport fails, the CLI falls back to the legacy one-shot `clite hook` path.
+When the CLI starts a direct local agent run, it sets up `createPersistentSubprocessHooks()` from `@clinebot/agents/node` unless hooks are disabled by `--yolo`. That path starts one long-lived `clite hook-worker` subprocess for the lifetime of that CLI runtime and exchanges newline-delimited JSON request/response messages with it. If the worker transport fails, the CLI falls back to the legacy one-shot `clite hook` path.
+
+RPC-backed sessions are different: `createRpcRuntimeHandlers()` in `apps/cli/src/commands/rpc-runtime.ts` now creates one shared persistent hook service per RPC server process and injects those hooks into all RPC runtime sessions. CLI clients talking to the RPC runtime do not each spawn their own hook worker.
 
 The hook handler:
 1. Reads the full JSON payload from stdin
@@ -1016,7 +1018,7 @@ Pass `--session <id>` to resume a previous interactive session. This:
 **Source:** `src/commands/hook.ts` → `runHookCommand()`, `runHookWorkerCommand()`
 **Source:** `src/utils/helpers.ts` → `appendHookAudit()`, `parseCliHookPayload()`
 
-The hook system provides a **side-channel audit trail** for agent lifecycle events. In normal mode it uses one persistent subprocess (`clite hook-worker`) for the duration of the run. In `--yolo` mode, CLI hook dispatch is disabled entirely. If the persistent transport fails, the CLI falls back to the legacy one-shot `clite hook` subprocess.
+The hook system provides a **side-channel audit trail** for agent lifecycle events. In normal direct CLI mode it uses one persistent subprocess (`clite hook-worker`) for the duration of that CLI runtime. In RPC-backed mode the RPC server owns one shared persistent hook service for all sessions handled by that server. In `--yolo` mode, CLI hook dispatch is disabled entirely. If the persistent transport fails, the runtime falls back to the legacy one-shot `clite hook` subprocess.
 
 #### How Hooks Are Wired
 
@@ -1258,7 +1260,7 @@ src/
     │                           # configureSandboxEnvironment(), resolveWorkspaceRoot(), etc.
     ├── session.ts              # createDefaultCliSessionManager(), listSessions(), deleteSession(),
     │                           # RPC connection management, stale runtime recovery, CliSessionManager interface
-    ├── hooks.ts                # createRuntimeHooks() — persistent hook-worker wiring
+    ├── hooks.ts                # createRuntimeHooks() — local CLI persistent hook-worker wiring
     ├── output.ts               # writeln(), writeErr(), write(), emitJsonLine(), c (ANSI colors)
     ├── resume.ts               # loadInteractiveResumeMessages()
     └── types.ts                # Config, ParsedArgs, ActiveCliSession, SessionDbRow, etc.
@@ -1303,7 +1305,7 @@ runCli() ───────────────────────�
     sessionManager.send(prompt)                                         │
          │                                                              │
          ├── events ──► handleEvent() / handleTeamEvent() ──► stdout   │
-         ├── hooks ───► clite hook-worker persistent subprocess ───►──┘
+         ├── hooks ───► local CLI hook-worker or shared RPC hook service ─►──┘
          └── result ──► print usage/timings if requested
          │
          ▼

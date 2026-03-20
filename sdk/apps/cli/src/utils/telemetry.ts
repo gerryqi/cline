@@ -1,37 +1,61 @@
+import { LoggerTelemetryAdapter } from "@clinebot/core";
 import { createConfiguredTelemetryService } from "@clinebot/core/telemetry/opentelemetry";
 import {
+	type BasicLogger,
 	createClineTelemetryServiceConfig,
 	type ITelemetryService,
 } from "@clinebot/shared";
 import { getCliBuildInfo } from "./common";
 
+type MutableTelemetryService = ITelemetryService & {
+	addAdapter?: (adapter: LoggerTelemetryAdapter) => void;
+};
+
 let telemetrySingleton:
 	| {
 			telemetry: ITelemetryService;
 			dispose: () => Promise<void>;
+			loggerAttached: boolean;
 	  }
 	| undefined;
 
-export function getCliTelemetryService(): ITelemetryService {
+export function getCliTelemetryService(
+	logger?: BasicLogger,
+): ITelemetryService {
 	if (!telemetrySingleton) {
 		const { version, name, os_type, os_version } = getCliBuildInfo();
 		const config = createClineTelemetryServiceConfig({
 			metadata: {
 				extension_version: version,
-				cline_type: name,
-				platform: "terminal",
+				cline_type: "cli",
+				platform: name,
 				platform_version: process.version,
 				os_type,
 				os_version,
 			},
 		});
-		const { telemetry, provider } = createConfiguredTelemetryService(config);
+		const { telemetry, provider } = createConfiguredTelemetryService({
+			...config,
+			logger,
+		});
 		telemetrySingleton = {
 			telemetry,
+			loggerAttached: Boolean(logger),
 			dispose: async () => {
 				await Promise.allSettled([telemetry.dispose(), provider?.dispose()]);
 			},
 		};
+	}
+	if (
+		logger &&
+		telemetrySingleton.loggerAttached !== true &&
+		typeof (telemetrySingleton.telemetry as MutableTelemetryService)
+			.addAdapter === "function"
+	) {
+		(telemetrySingleton.telemetry as MutableTelemetryService).addAdapter?.(
+			new LoggerTelemetryAdapter({ logger }),
+		);
+		telemetrySingleton.loggerAttached = true;
 	}
 	return telemetrySingleton.telemetry;
 }

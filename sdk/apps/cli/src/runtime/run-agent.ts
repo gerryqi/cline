@@ -73,6 +73,7 @@ export async function runAgent(
 		defaultToolExecutors: {
 			askQuestion: askQuestionInTerminal,
 		},
+		logger: config.logger,
 		toolPolicies: config.toolPolicies,
 		requestToolApproval,
 	});

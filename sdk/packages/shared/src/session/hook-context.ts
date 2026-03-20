@@ -3,9 +3,16 @@ export interface HookSessionContext {
 	hookLogPath?: string;
 }
 
+export interface HookSessionContextLookup {
+	hookName?: string;
+	conversationId?: string;
+	agentId?: string;
+	parentAgentId?: string | null;
+}
+
 export type HookSessionContextProvider =
 	| HookSessionContext
-	| (() => HookSessionContext | undefined);
+	| ((input?: HookSessionContextLookup) => HookSessionContext | undefined);
 
 function normalized(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
@@ -14,11 +21,12 @@ function normalized(value: string | undefined): string | undefined {
 
 export function resolveHookSessionContext(
 	provider?: HookSessionContextProvider,
+	input?: HookSessionContextLookup,
 ): HookSessionContext | undefined {
 	if (!provider) {
 		return undefined;
 	}
-	const context = typeof provider === "function" ? provider() : provider;
+	const context = typeof provider === "function" ? provider(input) : provider;
 	if (!context) {
 		return undefined;
 	}

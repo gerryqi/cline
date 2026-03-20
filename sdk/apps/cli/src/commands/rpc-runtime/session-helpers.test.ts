@@ -18,8 +18,10 @@ vi.mock("../../logging/adapter", () => ({
 describe("buildSessionStartInput", () => {
 	it("keeps maxIterations unset when not provided", async () => {
 		const { buildSessionStartInput } = await import("./session-helpers");
+		const hooks = { onRunStart: vi.fn() };
 		const built = await buildSessionStartInput({
 			sessionId: "session-123",
+			hooks,
 			config: {
 				provider: "cline",
 				model: "anthropic/claude-sonnet-4.6",
@@ -34,6 +36,7 @@ describe("buildSessionStartInput", () => {
 
 		expect(built.sessionInput.config.sessionId).toBe("session-123");
 		expect(built.sessionInput.config.maxIterations).toBeUndefined();
+		expect(built.sessionInput.config.hooks).toBe(hooks);
 	});
 });
 

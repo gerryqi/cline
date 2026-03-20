@@ -273,6 +273,7 @@ During OAuth login, `clite` tries to open the authorization URL in your default 
 RPC runtime note:
 
 - RPC chat payload parsers normalize invalid optional `maxIterations` values (including JSON `null`) to `undefined` so sessions do not terminate immediately with `finishReason="max_iterations"` at iteration 0.
+- RPC-backed sessions share one persistent hook service per local RPC runtime server. Direct local CLI runs still use one persistent `clite hook-worker` per CLI runtime.
 
 ## Options
 

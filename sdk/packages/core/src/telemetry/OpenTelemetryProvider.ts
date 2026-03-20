@@ -1,4 +1,5 @@
 import type {
+	BasicLogger,
 	ITelemetryService,
 	OpenTelemetryClientConfig,
 	TelemetryMetadata,
@@ -56,6 +57,7 @@ export interface CreateOpenTelemetryTelemetryServiceOptions
 			"name" | "distinctId" | "commonProperties"
 		> {
 	metadata: TelemetryMetadata;
+	logger?: BasicLogger;
 }
 
 export class OpenTelemetryProvider {
@@ -111,6 +113,7 @@ export class OpenTelemetryProvider {
 			adapters: [adapter],
 			distinctId: options.distinctId,
 			commonProperties: options.commonProperties,
+			logger: options.logger,
 		});
 	}
 

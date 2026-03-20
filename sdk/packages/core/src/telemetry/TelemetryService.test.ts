@@ -1,3 +1,4 @@
+import type { BasicLogger } from "@clinebot/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { ITelemetryAdapter } from "./ITelemetryAdapter";
 import { TelemetryService } from "./TelemetryService";
@@ -46,6 +47,64 @@ describe("TelemetryService", () => {
 			}),
 			undefined,
 			false,
+		);
+	});
+
+	it("mirrors telemetry events into the logger when provided", () => {
+		const logger: BasicLogger = {
+			debug: vi.fn(),
+			info: vi.fn(),
+			warn: vi.fn(),
+			error: vi.fn(),
+		};
+		const service = new TelemetryService({
+			logger,
+			metadata: {
+				extension_version: "1.2.3",
+				cline_type: "cli",
+			},
+			distinctId: "distinct-1",
+		});
+
+		service.capture({
+			event: "session.started",
+			properties: { sessionId: "session-1" },
+		});
+		service.captureRequired("user.opt_out", { reason: "manual" });
+		service.recordCounter("cline.session.starts.total", 1, {
+			sessionId: "session-1",
+		});
+
+		expect(logger.info).toHaveBeenCalledWith(
+			"telemetry.event",
+			expect.objectContaining({
+				adapter: "LoggerTelemetryAdapter",
+				event: "session.started",
+				properties: expect.objectContaining({
+					sessionId: "session-1",
+					extension_version: "1.2.3",
+					distinct_id: "distinct-1",
+				}),
+			}),
+		);
+		expect(logger.warn).toHaveBeenCalledWith(
+			"telemetry.required_event",
+			expect.objectContaining({
+				adapter: "LoggerTelemetryAdapter",
+				event: "user.opt_out",
+				properties: expect.objectContaining({
+					reason: "manual",
+					extension_version: "1.2.3",
+				}),
+			}),
+		);
+		expect(logger.debug).toHaveBeenCalledWith(
+			"telemetry.metric",
+			expect.objectContaining({
+				adapter: "LoggerTelemetryAdapter",
+				instrument: "counter",
+				name: "cline.session.starts.total",
+			}),
 		);
 	});
 });

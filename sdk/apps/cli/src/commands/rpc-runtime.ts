@@ -1,4 +1,9 @@
 import { randomUUID } from "node:crypto";
+import type {
+	AgentHooks,
+	PersistentSubprocessHookControl,
+} from "@clinebot/agents";
+import { createPersistentSubprocessHooks } from "@clinebot/agents";
 import {
 	CoreSessionService,
 	DefaultSessionManager,
@@ -6,10 +11,15 @@ import {
 } from "@clinebot/core/node";
 import type { providers as LlmsProviders } from "@clinebot/llms";
 import { type RpcRuntimeHandlers, RpcSessionClient } from "@clinebot/rpc";
+import type {
+	HookSessionContext,
+	HookSessionContextLookup,
+} from "@clinebot/shared";
 import {
 	createCliLoggerAdapter,
 	flushCliLoggerAdapters,
 } from "../logging/adapter";
+import { logSpawnedProcess } from "../logging/process";
 import {
 	createRpcToolApprovalRequester,
 	subscribeRuntimeEventBridge,
@@ -31,12 +41,250 @@ import {
 
 const RPC_RUNTIME_NAME = "rpc-runtime";
 const RPC_SESSION_COMPONENT = "rpc-runtime-session";
+type HookRunStartContext = Parameters<NonNullable<AgentHooks["onRunStart"]>>[0];
+type HookSessionShutdownContext = Parameters<
+	NonNullable<AgentHooks["onSessionShutdown"]>
+>[0];
+
+function getHookWorkerCommand(): string[] | undefined {
+	if (!process.argv[1]) {
+		return undefined;
+	}
+	return [process.execPath, process.argv[1], "hook-worker"];
+}
+
+class RpcRuntimeHookService {
+	private readonly logger = createCliLoggerAdapter({
+		runtime: RPC_RUNTIME_NAME,
+		component: "hooks",
+	}).core;
+	private readonly rootHookPaths = new Map<string, string>();
+	private readonly agentRoots = new Map<string, string>();
+	private readonly conversationRoots = new Map<string, string>();
+	private readonly rootMembers = new Map<
+		string,
+		{ agents: Set<string>; conversations: Set<string> }
+	>();
+	private readonly control?: PersistentSubprocessHookControl;
+	public readonly hooks?: AgentHooks;
+
+	constructor() {
+		const command = getHookWorkerCommand();
+		if (!command) {
+			return;
+		}
+		this.control = createPersistentSubprocessHooks({
+			command,
+			cwd: process.cwd(),
+			env: process.env,
+			sessionContext: (input) => this.resolveSessionContext(input),
+			onDispatchError: (error, payload) => {
+				this.logger.warn?.("RPC hook dispatch failed", {
+					error,
+					hookName: payload.hookName,
+					taskId: payload.taskId,
+					agentId: payload.agent_id,
+				});
+			},
+			onSpawn: ({ command: spawnedCommand, pid, detached }) => {
+				logSpawnedProcess({
+					component: "hooks",
+					command: spawnedCommand,
+					childPid: pid,
+					detached,
+					cwd: process.cwd(),
+					metadata: { runtime: RPC_RUNTIME_NAME },
+				});
+			},
+		});
+		this.hooks = this.wrapHooks(this.control.hooks);
+	}
+
+	public registerSession(sessionId: string, hookPath: string): void {
+		const normalizedSessionId = sessionId.trim();
+		const normalizedHookPath = hookPath.trim();
+		if (!normalizedSessionId || !normalizedHookPath) {
+			return;
+		}
+		this.rootHookPaths.set(normalizedSessionId, normalizedHookPath);
+		this.conversationRoots.set(normalizedSessionId, normalizedSessionId);
+		this.membersForRoot(normalizedSessionId).conversations.add(
+			normalizedSessionId,
+		);
+	}
+
+	public unregisterSession(sessionId: string): void {
+		const normalizedSessionId = sessionId.trim();
+		if (!normalizedSessionId) {
+			return;
+		}
+		this.rootHookPaths.delete(normalizedSessionId);
+		this.clearRoot(normalizedSessionId);
+	}
+
+	public async shutdown(): Promise<void> {
+		this.rootHookPaths.clear();
+		this.agentRoots.clear();
+		this.conversationRoots.clear();
+		this.rootMembers.clear();
+		await this.control?.client.close();
+	}
+
+	private wrapHooks(hooks: AgentHooks): AgentHooks {
+		return {
+			...hooks,
+			onSessionStart: async (ctx) => {
+				this.trackContext(ctx);
+				return await hooks.onSessionStart?.(ctx);
+			},
+			onRunStart: async (ctx) => {
+				this.trackContext(ctx);
+				return await hooks.onRunStart?.(ctx);
+			},
+			onSessionShutdown: async (ctx) => {
+				this.trackContext(ctx);
+				try {
+					return await hooks.onSessionShutdown?.(ctx);
+				} finally {
+					this.releaseContext(ctx);
+				}
+			},
+		};
+	}
+
+	private resolveSessionContext(
+		input?: HookSessionContextLookup,
+	): HookSessionContext | undefined {
+		const rootSessionId = this.resolveRootSessionId(input);
+		if (!rootSessionId) {
+			return undefined;
+		}
+		return {
+			rootSessionId,
+			hookLogPath: this.rootHookPaths.get(rootSessionId),
+		};
+	}
+
+	private resolveRootSessionId(
+		input?: HookSessionContextLookup,
+	): string | undefined {
+		const conversationId = input?.conversationId?.trim();
+		const agentId = input?.agentId?.trim();
+		const parentAgentId = input?.parentAgentId?.trim();
+		if (conversationId) {
+			const rootFromConversation = this.conversationRoots.get(conversationId);
+			if (rootFromConversation) {
+				return rootFromConversation;
+			}
+			if (this.rootHookPaths.has(conversationId)) {
+				return conversationId;
+			}
+		}
+		if (agentId) {
+			const rootFromAgent = this.agentRoots.get(agentId);
+			if (rootFromAgent) {
+				return rootFromAgent;
+			}
+		}
+		if (parentAgentId) {
+			return this.agentRoots.get(parentAgentId);
+		}
+		return undefined;
+	}
+
+	private trackContext(
+		ctx: Pick<
+			HookRunStartContext,
+			"agentId" | "conversationId" | "parentAgentId"
+		>,
+	): void {
+		const agentId = ctx.agentId.trim();
+		const conversationId = ctx.conversationId.trim();
+		const rootSessionId =
+			this.resolveRootSessionId({
+				agentId,
+				conversationId,
+				parentAgentId: ctx.parentAgentId,
+			}) ?? (!ctx.parentAgentId ? conversationId : undefined);
+		if (!rootSessionId) {
+			return;
+		}
+		if (agentId) {
+			this.agentRoots.set(agentId, rootSessionId);
+			this.membersForRoot(rootSessionId).agents.add(agentId);
+		}
+		if (conversationId) {
+			this.conversationRoots.set(conversationId, rootSessionId);
+			this.membersForRoot(rootSessionId).conversations.add(conversationId);
+		}
+	}
+
+	private releaseContext(ctx: HookSessionShutdownContext): void {
+		const agentId = ctx.agentId.trim();
+		const conversationId = ctx.conversationId.trim();
+		const rootSessionId =
+			this.resolveRootSessionId({
+				agentId,
+				conversationId,
+				parentAgentId: ctx.parentAgentId,
+			}) ?? conversationId;
+		if (!rootSessionId) {
+			return;
+		}
+		if (ctx.parentAgentId) {
+			if (agentId) {
+				this.agentRoots.delete(agentId);
+				this.rootMembers.get(rootSessionId)?.agents.delete(agentId);
+			}
+			if (conversationId) {
+				this.conversationRoots.delete(conversationId);
+				this.rootMembers
+					.get(rootSessionId)
+					?.conversations.delete(conversationId);
+			}
+			return;
+		}
+		this.rootHookPaths.delete(rootSessionId);
+		this.clearRoot(rootSessionId);
+	}
+
+	private membersForRoot(rootSessionId: string): {
+		agents: Set<string>;
+		conversations: Set<string>;
+	} {
+		let members = this.rootMembers.get(rootSessionId);
+		if (!members) {
+			members = {
+				agents: new Set<string>(),
+				conversations: new Set<string>(),
+			};
+			this.rootMembers.set(rootSessionId, members);
+		}
+		return members;
+	}
+
+	private clearRoot(rootSessionId: string): void {
+		const members = this.rootMembers.get(rootSessionId);
+		if (members) {
+			for (const agentId of members.agents) {
+				this.agentRoots.delete(agentId);
+			}
+			for (const conversationId of members.conversations) {
+				this.conversationRoots.delete(conversationId);
+			}
+			this.rootMembers.delete(rootSessionId);
+			return;
+		}
+		this.conversationRoots.delete(rootSessionId);
+	}
+}
 
 export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 	const sessionManager = new DefaultSessionManager({
 		distinctId: process.pid.toString(),
 		sessionService: new CoreSessionService(new SqliteSessionStore()),
 	});
+	const hookService = new RpcRuntimeHookService();
 	const sessionModes = new Map<string, "act" | "plan">();
 	const activeSessions = new Set<string>();
 	const rpcAddress = process.env.CLINE_RPC_ADDRESS?.trim() || "127.0.0.1:4317";
@@ -62,6 +310,7 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 		} finally {
 			activeSessions.delete(sessionId);
 			sessionModes.delete(sessionId);
+			hookService.unregisterSession(sessionId);
 		}
 	};
 	const stopTrackedSessions = async (
@@ -105,6 +354,7 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 				initialMessages: config.initialMessages as
 					| LlmsProviders.Message[]
 					| undefined,
+				hooks: hookService.hooks,
 			});
 			startedConfig.sessionInput.requestToolApproval =
 				createRpcToolApprovalRequester({
@@ -117,6 +367,7 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 				sessionId: started.sessionId,
 				mode: startedConfig.mode,
 			});
+			hookService.registerSession(started.sessionId, started.hookPath);
 			sessionModes.set(started.sessionId, startedConfig.mode);
 			activeSessions.add(started.sessionId);
 			return {
@@ -181,8 +432,15 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 					initialMessages: request.messages as unknown as
 						| LlmsProviders.Message[]
 						| undefined,
+					hooks: hookService.hooks,
 				});
-				await sessionManager.start(restoredConfig.sessionInput);
+				const restoredStarted = await sessionManager.start(
+					restoredConfig.sessionInput,
+				);
+				hookService.registerSession(
+					restoredStarted.sessionId,
+					restoredStarted.hookPath,
+				);
 				runtimeLogger.warn?.(
 					"RPC runtime session restored after missing session",
 					{
@@ -266,6 +524,7 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 			flushCliLoggerAdapters();
 			activeSessions.delete(id);
 			sessionModes.delete(id);
+			hookService.unregisterSession(id);
 			return { applied: known };
 		},
 		runProviderAction: async (request) => runProviderAction(request),
@@ -274,6 +533,7 @@ export function createRpcRuntimeHandlers(): RpcRuntimeHandlers {
 			unsubscribeEventBridge();
 			await stopTrackedSessions("rpc_runtime_shutdown");
 			await sessionManager.dispose("rpc_runtime_shutdown");
+			await hookService.shutdown();
 			flushCliLoggerAdapters();
 			activeSessions.clear();
 			sessionModes.clear();

@@ -156,6 +156,8 @@ flowchart TD
 - `clite rpc start`: starts in-process gateway if no server is already active.
 - `clite rpc status`: probes server health.
 - `clite rpc stop`: requests graceful shutdown.
+- `clite rpc ensure` and all CLI/runtime bootstrap paths serialize RPC startup with a cross-process lock rooted under `~/.cline/data/locks/`.
+- Startup is fail-closed on the default RPC address: if `127.0.0.1:4317` is occupied by an unhealthy or incompatible listener, CLI first attempts graceful shutdown, then force-kills the stale listener before starting a replacement on the requested address. It should not silently spawn an extra detached RPC beside an occupied default port.
 - Lightweight CLI commands that do not start a runtime session keep runtime-only imports behind lazy-load boundaries so command-style subcommands can exit without inheriting background handles from the runtime graph.
 
 ### CLI connector bridge flow
@@ -409,6 +411,7 @@ RPC runtime (`apps/cli/src/commands/rpc.ts`, `apps/cli/src/commands/rpc-runtime.
 
 - hosts shared runtime handlers (`start/send/abort runtime session`)
 - publishes runtime chat events (`runtime.chat.text_delta`, `runtime.chat.tool_call_*`)
+- owns one shared persistent hook service per RPC server process for RPC-backed sessions
 - owns stateful runtime/session lifecycle via `@clinebot/core/node`
 
 CLI + Agents (`apps/cli/src/index.ts`):

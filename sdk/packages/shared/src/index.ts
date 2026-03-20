@@ -99,6 +99,7 @@ export {
 } from "./services/telemetry-config";
 export type {
 	HookSessionContext,
+	HookSessionContextLookup,
 	HookSessionContextProvider,
 } from "./session/hook-context";
 export {

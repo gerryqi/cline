@@ -76,6 +76,7 @@ export async function runInteractive(
 		defaultToolExecutors: {
 			askQuestion: askQuestionInTerminal,
 		},
+		logger: config.logger,
 		toolPolicies: config.toolPolicies,
 		requestToolApproval: async (request) => {
 			if (autoApproveAllRef.current) {

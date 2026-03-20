@@ -1,15 +1,18 @@
 import type {
+	BasicLogger,
 	ITelemetryService,
 	TelemetryMetadata,
 	TelemetryProperties,
 } from "@clinebot/shared";
 import type { ITelemetryAdapter } from "./ITelemetryAdapter";
+import { LoggerTelemetryAdapter } from "./LoggerTelemetryAdapter";
 
 export interface TelemetryServiceOptions {
 	adapters?: ITelemetryAdapter[];
 	metadata?: Partial<TelemetryMetadata>;
 	distinctId?: string;
 	commonProperties?: TelemetryProperties;
+	logger?: BasicLogger;
 }
 
 export class TelemetryService implements ITelemetryService {
@@ -20,6 +23,11 @@ export class TelemetryService implements ITelemetryService {
 
 	constructor(options: TelemetryServiceOptions = {}) {
 		this.adapters = [...(options.adapters ?? [])];
+		if (options.logger) {
+			this.adapters.push(
+				new LoggerTelemetryAdapter({ logger: options.logger }),
+			);
+		}
 		this.metadata = { ...(options.metadata ?? {}) };
 		this.distinctId = options.distinctId;
 		this.commonProperties = { ...(options.commonProperties ?? {}) };

@@ -1,3 +1,4 @@
+import type { BasicLogger } from "@clinebot/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	createConfiguredTelemetryService,
@@ -72,5 +73,41 @@ describe("createOpenTelemetryTelemetryService", () => {
 		expect(provider).toBeUndefined();
 		expect(providerSpy).not.toHaveBeenCalled();
 		expect(telemetry).toBeInstanceOf(TelemetryService);
+	});
+
+	it("attaches the logger adapter when creating configured telemetry", () => {
+		const logger: BasicLogger = {
+			debug: vi.fn(),
+			info: vi.fn(),
+			warn: vi.fn(),
+			error: vi.fn(),
+		};
+		const { telemetry, provider } = createConfiguredTelemetryService({
+			metadata: {
+				extension_version: "1.2.3",
+				cline_type: "cli",
+				platform: "terminal",
+				platform_version: process.version,
+				os_type: process.platform,
+				os_version: "unknown",
+			},
+			enabled: true,
+			logsExporter: "console",
+			logger,
+		});
+
+		telemetry.capture({
+			event: "session.started",
+			properties: { sessionId: "session-1" },
+		});
+
+		expect(logger.info).toHaveBeenCalledWith(
+			"telemetry.event",
+			expect.objectContaining({
+				event: "session.started",
+			}),
+		);
+
+		return provider?.dispose();
 	});
 });

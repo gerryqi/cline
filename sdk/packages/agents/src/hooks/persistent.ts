@@ -404,7 +404,12 @@ function basePayload(
 		hookName,
 		timestamp: new Date().toISOString(),
 		taskId: ctx.conversationId,
-		sessionContext: resolveHookSessionContext(options.sessionContext),
+		sessionContext: resolveHookSessionContext(options.sessionContext, {
+			hookName,
+			conversationId: ctx.conversationId,
+			agentId: ctx.agentId,
+			parentAgentId: ctx.parentAgentId,
+		}),
 		workspaceRoots: workspaceRoot ? [workspaceRoot] : [],
 		userId,
 		agent_id: ctx.agentId,

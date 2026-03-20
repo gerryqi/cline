@@ -118,6 +118,7 @@ Apps built with the Cline SDK (`apps/`):
 - Runtime `send` commands in the shared bridge are now bounded (default `120000ms`, configurable by `CLINE_RPC_RUNTIME_SEND_TIMEOUT_MS`) so one stalled turn cannot wedge the bridge command loop.
 - The code app host also bounds bridge command waits (`130000ms`) and returns a timeout error instead of remaining indefinitely in `running`.
 - RPC runtime request parsing now normalizes invalid optional `maxIterations` values (especially JSON `null` from host serializers) to `undefined` to avoid immediate `max_iterations` exits at iteration `0`.
+- RPC-backed sessions now share one persistent hook service per RPC runtime server process instead of spawning one hook worker per client/runtime session.
 
 ## Linting and Formatting (Biome)
 
