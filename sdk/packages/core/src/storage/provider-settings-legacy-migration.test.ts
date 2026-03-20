@@ -2,7 +2,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { migrateLegacyProviderSettings } from "./provider-settings-legacy-migration";
+import {
+	type LegacyClineUserInfo,
+	migrateLegacyProviderSettings,
+	resolveLegacyClineAuth,
+} from "./provider-settings-legacy-migration";
 import { ProviderSettingsManager } from "./provider-settings-manager";
 
 describe("migrateLegacyProviderSettings", () => {
@@ -171,5 +175,133 @@ describe("migrateLegacyProviderSettings", () => {
 		expect(manager.read().providers["openai-codex"]?.tokenSource).toBe(
 			"migration",
 		);
+	});
+});
+
+// =============================================================================
+// resolveLegacyClineAuth – pure in-memory tests
+// =============================================================================
+
+/** Builds a realistic LegacyClineUserInfo JSON string. */
+function makeClineAccountJson(
+	overrides: Partial<LegacyClineUserInfo> & { userId?: string } = {},
+): string {
+	return JSON.stringify({
+		idToken: overrides.idToken ?? "id-token-abc",
+		expiresAt: overrides.expiresAt ?? 1750000000000,
+		refreshToken: overrides.refreshToken ?? "refresh-token-xyz",
+		userInfo: overrides.userInfo ?? {
+			id: overrides.userId ?? "user-42",
+			email: "test@example.com",
+			displayName: "Test User",
+			termsAcceptedAt: "2025-01-01T00:00:00Z",
+			clineBenchConsent: false,
+			createdAt: "2025-01-01T00:00:00Z",
+			updatedAt: "2025-01-01T00:00:00Z",
+		},
+		provider: overrides.provider ?? "google",
+		startedAt: overrides.startedAt ?? Date.now(),
+	} satisfies LegacyClineUserInfo);
+}
+
+describe("resolveLegacyClineAuth", () => {
+	it("extracts all auth fields from a complete legacy account JSON", () => {
+		const result = resolveLegacyClineAuth(
+			makeClineAccountJson({
+				idToken: "my-id-token",
+				expiresAt: 1750000000000,
+				refreshToken: "my-refresh",
+				userId: "user-123",
+			}),
+		);
+
+		expect(result).toEqual({
+			accessToken: "my-id-token",
+			refreshToken: "my-refresh",
+			expiresAt: 1750000000000,
+			accountId: "user-123",
+		});
+	});
+
+	it("maps idToken to accessToken", () => {
+		const result = resolveLegacyClineAuth(
+			makeClineAccountJson({ idToken: "tok-abc" }),
+		);
+		expect(result?.accessToken).toBe("tok-abc");
+	});
+
+	it("preserves expiresAt as a number", () => {
+		const result = resolveLegacyClineAuth(
+			makeClineAccountJson({ expiresAt: 9999999999999 }),
+		);
+		expect(result?.expiresAt).toBe(9999999999999);
+		expect(typeof result?.expiresAt).toBe("number");
+	});
+
+	it("maps userInfo.id to accountId", () => {
+		const result = resolveLegacyClineAuth(
+			makeClineAccountJson({ userId: "uid-xyz" }),
+		);
+		expect(result?.accountId).toBe("uid-xyz");
+	});
+
+	it("returns undefined accountId when userInfo is missing entirely", () => {
+		const raw = JSON.stringify({
+			idToken: "tok",
+			expiresAt: 1000,
+			refreshToken: "ref",
+			provider: "google",
+			startedAt: 1,
+		});
+
+		const result = resolveLegacyClineAuth(raw);
+		expect(result).toBeDefined();
+		expect(result?.accessToken).toBe("tok");
+		expect(result?.accountId).toBeUndefined();
+	});
+
+	it("returns undefined accountId when userInfo.id is missing", () => {
+		const raw = JSON.stringify({
+			idToken: "tok",
+			expiresAt: 1000,
+			refreshToken: "ref",
+			userInfo: {
+				email: "x@y.com",
+				displayName: "X",
+				termsAcceptedAt: "2025-01-01T00:00:00Z",
+				clineBenchConsent: false,
+				createdAt: "2025-01-01T00:00:00Z",
+				updatedAt: "2025-01-01T00:00:00Z",
+			},
+			provider: "google",
+			startedAt: 1,
+		});
+
+		const result = resolveLegacyClineAuth(raw);
+		expect(result).toBeDefined();
+		expect(result?.accountId).toBeUndefined();
+	});
+
+	it("returns undefined for invalid json", () => {
+		expect(resolveLegacyClineAuth(undefined)).toBeUndefined();
+		expect(resolveLegacyClineAuth("")).toBeUndefined();
+		expect(resolveLegacyClineAuth("   \n\t  ")).toBeUndefined();
+		expect(resolveLegacyClineAuth("not-json{{{")).toBeUndefined();
+		expect(resolveLegacyClineAuth("null")).toBeUndefined();
+	});
+
+	it("returns undefined fields when idToken/refreshToken are missing from JSON", () => {
+		const raw = JSON.stringify({
+			userInfo: { id: "uid" },
+			provider: "google",
+			startedAt: 1,
+		});
+
+		const result = resolveLegacyClineAuth(raw);
+		expect(result).toBeDefined();
+		expect(result?.accessToken).toBeUndefined();
+		expect(result?.refreshToken).toBeUndefined();
+		expect(result?.expiresAt).toBeUndefined();
+		expect(result?.accountId).toBe("uid");
 	});
 });

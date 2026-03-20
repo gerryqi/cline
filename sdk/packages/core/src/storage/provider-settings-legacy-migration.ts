@@ -162,6 +162,53 @@ export interface MigrateLegacyProviderSettingsResult {
 	lastUsedProvider?: string;
 }
 
+export type LegacyClineUserInfo = {
+	idToken: string;
+	expiresAt: number;
+	refreshToken: string;
+	userInfo: {
+		id: string;
+		email: string;
+		displayName: string;
+		termsAcceptedAt: string;
+		clineBenchConsent: boolean;
+		createdAt: string;
+		updatedAt: string;
+	};
+	provider: string;
+	startedAt: number;
+};
+
+/**
+ * Resolves legacy Cline account auth data from the raw `cline:clineAccountId`
+ * secret string into the auth fields used by `ProviderSettings`.
+ *
+ * Returns `undefined` when the input is missing, empty, whitespace-only, or
+ * unparseable JSON.
+ */
+export function resolveLegacyClineAuth(
+	rawAccountData: string | undefined,
+): ProviderSettings["auth"] | undefined {
+	const trimmed = rawAccountData?.trim();
+	if (!trimmed) {
+		return undefined;
+	}
+	try {
+		const data = JSON.parse(trimmed) as LegacyClineUserInfo;
+		if (!data) {
+			return undefined;
+		}
+		return {
+			accessToken: data.idToken,
+			refreshToken: data.refreshToken,
+			expiresAt: data.expiresAt,
+			accountId: data.userInfo?.id,
+		};
+	} catch {
+		return undefined;
+	}
+}
+
 function trimNonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
 	return trimmed ? trimmed : undefined;
@@ -400,14 +447,19 @@ function buildLegacyProviderSettings(
 		Object.assign(providerSpecific, resolveLegacyCodexAuth(legacySecrets));
 	}
 	if (providerId === "cline") {
-		const accountId = trimNonEmpty(
-			legacySecrets["cline:clineAccountId"] ?? legacySecrets.clineAccountId,
-		);
-		if (accountId) {
-			providerSpecific.auth = {
-				...(providerSpecific.auth ?? {}),
-				accountId,
-			};
+		try {
+			const legacyAuthString = trimNonEmpty(
+				legacySecrets["cline:clineAccountId"],
+			);
+
+			if (legacyAuthString) {
+				providerSpecific.auth = {
+					...(providerSpecific.auth ?? {}),
+					...resolveLegacyClineAuth(legacyAuthString),
+				};
+			}
+		} catch {
+			// Failed to parse stored cline auth data
 		}
 	}
 	if (providerId === "openai" && legacyGlobalState.openAiHeaders) {
