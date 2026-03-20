@@ -95,6 +95,30 @@ export async function runAgent(
 	const unsubscribe = subscribeToAgentEvents(sessionManager, onAgentEvent);
 	let abortRequested = false;
 	let activeSessionId: string | undefined;
+	let cleanupPromise: Promise<void> | undefined;
+	const cleanupRuntime = async () => {
+		if (cleanupPromise) {
+			return await cleanupPromise;
+		}
+		cleanupPromise = (async () => {
+			process.off("SIGINT", handleSigint);
+			process.off("SIGTERM", handleSigterm);
+			unsubscribe();
+			try {
+				if (activeSessionId) {
+					await sessionManager.stop(activeSessionId);
+				}
+			} finally {
+				try {
+					await sessionManager.dispose("cli_run_shutdown");
+				} finally {
+					await runtimeHooks.shutdown();
+				}
+			}
+			setActiveRuntimeAbort(undefined);
+		})();
+		return await cleanupPromise;
+	};
 	const abortAll = () => {
 		if (abortRequested) {
 			return false;
@@ -118,8 +142,10 @@ export async function runAgent(
 			writeln(`\n${c.dim}[abort] requested${c.reset}`);
 			return;
 		}
-		process.exitCode = 130;
-		process.exit(130);
+		void cleanupRuntime().finally(() => {
+			process.exitCode = 130;
+			process.exit(130);
+		});
 	};
 	const handleSigterm = () => {
 		if (abortAll() && config.outputMode === "json") {
@@ -279,18 +305,7 @@ export async function runAgent(
 		}
 		process.exitCode = 1;
 	} finally {
-		process.off("SIGINT", handleSigint);
-		process.off("SIGTERM", handleSigterm);
-		unsubscribe();
-		try {
-			if (activeSessionId) {
-				await sessionManager.stop(activeSessionId);
-			}
-		} finally {
-			await sessionManager.dispose("cli_run_shutdown");
-			await runtimeHooks.shutdown();
-		}
-		setActiveRuntimeAbort(undefined);
+		await cleanupRuntime();
 	}
 	if (runFailed) {
 		return;

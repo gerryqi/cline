@@ -18,6 +18,19 @@ export async function dispatchConnectorHook(
 			command: [shell, "-lc", trimmed],
 			cwd: process.cwd(),
 			env: process.env,
+			onSpawn: ({ command, pid, detached }) => {
+				logger.core.info?.("Process spawned", {
+					component: "connector-hooks",
+					command: command.join(" "),
+					commandArgs: command.slice(1),
+					executable: command[0],
+					childPid: pid,
+					cwd: process.cwd(),
+					detached,
+					adapter: hookPayload.adapter,
+					event: hookPayload.event,
+				});
+			},
 		});
 		if ((result?.exitCode ?? 0) !== 0) {
 			logger.core.warn?.("Connector hook exited non-zero", {

@@ -1,11 +1,13 @@
 import type {
 	AgentHooks,
 	HookEventPayload,
+	PersistentSubprocessHooksOptions,
 	RunHookResult,
 } from "@clinebot/agents";
 import { createPersistentSubprocessHooks } from "@clinebot/agents";
 import type { HookSessionContext } from "@clinebot/core";
 import { formatHookDispatchOutput } from "../commands/hook";
+import { logSpawnedProcess } from "../logging/process";
 import { closeInlineStreamIfNeeded } from "./events";
 import {
 	c,
@@ -130,7 +132,7 @@ export function createRuntimeHooks(options?: {
 		};
 	}
 	const verbose = options?.verbose === true;
-	const sharedOptions = {
+	const sharedOptions: Omit<PersistentSubprocessHooksOptions, "command"> = {
 		env: process.env,
 		cwd: process.cwd(),
 		sessionContext: currentHookSessionContext,
@@ -139,8 +141,32 @@ export function createRuntimeHooks(options?: {
 				writeErr(`hook dispatch failed: ${error.message}`);
 			}
 		},
-		onDispatch: ({ payload, result }) => {
+		onDispatch: ({
+			payload,
+			result,
+		}: {
+			payload: HookEventPayload;
+			result?: RunHookResult;
+			detached: boolean;
+		}) => {
 			writeHookInvocation(payload, { verbose }, result);
+		},
+		onSpawn: ({
+			command,
+			pid,
+			detached,
+		}: {
+			command: string[];
+			pid?: number;
+			detached: boolean;
+		}) => {
+			logSpawnedProcess({
+				component: "hooks",
+				command,
+				childPid: pid,
+				detached,
+				cwd: process.cwd(),
+			});
 		},
 	};
 	const control = createPersistentSubprocessHooks({

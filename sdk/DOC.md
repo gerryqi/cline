@@ -44,6 +44,7 @@ Workspace boundary note:
 
 - Core lifecycle engine exports (`HookEngine`, `HookHandler`) from `@clinebot/agents`
 - Node-only subprocess hook helpers from `@clinebot/agents/node`:
+  - `createPersistentSubprocessHooks`
   - `createSubprocessHooks`
   - `runHook`
   - `HookEventName`
@@ -264,12 +265,13 @@ Notes:
     - [4. Config View (`config`)](#4-config-view-config)
     - [5. Auth Subcommand](#5-auth-subcommand)
     - [6. Dev Subcommand](#6-dev-subcommand)
-    - [7. List Subcommand](#7-list-subcommand)
-    - [7. Sessions Subcommand](#7-sessions-subcommand)
+    - [7. Doctor Subcommand](#7-doctor-subcommand)
+    - [8. List Subcommand](#8-list-subcommand)
+    - [9. Sessions Subcommand](#9-sessions-subcommand)
       - [`sessions list`](#sessions-list)
       - [`sessions delete --session-id <id>`](#sessions-delete---session-id-id)
-    - [8. Hook Subcommand](#8-hook-subcommand)
-    - [9. RPC Subcommand](#9-rpc-subcommand)
+    - [10. Hook Subcommand](#10-hook-subcommand)
+    - [11. RPC Subcommand](#11-rpc-subcommand)
   - [All Flags \& Options](#all-flags--options)
   - [Features In Depth](#features-in-depth)
     - [Streaming Output \& Event Handling](#streaming-output--event-handling)
@@ -358,14 +360,14 @@ The entry point (`src/index.ts`) installs flush handlers for the logger adapter,
 4. **Check for `config` prefix** — if `rawArgs[0] === "config"`, sets interactive mode and strips the prefix
 5. **Configure sandbox** if `--sandbox` or `CLINE_SANDBOX=1`
 6. **Load `ProviderSettingsManager`** — migrates legacy settings on startup
-7. **Dispatch special subcommands** — `hook`, `rpc`, `auth`, `list`, `sessions` are dispatched before any session is created
+7. **Dispatch special subcommands** — `hook`, `hook-worker`, `rpc`, `auth`, `doctor`, `list`, `sessions` are dispatched before any session is created
 8. **Handle `--session <id>`** — forces interactive mode and sets `resumeSessionId`
 9. **Validate flags** (`--output`, `--mode`)
-10. **Resolve provider & API key** — flag → persisted settings → OAuth (if applicable)
+10. **Resolve provider & API key** — flag → persisted settings; non-interactive runs fail fast if the selected OAuth-backed provider is not authenticated
 11. **Optionally refresh live model catalog** — only if `--refresh-models` is passed
 12. **Assemble `Config`** object
 13. **Persist provider settings** for future runs
-14. **Read piped stdin** if not a TTY and not interactive
+14. **Read piped stdin** only when fd 0 is actually a pipe/file/socket and not interactive
 15. **Dispatch** to `runInteractive()` or `runAgent()`
 
 ### Argument Parser (`parseArgs`)
@@ -435,7 +437,7 @@ Single-shot mode is the default when a prompt is provided as a positional argume
 1. Resolves a Cline welcome line (credit balance) if using the `cline` provider
 2. Records start time (`performance.now()`)
 3. Prewarms the file index for the working directory
-4. Creates runtime hooks (subprocess hook process)
+4. Creates runtime hooks (persistent hook worker, or disabled in `--yolo`)
 5. Creates a `CliSessionManager` via `createDefaultCliSessionManager()`
 6. Subscribes to agent events via `subscribeToAgentEvents()`
 7. Registers SIGINT/SIGTERM handlers that call `sessionManager.abort()`
@@ -500,7 +502,7 @@ git diff | clite "Write a commit message for this diff"
 
 **How it works:**
 
-When `process.stdin.isTTY` is `false` and `--interactive` is not set, the CLI reads all stdin bytes before starting the agent. If a positional prompt was also given, it is prepended:
+When `--interactive` is not set and fd 0 is a readable pipe, file, or socket, the CLI reads all stdin bytes before starting the agent. If a positional prompt was also given, it is prepended:
 
 ```
 <user prompt>
@@ -561,7 +563,27 @@ Dispatched when `rawArgs[0] === "dev"`. Currently supported:
 
 ---
 
-### 7. List Subcommand
+### 7. Doctor Subcommand
+
+**Usage:**
+```bash
+clite doctor
+clite doctor --fix
+clite doctor --json
+```
+
+**Source:** `src/commands/doctor.ts` → `runDoctorCommand()`
+
+Dispatched when `rawArgs[0] === "doctor"`. It inspects local CLI health by:
+1. Checking RPC server health on the configured address
+2. Listing local RPC listener PIDs
+3. Listing stale local CLI processes
+
+With `--fix`, it also attempts local cleanup by terminating stale RPC listeners and old CLI processes. With `--json`, it writes a machine-readable report to stdout.
+
+---
+
+### 8. List Subcommand
 
 **Usage:**
 ```bash
@@ -594,7 +616,7 @@ All list commands support `--output json` / `--json` for machine-readable output
 
 ---
 
-### 7. Sessions Subcommand
+### 9. Sessions Subcommand
 
 **Usage:**
 ```bash
@@ -616,20 +638,21 @@ Deletes a session and all its associated files. The `--session-id` flag is requi
 
 ---
 
-### 8. Hook Subcommand
+### 10. Hook Subcommand
 
 **Usage:**
 ```bash
 clite hook          # called internally by the CLI itself
+clite hook-worker   # long-lived internal hook worker
 ```
 
-**This subcommand is not intended for direct user invocation.** It is used internally as a subprocess hook handler.
+**These subcommands are not intended for direct user invocation.** They are used internally by the CLI hook transport.
 
-**Source:** `src/commands/hook.ts` → `runHookCommand()`
+**Source:** `src/commands/hook.ts` → `runHookCommand()`, `runHookWorkerCommand()`
 
-When the CLI starts an agent run, it sets up `createSubprocessHooks()` from `@clinebot/agents`. For every lifecycle event, the SDK spawns a subprocess running `clite hook` and pipes a JSON payload to its stdin.
+When the CLI starts an agent run, it sets up `createPersistentSubprocessHooks()` from `@clinebot/agents/node` unless hooks are disabled by `--yolo`. The SDK starts one long-lived `clite hook-worker` subprocess and exchanges newline-delimited JSON request/response messages with it. If the worker transport fails, the CLI falls back to the legacy one-shot `clite hook` path.
 
-The `hook` handler:
+The hook handler:
 1. Reads the full JSON payload from stdin
 2. Parses and validates it with `parseCliHookPayload()`
 3. Appends the event to the session's `.hooks.jsonl` audit log (`appendHookAudit`)
@@ -639,6 +662,8 @@ The `hook` handler:
 7. Appends to the sub-agent transcript for key hook events
 8. Calls `sessions.applySubagentStatus(subSessionId, payload)` — updates sub-session status
 9. Writes `{}` as a JSON response to stdout
+
+The `hook-worker` handler performs the same bookkeeping but keeps the process alive and handles multiple requests over the same stdio connection.
 
 **Hook event types handled:**
 
@@ -655,7 +680,7 @@ The `hook` handler:
 
 ---
 
-### 9. RPC Subcommand
+### 11. RPC Subcommand
 
 **Usage:**
 ```bash
@@ -701,7 +726,7 @@ When any agent command starts, the CLI automatically attempts to connect to the 
 | `--tools` | — | boolean | `true` | Enable built-in tools (default on) |
 | `--no-tools` | — | boolean | — | Disable all built-in tools |
 | `--auto-approve-tools` | — | boolean | `true` | Auto-approve tool calls by default |
-| `--yolo` | — | boolean | `true` | Alias for `--auto-approve-tools` |
+| `--yolo` | — | boolean | `false` | Auto-approve tools and disable CLI hook dispatch |
 | `--require-tool-approval` | — | boolean | `false` | Require approval before each tool call by default |
 | `--no-yolo` | — | boolean | `false` | Alias for `--require-tool-approval` |
 | `--tool-enable <name>` | — | string | — | Explicitly enable a specific tool |
@@ -985,17 +1010,17 @@ Pass `--session <id>` to resume a previous interactive session. This:
 ### Hook System
 
 **Source:** `src/utils/hooks.ts` → `createRuntimeHooks()`
-**Source:** `src/commands/hook.ts` → `runHookCommand()`
+**Source:** `src/commands/hook.ts` → `runHookCommand()`, `runHookWorkerCommand()`
 **Source:** `src/utils/helpers.ts` → `appendHookAudit()`, `parseCliHookPayload()`
 
-The hook system provides a **side-channel audit trail** for every agent lifecycle event. It works by spawning a subprocess (`clite hook`) for each event.
+The hook system provides a **side-channel audit trail** for agent lifecycle events. In normal mode it uses one persistent subprocess (`clite hook-worker`) for the duration of the run. In `--yolo` mode, CLI hook dispatch is disabled entirely. If the persistent transport fails, the CLI falls back to the legacy one-shot `clite hook` subprocess.
 
 #### How Hooks Are Wired
 
 ```typescript
 // In createRuntimeHooks():
-createSubprocessHooks({
-  command: [process.execPath, process.argv[1], "hook"],
+createPersistentSubprocessHooks({
+  command: [process.execPath, process.argv[1], "hook-worker"],
   env: process.env,
   cwd: process.cwd(),
   sessionContext: currentHookSessionContext,  // provides rootSessionId + hookLogPath
@@ -1004,7 +1029,7 @@ createSubprocessHooks({
 })
 ```
 
-The hook subprocess receives a JSON payload on stdin and responds with `{}` on stdout.
+The persistent worker receives newline-delimited JSON payloads on stdin and responds with newline-delimited JSON `{}` envelopes on stdout. The legacy `clite hook` command still accepts a single JSON payload on stdin and replies once.
 
 In JSON output mode, each hook dispatch also emits a `hook_event` NDJSON line to stdout.
 
@@ -1090,7 +1115,7 @@ If the refresh fails, it logs a dim warning and falls back to bundled defaults. 
 
 #### OAuth Authentication
 
-For OAuth providers, if no API key is present the CLI triggers an OAuth flow before starting. Run `clite auth <provider>` explicitly to authenticate in advance. Tokens are persisted via `ProviderSettingsManager`.
+For OAuth providers, normal CLI startup does not auto-trigger an OAuth flow. Run `clite auth <provider>` explicitly to authenticate in advance. If a non-interactive run selects an unauthenticated OAuth-backed provider, the CLI fails fast with an actionable error instead of hanging in a hidden auth bootstrap path. Tokens are persisted via `ProviderSettingsManager`.
 
 ---
 
@@ -1100,7 +1125,7 @@ For OAuth providers, if no API key is present the CLI triggers an OAuth flow bef
 
 The CLI uses an RPC server (`@clinebot/rpc`) as its preferred session backend. On each run:
 
-1. `ensureRpcAddressViaCli()` runs `clite rpc ensure` synchronously to find an available address
+1. `ensureRpcRuntimeAddress()` verifies the configured address and can stop or replace an incompatible stale local server
 2. `tryConnectRpcSessions()` checks if a healthy server is already listening
 3. If not found, `startRpcServerInBackground()` spawns `clite rpc start` as a detached process
 4. Retries up to 5 times (100ms apart) waiting for the server to bind
@@ -1201,7 +1226,8 @@ src/
 ├── help.ts                     # showHelp(), showVersion()
 │
 ├── commands/
-│   ├── hook.ts                 # runHookCommand() — subprocess hook handler
+│   ├── hook.ts                 # runHookCommand(), runHookWorkerCommand() — CLI hook handlers
+│   ├── doctor.ts               # runDoctorCommand() — local health / cleanup command
 │   ├── rpc.ts                  # runRpcStartCommand(), runRpcStatusCommand(), etc.
 │   ├── auth.ts                 # runAuthCommand(), OAuth helpers, parseAuthCommandArgs()
 │   ├── list.ts                 # runListCommand(), runHistoryListCommand()
@@ -1228,8 +1254,8 @@ src/
     ├── helpers.ts              # parseArgs(), formatToolInput/Output(), appendHookAudit(),
     │                           # configureSandboxEnvironment(), resolveWorkspaceRoot(), etc.
     ├── session.ts              # createDefaultCliSessionManager(), listSessions(), deleteSession(),
-    │                           # RPC connection management, CliSessionManager interface
-    ├── hooks.ts                # createRuntimeHooks() — subprocess hook wiring
+    │                           # RPC connection management, stale runtime recovery, CliSessionManager interface
+    ├── hooks.ts                # createRuntimeHooks() — persistent hook-worker wiring
     ├── output.ts               # writeln(), writeErr(), write(), emitJsonLine(), c (ANSI colors)
     ├── resume.ts               # loadInteractiveResumeMessages()
     └── types.ts                # Config, ParsedArgs, ActiveCliSession, SessionDbRow, etc.
@@ -1246,13 +1272,15 @@ parseArgs()
     ▼
 runCli() ──────────────────────────────────────────────────────────────┐
     │                                                                   │
-    ├─ "hook" subcommand ──► runHookCommand()                          │
+    ├─ "hook" / "hook-worker" ──► runHookCommand() / runHookWorkerCommand() │
     │                        appendHookAudit()                         │
     │                        sessions.upsertSubagentSessionFromHook()  │
     │                                                                   │
     ├─ "rpc" subcommand ──► runRpcStart/Status/Stop/Ensure/Register()  │
     │                                                                   │
     ├─ "auth" subcommand ──► runAuthCommand()                          │
+    │                                                                   │
+    ├─ "doctor" subcommand ──► runDoctorCommand()                      │
     │                                                                   │
     ├─ "list" subcommand ──► runListCommand() / runHistoryListCommand() │
     │                                                                   │
@@ -1272,7 +1300,7 @@ runCli() ───────────────────────�
     sessionManager.send(prompt)                                         │
          │                                                              │
          ├── events ──► handleEvent() / handleTeamEvent() ──► stdout   │
-         ├── hooks ───► clite hook subprocess ──────────────────────►──┘
+         ├── hooks ───► clite hook-worker persistent subprocess ───►──┘
          └── result ──► print usage/timings if requested
          │
          ▼

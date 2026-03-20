@@ -64,7 +64,7 @@ export async function runInteractive(
 		userInstructionWatcher,
 	);
 
-	const hooks = createRuntimeHooks({
+	const runtimeHooks = createRuntimeHooks({
 		verbose: config.verbose,
 		yolo: config.yolo,
 	});
@@ -199,7 +199,7 @@ export async function runInteractive(
 				enableTools: chatCommandState.enableTools,
 				cwd: chatCommandState.cwd,
 				workspaceRoot: chatCommandState.workspaceRoot,
-				hooks,
+				hooks: runtimeHooks.hooks,
 				onTeamEvent: (event) => {
 					uiEvents.emit("team", event);
 				},
@@ -229,7 +229,7 @@ export async function runInteractive(
 				enableTools: chatCommandState.enableTools,
 				cwd: chatCommandState.cwd,
 				workspaceRoot: chatCommandState.workspaceRoot,
-				hooks,
+				hooks: runtimeHooks.hooks,
 				onTeamEvent: (event) => {
 					uiEvents.emit("team", event);
 				},
@@ -269,14 +269,17 @@ export async function runInteractive(
 		unmountInteractiveUi = undefined;
 		close();
 	};
+	let cleanupPromise: Promise<void> | undefined;
 
 	const handleSigint = () => {
 		if (isRunning) {
 			if (abortAll()) {
 				return;
 			}
-			process.exitCode = 130;
-			process.exit(130);
+			void cleanupRuntime().finally(() => {
+				process.exitCode = 130;
+				process.exit(130);
+			});
 			return;
 		}
 		requestExit();
@@ -287,6 +290,28 @@ export async function runInteractive(
 			return;
 		}
 		requestExit();
+	};
+	const cleanupRuntime = async () => {
+		if (cleanupPromise) {
+			return await cleanupPromise;
+		}
+		cleanupPromise = (async () => {
+			requestExit();
+			process.off("SIGINT", handleSigint);
+			process.off("SIGTERM", handleSigterm);
+			unsubscribe();
+			try {
+				await sessionManager.stop(activeSessionId);
+			} finally {
+				try {
+					await sessionManager.dispose("cli_interactive_shutdown");
+				} finally {
+					await runtimeHooks.shutdown();
+				}
+			}
+			setActiveRuntimeAbort(undefined);
+		})();
+		return await cleanupPromise;
 	};
 
 	process.on("SIGINT", handleSigint);
@@ -409,14 +434,6 @@ export async function runInteractive(
 	try {
 		await inkApp.waitUntilExit();
 	} finally {
-		process.off("SIGINT", handleSigint);
-		process.off("SIGTERM", handleSigterm);
-		unsubscribe();
-		try {
-			await sessionManager.stop(activeSessionId);
-		} finally {
-			await sessionManager.dispose("cli_interactive_shutdown");
-		}
-		setActiveRuntimeAbort(undefined);
+		await cleanupRuntime();
 	}
 }

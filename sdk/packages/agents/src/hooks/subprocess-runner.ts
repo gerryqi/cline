@@ -6,6 +6,11 @@ export interface RunSubprocessEventOptions {
 	env?: NodeJS.ProcessEnv;
 	detached?: boolean;
 	timeoutMs?: number;
+	onSpawn?: (event: {
+		command: string[];
+		pid?: number;
+		detached: boolean;
+	}) => void;
 }
 
 export interface RunSubprocessEventResult {
@@ -77,6 +82,17 @@ export async function runSubprocessEvent(
 		env: options.env,
 		stdio: detached ? ["pipe", "ignore", "ignore"] : ["pipe", "pipe", "pipe"],
 		detached,
+	});
+	child.once("spawn", () => {
+		try {
+			options.onSpawn?.({
+				command,
+				pid: child.pid ?? undefined,
+				detached,
+			});
+		} catch {
+			// Logging callbacks must not break subprocess execution.
+		}
 	});
 
 	if (!child.stdin) {

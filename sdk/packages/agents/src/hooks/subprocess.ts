@@ -280,6 +280,11 @@ export interface RunHookOptions {
 	env?: NodeJS.ProcessEnv;
 	detached?: boolean;
 	timeoutMs?: number;
+	onSpawn?: (event: {
+		command: string[];
+		pid?: number;
+		detached: boolean;
+	}) => void;
 }
 
 export type RunHookResult = RunSubprocessEventResult;
@@ -301,6 +306,7 @@ export async function runHook(
 		env: options.env,
 		detached: options.detached,
 		timeoutMs: options.timeoutMs,
+		onSpawn: options.onSpawn,
 	});
 }
 
@@ -322,6 +328,11 @@ export interface SubprocessHooksOptions {
 	onDispatch?: (event: {
 		payload: HookEventPayload;
 		result?: RunHookResult;
+		detached: boolean;
+	}) => void;
+	onSpawn?: (event: {
+		command: string[];
+		pid?: number;
 		detached: boolean;
 	}) => void;
 	/**
@@ -442,6 +453,7 @@ async function dispatchDetached(
 			cwd: options.cwd,
 			env: options.env,
 			detached: true,
+			onSpawn: options.onSpawn,
 		});
 		options.onDispatch?.({ payload, result, detached: true });
 	} catch (error) {
@@ -522,6 +534,7 @@ export function createSubprocessHooks(
 				env: options.env,
 				detached: false,
 				timeoutMs: options.timeoutMs,
+				onSpawn: options.onSpawn,
 			});
 			options.onDispatch?.({ payload, result, detached: false });
 			if (result?.timedOut) {

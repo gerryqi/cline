@@ -11,6 +11,7 @@ import {
 	stopRpcServer,
 } from "@clinebot/rpc";
 import { createCliLoggerAdapter } from "../logging/adapter";
+import { logSpawnedProcess } from "../logging/process";
 import { createRpcRuntimeHandlers } from "./rpc-runtime";
 
 const c = {
@@ -153,6 +154,14 @@ function spawnRpcStartDetached(address: string): void {
 		stdio: "ignore",
 		env: process.env,
 		cwd: process.cwd(),
+	});
+	logSpawnedProcess({
+		component: "rpc",
+		command: [launcher, ...childArgs],
+		childPid: child.pid ?? undefined,
+		detached: true,
+		cwd: process.cwd(),
+		metadata: { rpcAddress: address, purpose: "rpc.start.background" },
 	});
 	child.unref();
 }

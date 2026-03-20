@@ -332,6 +332,7 @@ Top-level commands:
 - `clite schedule <command>` - Create and manage scheduled runs
 - `clite sessions <list|update|delete>` - Inspect or edit saved sessions
 - `clite dev log` - Open the CLI runtime log file
+- `clite doctor` - Inspect local CLI/RPC health and stale processes
 - `clite hook` - Handle a hook payload from stdin
 - `clite rpc <command>` - Manage the local RPC runtime server
 
@@ -444,7 +445,7 @@ In desktop mode, CLI writes a request JSON file and waits for a matching decisio
 
 `--key` takes precedence over environment variables.
 
-For OAuth providers (`cline`, `openai-codex`, `oca`), you can either use `clite auth <provider>` or let `clite` prompt for OAuth automatically when no API key is configured.
+For OAuth providers (`cline`, `openai-codex`, `oca`), authenticate explicitly with `clite auth <provider>`. Normal command startup does not auto-launch OAuth.
 
 ## Logging Adapter
 

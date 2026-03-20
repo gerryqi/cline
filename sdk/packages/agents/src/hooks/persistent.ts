@@ -49,6 +49,11 @@ export interface PersistentHookClientOptions {
 	command: string[];
 	cwd?: string;
 	env?: NodeJS.ProcessEnv;
+	onSpawn?: (event: {
+		command: string[];
+		pid?: number;
+		detached: boolean;
+	}) => void;
 }
 
 export class PersistentHookClient {
@@ -209,7 +214,18 @@ export class PersistentHookClient {
 		});
 
 		await new Promise<void>((resolve, reject) => {
-			child.once("spawn", () => resolve());
+			child.once("spawn", () => {
+				try {
+					this.options.onSpawn?.({
+						command,
+						pid: child.pid ?? undefined,
+						detached: false,
+					});
+				} catch {
+					// Logging callbacks must not break subprocess execution.
+				}
+				resolve();
+			});
 			child.once("error", (error) =>
 				reject(error instanceof Error ? error : new Error(String(error))),
 			);
@@ -290,6 +306,11 @@ export interface PersistentSubprocessHooksOptions {
 	cwd?: string;
 	env?: NodeJS.ProcessEnv;
 	timeoutMs?: number;
+	onSpawn?: (event: {
+		command: string[];
+		pid?: number;
+		detached: boolean;
+	}) => void;
 	onDispatchError?: (error: Error, payload: HookEventPayload) => void;
 	onDispatch?: (event: {
 		payload: HookEventPayload;
@@ -407,6 +428,7 @@ export function createPersistentSubprocessHooks(
 		command: options.command ?? DEFAULT_HOOK_WORKER_COMMAND,
 		cwd: options.cwd,
 		env: options.env,
+		onSpawn: options.onSpawn,
 	});
 	const fallback =
 		options.fallbackToSubprocess === false
@@ -421,6 +443,7 @@ export function createPersistentSubprocessHooks(
 					cwd: options.cwd,
 					env: options.env,
 					timeoutMs: options.timeoutMs,
+					onSpawn: options.onSpawn,
 					onDispatchError: options.onDispatchError,
 					onDispatch: options.onDispatch,
 					sessionContext: options.sessionContext,

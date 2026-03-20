@@ -3,6 +3,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { ensureParentDir } from "@clinebot/core";
 import type { RpcSessionClient, RpcSessionRow } from "@clinebot/rpc";
+import { logSpawnedProcess } from "../logging/process";
 
 export function parseBooleanFlag(rawArgs: string[], flag: string): boolean {
 	return rawArgs.includes(flag);
@@ -93,6 +94,14 @@ export function spawnDetachedConnector(
 			...process.env,
 			[childEnvKey]: "1",
 		},
+	});
+	logSpawnedProcess({
+		component: "connectors",
+		command: [launcher, ...childArgs],
+		childPid: child.pid ?? undefined,
+		detached: true,
+		cwd: process.cwd(),
+		metadata: { childEnvKey, purpose: "connector.detached" },
 	});
 	child.unref();
 	return child.pid ?? 0;

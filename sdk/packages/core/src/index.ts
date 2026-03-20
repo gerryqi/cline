@@ -126,6 +126,10 @@ export type {
 	TelemetryValue,
 } from "./telemetry/ITelemetryAdapter";
 export {
+	LoggerTelemetryAdapter,
+	type LoggerTelemetryAdapterOptions,
+} from "./telemetry/LoggerTelemetryAdapter";
+export {
 	TelemetryService,
 	type TelemetryServiceOptions,
 } from "./telemetry/TelemetryService";

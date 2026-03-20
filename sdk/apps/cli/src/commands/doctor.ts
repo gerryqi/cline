@@ -1,5 +1,9 @@
 import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { resolveClineDataDir } from "@clinebot/core";
 import { getRpcServerDefaultAddress, getRpcServerHealth } from "@clinebot/rpc";
+import { getCliBuildInfo } from "../utils/common";
 
 type DoctorIo = {
 	writeln: (text?: string) => void;
@@ -12,6 +16,16 @@ type DoctorStatus = {
 	rpcServerId?: string;
 	listeningPids: number[];
 	staleCliPids: number[];
+	hookWorkerPids: number[];
+	recentSpawnedProcesses: SpawnedProcessRecord[];
+};
+
+type SpawnedProcessRecord = {
+	timestamp?: string;
+	pid?: number;
+	command?: string;
+	component?: string;
+	detached?: boolean;
 };
 
 function resolveRpcAddress(rawArgs: string[]): string {
@@ -28,6 +42,11 @@ function parsePids(raw: string): number[] {
 		.split(/\r?\n/)
 		.map((line) => Number.parseInt(line.trim(), 10))
 		.filter((pid) => Number.isInteger(pid) && pid > 0);
+}
+
+function resolveCliLogPath(): string {
+	const { name } = getCliBuildInfo();
+	return join(resolveClineDataDir(), "logs", `${name}.log`);
 }
 
 function parseRpcPort(address: string): number | undefined {
@@ -80,6 +99,68 @@ function listStaleCliPids(): number[] {
 	return [...pids].sort((a, b) => a - b);
 }
 
+function listHookWorkerPids(): number[] {
+	if (process.platform === "win32") {
+		return [];
+	}
+	const patterns = ["hook-worker", " hook-worker "];
+	const pids = new Set<number>();
+	for (const pattern of patterns) {
+		const result = spawnSync("pgrep", ["-f", pattern], { encoding: "utf8" });
+		if (result.status !== 0 && result.status !== 1) {
+			continue;
+		}
+		for (const pid of parsePids(result.stdout)) {
+			if (pid !== process.pid && pid !== process.ppid) {
+				pids.add(pid);
+			}
+		}
+	}
+	return [...pids].sort((a, b) => a - b);
+}
+
+function readRecentSpawnedProcesses(limit = 20): SpawnedProcessRecord[] {
+	const logPath = resolveCliLogPath();
+	if (!existsSync(logPath)) {
+		return [];
+	}
+	try {
+		const raw = readFileSync(logPath, "utf8");
+		const lines = raw
+			.split(/\r?\n/)
+			.map((line) => line.trim())
+			.filter(Boolean);
+		const records: SpawnedProcessRecord[] = [];
+		for (let index = lines.length - 1; index >= 0; index -= 1) {
+			try {
+				const parsed = JSON.parse(lines[index]) as Record<string, unknown>;
+				if (parsed.msg !== "Process spawned") {
+					continue;
+				}
+				records.push({
+					timestamp: typeof parsed.time === "string" ? parsed.time : undefined,
+					pid:
+						typeof parsed.childPid === "number" ? parsed.childPid : undefined,
+					command:
+						typeof parsed.command === "string" ? parsed.command : undefined,
+					component:
+						typeof parsed.component === "string" ? parsed.component : undefined,
+					detached:
+						typeof parsed.detached === "boolean" ? parsed.detached : undefined,
+				});
+			} catch {
+				// Ignore malformed lines.
+			}
+			if (records.length >= limit) {
+				break;
+			}
+		}
+		return records.reverse();
+	} catch {
+		return [];
+	}
+}
+
 async function collectDoctorStatus(address: string): Promise<DoctorStatus> {
 	const health = await getRpcServerHealth(address);
 	return {
@@ -88,6 +169,8 @@ async function collectDoctorStatus(address: string): Promise<DoctorStatus> {
 		rpcServerId: health?.serverId,
 		listeningPids: listListeningPids(address),
 		staleCliPids: listStaleCliPids(),
+		hookWorkerPids: listHookWorkerPids(),
+		recentSpawnedProcesses: readRecentSpawnedProcesses(),
 	};
 }
 
@@ -96,6 +179,19 @@ function formatPidList(label: string, pids: number[]): string {
 		return `${label}: none`;
 	}
 	return `${label}: ${pids.join(", ")}`;
+}
+
+function formatRecentSpawnedProcess(record: SpawnedProcessRecord): string {
+	const pieces = [
+		record.timestamp ?? "unknown-time",
+		record.component ?? "unknown-component",
+		record.pid ? `pid=${record.pid}` : undefined,
+		record.detached === undefined
+			? undefined
+			: `detached=${record.detached ? "yes" : "no"}`,
+		record.command,
+	].filter(Boolean);
+	return pieces.join(" | ");
 }
 
 function killPids(pids: number[]): number {
@@ -131,9 +227,20 @@ export async function runDoctorCommand(
 		);
 		io.writeln(formatPidList("rpc listeners", before.listeningPids));
 		io.writeln(formatPidList("cli processes", before.staleCliPids));
-		if (before.listeningPids.length > 0 || before.staleCliPids.length > 0) {
+		io.writeln(formatPidList("hook workers", before.hookWorkerPids));
+		if (before.recentSpawnedProcesses.length > 0) {
+			io.writeln("recent spawned processes:");
+			for (const record of before.recentSpawnedProcesses) {
+				io.writeln(`- ${formatRecentSpawnedProcess(record)}`);
+			}
+		}
+		if (
+			before.listeningPids.length > 0 ||
+			before.staleCliPids.length > 0 ||
+			before.hookWorkerPids.length > 0
+		) {
 			io.writeln(
-				"Run `clite doctor --fix` to kill stale local RPC/CLI processes.",
+				"Run `clite doctor --fix` to kill stale local RPC/CLI/hook-worker processes.",
 			);
 		}
 		return 0;
@@ -144,6 +251,11 @@ export async function runDoctorCommand(
 		(pid) => !before.listeningPids.includes(pid),
 	);
 	const killedCli = killPids(staleCliTargets);
+	const hookWorkerTargets = before.hookWorkerPids.filter(
+		(pid) =>
+			!before.listeningPids.includes(pid) && !staleCliTargets.includes(pid),
+	);
+	const killedHookWorkers = killPids(hookWorkerTargets);
 	const after = await collectDoctorStatus(address);
 
 	if (jsonOutput) {
@@ -154,6 +266,7 @@ export async function runDoctorCommand(
 				killed: {
 					rpcListeners: killedRpc,
 					cliProcesses: killedCli,
+					hookWorkers: killedHookWorkers,
 				},
 			}),
 		);
@@ -162,8 +275,10 @@ export async function runDoctorCommand(
 
 	io.writeln(`killed rpc listeners: ${killedRpc}`);
 	io.writeln(`killed cli processes: ${killedCli}`);
+	io.writeln(`killed hook workers: ${killedHookWorkers}`);
 	io.writeln(`rpc healthy after fix: ${after.rpcHealthy ? "yes" : "no"}`);
 	io.writeln(formatPidList("remaining rpc listeners", after.listeningPids));
 	io.writeln(formatPidList("remaining cli processes", after.staleCliPids));
+	io.writeln(formatPidList("remaining hook workers", after.hookWorkerPids));
 	return 0;
 }
