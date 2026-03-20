@@ -432,14 +432,16 @@ export function createEditorTool(
 	return createTool<EditFileInput, ToolOperationResult>({
 		name: "editor",
 		description:
-			"Edit file using absolute path with create, string replacement, and line insert operations. " +
-			"Supported commands: create, str_replace, insert.",
+			"An editor for controlled filesystem edits on the text file at the provided path. " +
+			"Provide `insert_line` to insert `new_text` at a specific line number. " +
+			"Otherwise, the tool replaces `old_text` with `new_text`, or creates the file with `new_text` if it does not exist.",
 		inputSchema: zodToJsonSchema(EditFileInputSchema),
 		timeoutMs,
 		retryable: false, // Editing operations are stateful and should not auto-retry
 		maxRetries: 0,
 		execute: async (input, context) => {
 			const validatedInput = validateWithZod(EditFileInputSchema, input);
+			const operation = validatedInput.insert_line == null ? "edit" : "insert";
 
 			try {
 				const result = await withTimeout(
@@ -449,14 +451,14 @@ export function createEditorTool(
 				);
 
 				return {
-					query: `${validatedInput.command}:${validatedInput.path}`,
+					query: `${operation}:${validatedInput.path}`,
 					result,
 					success: true,
 				};
 			} catch (error) {
 				const msg = formatError(error);
 				return {
-					query: `${validatedInput.command}:${validatedInput.path}`,
+					query: `${operation}:${validatedInput.path}`,
 					result: "",
 					error: `Editor operation failed: ${msg}`,
 					success: false,

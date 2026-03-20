@@ -238,16 +238,11 @@ export class TurnProcessor {
 
 		if (tool_call.function.arguments) {
 			if (typeof tool_call.function.arguments === "string") {
-				const argsChunk = tool_call.function.arguments;
-				const trimmedChunk = argsChunk.trimStart();
-				if (
-					(trimmedChunk.startsWith("{") || trimmedChunk.startsWith("[")) &&
-					this.tryParseJson(argsChunk) !== undefined
-				) {
-					pending.arguments = argsChunk;
-				} else {
-					pending.arguments += argsChunk;
-				}
+				// Provider handlers are responsible for normalizing cumulative
+				// snapshots into deltas. Re-interpreting string chunks here can
+				// corrupt valid payloads when a later suffix happens to start with
+				// "[" or "{" inside a JSON string value.
+				pending.arguments += tool_call.function.arguments;
 			} else {
 				pending.arguments = JSON.stringify(tool_call.function.arguments);
 			}
@@ -268,14 +263,14 @@ export class TurnProcessor {
 			if (!pending.name || !pending.arguments) {
 				continue;
 			}
-			const input = this.tryParseJson(pending.arguments);
-			if (input === undefined) {
+			const parsed = this.parseToolArguments(pending.arguments);
+			if (!parsed.ok) {
 				continue;
 			}
 			toolCalls.push({
 				id,
 				name: pending.name,
-				input,
+				input: parsed.value,
 				signature: pending.signature,
 			});
 		}
@@ -317,11 +312,12 @@ export class TurnProcessor {
 				});
 				continue;
 			}
-			if (this.tryParseJson(pending.arguments) === undefined) {
+			const parsed = this.parseToolArguments(pending.arguments);
+			if (!parsed.ok) {
 				invalid.push({
 					id,
 					name: pending.name,
-					input: this.buildInvalidToolInput(pending.arguments),
+					input: this.buildInvalidToolInput(pending.arguments, parsed.error),
 					reason: "invalid_arguments",
 				});
 			}
@@ -329,12 +325,14 @@ export class TurnProcessor {
 		return invalid;
 	}
 
-	private buildInvalidToolInput(value: string): unknown {
+	private buildInvalidToolInput(value: string, parseError?: string): unknown {
 		const trimmed = value.trim();
 		if (!trimmed) {
 			return {};
 		}
-		return { raw_arguments: value };
+		return parseError
+			? { raw_arguments: value, parse_error: parseError }
+			: { raw_arguments: value };
 	}
 
 	private toPersistedInvalidToolInput(input: unknown): Record<string, unknown> {
@@ -353,5 +351,32 @@ export class TurnProcessor {
 	private tryParseJson(value: string): unknown | undefined {
 		const parsed = parseJsonStream(value);
 		return parsed === value ? undefined : parsed;
+	}
+
+	private parseToolArguments(
+		value: string,
+	): { ok: true; value: unknown } | { ok: false; error: string } {
+		const trimmed = value.trim();
+		if (!trimmed) {
+			return { ok: false, error: "Tool call arguments were empty." };
+		}
+
+		const parsed = this.tryParseJson(value);
+		if (parsed !== undefined) {
+			return { ok: true, value: parsed };
+		}
+
+		if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) {
+			return {
+				ok: false,
+				error: "Tool call arguments must be encoded as a JSON object or array.",
+			};
+		}
+
+		return {
+			ok: false,
+			error:
+				"Tool call arguments could not be parsed as JSON. Ensure the outer tool payload is valid JSON and escape embedded quotes/newlines inside string fields.",
+		};
 	}
 }

@@ -204,6 +204,42 @@ function parseHookStdout(stdout: string): {
 	}
 }
 
+async function writeToChildStdin(
+	child: ReturnType<typeof spawn>,
+	body: string,
+): Promise<void> {
+	const stdin = child.stdin;
+	if (!stdin) {
+		throw new Error("hook command failed to create stdin");
+	}
+
+	await new Promise<void>((resolve, reject) => {
+		const onError = (error: Error) => {
+			stdin.off("error", onError);
+			const code = (error as Error & { code?: string }).code;
+			if (code === "EPIPE" || code === "ERR_STREAM_DESTROYED") {
+				resolve();
+				return;
+			}
+			reject(error);
+		};
+		stdin.once("error", onError);
+		stdin.end(body, (error?: Error | null) => {
+			stdin.off("error", onError);
+			if (error) {
+				const code = (error as Error & { code?: string }).code;
+				if (code === "EPIPE" || code === "ERR_STREAM_DESTROYED") {
+					resolve();
+					return;
+				}
+				reject(error);
+				return;
+			}
+			resolve();
+		});
+	});
+}
+
 async function runHookCommand(
 	payload: HookEventPayload,
 	options: {
@@ -225,19 +261,18 @@ async function runHookCommand(
 			: ["pipe", "pipe", "pipe"],
 		detached: options.detached,
 	});
+	const spawned = new Promise<void>((resolve) => {
+		child.once("spawn", () => resolve());
+	});
+	const childError = new Promise<never>((_, reject) => {
+		child.once("error", (error) => reject(error));
+	});
 
 	const body = JSON.stringify(payload);
-	if (!child.stdin) {
-		throw new Error("hook command failed to create stdin");
-	}
-	child.stdin.write(body);
-	child.stdin.end();
+	await writeToChildStdin(child, body);
 
 	if (options.detached) {
-		await new Promise<void>((resolve, reject) => {
-			child.once("error", reject);
-			child.once("spawn", () => resolve());
-		});
+		await Promise.race([spawned, childError]);
 		child.unref();
 		return;
 	}
@@ -256,8 +291,7 @@ async function runHookCommand(
 		stderr += chunk.toString();
 	});
 
-	return await new Promise<HookCommandResult>((resolve, reject) => {
-		child.once("error", reject);
+	const result = new Promise<HookCommandResult>((resolve) => {
 		if ((options.timeoutMs ?? 0) > 0) {
 			timeoutId = setTimeout(() => {
 				timedOut = true;
@@ -279,6 +313,7 @@ async function runHookCommand(
 			});
 		});
 	});
+	return await Promise.race([result, childError]);
 }
 
 function parseShebangCommand(path: string): string[] | undefined {

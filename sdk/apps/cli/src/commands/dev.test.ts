@@ -1,13 +1,29 @@
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCliBuildInfo } from "../utils/common";
 import { runDevCommand } from "./dev";
+
+const { resolveClineDataDir } = vi.hoisted(() => ({
+	resolveClineDataDir: vi.fn(),
+}));
+
+vi.mock("@clinebot/core", () => ({
+	resolveClineDataDir,
+}));
+
+vi.mock("open", () => ({
+	default: vi.fn(),
+}));
 
 describe("runDevCommand", () => {
 	const tempDirs: string[] = [];
 	const commandName = getCliBuildInfo().name;
+
+	beforeEach(() => {
+		resolveClineDataDir.mockReset();
+	});
 
 	afterEach(() => {
 		delete process.env.CLINE_DATA_DIR;
@@ -22,6 +38,7 @@ describe("runDevCommand", () => {
 		);
 		tempDirs.push(dataDir);
 		process.env.CLINE_DATA_DIR = dataDir;
+		resolveClineDataDir.mockReturnValue(dataDir);
 
 		const opened: string[] = [];
 		const output: string[] = [];
@@ -70,6 +87,7 @@ describe("runDevCommand", () => {
 		);
 		tempDirs.push(dataDir);
 		process.env.CLINE_DATA_DIR = dataDir;
+		resolveClineDataDir.mockReturnValue(dataDir);
 
 		const errors: string[] = [];
 		const code = await runDevCommand(

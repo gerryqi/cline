@@ -4,6 +4,27 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createHookConfigFileHooks } from "./hook-file-hooks";
 
+async function waitForFile(
+	filePath: string,
+	timeoutMs = 1500,
+): Promise<string> {
+	const started = Date.now();
+	for (;;) {
+		try {
+			return await readFile(filePath, "utf8");
+		} catch (error) {
+			const code =
+				error && typeof error === "object" && "code" in error
+					? String((error as { code?: unknown }).code)
+					: undefined;
+			if (code !== "ENOENT" || Date.now() - started >= timeoutMs) {
+				throw error;
+			}
+			await new Promise((resolve) => setTimeout(resolve, 25));
+		}
+	}
+}
+
 async function createWorkspaceWithHook(
 	fileName: string,
 	body: string,
@@ -169,8 +190,7 @@ describe("createHookConfigFileHooks", () => {
 				iteration: 3,
 				error: new Error("401 unauthorized"),
 			});
-			await new Promise((resolve) => setTimeout(resolve, 80));
-			const payload = JSON.parse(await readFile(outputPath, "utf8")) as {
+			const payload = JSON.parse(await waitForFile(outputPath)) as {
 				hookName: string;
 				error?: { message?: string };
 			};

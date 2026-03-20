@@ -113,6 +113,15 @@ async function createFile(
 	return `File created successfully at: ${filePath}`;
 }
 
+async function fileExists(filePath: string): Promise<boolean> {
+	try {
+		await fs.access(filePath);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 async function replaceInFile(
 	filePath: string,
 	oldStr: string,
@@ -181,52 +190,30 @@ export function createEditorExecutor(
 	): Promise<string> => {
 		const filePath = resolveFilePath(cwd, input.path, restrictToCwd);
 
-		switch (input.command) {
-			case "create":
-				if (input.file_text == null) {
-					throw new Error(
-						"Parameter `file_text` is required for command: create",
-					);
-				}
-				return createFile(filePath, input.file_text, encoding);
-
-			case "str_replace":
-				if (input.old_str == null) {
-					throw new Error(
-						"Parameter `old_str` is required for command: str_replace",
-					);
-				}
-				return replaceInFile(
-					filePath,
-					input.old_str,
-					input.new_str,
-					encoding,
-					maxDiffLines,
-				);
-
-			case "insert":
-				if (input.insert_line == null) {
-					throw new Error(
-						"Parameter `insert_line` is required for insert command.",
-					);
-				}
-				if (input.new_str == null) {
-					throw new Error(
-						"Parameter `new_str` is required for insert command.",
-					);
-				}
-				return insertInFile(
-					filePath,
-					input.insert_line, // One-based index
-					input.new_str,
-					encoding,
-				);
-
-			default:
-				throw new Error(
-					`Unrecognized command ${(input as { command: string }).command}. ` +
-						"Allowed commands are: create, str_replace, insert",
-				);
+		if (input.insert_line != null) {
+			return insertInFile(
+				filePath,
+				input.insert_line, // One-based index
+				input.new_text,
+				encoding,
+			);
 		}
+
+		if (!(await fileExists(filePath))) {
+			return createFile(filePath, input.new_text, encoding);
+		}
+		if (input.old_text == null) {
+			throw new Error(
+				"Parameter `old_text` is required when editing an existing file without `insert_line`",
+			);
+		}
+
+		return replaceInFile(
+			filePath,
+			input.old_text,
+			input.new_text,
+			encoding,
+			maxDiffLines,
+		);
 	};
 }

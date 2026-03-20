@@ -717,28 +717,19 @@ export class Agent {
 				});
 
 				if (turn.invalidToolCalls.length > 0) {
+					const feedback = this.buildInvalidToolCallFeedback(
+						turn.invalidToolCalls,
+					);
 					this.conversationStore.appendMessage(
 						this.buildInvalidToolResultMessage(turn.invalidToolCalls),
 					);
-					this.appendRecoveryNotice(
-						this.buildInvalidToolCallFeedback(turn.invalidToolCalls),
-						"invalid_tool_call",
-					);
-					const shouldContinue = await this.recordMistake({
-						iteration,
+					this.emit({
+						type: "notice",
+						noticeType: "recovery",
+						message: feedback,
 						reason: "invalid_tool_call",
-						details: `${turn.invalidToolCalls.length} invalid tool call(s)`,
-						consecutiveMistakes: () => consecutiveMistakes,
-						setConsecutiveMistakes: (value) => {
-							consecutiveMistakes = value;
-						},
 					});
-					if (shouldContinue) {
-						continue;
-					}
-					throw new Error(
-						`maximum consecutive mistakes reached (${this.config.maxConsecutiveMistakes})`,
-					);
+					throw new Error(feedback);
 				}
 
 				if (turn.toolCalls.length === 0) {
@@ -963,12 +954,20 @@ export class Agent {
 		const details = invalidToolCalls
 			.map((call) => {
 				const name = call.name?.trim() || "(unknown tool)";
+				const parseError =
+					call.input &&
+					typeof call.input === "object" &&
+					!Array.isArray(call.input) &&
+					typeof (call.input as { parse_error?: unknown }).parse_error ===
+						"string"
+						? (call.input as { parse_error: string }).parse_error
+						: undefined;
 				const reason =
 					call.reason === "missing_name"
 						? "missing tool name"
 						: call.reason === "missing_arguments"
 							? "missing arguments"
-							: "arguments were invalid JSON";
+							: (parseError ?? "arguments could not be parsed as JSON");
 				return `${name} [${call.id}]: ${reason}`;
 			})
 			.join("; ");
@@ -997,7 +996,13 @@ export class Agent {
 							? "Tool call was missing a tool name"
 							: call.reason === "missing_arguments"
 								? "Tool call was missing required arguments"
-								: "Tool call arguments were invalid JSON",
+								: call.input &&
+										typeof call.input === "object" &&
+										!Array.isArray(call.input) &&
+										typeof (call.input as { parse_error?: unknown })
+											.parse_error === "string"
+									? (call.input as { parse_error: string }).parse_error
+									: "Tool call arguments could not be parsed as JSON",
 					success: false,
 				}),
 				is_error: true,

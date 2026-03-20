@@ -261,7 +261,7 @@ describe("zod schema conversion", () => {
 });
 
 describe("default editor tool", () => {
-	it("accepts null for unused optional fields on str_replace", async () => {
+	it("accepts replacement edits without insert fields", async () => {
 		const execute = vi.fn(async () => "patched");
 		const tools = createDefaultTools({
 			executors: {
@@ -284,12 +284,9 @@ describe("default editor tool", () => {
 
 		const result = await editorTool.execute(
 			{
-				command: "str_replace",
 				path: "/tmp/example.ts",
-				old_str: "before",
-				new_str: "after",
-				file_text: null,
-				insert_line: null,
+				old_text: "before",
+				new_text: "after",
 			},
 			{
 				agentId: "agent-1",
@@ -299,18 +296,15 @@ describe("default editor tool", () => {
 		);
 
 		expect(result).toEqual({
-			query: "str_replace:/tmp/example.ts",
+			query: "edit:/tmp/example.ts",
 			result: "patched",
 			success: true,
 		});
 		expect(execute).toHaveBeenCalledWith(
 			expect.objectContaining({
-				command: "str_replace",
 				path: "/tmp/example.ts",
-				old_str: "before",
-				new_str: "after",
-				file_text: null,
-				insert_line: null,
+				old_text: "before",
+				new_text: "after",
 			}),
 			process.cwd(),
 			expect.objectContaining({
@@ -321,7 +315,7 @@ describe("default editor tool", () => {
 		);
 	});
 
-	it("still rejects null for required insert fields", async () => {
+	it("allows edit without old_text so missing files can be created", async () => {
 		const execute = vi.fn(async () => "patched");
 		const tools = createDefaultTools({
 			executors: {
@@ -342,21 +336,80 @@ describe("default editor tool", () => {
 			throw new Error("Expected editor tool to be defined.");
 		}
 
-		await expect(
-			editorTool.execute(
-				{
-					command: "insert",
-					path: "/tmp/example.ts",
-					new_str: "after",
-					insert_line: null,
-				},
-				{
-					agentId: "agent-1",
-					conversationId: "conv-1",
-					iteration: 1,
-				},
-			),
-		).rejects.toThrow(/insert_line is required for command=insert/);
-		expect(execute).not.toHaveBeenCalled();
+		const result = await editorTool.execute(
+			{
+				path: "/tmp/example.ts",
+				new_text: "created",
+			},
+			{
+				agentId: "agent-1",
+				conversationId: "conv-1",
+				iteration: 1,
+			},
+		);
+
+		expect(result).toEqual({
+			query: "edit:/tmp/example.ts",
+			result: "patched",
+			success: true,
+		});
+		expect(execute).toHaveBeenCalledWith(
+			expect.objectContaining({
+				path: "/tmp/example.ts",
+				new_text: "created",
+			}),
+			process.cwd(),
+			expect.anything(),
+		);
+	});
+
+	it("treats insert_line as an insert operation", async () => {
+		const execute = vi.fn(async () => "patched");
+		const tools = createDefaultTools({
+			executors: {
+				editor: execute,
+			},
+			enableReadFiles: false,
+			enableSearch: false,
+			enableBash: false,
+			enableWebFetch: false,
+			enableSkills: false,
+			enableAskQuestion: false,
+			enableApplyPatch: false,
+			enableEditor: true,
+		});
+		const editorTool = tools.find((tool) => tool.name === "editor");
+		expect(editorTool).toBeDefined();
+		if (!editorTool) {
+			throw new Error("Expected editor tool to be defined.");
+		}
+
+		const result = await editorTool.execute(
+			{
+				path: "/tmp/example.ts",
+				new_text: "after",
+				insert_line: 3,
+			},
+			{
+				agentId: "agent-1",
+				conversationId: "conv-1",
+				iteration: 1,
+			},
+		);
+
+		expect(result).toEqual({
+			query: "insert:/tmp/example.ts",
+			result: "patched",
+			success: true,
+		});
+		expect(execute).toHaveBeenCalledWith(
+			expect.objectContaining({
+				path: "/tmp/example.ts",
+				new_text: "after",
+				insert_line: 3,
+			}),
+			process.cwd(),
+			expect.anything(),
+		);
 	});
 });

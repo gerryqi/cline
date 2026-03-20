@@ -143,6 +143,8 @@ describe("TurnProcessor", () => {
 				name: "editor",
 				input: {
 					raw_arguments: '{"command":"create","path":/tmp/file.txt}',
+					parse_error:
+						"Tool call arguments could not be parsed as JSON. Ensure the outer tool payload is valid JSON and escape embedded quotes/newlines inside string fields.",
 				},
 				reason: "invalid_arguments",
 			},
@@ -154,7 +156,116 @@ describe("TurnProcessor", () => {
 			name: "editor",
 			input: {
 				raw_arguments: '{"command":"create","path":/tmp/file.txt}',
+				parse_error:
+					"Tool call arguments could not be parsed as JSON. Ensure the outer tool payload is valid JSON and escape embedded quotes/newlines inside string fields.",
 			},
+		});
+	});
+
+	it("classifies non-json tool arguments with a specific parse error", async () => {
+		const processor = createProcessor([
+			{
+				type: "tool_calls",
+				id: "r1",
+				tool_call: {
+					call_id: "call_1",
+					function: {
+						name: "editor",
+						arguments:
+							'command=create path=/tmp/file.txt file_text="hello world"',
+					},
+				},
+			},
+			{ type: "done", id: "r1", success: true },
+		]);
+
+		const { turn } = await processor.processTurn(
+			[],
+			"system",
+			[],
+			new AbortController().signal,
+		);
+
+		expect(turn.toolCalls).toEqual([]);
+		expect(turn.invalidToolCalls).toEqual([
+			{
+				id: "call_1",
+				name: "editor",
+				input: {
+					raw_arguments:
+						'command=create path=/tmp/file.txt file_text="hello world"',
+					parse_error:
+						"Tool call arguments must be encoded as a JSON object or array.",
+				},
+				reason: "invalid_arguments",
+			},
+		]);
+	});
+
+	it("appends string argument deltas even when a later chunk starts with [", async () => {
+		const processor = createProcessor([
+			{
+				type: "tool_calls",
+				id: "r1",
+				tool_call: {
+					call_id: "call_1",
+					function: {
+						name: "editor",
+						arguments: '{"command":"create","file_text":"prefix',
+					},
+				},
+			},
+			{
+				type: "tool_calls",
+				id: "r1",
+				tool_call: {
+					call_id: "call_1",
+					function: {
+						arguments: " [`ARCHITECTURE.md`]",
+					},
+				},
+			},
+			{
+				type: "tool_calls",
+				id: "r1",
+				tool_call: {
+					call_id: "call_1",
+					function: {
+						arguments: ' suffix"}',
+					},
+				},
+			},
+			{ type: "done", id: "r1", success: true },
+		]);
+
+		const { turn, assistantMessage } = await processor.processTurn(
+			[],
+			"system",
+			[],
+			new AbortController().signal,
+		);
+
+		expect(turn.invalidToolCalls).toEqual([]);
+		expect(turn.toolCalls).toEqual([
+			{
+				id: "call_1",
+				name: "editor",
+				input: {
+					command: "create",
+					file_text: "prefix [`ARCHITECTURE.md`] suffix",
+				},
+				signature: undefined,
+			},
+		]);
+		expect(assistantMessage?.content).toContainEqual({
+			type: "tool_use",
+			id: "call_1",
+			name: "editor",
+			input: {
+				command: "create",
+				file_text: "prefix [`ARCHITECTURE.md`] suffix",
+			},
+			signature: undefined,
 		});
 	});
 });

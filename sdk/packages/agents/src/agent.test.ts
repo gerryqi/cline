@@ -240,6 +240,55 @@ describe("Agent", () => {
 		expect(handler.createMessage).toHaveBeenCalledTimes(2);
 	});
 
+	it("fails immediately with parse-specific feedback for invalid tool payloads", async () => {
+		const { Agent } = await import("./agent.js");
+		const handler = makeHandler([
+			[
+				{
+					type: "tool_calls",
+					id: "r1",
+					tool_call: {
+						call_id: "call_1",
+						function: {
+							name: "editor",
+							arguments: '{"command":"create","path":/tmp/file.txt}',
+						},
+					},
+				},
+				{ type: "done", id: "r1", success: true },
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const notices: string[] = [];
+		const errors: string[] = [];
+		const agent = new Agent({
+			providerId: "anthropic",
+			modelId: "mock-model",
+			systemPrompt: "Use tools.",
+			tools: [],
+			onEvent: (event) => {
+				if (event.type === "notice") {
+					notices.push(event.message);
+				}
+				if (event.type === "error") {
+					errors.push(event.error.message);
+				}
+			},
+		});
+
+		await expect(agent.run("try editing a file")).rejects.toThrow(
+			"One or more tool calls were invalid or missing required parameters (editor [call_1]: Tool call arguments could not be parsed as JSON. Ensure the outer tool payload is valid JSON and escape embedded quotes/newlines inside string fields.). Retry with valid tool names and arguments.",
+		);
+		expect(handler.createMessage).toHaveBeenCalledTimes(1);
+		expect(notices).toContain(
+			"One or more tool calls were invalid or missing required parameters (editor [call_1]: Tool call arguments could not be parsed as JSON. Ensure the outer tool payload is valid JSON and escape embedded quotes/newlines inside string fields.). Retry with valid tool names and arguments.",
+		);
+		expect(errors).toContain(
+			"One or more tool calls were invalid or missing required parameters (editor [call_1]: Tool call arguments could not be parsed as JSON. Ensure the outer tool payload is valid JSON and escape embedded quotes/newlines inside string fields.). Retry with valid tool names and arguments.",
+		);
+	});
+
 	it("uses the default consecutive mistake limit of 3 when config omits it", async () => {
 		const { Agent } = await import("./agent.js");
 		const handler = makeHandler([
@@ -760,7 +809,7 @@ describe("Agent", () => {
 						call_id: "call_1",
 						function: {
 							name: "team_log_update",
-							arguments: '{"update":"Spawned two-agent team"}',
+							arguments: '{"kind":"progress",',
 						},
 					},
 				},
@@ -770,8 +819,7 @@ describe("Agent", () => {
 					tool_call: {
 						call_id: "call_1",
 						function: {
-							arguments:
-								'{"kind":"progress","summary":"Spawned two-agent team"}',
+							arguments: '"summary":"Spawned two-agent team"}',
 						},
 					},
 				},
@@ -834,7 +882,7 @@ describe("Agent", () => {
 						function: {
 							id: "fc_1",
 							name: "run_commands",
-							arguments: '{"commands":["pwd"]}',
+							arguments: '{"commands":["p',
 						},
 					},
 				},
@@ -846,7 +894,7 @@ describe("Agent", () => {
 						function: {
 							id: "fc_1",
 							name: "run_commands",
-							arguments: '{"commands":["pwd"]}',
+							arguments: 'wd"]}',
 						},
 					},
 				},

@@ -67,6 +67,42 @@ function formatSpawnError(error: unknown, command: string[]): Error {
 	);
 }
 
+async function writeToChildStdin(
+	child: ReturnType<typeof spawn>,
+	payload: string,
+): Promise<void> {
+	const stdin = child.stdin;
+	if (!stdin) {
+		throw new Error("runSubprocessEvent failed to create stdin pipe");
+	}
+
+	await new Promise<void>((resolve, reject) => {
+		const onError = (error: Error) => {
+			stdin.off("error", onError);
+			const code = (error as Error & { code?: string }).code;
+			if (code === "EPIPE" || code === "ERR_STREAM_DESTROYED") {
+				resolve();
+				return;
+			}
+			reject(error);
+		};
+		stdin.once("error", onError);
+		stdin.end(payload, (error?: Error | null) => {
+			stdin.off("error", onError);
+			if (error) {
+				const code = (error as Error & { code?: string }).code;
+				if (code === "EPIPE" || code === "ERR_STREAM_DESTROYED") {
+					resolve();
+					return;
+				}
+				reject(error);
+				return;
+			}
+			resolve();
+		});
+	});
+}
+
 export async function runSubprocessEvent(
 	payload: unknown,
 	options: RunSubprocessEventOptions,
@@ -83,31 +119,30 @@ export async function runSubprocessEvent(
 		stdio: detached ? ["pipe", "ignore", "ignore"] : ["pipe", "pipe", "pipe"],
 		detached,
 	});
-	child.once("spawn", () => {
-		try {
-			options.onSpawn?.({
-				command,
-				pid: child.pid ?? undefined,
-				detached,
-			});
-		} catch {
-			// Logging callbacks must not break subprocess execution.
-		}
+	const spawned = new Promise<void>((resolve) => {
+		child.once("spawn", () => {
+			try {
+				options.onSpawn?.({
+					command,
+					pid: child.pid ?? undefined,
+					detached,
+				});
+			} catch {
+				// Logging callbacks must not break subprocess execution.
+			}
+			resolve();
+		});
+	});
+	const childError = new Promise<never>((_, reject) => {
+		child.once("error", (error) => {
+			reject(formatSpawnError(error, command));
+		});
 	});
 
-	if (!child.stdin) {
-		throw new Error("runSubprocessEvent failed to create stdin pipe");
-	}
-	child.stdin.write(JSON.stringify(payload));
-	child.stdin.end();
+	await writeToChildStdin(child, JSON.stringify(payload));
 
 	if (detached) {
-		await new Promise<void>((resolve, reject) => {
-			child.once("error", (error) => {
-				reject(formatSpawnError(error, command));
-			});
-			child.once("spawn", () => resolve());
-		});
+		await Promise.race([spawned, childError]);
 		child.unref();
 		return;
 	}
@@ -128,10 +163,7 @@ export async function runSubprocessEvent(
 		stderr += chunk.toString();
 	});
 
-	return await new Promise<RunSubprocessEventResult>((resolve, reject) => {
-		child.once("error", (error) => {
-			reject(formatSpawnError(error, command));
-		});
+	const result = new Promise<RunSubprocessEventResult>((resolve) => {
 		if ((options.timeoutMs ?? 0) > 0) {
 			timeoutId = setTimeout(() => {
 				timedOut = true;
@@ -153,4 +185,5 @@ export async function runSubprocessEvent(
 			});
 		});
 	});
+	return await Promise.race([result, childError]);
 }

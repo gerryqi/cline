@@ -18,7 +18,7 @@ interface ToolCallDelta {
 	id?: string;
 	function?: {
 		name?: string;
-		arguments?: string;
+		arguments?: unknown;
 	};
 }
 
@@ -61,7 +61,11 @@ export class ToolCallProcessor {
 			if (fn?.name) {
 				toolCall.name = fn.name;
 			}
-			const deltaArguments = fn?.arguments ?? "";
+			const rawArguments = fn?.arguments;
+			const deltaArguments = this.normalizeArgumentsDelta(
+				toolCall.arguments,
+				rawArguments,
+			);
 			if (deltaArguments) {
 				toolCall.arguments += deltaArguments;
 			}
@@ -107,5 +111,36 @@ export class ToolCallProcessor {
 	 */
 	reset(): void {
 		this.toolCalls.clear();
+	}
+
+	private normalizeArgumentsDelta(
+		accumulatedArguments: string,
+		rawArguments: unknown,
+	): string {
+		if (rawArguments == null) {
+			return "";
+		}
+
+		const nextArguments =
+			typeof rawArguments === "string"
+				? rawArguments
+				: JSON.stringify(rawArguments);
+
+		if (!nextArguments) {
+			return "";
+		}
+
+		// Some OpenAI-compatible providers emit cumulative argument snapshots
+		// instead of true deltas. Convert those snapshots back into a suffix so
+		// downstream accumulation only happens once.
+		if (
+			accumulatedArguments &&
+			nextArguments.length >= accumulatedArguments.length &&
+			nextArguments.startsWith(accumulatedArguments)
+		) {
+			return nextArguments.slice(accumulatedArguments.length);
+		}
+
+		return nextArguments;
 	}
 }

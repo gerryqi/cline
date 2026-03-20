@@ -203,7 +203,7 @@ export class AnthropicHandler extends BaseHandler {
 		yield { type: "done", success: true, id: responseId };
 	}
 
-	private *processChunk(
+	protected *processChunk(
 		chunk: RawMessageStreamEvent,
 		currentToolCall: { id: string; name: string; arguments: string },
 		usageSnapshot: {
@@ -332,11 +332,13 @@ export class AnthropicHandler extends BaseHandler {
 			case "content_block_stop": {
 				// If we have a tool call, yield it
 				if (currentToolCall.id) {
-					let parsedArgs: Record<string, unknown>;
+					let parsedArgs: string | Record<string, unknown>;
 					try {
 						parsedArgs = JSON.parse(currentToolCall.arguments || "{}");
 					} catch {
-						parsedArgs = {};
+						// Preserve the raw JSON fragment so downstream can classify it
+						// as an invalid tool call instead of silently turning it into {}.
+						parsedArgs = currentToolCall.arguments;
 					}
 
 					yield {

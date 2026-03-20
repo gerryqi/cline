@@ -52,14 +52,16 @@ export const SearchCodebaseUnionInputSchema = z.union([
 	z.string(),
 ]);
 
-const CommandInputSchema = z.string();
+const CommandInputSchema = z
+	.string()
+	.describe("The non-interactive shell command to execute");
 /**
  * Schema for run_commands tool input
  */
 export const RunCommandsInputSchema = z.object({
 	commands: z
 		.array(CommandInputSchema)
-		.describe("Array of shell commands to execute."),
+		.describe("Array of shell commands to execute"),
 });
 
 /**
@@ -67,8 +69,8 @@ export const RunCommandsInputSchema = z.object({
  */
 export const RunCommandsInputUnionSchema = z.union([
 	RunCommandsInputSchema,
-	z.array(CommandInputSchema),
-	CommandInputSchema,
+	z.array(z.string()),
+	z.string(),
 ]);
 
 /**
@@ -93,46 +95,34 @@ export const FetchWebContentInputSchema = z.object({
  */
 export const EditFileInputSchema = z
 	.object({
-		command: z
-			.enum(["create", "str_replace", "insert"])
-			.describe("Editor command to execute: create, str_replace, insert"),
-		path: z.string().min(1).describe("Absolute file path"),
-		file_text: z
+		path: z
 			.string()
-			.nullish()
-			.describe("Full file content required for 'create' command"),
-		old_str: z
+			.min(1)
+			.describe("The absolute file path for the action to be performed on"),
+		old_text: z
 			.string()
-			.nullish()
+			.nullable()
+			.optional()
 			.describe(
-				"Exact text to replace (must match exactly once) for 'str_replace' command",
+				"Exact text to replace (must match exactly once). Omit this when creating a missing file or inserting via insert_line.",
 			),
-		new_str: z
+		new_text: z
 			.string()
-			.nullish()
-			.describe("Replacement text for 'str_replace' or 'insert' commands"),
+			.describe(
+				"The new content to write when creating a missing file, the replacement text for edits, or the inserted text when insert_line is provided",
+			),
 		insert_line: z
 			.number()
 			.int()
-			.nullish()
-			.describe("Optional one-based line index for 'insert' command"),
+			.nullable()
+			.optional()
+			.describe(
+				"Optional one-based line index. When provided, the tool inserts new_text at that line instead of performing a replacement edit.",
+			),
 	})
-	.refine((v) => v.command !== "create" || v.file_text != null, {
-		path: ["file_text"],
-		message: "file_text is required for command=create",
-	})
-	.refine((v) => v.command !== "str_replace" || v.old_str != null, {
-		path: ["old_str"],
-		message: "old_str is required for command=str_replace",
-	})
-	.refine((v) => v.command !== "insert" || v.insert_line != null, {
-		path: ["insert_line"],
-		message: "insert_line is required for command=insert",
-	})
-	.refine((v) => v.command !== "insert" || v.new_str != null, {
-		path: ["new_str"],
-		message: "new_str is required for command=insert",
-	});
+	.describe(
+		"Edit a text file by replacing old_text with new_text, create the file with new_text if it does not exist, or insert new_text at insert_line when insert_line is provided. IMPORTANT: large edits can time out, so use small chunks and multiple calls when possible.",
+	);
 
 /**
  * Schema for apply_patch tool input

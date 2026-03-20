@@ -33,6 +33,66 @@ describe("ToolCallProcessor", () => {
 		expect(second[0].tool_call.function.arguments).toBe(' -la"]}');
 	});
 
+	it("normalizes cumulative argument snapshots into deltas", () => {
+		const processor = new ToolCallProcessor();
+
+		const first = processor.processToolCallDeltas(
+			[
+				{
+					index: 0,
+					id: "call_1",
+					function: { name: "editor", arguments: '{"command":"create"' },
+				},
+			],
+			"resp_1",
+		);
+
+		const second = processor.processToolCallDeltas(
+			[
+				{
+					index: 0,
+					function: {
+						arguments: '{"command":"create","path":"/tmp/file.txt"}',
+					},
+				},
+			],
+			"resp_1",
+		);
+
+		expect(first).toHaveLength(1);
+		expect(second).toHaveLength(1);
+		expect(first[0].tool_call.function.arguments).toBe('{"command":"create"');
+		expect(second[0].tool_call.function.arguments).toBe(
+			',"path":"/tmp/file.txt"}',
+		);
+	});
+
+	it("serializes object-shaped arguments instead of concatenating [object Object]", () => {
+		const processor = new ToolCallProcessor();
+
+		const result = processor.processToolCallDeltas(
+			[
+				{
+					index: 0,
+					id: "call_1",
+					function: {
+						name: "editor",
+						arguments: {
+							command: "create",
+							path: "/tmp/file.txt",
+						},
+					},
+				},
+			],
+			"resp_1",
+		);
+
+		expect(result).toHaveLength(1);
+		expect(result[0].tool_call.function.arguments).toBe(
+			'{"command":"create","path":"/tmp/file.txt"}',
+		);
+	});
+
 	it("preserves tool call id/name for interleaved parallel deltas", () => {
 		const processor = new ToolCallProcessor();
 

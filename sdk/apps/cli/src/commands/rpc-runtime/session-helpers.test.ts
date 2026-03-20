@@ -1,5 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("@clinebot/core", () => ({
+	setHomeDir: vi.fn(),
+	setHomeDirIfUnset: vi.fn(),
+}));
+
+vi.mock("@clinebot/core/node", () => ({
+	SessionSource: {
+		CLI: "cli",
+	},
+}));
+
+vi.mock("@clinebot/llms", () => ({
+	providers: {
+		normalizeProviderId: vi.fn((provider: string) => provider),
+	},
+}));
+
 vi.mock("../../runtime/prompt", () => ({
 	resolveSystemPrompt: vi.fn(async () => "resolved system prompt"),
 }));
@@ -13,6 +30,10 @@ vi.mock("../../logging/adapter", () => ({
 			error: vi.fn(),
 		},
 	})),
+}));
+
+vi.mock("../../utils/telemetry", () => ({
+	getCliTelemetryService: vi.fn(() => undefined),
 }));
 
 describe("buildSessionStartInput", () => {

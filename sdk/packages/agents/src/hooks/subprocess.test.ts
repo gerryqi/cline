@@ -6,6 +6,34 @@ import { createSubprocessHooks, runHook } from "./subprocess.js";
 
 const tmpPaths: string[] = [];
 
+async function waitForFileContents(
+	filePath: string,
+	predicate: (contents: string) => boolean,
+	timeoutMs = 1500,
+): Promise<string> {
+	const started = Date.now();
+	for (;;) {
+		try {
+			const contents = await readFile(filePath, "utf8");
+			if (predicate(contents)) {
+				return contents;
+			}
+		} catch (error) {
+			const code =
+				error && typeof error === "object" && "code" in error
+					? String((error as { code?: unknown }).code)
+					: undefined;
+			if (code !== "ENOENT" || Date.now() - started >= timeoutMs) {
+				throw error;
+			}
+		}
+		if (Date.now() - started >= timeoutMs) {
+			throw new Error(`Timed out waiting for hook output at ${filePath}`);
+		}
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+}
+
 afterEach(async () => {
 	for (const path of tmpPaths) {
 		await rm(path, { recursive: true, force: true });
@@ -100,6 +128,7 @@ describe("hooks", () => {
 				turn: {
 					text: "done",
 					toolCalls: [],
+					invalidToolCalls: [],
 					usage: { inputTokens: 1, outputTokens: 1 },
 					truncated: false,
 				},
@@ -123,8 +152,10 @@ describe("hooks", () => {
 			}),
 		).resolves.toBeUndefined();
 
-		await new Promise((resolve) => setTimeout(resolve, 80));
-		const lines = (await readFile(output, "utf8"))
+		const contents = await waitForFileContents(output, (text) =>
+			text.includes('"hookName":"agent_error"'),
+		);
+		const lines = contents
 			.trim()
 			.split("\n")
 			.map((line) => JSON.parse(line));
