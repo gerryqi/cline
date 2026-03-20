@@ -1,0 +1,79 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const resolveSessionBackend = vi.fn();
+const ensureRpcRuntimeAddress = vi.fn();
+
+class MockRpcCoreSessionService {}
+
+vi.mock("@clinebot/core/node", () => ({
+	RpcCoreSessionService: MockRpcCoreSessionService,
+	resolveSessionBackend,
+	createSessionHost: vi.fn(),
+	SessionSource: {
+		CLI: "cli",
+	},
+}));
+
+vi.mock("@clinebot/rpc", () => ({
+	getRpcServerDefaultAddress: vi.fn(() => "127.0.0.1:4317"),
+	RpcSessionClient: vi.fn().mockImplementation(() => ({
+		close: vi.fn(),
+		streamEvents: vi.fn(() => vi.fn()),
+	})),
+}));
+
+vi.mock("../commands/rpc", () => ({
+	ensureRpcRuntimeAddress,
+}));
+
+vi.mock("./telemetry", () => ({
+	getCliTelemetryService: vi.fn(() => undefined),
+}));
+
+describe("createDefaultCliSessionManager", () => {
+	const envSnapshot = {
+		CLINE_RPC_ADDRESS: process.env.CLINE_RPC_ADDRESS,
+		CLINE_SESSION_BACKEND_MODE: process.env.CLINE_SESSION_BACKEND_MODE,
+	};
+
+	beforeEach(() => {
+		resolveSessionBackend.mockReset();
+		ensureRpcRuntimeAddress.mockReset();
+		resolveSessionBackend.mockResolvedValue(new MockRpcCoreSessionService());
+		delete process.env.CLINE_RPC_ADDRESS;
+		delete process.env.CLINE_SESSION_BACKEND_MODE;
+	});
+
+	afterEach(() => {
+		process.env.CLINE_RPC_ADDRESS = envSnapshot.CLINE_RPC_ADDRESS;
+		process.env.CLINE_SESSION_BACKEND_MODE =
+			envSnapshot.CLINE_SESSION_BACKEND_MODE;
+	});
+
+	it("treats an explicit rpc address as a shared server to attach to", async () => {
+		process.env.CLINE_RPC_ADDRESS = "127.0.0.1:5001";
+
+		const { createDefaultCliSessionManager } = await import("./session");
+		await createDefaultCliSessionManager();
+
+		expect(ensureRpcRuntimeAddress).not.toHaveBeenCalled();
+		expect(resolveSessionBackend).toHaveBeenCalledWith({
+			backendMode: "rpc",
+			rpcAddress: "127.0.0.1:5001",
+			autoStartRpcServer: false,
+		});
+	});
+
+	it("still ensures rpc runtime when no explicit address is configured", async () => {
+		ensureRpcRuntimeAddress.mockResolvedValue("127.0.0.1:6001");
+
+		const { createDefaultCliSessionManager } = await import("./session");
+		await createDefaultCliSessionManager();
+
+		expect(ensureRpcRuntimeAddress).toHaveBeenCalledWith("127.0.0.1:4317");
+		expect(resolveSessionBackend).toHaveBeenCalledWith({
+			backendMode: "auto",
+			rpcAddress: "127.0.0.1:6001",
+		});
+	});
+});

@@ -43,6 +43,11 @@ type SpawnedProcessRecord = {
 	detached?: boolean;
 };
 
+type ProcessRecord = {
+	pid: number;
+	command: string;
+};
+
 function resolveRpcAddress(rawArgs: string[]): string {
 	const addressIndex = rawArgs.indexOf("--address");
 	const address =
@@ -57,6 +62,40 @@ function parsePids(raw: string): number[] {
 		.split(/\r?\n/)
 		.map((line) => Number.parseInt(line.trim(), 10))
 		.filter((pid) => Number.isInteger(pid) && pid > 0);
+}
+
+function listMatchingProcesses(pattern: string): ProcessRecord[] {
+	if (process.platform === "win32") {
+		return [];
+	}
+	const result = spawnSync("pgrep", ["-fal", pattern], { encoding: "utf8" });
+	if (result.status !== 0 && result.status !== 1) {
+		return [];
+	}
+	const records = new Map<number, ProcessRecord>();
+	for (const line of (result.stdout || "").split(/\r?\n/)) {
+		const trimmed = line.trim();
+		if (!trimmed) {
+			continue;
+		}
+		const match = trimmed.match(/^(\d+)\s+(.*)$/);
+		if (!match) {
+			continue;
+		}
+		const pid = Number.parseInt(match[1] || "", 10);
+		const command = match[2]?.trim();
+		if (
+			!Number.isInteger(pid) ||
+			pid <= 0 ||
+			!command ||
+			pid === process.pid ||
+			pid === process.ppid
+		) {
+			continue;
+		}
+		records.set(pid, { pid, command });
+	}
+	return [...records.values()].sort((a, b) => a.pid - b.pid);
 }
 
 function resolveCliLogPath(): string {
@@ -91,27 +130,23 @@ function listListeningPids(address: string): number[] {
 }
 
 function listStaleCliPids(): number[] {
-	if (process.platform === "win32") {
-		return [];
-	}
 	const patterns = [
 		"/apps/cli/src/index.ts",
 		"/apps/cli/dist/index.js",
 		"/dist/clite",
 	];
-	const pids = new Set<number>();
+	const records = new Map<number, ProcessRecord>();
 	for (const pattern of patterns) {
-		const result = spawnSync("pgrep", ["-f", pattern], { encoding: "utf8" });
-		if (result.status !== 0 && result.status !== 1) {
-			continue;
-		}
-		for (const pid of parsePids(result.stdout)) {
-			if (pid !== process.pid && pid !== process.ppid) {
-				pids.add(pid);
-			}
+		for (const record of listMatchingProcesses(pattern)) {
+			records.set(record.pid, record);
 		}
 	}
-	return [...pids].sort((a, b) => a - b);
+	return [...records.values()]
+		.filter(
+			(record) =>
+				!/(?:^|\s)(?:rpc|hook-worker|connect)(?:\s|$)/.test(record.command),
+		)
+		.map((record) => record.pid);
 }
 
 function listHookWorkerPids(): number[] {

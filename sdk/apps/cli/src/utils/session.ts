@@ -33,6 +33,10 @@ function resolveRpcAddress(): string {
 	return process.env.CLINE_RPC_ADDRESS?.trim() || getRpcServerDefaultAddress();
 }
 
+function hasExplicitRpcAddress(): boolean {
+	return !!process.env.CLINE_RPC_ADDRESS?.trim();
+}
+
 function resolveSessionBackendMode(): "auto" | "rpc" | "local" {
 	const raw = process.env.CLINE_SESSION_BACKEND_MODE?.trim().toLowerCase();
 	if (raw === "rpc" || raw === "local") {
@@ -127,6 +131,14 @@ async function getCoreSessions(): Promise<SessionBackend> {
 		});
 	}
 	const requestedAddress = resolveRpcAddress();
+	if (backendMode === "auto" && hasExplicitRpcAddress()) {
+		process.env.CLINE_RPC_ADDRESS = requestedAddress;
+		return await resolveSessionBackend({
+			backendMode: "rpc",
+			rpcAddress: requestedAddress,
+			autoStartRpcServer: false,
+		});
+	}
 	const ensuredAddress = await ensureRpcRuntimeAddress(requestedAddress).catch(
 		() => requestedAddress,
 	);
