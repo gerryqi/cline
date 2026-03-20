@@ -692,20 +692,21 @@ function createRpcRuntimeCliSessionManager(
 					contentType: "text",
 				});
 			}
-			emitAgentEvent(listeners, input.sessionId, {
-				type: "done",
-				reason: result.finishReason,
-				iterations: result.iterations,
-				usage: result.usage,
-			} as unknown as AgentEvent);
 			const agentResult = toAgentResult(result, config);
 			const baseline =
 				accumulatedUsageBySession.get(input.sessionId) ??
 				createInitialAccumulatedUsage();
-			accumulatedUsageBySession.set(
-				input.sessionId,
-				accumulateUsageTotals(baseline, agentResult.usage),
+			const accumulatedUsage = accumulateUsageTotals(
+				baseline,
+				agentResult.usage,
 			);
+			accumulatedUsageBySession.set(input.sessionId, accumulatedUsage);
+			emitAgentEvent(listeners, input.sessionId, {
+				type: "done",
+				reason: result.finishReason,
+				iterations: result.iterations,
+				usage: accumulatedUsage,
+			} as unknown as AgentEvent);
 			return agentResult;
 		},
 		getAccumulatedUsage: async (sessionId) => {

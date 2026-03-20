@@ -83,6 +83,7 @@ Workspace boundary note:
 - `team_spawn_teammate`
 - `team_shutdown_teammate`
 - `team_create_task`
+- `team_list_tasks`
 - `team_claim_task`
 - `team_complete_task`
 - `team_block_task`
@@ -170,6 +171,20 @@ const agent = new Agent({
 const result = await agent.run("Summarize this repository.")
 console.log(result.text)
 ```
+
+## Codex Provider Tool Behavior
+
+`openai-codex` is different from providers that support SDK-defined custom tools.
+
+- Do not pass custom tool definitions to the Codex provider.
+- Do not rely on model `tool_calls` from `openai-codex` being executable by `@clinebot/agents`.
+- Codex may still use its own built-in provider-native tools internally.
+- Provider-native Codex tool events are treated as informational provider behavior and are not forwarded into local tool execution, which avoids `Unknown tool` errors for built-in Codex tools.
+
+Practical effect:
+- If you disable session tools for `openai-codex`, local Cline tools stay off.
+- Codex can still use its built-in tools inside the provider runtime.
+- Those built-in tool invocations are not mapped onto the Cline tool registry.
 
 ## `@clinebot/core` Telemetry
 
@@ -793,6 +808,7 @@ When `--output json` (or `--json`) is used, output switches to **NDJSON**:
 | `team_spawn_teammate` | `<agentId>: <rolePrompt>` |
 | `team_shutdown_teammate` | `shutdown <agentId>` |
 | `team_create_task` | `create <title>` |
+| `team_list_tasks` | `list status=<status\|any> readyOnly=<bool>` |
 | `team_claim_task` | `claim <taskId>` |
 | `team_complete_task` | `complete <taskId>: <summary>` |
 | `team_block_task` | `block <taskId>: <reason>` |
@@ -927,6 +943,7 @@ Agent teams enable the lead agent to spawn, coordinate, and communicate with mul
 | `team_shutdown_teammate` | Shutdown a teammate by `agentId` |
 | `team_status` | Get a snapshot of all teammates, tasks, mailbox, and mission log |
 | `team_create_task` | Create a shared task |
+| `team_list_tasks` | List shared tasks, including `isReady` claimability and unresolved `blockedBy` dependencies |
 | `team_claim_task` | Claim a shared task |
 | `team_complete_task` | Complete a shared task |
 | `team_block_task` | Block a shared task |
@@ -947,6 +964,38 @@ Agent teams enable the lead agent to spawn, coordinate, and communicate with mul
 | `team_cleanup` | Clean up the team runtime |
 
 Team state is persisted in SQLite via `SqliteTeamStore` keyed by `teamName`. On restart with the same `--team-name`, the runtime snapshot is restored and stale queued/running runs are marked interrupted before continuing.
+
+`team_list_tasks` is the discovery primitive that makes autonomous task pickup possible. Agents can now inspect the shared task set, find tasks that are both unassigned and dependency-ready, then claim them with `team_claim_task`.
+
+### Scheduled Routines (`clite schedule`)
+
+Schedules are RPC-backed cron jobs that start a runtime session, run a prompt, and persist execution history through `@clinebot/scheduler`.
+
+Normal schedule behavior:
+- cron decides when a schedule becomes due
+- the scheduler starts one runtime session
+- the scheduler sends the configured prompt
+- the scheduler records execution metrics/history and stops the session
+
+Autonomous routine behavior:
+- enable it with schedule metadata `autonomous.enabled = true`
+- the CLI now supports metadata patch flags `--autonomous`, `--no-autonomous`, `--idle-timeout <seconds>`, and `--poll-interval <seconds>` on `schedule create`, `schedule import`, and `schedule update`
+- after the first scheduled turn, the scheduler can keep the same session alive for a bounded idle window
+- on each idle poll, the lead agent is prompted to inspect `team_read_mailbox` and `team_list_tasks`, claim one ready task if work exists, and continue in-session
+- if no actionable work appears for the full idle window, the scheduler stops the session cleanly
+- execution metrics aggregate across the initial turn and all autonomous follow-up turns
+
+Example:
+
+```bash
+clite schedule create daily-routine \
+  --cron "0 * * * *" \
+  --prompt "Review open shared tasks and keep the team moving." \
+  --workspace /path/to/workspace \
+  --autonomous \
+  --idle-timeout 60 \
+  --poll-interval 5
+```
 
 **Team event display** (`handleTeamEvent` in `src/events.ts`):
 
@@ -1112,7 +1161,7 @@ If the refresh fails, it logs a dim warning and falls back to bundled defaults. 
 |---|---|---|
 | `anthropic` | `ANTHROPIC_API_KEY` | Default provider |
 | `openai` | `OPENAI_API_KEY` | Use with `-p openai` |
-| `openai-codex` | OAuth | OAuth-only; use `clite auth openai-codex` |
+| `openai-codex` | OAuth | OAuth-only; use `clite auth openai-codex`. Does not accept SDK custom tools; Codex built-in tools remain provider-native and are not executed through the local Cline tool registry. |
 | `openrouter` | `OPENROUTER_API_KEY` | Use with `-p openrouter` |
 | `vercel-ai-gateway` | `AI_GATEWAY_API_KEY` | Use with `-p vercel-ai-gateway` |
 | `cline` | `CLINE_API_KEY` or OAuth | Cline-hosted; shows account/credit info on start |

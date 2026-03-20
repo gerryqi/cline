@@ -304,6 +304,14 @@ export interface AgentHookErrorContext {
 	error: Error;
 }
 
+export interface AgentHookStopErrorContext {
+	agentId: string;
+	conversationId: string;
+	parentAgentId: string | null;
+	iteration: number;
+	error: Error;
+}
+
 export interface AgentHookSessionShutdownContext {
 	agentId: string;
 	conversationId: string;
@@ -325,6 +333,7 @@ export type HookStage =
 	| "tool_call_before"
 	| "tool_call_after"
 	| "turn_end"
+	| "stop_error"
 	| "iteration_end"
 	| "run_end"
 	| "session_shutdown"
@@ -491,6 +500,7 @@ export type AgentExtensionHookStage =
 	| "tool_call_before"
 	| "tool_call_after"
 	| "turn_end"
+	| "stop_error"
 	| "iteration_end"
 	| "run_end"
 	| "session_shutdown"
@@ -535,6 +545,9 @@ export interface AgentExtension {
 	onAgentEnd?: (
 		ctx: AgentHookTurnEndContext,
 	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onAgentError?: (
+		ctx: AgentHookStopErrorContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
 	onIterationEnd?: (ctx: AgentHookIterationEndContext) => void | Promise<void>;
 	onRunEnd?: (ctx: AgentHookRunEndContext) => void | Promise<void>;
 	onSessionShutdown?: (
@@ -575,6 +588,9 @@ export interface AgentHooks {
 	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
 	onTurnEnd?: (
 		ctx: AgentHookTurnEndContext,
+	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
+	onStopError?: (
+		ctx: AgentHookStopErrorContext,
 	) => undefined | AgentHookControl | Promise<undefined | AgentHookControl>;
 	onToolCallStart?: (
 		ctx: AgentHookToolCallStartContext,

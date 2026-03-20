@@ -630,6 +630,17 @@ export class Agent {
 								: new Error(String(error));
 					const message = errorObj.message;
 					if (isNonRecoverableApiError(errorObj)) {
+						await this.lifecycle.dispatch("hook.stop_error", {
+							stage: "stop_error",
+							iteration,
+							payload: {
+								agentId: this.agentId,
+								conversationId: this.conversationStore.getConversationId(),
+								parentAgentId: this.parentAgentId,
+								iteration,
+								error: errorObj,
+							},
+						});
 						throw errorObj;
 					}
 					this.appendRecoveryNotice(
@@ -648,6 +659,17 @@ export class Agent {
 					if (shouldContinue) {
 						continue;
 					}
+					await this.lifecycle.dispatch("hook.stop_error", {
+						stage: "stop_error",
+						iteration,
+						payload: {
+							agentId: this.agentId,
+							conversationId: this.conversationStore.getConversationId(),
+							parentAgentId: this.parentAgentId,
+							iteration,
+							error: errorObj,
+						},
+					});
 					throw errorObj;
 				}
 				if (assistantMessage) {

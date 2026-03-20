@@ -4,6 +4,7 @@ import path from "node:path";
 import { isMainThread, parentPort, Worker } from "node:worker_threads";
 
 const DEFAULT_INDEX_TTL_MS = 15_000;
+const STALE_CACHE_EVICTION_MS = 10 * 60_000;
 const WORKER_INDEX_REQUEST_TIMEOUT_MS = 1_000;
 const DEFAULT_EXCLUDE_DIRS = new Set([
 	".git",
@@ -21,6 +22,7 @@ const DEFAULT_EXCLUDE_DIRS = new Set([
 interface CacheEntry {
 	files: Set<string>;
 	lastBuiltAt: number;
+	lastAccessedAt: number;
 	pending: Promise<Set<string>> | null;
 }
 
@@ -42,6 +44,20 @@ interface IndexResponseMessage {
 }
 
 const CACHE = new Map<string, CacheEntry>();
+
+function pruneStaleCacheEntries(now: number): void {
+	if (CACHE.size <= 1) {
+		return;
+	}
+	for (const [cwd, entry] of CACHE.entries()) {
+		if (entry.pending) {
+			continue;
+		}
+		if (now - entry.lastAccessedAt > STALE_CACHE_EVICTION_MS) {
+			CACHE.delete(cwd);
+		}
+	}
+}
 
 function toPosixRelative(cwd: string, absolutePath: string): string {
 	return path.relative(cwd, absolutePath).split(path.sep).join("/");
@@ -265,6 +281,7 @@ export async function getFileIndex(
 ): Promise<Set<string>> {
 	const ttlMs = options.ttlMs ?? DEFAULT_INDEX_TTL_MS;
 	const now = Date.now();
+	pruneStaleCacheEntries(now);
 	const existing = CACHE.get(cwd);
 
 	if (
@@ -273,10 +290,12 @@ export async function getFileIndex(
 		now - existing.lastBuiltAt <= ttlMs &&
 		existing.files.size > 0
 	) {
+		existing.lastAccessedAt = now;
 		return existing.files;
 	}
 
 	if (existing?.pending) {
+		existing.lastAccessedAt = now;
 		return existing.pending;
 	}
 
@@ -284,6 +303,7 @@ export async function getFileIndex(
 		CACHE.set(cwd, {
 			files,
 			lastBuiltAt: Date.now(),
+			lastAccessedAt: Date.now(),
 			pending: null,
 		});
 		return files;
@@ -292,6 +312,7 @@ export async function getFileIndex(
 	CACHE.set(cwd, {
 		files: existing?.files ?? new Set<string>(),
 		lastBuiltAt: existing?.lastBuiltAt ?? 0,
+		lastAccessedAt: now,
 		pending,
 	});
 

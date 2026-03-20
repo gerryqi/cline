@@ -13,7 +13,12 @@ export interface SessionEndedEvent {
 
 export interface SessionToolEvent {
 	sessionId: string;
-	hookEventName: "tool_call" | "tool_result" | "agent_end" | "session_shutdown";
+	hookEventName:
+		| "tool_call"
+		| "tool_result"
+		| "agent_end"
+		| "agent_error"
+		| "session_shutdown";
 	agentId?: string;
 	conversationId?: string;
 	parentAgentId?: string;

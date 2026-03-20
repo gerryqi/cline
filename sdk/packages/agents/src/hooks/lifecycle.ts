@@ -83,6 +83,13 @@ const EXTENSION_STAGE_HANDLERS: Record<
 				| AgentHookControl
 				| undefined,
 	},
+	stop_error: {
+		name: "onAgentError",
+		handler: (extension, event) =>
+			extension.onAgentError?.(event.payload as never) as
+				| AgentHookControl
+				| undefined,
+	},
 	iteration_end: {
 		name: "onIterationEnd",
 		handler: async (extension, event) => {
@@ -182,6 +189,13 @@ export function registerLifecycleHandlers(
 			name: "hooks.onTurnEnd",
 			stage: "turn_end",
 			handle: (event) => hooks.onTurnEnd?.(event.payload as never),
+		});
+	}
+	if (hooks?.onStopError) {
+		register({
+			name: "hooks.onStopError",
+			stage: "stop_error",
+			handle: (event) => hooks.onStopError?.(event.payload as never),
 		});
 	}
 	if (hooks?.onToolCallStart) {

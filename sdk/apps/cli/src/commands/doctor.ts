@@ -1,8 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { resolveClineDataDir } from "@clinebot/core";
 import { getRpcServerDefaultAddress, getRpcServerHealth } from "@clinebot/rpc";
+import { isProcessRunning } from "../connectors/common";
 import { getCliBuildInfo } from "../utils/common";
 
 type DoctorIo = {
@@ -17,7 +18,20 @@ type DoctorStatus = {
 	listeningPids: number[];
 	staleCliPids: number[];
 	hookWorkerPids: number[];
+	activeConnectors: ActiveConnectorRecord[];
 	recentSpawnedProcesses: SpawnedProcessRecord[];
+};
+
+type ActiveConnectorRecord = {
+	type: "telegram" | "gchat" | "whatsapp";
+	pid: number;
+	rpcAddress: string;
+	startedAt?: string;
+	botUsername?: string;
+	userName?: string;
+	phoneNumberId?: string;
+	port?: number;
+	baseUrl?: string;
 };
 
 type SpawnedProcessRecord = {
@@ -161,6 +175,126 @@ function readRecentSpawnedProcesses(limit = 20): SpawnedProcessRecord[] {
 	}
 }
 
+function listConnectorStatePaths(
+	type: ActiveConnectorRecord["type"],
+): string[] {
+	const dir = join(resolveClineDataDir(), "connectors", type);
+	if (!existsSync(dir)) {
+		return [];
+	}
+	return readdirSync(dir)
+		.filter((name) => name.endsWith(".json") && !name.endsWith(".threads.json"))
+		.map((name) => join(dir, name));
+}
+
+function readJsonRecord(path: string): Record<string, unknown> | undefined {
+	if (!existsSync(path)) {
+		return undefined;
+	}
+	try {
+		const raw = readFileSync(path, "utf8");
+		const parsed = JSON.parse(raw) as unknown;
+		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+			return parsed as Record<string, unknown>;
+		}
+	} catch {
+		// Ignore malformed connector state.
+	}
+	return undefined;
+}
+
+function readActiveConnectorRecord(
+	type: ActiveConnectorRecord["type"],
+	statePath: string,
+): ActiveConnectorRecord | undefined {
+	const parsed = readJsonRecord(statePath);
+	if (!parsed) {
+		return undefined;
+	}
+	const pid = typeof parsed.pid === "number" ? parsed.pid : undefined;
+	const rpcAddress =
+		typeof parsed.rpcAddress === "string" ? parsed.rpcAddress : undefined;
+	if (!pid || !rpcAddress || !isProcessRunning(pid)) {
+		return undefined;
+	}
+	if (
+		type === "telegram" &&
+		typeof parsed.botUsername === "string" &&
+		parsed.botUsername.trim()
+	) {
+		return {
+			type,
+			pid,
+			rpcAddress,
+			startedAt:
+				typeof parsed.startedAt === "string" ? parsed.startedAt : undefined,
+			botUsername: parsed.botUsername,
+		};
+	}
+	if (
+		type === "gchat" &&
+		typeof parsed.userName === "string" &&
+		parsed.userName.trim()
+	) {
+		return {
+			type,
+			pid,
+			rpcAddress,
+			startedAt:
+				typeof parsed.startedAt === "string" ? parsed.startedAt : undefined,
+			userName: parsed.userName,
+			port: typeof parsed.port === "number" ? parsed.port : undefined,
+			baseUrl: typeof parsed.baseUrl === "string" ? parsed.baseUrl : undefined,
+		};
+	}
+	if (
+		type === "whatsapp" &&
+		typeof parsed.userName === "string" &&
+		parsed.userName.trim()
+	) {
+		return {
+			type,
+			pid,
+			rpcAddress,
+			startedAt:
+				typeof parsed.startedAt === "string" ? parsed.startedAt : undefined,
+			userName: parsed.userName,
+			phoneNumberId:
+				typeof parsed.phoneNumberId === "string"
+					? parsed.phoneNumberId
+					: undefined,
+			port: typeof parsed.port === "number" ? parsed.port : undefined,
+			baseUrl: typeof parsed.baseUrl === "string" ? parsed.baseUrl : undefined,
+		};
+	}
+	return undefined;
+}
+
+function listActiveConnectors(): ActiveConnectorRecord[] {
+	const connectorTypes: ActiveConnectorRecord["type"][] = [
+		"telegram",
+		"gchat",
+		"whatsapp",
+	];
+	const records: ActiveConnectorRecord[] = [];
+	for (const type of connectorTypes) {
+		for (const statePath of listConnectorStatePaths(type)) {
+			const record = readActiveConnectorRecord(type, statePath);
+			if (record) {
+				records.push(record);
+			}
+		}
+	}
+	return records.sort((left, right) => {
+		if (left.type !== right.type) {
+			return left.type.localeCompare(right.type);
+		}
+		const leftName = left.botUsername ?? left.userName ?? "";
+		const rightName = right.botUsername ?? right.userName ?? "";
+		return leftName.localeCompare(rightName);
+	});
+}
+
 async function collectDoctorStatus(address: string): Promise<DoctorStatus> {
 	const health = await getRpcServerHealth(address);
 	return {
@@ -170,6 +304,7 @@ async function collectDoctorStatus(address: string): Promise<DoctorStatus> {
 		listeningPids: listListeningPids(address),
 		staleCliPids: listStaleCliPids(),
 		hookWorkerPids: listHookWorkerPids(),
+		activeConnectors: listActiveConnectors(),
 		recentSpawnedProcesses: readRecentSpawnedProcesses(),
 	};
 }
@@ -190,6 +325,24 @@ function formatRecentSpawnedProcess(record: SpawnedProcessRecord): string {
 			? undefined
 			: `detached=${record.detached ? "yes" : "no"}`,
 		record.command,
+	].filter(Boolean);
+	return pieces.join(" | ");
+}
+
+function formatActiveConnector(record: ActiveConnectorRecord): string {
+	const identity =
+		record.type === "telegram"
+			? `bot=@${record.botUsername ?? "unknown"}`
+			: `user=${record.userName ?? "unknown"}`;
+	const pieces = [
+		record.type,
+		identity,
+		`pid=${record.pid}`,
+		`rpc=${record.rpcAddress}`,
+		record.phoneNumberId ? `phone=${record.phoneNumberId}` : undefined,
+		record.port ? `port=${record.port}` : undefined,
+		record.baseUrl ? `url=${record.baseUrl}` : undefined,
+		record.startedAt ? `started=${record.startedAt}` : undefined,
 	].filter(Boolean);
 	return pieces.join(" | ");
 }
@@ -228,6 +381,14 @@ export async function runDoctorCommand(
 		io.writeln(formatPidList("rpc listeners", before.listeningPids));
 		io.writeln(formatPidList("cli processes", before.staleCliPids));
 		io.writeln(formatPidList("hook workers", before.hookWorkerPids));
+		if (before.activeConnectors.length === 0) {
+			io.writeln("active connectors: none");
+		} else {
+			io.writeln("active connectors:");
+			for (const record of before.activeConnectors) {
+				io.writeln(`- ${formatActiveConnector(record)}`);
+			}
+		}
 		if (before.recentSpawnedProcesses.length > 0) {
 			io.writeln("recent spawned processes:");
 			for (const record of before.recentSpawnedProcesses) {

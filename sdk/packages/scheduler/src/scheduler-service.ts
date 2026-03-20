@@ -13,6 +13,7 @@ import type {
 	CreateScheduleInput,
 	ListScheduleExecutionsOptions,
 	ListSchedulesOptions,
+	ScheduleAutonomousOptions,
 	ScheduleExecutionRecord,
 	ScheduleExecutionStatus,
 	ScheduleRecord,
@@ -48,6 +49,101 @@ function parseTurnMetrics(result: RpcChatTurnResult): {
 				? result.usage.totalCost
 				: undefined,
 	};
+}
+
+const DEFAULT_AUTONOMOUS_IDLE_TIMEOUT_SECONDS = 60;
+const DEFAULT_AUTONOMOUS_POLL_INTERVAL_SECONDS = 5;
+const AUTONOMOUS_IDLE_NOOP_TOKEN = "<idle-noop/>";
+
+interface AggregatedTurnMetrics {
+	iterations?: number;
+	tokensUsed?: number;
+	costUsd?: number;
+}
+
+function addTurnMetrics(
+	current: AggregatedTurnMetrics,
+	result: RpcChatTurnResult,
+): AggregatedTurnMetrics {
+	const next = { ...current };
+	const metrics = parseTurnMetrics(result);
+	if (typeof metrics.iterations === "number") {
+		next.iterations = (next.iterations ?? 0) + metrics.iterations;
+	}
+	if (typeof metrics.tokensUsed === "number") {
+		next.tokensUsed = (next.tokensUsed ?? 0) + metrics.tokensUsed;
+	}
+	if (typeof metrics.costUsd === "number") {
+		next.costUsd = (next.costUsd ?? 0) + metrics.costUsd;
+	}
+	return next;
+}
+
+function asPositiveSeconds(value: unknown, fallback: number): number {
+	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+		return fallback;
+	}
+	return Math.max(1, Math.floor(value));
+}
+
+function getAutonomousOptions(
+	schedule: ScheduleRecord,
+): ScheduleAutonomousOptions | undefined {
+	const metadata = schedule.metadata;
+	if (!metadata || typeof metadata !== "object") {
+		return undefined;
+	}
+	const raw =
+		metadata.autonomous &&
+		typeof metadata.autonomous === "object" &&
+		!Array.isArray(metadata.autonomous)
+			? (metadata.autonomous as Record<string, unknown>)
+			: undefined;
+	if (!raw || raw.enabled !== true) {
+		return undefined;
+	}
+	return {
+		enabled: true,
+		idleTimeoutSeconds: asPositiveSeconds(
+			raw.idleTimeoutSeconds,
+			DEFAULT_AUTONOMOUS_IDLE_TIMEOUT_SECONDS,
+		),
+		pollIntervalSeconds: asPositiveSeconds(
+			raw.pollIntervalSeconds,
+			DEFAULT_AUTONOMOUS_POLL_INTERVAL_SECONDS,
+		),
+	};
+}
+
+function buildSchedulePrompt(
+	schedule: ScheduleRecord,
+	autonomous: ScheduleAutonomousOptions | undefined,
+): string {
+	if (!autonomous?.enabled) {
+		return schedule.prompt;
+	}
+	return `${schedule.prompt}
+
+When you finish the immediate scheduled work, remain available for autonomous follow-up. During idle polling, inspect team mailbox and team tasks. Use team_list_tasks to find ready unassigned work, claim it with team_claim_task, and resume execution when work exists. Reply exactly ${AUTONOMOUS_IDLE_NOOP_TOKEN} only when the poll finds no actionable work.`;
+}
+
+function buildAutonomousPollPrompt(
+	autonomous: ScheduleAutonomousOptions,
+): string {
+	return `Autonomous idle poll. Check team_read_mailbox for unread messages and use team_list_tasks to find ready unassigned tasks. Claim and execute one task if actionable work exists. If there is nothing to do right now, reply exactly ${AUTONOMOUS_IDLE_NOOP_TOKEN} and nothing else. Poll cadence is ${autonomous.pollIntervalSeconds}s and the idle shutdown window is ${autonomous.idleTimeoutSeconds}s.`;
+}
+
+function isAutonomousNoop(result: RpcChatTurnResult): boolean {
+	return result.text?.trim() === AUTONOMOUS_IDLE_NOOP_TOKEN;
+}
+
+function sleep(ms: number): Promise<void> {
+	if (ms <= 0) {
+		return Promise.resolve();
+	}
+	return new Promise((resolve) => {
+		setTimeout(resolve, ms);
+	});
 }
 
 class TimeoutError extends Error {
@@ -345,6 +441,7 @@ export class SchedulerService {
 		let sessionId: string | undefined;
 		let startedAt: string | undefined;
 		let timeoutAt: string | undefined;
+		let executionDeadlineMs: number | undefined;
 
 		try {
 			const startRequest = this.buildStartRequest(schedule);
@@ -354,6 +451,7 @@ export class SchedulerService {
 			if (!sessionId) {
 				throw new Error("runtime start returned empty sessionId");
 			}
+			const activeSessionId = sessionId;
 			const startedAtIso = nowIso();
 			startedAt = startedAtIso;
 			timeoutAt =
@@ -363,6 +461,9 @@ export class SchedulerService {
 							new Date(startedAtIso).getTime() + schedule.timeoutSeconds * 1000,
 						).toISOString()
 					: undefined;
+			executionDeadlineMs = timeoutAt
+				? new Date(timeoutAt).getTime()
+				: undefined;
 
 			const runningState: ScheduleExecutionRecord = {
 				...pending,
@@ -388,17 +489,33 @@ export class SchedulerService {
 
 			const turnRequest: RpcChatRunTurnRequest = {
 				config: startRequest,
-				prompt: schedule.prompt,
+				prompt: buildSchedulePrompt(schedule, getAutonomousOptions(schedule)),
 			};
-			const sendPromise = this.options.runtimeHandlers.sendSession(
-				sessionId,
-				turnRequest,
-			);
-			const sendResult = await withTimeout(
-				sendPromise,
-				(schedule.timeoutSeconds ?? 0) * 1000,
-			);
-			const metrics = parseTurnMetrics(sendResult.result);
+			const sendTurn = async (
+				request: RpcChatRunTurnRequest,
+			): Promise<RpcChatTurnResult> => {
+				const sendPromise = this.options.runtimeHandlers.sendSession(
+					activeSessionId,
+					request,
+				);
+				const timeoutMs = executionDeadlineMs
+					? Math.max(1, executionDeadlineMs - Date.now())
+					: 0;
+				const sendResult = await withTimeout(sendPromise, timeoutMs);
+				return sendResult.result;
+			};
+			let metrics = addTurnMetrics({}, await sendTurn(turnRequest));
+			const autonomous = getAutonomousOptions(schedule);
+			if (autonomous?.enabled) {
+				metrics = await this.runAutonomousIdleLoop({
+					sessionId: activeSessionId,
+					startRequest,
+					autonomous,
+					metrics,
+					sendTurn,
+					executionDeadlineMs,
+				});
+			}
 			const completed: ScheduleExecutionRecord = {
 				...runningState,
 				status: "success",
@@ -464,6 +581,51 @@ export class SchedulerService {
 
 	private publishEvent(eventType: string, payload: unknown): void {
 		this.options.eventPublisher?.(eventType, payload);
+	}
+
+	private async runAutonomousIdleLoop(options: {
+		sessionId: string;
+		startRequest: RpcChatStartSessionRequest;
+		autonomous: ScheduleAutonomousOptions;
+		metrics: AggregatedTurnMetrics;
+		sendTurn: (request: RpcChatRunTurnRequest) => Promise<RpcChatTurnResult>;
+		executionDeadlineMs?: number;
+	}): Promise<AggregatedTurnMetrics> {
+		let metrics = options.metrics;
+		const idleTimeoutSeconds =
+			options.autonomous.idleTimeoutSeconds ??
+			DEFAULT_AUTONOMOUS_IDLE_TIMEOUT_SECONDS;
+		const pollIntervalSeconds =
+			options.autonomous.pollIntervalSeconds ??
+			DEFAULT_AUTONOMOUS_POLL_INTERVAL_SECONDS;
+		let idleDeadlineMs = Date.now() + idleTimeoutSeconds * 1000;
+		while (Date.now() < idleDeadlineMs) {
+			const remainingIdleMs = Math.max(0, idleDeadlineMs - Date.now());
+			const waitMs = Math.min(pollIntervalSeconds * 1000, remainingIdleMs);
+			if (waitMs > 0) {
+				if (options.executionDeadlineMs) {
+					const remainingExecutionMs = options.executionDeadlineMs - Date.now();
+					if (remainingExecutionMs <= 0) {
+						throw new TimeoutError("scheduled execution timed out");
+					}
+					await sleep(Math.min(waitMs, remainingExecutionMs));
+				} else {
+					await sleep(waitMs);
+				}
+			}
+			if (Date.now() >= idleDeadlineMs) {
+				break;
+			}
+			const result = await options.sendTurn({
+				config: options.startRequest,
+				prompt: buildAutonomousPollPrompt(options.autonomous),
+			});
+			metrics = addTurnMetrics(metrics, result);
+			if (!isAutonomousNoop(result)) {
+				idleDeadlineMs = Date.now() + idleTimeoutSeconds * 1000;
+			}
+		}
+		return metrics;
 	}
 }
 

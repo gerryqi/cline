@@ -3,12 +3,14 @@ export type SessionHookEvent = {
 		| "tool_call"
 		| "tool_result"
 		| "agent_end"
+		| "agent_error"
 		| "session_shutdown"
 		| string;
 	hookName?:
 		| "tool_call"
 		| "tool_result"
 		| "agent_end"
+		| "agent_error"
 		| "session_shutdown"
 		| string;
 	toolName?: string;

@@ -145,7 +145,6 @@ export class CodexHandler extends AiSdkProviderHandler {
 	> {
 		return {
 			reasoningTypes: ["reasoning-delta", "reasoning"],
-			enableToolCalls: true,
 			toolCallArgsOrder: ["args", "input"],
 		};
 	}

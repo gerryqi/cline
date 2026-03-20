@@ -311,6 +311,46 @@ describe("Agent", () => {
 		).toBe(false);
 	});
 
+	it("emits stop-error hooks when a non-recoverable API error ends the turn", async () => {
+		const { Agent } = await import("./agent.js");
+		const handler = makeHandler([
+			[
+				{
+					type: "done",
+					id: "r1",
+					success: false,
+					error: '{"error":{"code":429,"message":"rate limit exceeded"}}',
+				},
+			],
+		]);
+		createHandlerMock.mockReturnValue(handler);
+
+		const onStopError = vi.fn();
+		const onError = vi.fn();
+		const agent = new Agent({
+			providerId: "gemini",
+			modelId: "mock-model",
+			systemPrompt: "Handle retries",
+			tools: [],
+			hooks: {
+				onStopError,
+				onError,
+			},
+		});
+
+		await expect(agent.run("retry")).rejects.toThrow("429");
+		expect(onStopError).toHaveBeenCalledTimes(1);
+		expect(onStopError).toHaveBeenCalledWith(
+			expect.objectContaining({
+				iteration: 1,
+				error: expect.objectContaining({
+					message: expect.stringContaining("429"),
+				}),
+			}),
+		);
+		expect(onError).toHaveBeenCalledTimes(1);
+	});
+
 	it("fails immediately on missing api key errors", async () => {
 		const { Agent } = await import("./agent.js");
 		const handler = makeHandler([

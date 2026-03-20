@@ -5,7 +5,11 @@ import { z } from "zod";
 import { getClineDefaultSystemPrompt } from "../prompts/cline.js";
 import { createTool } from "../tools/create.js";
 import type { AgentConfig, AgentHooks, BasicLogger } from "../types.js";
-import type { AgentTeamsRuntime, TeamRuntimeState } from "./multi-agent.js";
+import type {
+	AgentTeamsRuntime,
+	TeamRuntimeState,
+	TeamTaskListItem,
+} from "./multi-agent.js";
 
 export interface TeamTeammateSpec {
 	agentId: string;
@@ -45,6 +49,22 @@ const TeamCreateTaskInputSchema = z.object({
 		.optional()
 		.describe("Array of the dependency task IDs"),
 	assignee: z.string().min(1).optional().describe("Optional assignee"),
+});
+
+const TeamListTasksInputSchema = z.object({
+	status: z
+		.enum(["pending", "in_progress", "blocked", "completed"])
+		.optional()
+		.describe("Optional task status filter"),
+	assignee: z.string().min(1).optional().describe("Optional assignee filter"),
+	unassignedOnly: z
+		.boolean()
+		.optional()
+		.describe("Only include tasks without an assignee"),
+	readyOnly: z
+		.boolean()
+		.optional()
+		.describe("Only include tasks ready to claim now"),
 });
 
 const TeamClaimTaskInputSchema = z.object({
@@ -193,6 +213,7 @@ type TeamShutdownTeammateInput = z.infer<
 >;
 type TeamStatusInput = z.infer<typeof TeamStatusInputSchema>;
 type TeamCreateTaskInput = z.infer<typeof TeamCreateTaskInputSchema>;
+type TeamListTasksInput = z.infer<typeof TeamListTasksInputSchema>;
 type TeamClaimTaskInput = z.infer<typeof TeamClaimTaskInputSchema>;
 type TeamCompleteTaskInput = z.infer<typeof TeamCompleteTaskInputSchema>;
 type TeamBlockTaskInput = z.infer<typeof TeamBlockTaskInputSchema>;
@@ -465,6 +486,24 @@ export function createAgentTeamsTools(
 					createdBy: options.requesterId,
 				});
 				return { taskId: task.id, status: task.status };
+			},
+		}) as Tool,
+	);
+
+	tools.push(
+		createTool<TeamListTasksInput, TeamTaskListItem[]>({
+			name: "team_list_tasks",
+			description:
+				"List shared team tasks, including whether each task is ready to claim and which dependencies still block it.",
+			inputSchema: zodToJsonSchema(TeamListTasksInputSchema),
+			execute: async (input) => {
+				const validatedInput = validateWithZod(TeamListTasksInputSchema, input);
+				return options.runtime.listTaskItems({
+					status: validatedInput.status,
+					assignee: validatedInput.assignee,
+					unassignedOnly: validatedInput.unassignedOnly,
+					readyOnly: validatedInput.readyOnly,
+				});
 			},
 		}) as Tool,
 	);
