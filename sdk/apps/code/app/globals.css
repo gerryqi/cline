@@ -1,9 +1,14 @@
+@import "@fontsource-variable/geist";
 @import "tailwindcss";
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
+	--font-geist-sans: "Geist Variable";
+	--font-geist-mono:
+		ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo,
+		monospace;
 	--background: oklch(0.13 0.005 260);
 	--foreground: oklch(0.93 0 0);
 	--card: oklch(0.16 0.005 260);

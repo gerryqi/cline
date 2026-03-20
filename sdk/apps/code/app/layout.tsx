@@ -1,16 +1,6 @@
 import { Analytics } from "@vercel/analytics/next";
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-
-const geist = Geist({
-	subsets: ["latin"],
-	variable: "--font-geist-sans",
-});
-const geistMono = Geist_Mono({
-	subsets: ["latin"],
-	variable: "--font-geist-mono",
-});
 
 export const metadata: Metadata = {
 	title: "Agent Desktop",
@@ -41,10 +31,7 @@ export default function RootLayout({
 	children: React.ReactNode;
 }>) {
 	return (
-		<html
-			className={`${geist.variable} ${geistMono.variable} h-full`}
-			lang="en"
-		>
+		<html className="h-full" lang="en">
 			<body className="h-full min-h-screen font-sans antialiased">
 				{children}
 				<Analytics />
