@@ -16,10 +16,12 @@ vi.mock("@clinebot/core/node", () => ({
 
 vi.mock("@clinebot/rpc", () => ({
 	getRpcServerDefaultAddress: vi.fn(() => "127.0.0.1:4317"),
-	RpcSessionClient: vi.fn().mockImplementation(() => ({
-		close: vi.fn(),
-		streamEvents: vi.fn(() => vi.fn()),
-	})),
+	RpcSessionClient: vi.fn().mockImplementation(function RpcSessionClient() {
+		return {
+			close: vi.fn(),
+			streamEvents: vi.fn(() => vi.fn()),
+		};
+	}),
 }));
 
 vi.mock("../commands/rpc", () => ({
