@@ -1,4 +1,5 @@
 import { ApiHandler } from "@core/api"
+import { DeepSeekHandler } from "@core/api/providers/deepseek"
 import { OpenAiHandler } from "@core/api/providers/openai"
 
 /**
@@ -10,9 +11,13 @@ import { OpenAiHandler } from "@core/api/providers/openai"
 export function getContextWindowInfo(api: ApiHandler) {
 	let contextWindow = api.getModel().info.contextWindow || 128_000
 
-	// Handle OpenAiHandler with deepseek models — use actual model info when available
-	// to avoid forcing 128K on models with different context windows (e.g., v4-pro 1M).
-	if (api instanceof OpenAiHandler && api.getModel().id.toLowerCase().includes("deepseek")) {
+	// Handle OpenAI-compatible handlers (OpenAiHandler, DeepSeekHandler, etc.)
+	// with deepseek models — use actual model info when available to avoid
+	// forcing 128K on models with different context windows (e.g., v4-pro 1M).
+	if (
+		(api instanceof OpenAiHandler || api instanceof DeepSeekHandler) &&
+		api.getModel().id.toLowerCase().includes("deepseek")
+	) {
 		contextWindow = api.getModel().info.contextWindow || 128_000
 	}
 
