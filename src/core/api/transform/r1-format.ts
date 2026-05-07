@@ -47,6 +47,15 @@ export function addReasoningContent(
 		}
 	}
 
+	// Validate that positional index mapping is safe: if convertToOpenAiMessages
+	// filtered or reordered messages, the assistant message counts would differ
+	// and injecting reasoning_content by index would produce incorrect results.
+	const openAiAssistantCount = openAiMessages.filter((m) => m.role === "assistant").length
+	if (openAiAssistantCount !== assistantIdx) {
+		// Fall back to no reasoning_content injection rather than mismatching
+		return openAiMessages as DeepSeekReasonerMessage[]
+	}
+
 	// Add reasoning_content only to assistant messages in current turn
 	let aiIdx = 0
 	return openAiMessages.map((msg, i): DeepSeekReasonerMessage => {
