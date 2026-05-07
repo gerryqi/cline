@@ -176,6 +176,7 @@ export class DeepSeekHandler implements ApiHandler {
 			maxTokens = Math.max(MIN_TOKENS_FLOOR, cappedTokens)
 		}
 
+		this.isAborted = false
 		this.abortController = new AbortController()
 
 		const stream = await client.chat.completions.create(
