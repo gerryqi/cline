@@ -196,12 +196,15 @@ export class DeepSeekHandler implements ApiHandler {
 
 		const toolCallProcessor = new ToolCallProcessor()
 
+		let hasYieldedText = false
+
 		for await (const chunk of stream) {
 			if (this.isAborted) {
 				break
 			}
 			const delta = chunk.choices?.[0]?.delta
 			if (delta?.content) {
+				hasYieldedText = true
 				yield {
 					type: "text",
 					text: delta.content,
@@ -221,6 +224,17 @@ export class DeepSeekHandler implements ApiHandler {
 
 			if (chunk.usage) {
 				yield* this.yieldUsage(model.info, chunk.usage)
+			}
+		}
+
+		// DeepSeek V4 Pro may return reasoning_content without any content text,
+		// which would cause the task loop to report "Invalid API Response".
+		// If we have reasoning content but no text was yielded, emit a minimal
+		// text chunk so downstream code recognizes this as a valid response.
+		if (isDeepseekV4Pro && !hasYieldedText) {
+			yield {
+				type: "text",
+				text: "",
 			}
 		}
 	}
