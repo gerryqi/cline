@@ -186,8 +186,8 @@ export class DeepSeekHandler implements ApiHandler {
 				messages: openAiMessages,
 				stream: true,
 				stream_options: { include_usage: true },
-				// Only set temperature for non-reasoner models (reasoner uses R1 format which doesn't support temperature)
-				...(isDeepseekReasoner ? {} : { temperature: 0 }),
+				// Read temperature from model definition; default to 0 if not specified
+				...(!isDeepseekReasoner ? { temperature: modelInfo.temperature ?? 0 } : {}),
 				...(reasoningEffort ? { reasoning_effort: reasoningEffort as ChatCompletionReasoningEffort } : {}),
 				...getOpenAIToolParams(tools),
 			},
