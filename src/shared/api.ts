@@ -2225,8 +2225,8 @@ export const deepSeekModels = {
 		supportsStreaming: true,
 	},
 	"deepseek-v4-flash": {
-		maxTokens: 8_000,
-		contextWindow: 64_000,
+		maxTokens: 384_000,
+		contextWindow: 1_000_000,
 		supportsImages: false,
 		supportsPromptCache: true,
 		inputPrice: 0,
