@@ -6,7 +6,6 @@ import { BaseUrlField } from "../common/BaseUrlField"
 import { ModelInfoView } from "../common/ModelInfoView"
 import { ModelSelector } from "../common/ModelSelector"
 import ReasoningEffortSelector from "../ReasoningEffortSelector"
-import ThinkingBudgetSlider from "../ThinkingBudgetSlider"
 import { normalizeApiConfiguration } from "../utils/providerUtils"
 import { useApiConfigurationHandlers } from "../utils/useApiConfigurationHandlers"
 
@@ -30,7 +29,6 @@ export const DeepSeekProvider = ({ showModelOptions, isPopup, currentMode }: Dee
 	const { selectedModelId, selectedModelInfo } = normalizeApiConfiguration(apiConfiguration, currentMode)
 	const modelInfo = deepSeekModels[selectedModelId as keyof typeof deepSeekModels]
 	const showReasoningEffort = (modelInfo as any)?.supportsReasoningEffort === true
-	const showThinkingBudget = (modelInfo as any)?.supportsReasoning === true
 
 	return (
 		<div>
@@ -70,8 +68,6 @@ export const DeepSeekProvider = ({ showModelOptions, isPopup, currentMode }: Dee
 							description="Controls reasoning depth for DeepSeek V4 Pro. Higher effort improves complex reasoning at the cost of more tokens."
 						/>
 					)}
-
-					{showThinkingBudget && <ThinkingBudgetSlider currentMode={currentMode} minBudget={8192} />}
 
 					<ModelInfoView isPopup={isPopup} modelInfo={selectedModelInfo} selectedModelId={selectedModelId} />
 				</>
