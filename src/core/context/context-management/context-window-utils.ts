@@ -21,10 +21,13 @@ export function getContextWindowInfo(api: ApiHandler) {
 		contextWindow = api.getModel().info.contextWindow || 128_000
 	}
 
+	const maxTokens = api.getModel().info.maxTokens || 0
+
 	let maxAllowedSize: number
 	// Dynamic buffer sizing based on context window tiers.
-	// Small windows need proportionally larger buffers for output tokens;
-	// large windows (e.g., deepseek-v4-pro 1M) can use a smaller relative buffer.
+	// Smaller context windows need proportionally larger buffers for output tokens;
+	// larger windows dynamically adjust based on the model's maxTokens to ensure
+	// enough room for long outputs (e.g., DeepSeek V4 Pro with 384K maxTokens).
 	if (contextWindow <= 64_000) {
 		// deepseek-v4-flash and similar small models: reserve ~42% for output
 		maxAllowedSize = contextWindow - 27_000
@@ -38,10 +41,15 @@ export function getContextWindowInfo(api: ApiHandler) {
 		// Mid-large windows: reserve 100K (conservative)
 		maxAllowedSize = contextWindow - 100_000
 	} else {
-		// Extra-large windows (deepseek-v4-pro 1M, etc.): reserve 60K
-		// 384K maxTokens output ceiling far exceeds the 60K buffer requirement,
-		// so we can safely use a smaller buffer to maximize available input context.
-		maxAllowedSize = Math.max(contextWindow - 60_000, contextWindow * 0.94)
+		// Extra-large windows (deepseek-v4-pro 1M, etc.):
+		// Use a model-aware buffer based on maxTokens rather than a fixed 60K.
+		// This prevents context_length_exceeded errors when models like DeepSeek V4
+		// (maxTokens=384K) generate very long outputs.
+		// The buffer reserves at least 60K and at most 40% of context window,
+		// ensuring space for model output proportional to its max generation capacity.
+		const modelBasedBuffer = Math.min(maxTokens * 0.5, contextWindow * 0.4)
+		const buffer = Math.max(modelBasedBuffer, 60_000)
+		maxAllowedSize = Math.max(contextWindow - buffer, contextWindow * 0.5)
 	}
 
 	return { contextWindow, maxAllowedSize }
