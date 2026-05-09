@@ -2197,7 +2197,7 @@ export type DeepSeekModelId = keyof typeof deepSeekModels
 export const deepSeekDefaultModelId: DeepSeekModelId = "deepseek-chat"
 export const deepSeekModels = {
 	"deepseek-chat": {
-		maxTokens: 8_000,
+		maxTokens: 32_000,
 		contextWindow: 128_000,
 		supportsImages: false,
 		supportsPromptCache: true, // supports context caching, but not in the way anthropic does it (deepseek reports input tokens and reads/writes in the same usage report) FIXME: we need to show users cache stats how deepseek does it
@@ -2215,7 +2215,7 @@ export const deepSeekModels = {
 			"DeepSeek's flagship chat model (latest V3 series). Optimized for coding and general tasks with cost-efficient KV cache pricing.",
 	},
 	"deepseek-reasoner": {
-		maxTokens: 8_192,
+		maxTokens: 32_000,
 		contextWindow: 128_000,
 		supportsImages: false,
 		supportsPromptCache: true, // supports context caching, but not in the way anthropic does it (deepseek reports input tokens and reads/writes in the same usage report) FIXME: we need to show users cache stats how deepseek does it
