@@ -158,7 +158,9 @@ export class ContextManager {
 			if (previousRequestText) {
 				try {
 					const { tokensIn, tokensOut, cacheWrites, cacheReads }: ClineApiReqInfo = JSON.parse(previousRequestText)
-					const totalTokens = (tokensIn || 0) + (tokensOut || 0) + (cacheWrites || 0) + (cacheReads || 0)
+					// For DeepSeek, inputTokens is the total (prompt_tokens = cache_hit + cache_miss),
+					// so cache fields are already included in tokensIn. Adding them again would double-count.
+					const totalTokens = (tokensIn || 0) + (tokensOut || 0)
 
 					const { contextWindow, maxAllowedSize } = getContextWindowInfo(api)
 					const roundedThreshold = thresholdPercentage
@@ -242,7 +244,8 @@ export class ContextManager {
 				if (previousRequestText) {
 					const timestamp = clineMessages[previousApiReqIndex].ts
 					const { tokensIn, tokensOut, cacheWrites, cacheReads }: ClineApiReqInfo = JSON.parse(previousRequestText)
-					const totalTokens = (tokensIn || 0) + (tokensOut || 0) + (cacheWrites || 0) + (cacheReads || 0)
+					// For DeepSeek, inputTokens includes cache tokens; adding cache fields would double-count
+					const totalTokens = (tokensIn || 0) + (tokensOut || 0)
 					const { maxAllowedSize } = getContextWindowInfo(api)
 
 					// This is the most reliable way to know when we're close to hitting the context window.

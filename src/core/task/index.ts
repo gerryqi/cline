@@ -3717,7 +3717,8 @@ export class Task {
 			}
 			try {
 				const { tokensIn, tokensOut, cacheWrites, cacheReads } = JSON.parse(msg.text)
-				return (tokensIn || 0) + (tokensOut || 0) + (cacheWrites || 0) + (cacheReads || 0)
+				// For DeepSeek, inputTokens includes cache tokens; avoid double-counting
+				return (tokensIn || 0) + (tokensOut || 0)
 			} catch (_e) {
 				return 0
 			}

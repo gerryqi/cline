@@ -100,17 +100,19 @@ export class DeepSeekHandler implements ApiHandler {
 		}
 		const deepUsage = usage as DeepSeekUsage
 
-		const inputTokens = deepUsage?.prompt_tokens || 0 // sum of cache hits and misses
+		const totalInputTokens = deepUsage?.prompt_tokens || 0 // sum of cache hits and misses
 		const outputTokens = deepUsage?.completion_tokens || 0
 		const cacheReadTokens = deepUsage?.prompt_cache_hit_tokens || 0
 		const cacheWriteTokens = deepUsage?.prompt_cache_miss_tokens || 0
-		const totalCost = calculateApiCostOpenAI(info, inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens)
-		// In DeepSeek's model, all input tokens are accounted as either cache hits or misses,
-		// so the non-cached token count is always 0.
-		const nonCachedInputTokens = Math.max(0, inputTokens - cacheReadTokens - cacheWriteTokens)
+		const totalCost = calculateApiCostOpenAI(info, totalInputTokens, outputTokens, cacheWriteTokens, cacheReadTokens)
+		// DeepSeek reports all input tokens as either cache hits or misses:
+		//   prompt_tokens = cache_hit_tokens + cache_miss_tokens
+		// Unlike Anthropic, there's no separate non-cached input token count.
+		// Report the total input tokens so the UI displays meaningful usage stats,
+		// while cacheReadTokens and cacheWriteTokens show the cache breakdown.
 		yield {
 			type: "usage",
-			inputTokens: nonCachedInputTokens,
+			inputTokens: totalInputTokens,
 			outputTokens: outputTokens,
 			cacheWriteTokens: cacheWriteTokens,
 			cacheReadTokens: cacheReadTokens,

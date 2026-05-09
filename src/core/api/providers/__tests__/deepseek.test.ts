@@ -173,8 +173,8 @@ describe("DeepSeekHandler", () => {
 			usageChunk!.outputTokens.should.equal(50)
 			usageChunk!.cacheReadTokens.should.equal(60)
 			usageChunk!.cacheWriteTokens.should.equal(40)
-			// nonCachedInputTokens should be 0: 100 - 60 - 40 = 0
-			usageChunk!.inputTokens.should.equal(0)
+			// Total input tokens (prompt_tokens) reported directly, including cache components
+			usageChunk!.inputTokens.should.equal(100)
 		})
 
 		it("should use R1 format messages for reasoner model (isR1FormatRequired)", async () => {
