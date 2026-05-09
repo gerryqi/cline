@@ -7,7 +7,8 @@ export function checkContextWindowExceededError(error: unknown): boolean {
 		checkIsAnthropicContextWindowError(error) ||
 		checkIsCerebrasContextWindowError(error) ||
 		checkIsBedrockContextWindowError(error) ||
-		checkIsVercelContextWindowError(error)
+		checkIsVercelContextWindowError(error) ||
+		checkIsDeepSeekContextWindowError(error)
 	)
 }
 
@@ -33,6 +34,41 @@ function checkIsOpenRouterContextWindowError(error: any): boolean {
 		] as const
 
 		return String(finalStatus) === "400" && CONTEXT_ERROR_PATTERNS.some((pattern) => pattern.test(message))
+	} catch {
+		return false
+	}
+}
+
+/**
+ * Detects DeepSeek-specific context window exceeded errors.
+ * DeepSeek returns errors with code "400" and "context_length_exceeded",
+ * or messages like "input length exceeds maximum tokens" (OpenAI-compatible format).
+ */
+function checkIsDeepSeekContextWindowError(error: any): boolean {
+	try {
+		const status = error?.status ?? error?.code ?? error?.error?.code ?? error?.error?.status
+		const message: string = String(error?.message || error?.error?.message || "")
+
+		// DeepSeek may return context_length_exceeded code directly
+		if (error?.code === "context_length_exceeded" || error?.error?.code === "context_length_exceeded") {
+			return true
+		}
+
+		// Check for 400 status with context-related error message
+		const is400 = String(status) === "400"
+		if (!is400) {
+			return false
+		}
+
+		const DEEPSEEK_CONTEXT_PATTERNS = [
+			/input length.*exceed/i,
+			/context length.*exceed/i,
+			/too many tokens/i,
+			/reduce.*length/i,
+			/exceeds.*maximum.*tokens/i,
+		] as const
+
+		return DEEPSEEK_CONTEXT_PATTERNS.some((pattern) => pattern.test(message))
 	} catch {
 		return false
 	}
