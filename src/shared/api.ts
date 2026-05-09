@@ -2255,13 +2255,14 @@ export const deepSeekModels = {
 		outputPrice: 3.48,
 		cacheWritesPrice: 1.74,
 		cacheReadsPrice: 0.145,
+		temperature: 0.3, // coding-optimized; DeepSeek recommends 0-0.3 for coding tasks
 		supportsReasoning: true,
 		supportsReasoningEffort: true,
 		apiFormat: ApiFormat.OPENAI_CHAT,
 		supportsTools: true,
 		supportsStreaming: true,
 		description:
-			"DeepSeek V4 Pro — 1M context window with reasoning capabilities. Supports reasoning_effort (high/Xhigh->max) for complex problem-solving and agent tasks.",
+			"DeepSeek V4 Pro — 1M context window with reasoning capabilities. Supports reasoning_effort (high/max) for complex problem-solving and agent tasks.",
 	},
 } as const satisfies Record<string, OpenAiCompatibleModelInfo>
 
