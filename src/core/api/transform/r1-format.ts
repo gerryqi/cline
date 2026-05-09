@@ -1,6 +1,7 @@
 import { Anthropic } from "@anthropic-ai/sdk"
 import OpenAI from "openai"
 import { ClineAssistantThinkingBlock, ClineStorageMessage } from "@/shared/messages/content"
+import { Logger } from "@/shared/services/Logger"
 
 /**
  * DeepSeek Reasoner message format with reasoning_content support.
@@ -52,7 +53,14 @@ export function addReasoningContent(
 	// and injecting reasoning_content by index would produce incorrect results.
 	const openAiAssistantCount = openAiMessages.filter((m) => m.role === "assistant").length
 	if (openAiAssistantCount !== assistantIdx) {
-		// Fall back to no reasoning_content injection rather than mismatching
+		// Fall back to no reasoning_content injection rather than mismatching.
+		// Log a warning so operators can detect and investigate reasoning context loss
+		// in multi-turn R1 conversations.
+		Logger.warn(
+			`[DeepSeek R1] Assistant message count mismatch: openAi=${openAiAssistantCount} vs original=${assistantIdx}. ` +
+				`Reasoning content will be dropped for this turn to avoid index mismatches. ` +
+				`This may degrade multi-turn reasoning coherence for DeepSeek Reasoner.`,
+		)
 		return openAiMessages as DeepSeekReasonerMessage[]
 	}
 
