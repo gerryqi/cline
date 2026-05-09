@@ -155,6 +155,13 @@ export class DeepSeekHandler implements ApiHandler {
 		this.isAborted = false
 		this.abortController = new AbortController()
 
+		// Read optional tuning parameters from model config or options
+		// DeepSeek supports standard OpenAI-compatible generation params
+		const temperature = !isDeepseekReasoner ? (modelInfo.temperature ?? 0) : undefined
+		const topP = (modelInfo as OpenAiCompatibleModelInfo).topP
+		const frequencyPenalty = (modelInfo as OpenAiCompatibleModelInfo).frequencyPenalty
+		const presencePenalty = (modelInfo as OpenAiCompatibleModelInfo).presencePenalty
+
 		const stream = await client.chat.completions.create(
 			{
 				model: model.id,
@@ -162,8 +169,10 @@ export class DeepSeekHandler implements ApiHandler {
 				messages: openAiMessages,
 				stream: true,
 				stream_options: { include_usage: true },
-				// Read temperature from model definition; default to 0 if not specified
-				...(!isDeepseekReasoner ? { temperature: modelInfo.temperature ?? 0 } : {}),
+				...(temperature !== undefined ? { temperature } : {}),
+				...(topP !== undefined ? { top_p: topP } : {}),
+				...(frequencyPenalty !== undefined ? { frequency_penalty: frequencyPenalty } : {}),
+				...(presencePenalty !== undefined ? { presence_penalty: presencePenalty } : {}),
 				...(reasoningEffort ? { reasoning_effort: reasoningEffort as ChatCompletionReasoningEffort } : {}),
 				...getOpenAIToolParams(tools),
 			},

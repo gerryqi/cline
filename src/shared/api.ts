@@ -99,6 +99,9 @@ export interface OpenAiCompatibleModelInfo extends ModelInfo {
 	supportsReasoningEffort?: boolean
 	supportsTools?: boolean
 	supportsStreaming?: boolean
+	topP?: number
+	frequencyPenalty?: number
+	presencePenalty?: number
 }
 
 export interface OcaModelInfo extends OpenAiCompatibleModelInfo {
