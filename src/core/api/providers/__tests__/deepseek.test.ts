@@ -198,10 +198,9 @@ describe("DeepSeekHandler", () => {
 			// Verify that the create call was made with R1-formatted messages
 			const createCall = fakeClient.chat.completions.create.lastCall
 			const args = createCall.args[0]
-			// R1 format converts "system" role to "user" and uses addReasoningContent
-			// The first message should have role "user" (not "system") because convertToR1Format
-			// maps system → user for DeepSeek Reasoner compatibility
-			args.messages[0].role.should.equal("system")
+			// The system prompt is sent as "user" role because DeepSeek R1 does not
+			// support the system role and recommends user role instead
+			args.messages[0].role.should.equal("user")
 		})
 
 		it("should set temperature=0 for non-reasoner models", async () => {

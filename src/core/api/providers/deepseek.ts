@@ -144,7 +144,8 @@ export class DeepSeekHandler implements ApiHandler {
 
 		const convertedMessages = convertToOpenAiMessages(messages)
 		const openAiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = isDeepseekReasoner
-			? [{ role: "system", content: systemPrompt }, ...addReasoningContent(convertedMessages, messages)]
+			? // DeepSeek R1 does not support system role; use user role instead for optimal performance
+				[{ role: "user", content: systemPrompt }, ...addReasoningContent(convertedMessages, messages)]
 			: [{ role: "system", content: systemPrompt }, ...convertedMessages]
 
 		const reasoningEffort = isDeepseekV4Pro ? this.toDeepSeekReasoningEffort(this.options.reasoningEffort) : undefined
